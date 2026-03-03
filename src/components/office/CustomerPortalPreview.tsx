@@ -16,7 +16,8 @@ import {
   Image, 
   Download,
   CheckCircle,
-  Clock
+  Clock,
+  ExternalLink
 } from 'lucide-react';
 
 interface CustomerPortalPreviewProps {
@@ -47,15 +48,15 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
 
   return (
     <div className="min-h-full">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
+      {/* Header: black, gold, dark green */}
+      <div className="bg-gradient-to-r from-zinc-900 via-emerald-950 to-zinc-900 text-white shadow-xl border-b-2 border-amber-500/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Your Projects</h1>
-              <p className="text-blue-100 mt-1">Welcome back, {customerName}</p>
+              <h1 className="text-3xl font-bold text-amber-400">Your Projects</h1>
+              <p className="text-emerald-100/90 mt-1">Welcome back, {customerName}</p>
             </div>
-            <Badge variant="outline" className="bg-white/10 text-white border-white/30 px-4 py-2">
+            <Badge variant="outline" className="bg-amber-500/10 text-amber-300 border-amber-500/40 px-4 py-2">
               Customer Portal
             </Badge>
           </div>
@@ -66,8 +67,8 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Custom Message */}
         {customMessage && (
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-6">
-            <p className="text-blue-900">{customMessage}</p>
+          <div className="bg-amber-50/80 border-2 border-amber-200/60 rounded-lg p-4 mb-6">
+            <p className="text-slate-800">{customMessage}</p>
           </div>
         )}
 
@@ -88,7 +89,7 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <CardTitle className="flex items-center gap-2">
-                          <Building2 className="w-5 h-5 text-blue-600" />
+                          <Building2 className="w-5 h-5 text-emerald-600" />
                           {jobData.name}
                         </CardTitle>
                         <p className="text-sm text-muted-foreground mt-1">
@@ -104,19 +105,23 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
                   <CardContent className="space-y-4">
                     {/* Financial Summary - Only if enabled */}
                     {visibilitySettings?.show_financial_summary && (
-                      <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg">
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Total</p>
-                          <p className="font-bold text-sm">${estimatedPrice.toLocaleString()}</p>
+                          <p className="text-xs text-muted-foreground">Quote Total</p>
+                          <p className="font-bold text-sm text-emerald-700">${estimatedPrice.toLocaleString()}</p>
                         </div>
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Paid</p>
-                          <p className="font-bold text-sm text-green-600">${totalPaid.toLocaleString()}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Balance</p>
-                          <p className="font-bold text-sm text-amber-600">${remainingBalance.toLocaleString()}</p>
-                        </div>
+                        {(jobData.quote?.status === 'accepted' || jobData.quote?.status === 'signed') && (
+                          <>
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground">Paid</p>
+                              <p className="font-bold text-sm text-green-600">${totalPaid.toLocaleString()}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground">Balance</p>
+                              <p className="font-bold text-sm text-amber-600">${remainingBalance.toLocaleString()}</p>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -160,14 +165,15 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
 // Job Detail Preview Component - Shows individual job with all tabs
 function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
   const [activeTab, setActiveTab] = useState('overview');
-  const { payments, documents, photos, scheduleEvents, proposalData } = jobData;
+  const { payments, documents, photos, scheduleEvents, proposalData, quote, viewerLinks = [] } = jobData;
   const totalPaid = payments?.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0) || 0;
   const balance = (proposalData?.totals?.grandTotal || 0) - totalPaid;
+  const isSignedContract = quote?.status === 'accepted' || quote?.status === 'signed';
+  const proposalNumber = quote?.proposal_number || quote?.quote_number || 'N/A';
 
-  // Filter tabs based on visibility settings
+  // Filter tabs: no separate Proposal tab – proposal is on Overview
   const visibleTabs = [
     { value: 'overview', label: 'Overview', show: true },
-    { value: 'proposal', label: 'Proposal', show: visibilitySettings?.show_proposal },
     { value: 'payments', label: 'Payments', show: visibilitySettings?.show_payments },
     { value: 'schedule', label: 'Schedule', show: visibilitySettings?.show_schedule },
     { value: 'documents', label: 'Documents', show: visibilitySettings?.show_documents },
@@ -176,20 +182,31 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
 
   return (
     <div className="min-h-full">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
+      {/* Header: black, gold, dark green – project name, proposal #, client, address */}
+      <div className="bg-gradient-to-r from-zinc-900 via-emerald-950 to-zinc-900 text-white shadow-xl border-b-2 border-amber-500/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={onBack} className="text-white hover:bg-white/10">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
+              <Button variant="ghost" size="sm" onClick={onBack} className="text-white hover:bg-white/10 shrink-0">
                 ← Back to Projects
               </Button>
               <div>
-                <h1 className="text-3xl font-bold">{jobData.name}</h1>
-                <p className="text-blue-100 mt-1">{jobData.client_name}</p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-3xl font-bold text-amber-400">{jobData.name}</h1>
+                  <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-500/50">
+                    #{proposalNumber}
+                  </Badge>
+                </div>
+                <p className="text-emerald-100/90 mt-1">{jobData.client_name}</p>
+                {jobData.address && (
+                  <p className="text-emerald-200/80 text-sm mt-1 flex items-center gap-1">
+                    <MapPin className="w-4 h-4 shrink-0 text-amber-400/90" />
+                    {jobData.address}
+                  </p>
+                )}
               </div>
             </div>
-            <Badge variant="outline" className="bg-white/10 text-white border-white/30 px-4 py-2">
+            <Badge variant="outline" className="bg-amber-500/10 text-amber-300 border-amber-500/40 px-4 py-2">
               Project Details
             </Badge>
           </div>
@@ -205,149 +222,165 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
             ))}
           </TabsList>
 
-          {/* Overview Tab */}
+          {/* Overview Tab – matches customer portal: custom message, drawings, proposal, project info */}
           <TabsContent value="overview" className="space-y-6">
-            {visibilitySettings?.show_financial_summary && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <DollarSign className="w-4 h-4" />
-                      Project Total
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-blue-600">
-                      ${(proposalData?.totals?.grandTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Amount Paid
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-green-600">
-                      ${totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Balance Due
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className={`text-3xl font-bold ${balance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                      ${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+            {/* Custom welcome message (from Portal settings) */}
+            {visibilitySettings?.custom_message && (
+              <Card className="border-amber-200 bg-amber-50/50">
+                <CardContent className="pt-6">
+                  <p className="text-slate-800 whitespace-pre-wrap">{visibilitySettings.custom_message}</p>
+                </CardContent>
+              </Card>
+            )}
+            {/* Drawings & 3D Views (viewer links from Manage links) */}
+            {viewerLinks.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ExternalLink className="w-5 h-5" />
+                    Drawings & 3D Views
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground font-normal">Open the links below to view plans and 3D models.</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-3">
+                    {viewerLinks.map((link: any) => (
+                      <Button
+                        key={link.id}
+                        variant="outline"
+                        className="flex items-center gap-2"
+                        onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        {link.label}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5" />
-                  Project Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground flex items-center gap-2">
-                      <MapPin className="w-4 h-4" />
-                      Address
-                    </p>
-                    <p className="font-medium mt-1">{jobData.address}</p>
-                  </div>
+            {/* Proposal on same page as overview */}
+            {visibilitySettings?.show_proposal && (
+              <Card className="border-emerald-200/60">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-emerald-900">
+                    <FileText className="w-5 h-5" />
+                    Project Proposal
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {(proposalData?.materialSheets || []).map((sheet: any) => {
+                    const showSheetPrice = visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices;
+                    const itemsTotal = (sheet.items || []).reduce((sum: number, item: any) => sum + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
+                    const sheetTotal = itemsTotal + (sheet.laborTotal ?? 0) + (sheet.sheetLineItemsTotal ?? 0);
+                    return (
+                      <div key={sheet.id} className="border rounded-lg p-4 flex flex-col gap-2">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
+                            {sheet.description && (
+                              <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                            )}
+                          </div>
+                          {showSheetPrice && sheetTotal > 0 && (
+                            <p className="text-xl font-bold text-emerald-700 shrink-0">
+                              ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {proposalData?.customRows?.map((row: any) => {
+                    const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                    const showRowPrice = visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices;
+                    return (
+                      <div key={row.id} className="border rounded-lg p-4 flex flex-col gap-2">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-bold text-lg">{row.description}</h3>
+                            {items.length > 0 ? (
+                              <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
+                                {items.map((item: any) => (
+                                  <li key={item.id}>{item.description}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {showRowPrice && (row.quantity != null || row.unit_cost != null) && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {row.quantity} × ${(row.unit_cost ?? 0).toFixed(2)}
+                              </p>
+                            )}
+                          </div>
+                          {showRowPrice && (
+                            <p className="text-xl font-bold text-emerald-700 shrink-0">
+                              ${(row.selling_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {proposalData?.subcontractorEstimates?.map((est: any) => (
+                    <div key={est.id} className="border rounded-lg p-4">
+                      <h3 className="font-bold">{est.company_name}</h3>
+                      {est.scope_of_work && (
+                        <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
+                      )}
+                    </div>
+                  ))}
+
+                  {visibilitySettings?.show_financial_summary && (
+                    <div className="border-t-2 pt-4 space-y-2">
+                      <div className="flex justify-between text-lg">
+                        <span className="font-medium">Subtotal:</span>
+                        <span>${proposalData?.totals?.subtotal?.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex justify-between text-lg">
+                        <span className="font-medium">Tax (7%):</span>
+                        <span>${proposalData?.totals?.tax?.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex justify-between text-2xl font-bold pt-2 border-t">
+                        <span>Grand Total:</span>
+                        <span className="text-emerald-700">
+                          ${proposalData?.totals?.grandTotal?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Project Information (description & notes only; address is in header) */}
+            {(jobData.description || jobData.notes) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="w-5 h-5" />
+                    Project Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   {jobData.description && (
                     <div>
                       <p className="text-sm text-muted-foreground">Description</p>
                       <p className="font-medium mt-1">{jobData.description}</p>
                     </div>
                   )}
-                </div>
-                {jobData.notes && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Notes</p>
-                    <p className="mt-1">{jobData.notes}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Proposal Tab */}
-          {visibilitySettings?.show_proposal && (
-            <TabsContent value="proposal">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="w-5 h-5" />
-                    Project Proposal
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {proposalData?.customRows?.map((row: any) => (
-                    <div key={row.id} className="border rounded-lg p-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="font-bold">{row.description}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {row.quantity} × ${row.unit_cost?.toFixed(2)}
-                        </p>
-                      </div>
-                      <p className="text-xl font-bold text-blue-600">
-                        ${row.selling_price?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </p>
+                  {jobData.notes && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Notes</p>
+                      <p className="mt-1">{jobData.notes}</p>
                     </div>
-                  ))}
-
-                  {proposalData?.subcontractorEstimates?.map((est: any) => {
-                    const finalPrice = (est.total_amount || 0) * (1 + (est.markup_percent || 0) / 100);
-                    return (
-                      <div key={est.id} className="border rounded-lg p-4 flex items-center justify-between">
-                        <div>
-                          <h3 className="font-bold">{est.company_name}</h3>
-                          {est.scope_of_work && (
-                            <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
-                          )}
-                        </div>
-                        <p className="text-xl font-bold text-blue-600">
-                          ${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                    );
-                  })}
-
-                  <div className="border-t-2 pt-4 space-y-2">
-                    <div className="flex justify-between text-lg">
-                      <span className="font-medium">Subtotal:</span>
-                      <span>${proposalData?.totals?.subtotal?.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-lg">
-                      <span className="font-medium">Tax (7%):</span>
-                      <span>${proposalData?.totals?.tax?.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-2xl font-bold pt-2 border-t">
-                      <span>Grand Total:</span>
-                      <span className="text-blue-600">
-                        ${proposalData?.totals?.grandTotal?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
-            </TabsContent>
-          )}
+            )}
+          </TabsContent>
 
           {/* Payments Tab */}
           {visibilitySettings?.show_payments && (
@@ -404,11 +437,11 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
                     <div className="space-y-3">
                       {scheduleEvents.map((event: any) => (
                         <div key={event.id} className="flex items-start gap-4 p-4 border rounded-lg">
-                          <div className="text-center bg-blue-50 rounded-lg p-3 min-w-[80px]">
+                          <div className="text-center bg-emerald-50 rounded-lg p-3 min-w-[80px]">
                             <p className="text-sm text-muted-foreground">
                               {new Date(event.event_date).toLocaleDateString('en-US', { month: 'short' })}
                             </p>
-                            <p className="text-2xl font-bold text-blue-600">
+                            <p className="text-2xl font-bold text-emerald-700">
                               {new Date(event.event_date).getDate()}
                             </p>
                           </div>
@@ -447,7 +480,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
                       {documents.map((doc: any) => (
                         <div key={doc.id} className="flex items-center justify-between p-4 border rounded-lg">
                           <div className="flex items-center gap-3">
-                            <FileText className="w-8 h-8 text-blue-600" />
+                            <FileText className="w-8 h-8 text-emerald-600" />
                             <div>
                               <p className="font-medium">{doc.name}</p>
                               <p className="text-sm text-muted-foreground">

@@ -678,10 +678,17 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
 
               {linkedSubs.map((sub: any) => {
                 const lineItems = subcontractorLineItems[sub.id] || [];
-                const includedTotal = lineItems
-                  .filter((item: any) => !item.excluded)
-                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const totalWithMarkup = includedTotal * (1 + (sub.markup_percent || 0) / 100);
+                const included = lineItems.filter((item: any) => !item.excluded);
+                const materialTotal = included
+                  .filter((i: any) => (i.item_type || 'material') === 'material')
+                  .reduce((sum: number, i: any) => sum + (i.total_price || 0), 0);
+                const laborTotal = included
+                  .filter((i: any) => (i.item_type || 'material') === 'labor')
+                  .reduce((sum: number, i: any) => sum + (i.total_price || 0), 0);
+                const markup = 1 + (sub.markup_percent || 0) / 100;
+                const materialWithMarkup = materialTotal * markup;
+                const laborWithMarkup = laborTotal * markup;
+                const totalWithMarkup = materialWithMarkup + laborWithMarkup;
 
                 return (
                   <Collapsible key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -696,7 +703,9 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                           <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                           <div className="flex items-center gap-2">
                             <div className="flex items-center gap-1 text-xs">
-                              <span className="text-slate-600">Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              {materialTotal > 0 && <span className="text-slate-600">Material: ${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                              {laborTotal > 0 && <span className="text-amber-700">Labor: ${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                              {materialTotal === 0 && laborTotal === 0 && <span className="text-slate-500">$0.00</span>}
                               <span className="text-slate-500">+</span>
                               <Input
                                 type="number"
@@ -1150,10 +1159,17 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
 
                 {linkedSubs.map((sub: any) => {
                   const subLineItems = subcontractorLineItems[sub.id] || [];
-                  const includedTotal = subLineItems
-                    .filter((item: any) => !item.excluded)
-                    .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const totalWithMarkup = includedTotal * (1 + (sub.markup_percent || 0) / 100);
+                  const included = subLineItems.filter((item: any) => !item.excluded);
+                  const materialTotal = included
+                    .filter((i: any) => (i.item_type || 'material') === 'material')
+                    .reduce((sum: number, i: any) => sum + (i.total_price || 0), 0);
+                  const laborTotal = included
+                    .filter((i: any) => (i.item_type || 'material') === 'labor')
+                    .reduce((sum: number, i: any) => sum + (i.total_price || 0), 0);
+                  const markup = 1 + (sub.markup_percent || 0) / 100;
+                  const materialWithMarkup = materialTotal * markup;
+                  const laborWithMarkup = laborTotal * markup;
+                  const totalWithMarkup = materialWithMarkup + laborWithMarkup;
 
                   return (
                     <Collapsible key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -1168,7 +1184,9 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                             <div className="flex items-center gap-2">
                               <div className="flex items-center gap-1 text-xs">
-                                <span className="text-slate-600">Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                {materialTotal > 0 && <span className="text-slate-600">Material: ${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                                {laborTotal > 0 && <span className="text-amber-700">Labor: ${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                                {materialTotal === 0 && laborTotal === 0 && <span className="text-slate-500">$0.00</span>}
                                 <span className="text-slate-500">+</span>
                                 <Input
                                   type="number"
@@ -1304,11 +1322,18 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
     } else if (item.type === 'subcontractor') {
       const est = item.data;
       const lineItems = subcontractorLineItems[est.id] || [];
-      const includedTotal = lineItems
-        .filter((item: any) => !item.excluded)
-        .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
+      const included = lineItems.filter((item: any) => !item.excluded);
+      const materialIncludedTotal = included
+        .filter((i: any) => (i.item_type || 'material') === 'material')
+        .reduce((sum: number, i: any) => sum + (i.total_price || 0), 0);
+      const laborIncludedTotal = included
+        .filter((i: any) => (i.item_type || 'material') === 'labor')
+        .reduce((sum: number, i: any) => sum + (i.total_price || 0), 0);
+      const includedTotal = materialIncludedTotal + laborIncludedTotal;
       const estMarkup = est.markup_percent || 0;
-      const finalPrice = includedTotal * (1 + estMarkup / 100);
+      const materialWithMarkup = materialIncludedTotal * (1 + estMarkup / 100);
+      const laborWithMarkup = laborIncludedTotal * (1 + estMarkup / 100);
+      const finalPrice = materialWithMarkup + laborWithMarkup;
 
       return (
         <Collapsible className="border rounded bg-white py-1 px-2">
@@ -1417,10 +1442,9 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
               )}
             </div>
 
-            {/* Pricing column (narrow) */}
-            <div className="w-[120px] flex-shrink-0 text-right">
-              <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
-                <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            {/* Pricing column: Material (taxable) and Labor (non-taxable) split */}
+            <div className="w-[140px] flex-shrink-0 text-right">
+              <div className="flex items-center justify-end gap-1 text-xs text-slate-600 mb-0.5">
                 <span>+</span>
                 <Input
                   type="number"
@@ -1430,13 +1454,25 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                     updateSubcontractorMarkup(est.id, newMarkup);
                   }}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-14 h-5 text-xs px-1 text-center"
+                  className="w-12 h-5 text-xs px-1 text-center"
                   step="1"
                   min="0"
                 />
                 <span>%</span>
               </div>
-              <p className="text-sm text-slate-500">Total</p>
+              {materialIncludedTotal > 0 && (
+                <div className="text-xs mb-0.5">
+                  <span className="text-slate-500">Material: </span>
+                  <span className="font-medium">${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {laborIncludedTotal > 0 && (
+                <div className="text-xs mb-0.5">
+                  <span className="text-slate-500">Labor: </span>
+                  <span className="font-medium text-amber-700">${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              <p className="text-sm text-slate-500 mt-1">Total</p>
               <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
@@ -4694,8 +4730,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   async function handlePrintPdfView() {
     if (!pdfViewHtml || !pdfViewFilename) return;
     try {
-      const printHtml = await fetchProposalPdfHtml(pdfViewHtml, pdfViewFilename);
-      const blob = new Blob([printHtml], { type: 'text/html; charset=utf-8' });
+      // Use proposal HTML directly so template @page and footer (margin from bottom) apply
+      const blob = new Blob([pdfViewHtml], { type: 'text/html; charset=utf-8' });
       const blobUrl = URL.createObjectURL(blob);
       const win = window.open(blobUrl, '_blank');
       if (!win) {

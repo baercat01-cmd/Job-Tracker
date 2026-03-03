@@ -32,7 +32,7 @@ export function generateProposalHTML(data: {
   // Apply template settings or use defaults
   const t = templateSettings || {};
   const pageMarginTop = t.page_margin_top ?? 0.75;
-  const pageMarginBottom = t.page_margin_bottom ?? 0.75;
+  const pageMarginBottom = t.page_margin_bottom ?? 2;
   const pageMarginLeft = t.page_margin_left ?? 0.5;
   const pageMarginRight = t.page_margin_right ?? 0.5;
   const bodyPaddingTop = t.body_padding_top ?? 50;
@@ -41,10 +41,10 @@ export function generateProposalHTML(data: {
   const bodyPaddingRight = t.body_padding_right ?? 30;
   const bodyFontSize = t.body_font_size ?? 11;
   const bodyLineHeight = t.body_line_height ?? 1.3;
-  const sectionMarginTop = t.section_margin_top ?? 12;
-  const sectionMarginBottom = t.section_margin_bottom ?? 6;
-  const sectionPaddingBottom = t.section_padding_bottom ?? 4;
-  const sectionMinHeight = t.section_min_height ?? 60;
+  const sectionMarginTop = t.section_margin_top ?? 6;
+  const sectionMarginBottom = t.section_margin_bottom ?? 3;
+  const sectionPaddingBottom = t.section_padding_bottom ?? 2;
+  const sectionMinHeight = t.section_min_height ?? 40;
   const proposalTitleSize = t.proposal_title_size ?? 32;
   const sectionTitleSize = t.section_title_size ?? 12;
   const introText = t.intro_text ?? 'We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:';
@@ -148,9 +148,13 @@ export function generateProposalHTML(data: {
             align-items: baseline;
           }
           
+          .section-wrapper:first-child .section-title {
+            margin-top: 0;
+          }
+          
           .section-content { 
             margin-left: 0; 
-            margin-bottom: 15px; 
+            margin-bottom: 8px; 
             white-space: pre-wrap;
             line-height: 1.5;
             color: #333;
@@ -158,7 +162,7 @@ export function generateProposalHTML(data: {
           
           .section-wrapper {
             page-break-inside: avoid;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             min-height: ${sectionMinHeight}px;
             padding-bottom: ${sectionPaddingBottom}px;
           }
@@ -305,27 +309,31 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Print page setup */
+          /* Print: use @page footer so counter(page) is 1, 2, 3...; fixed footer only for screen preview */
           @page {
             margin: ${pageMarginTop}in ${pageMarginRight}in ${pageMarginBottom}in ${pageMarginLeft}in;
             size: letter;
+            @bottom-left {
+              content: "Proposal #${proposalNumber}   Page " counter(page);
+              font-size: 9pt;
+              color: #666;
+              font-weight: 600;
+              vertical-align: bottom;
+              padding-bottom: 0.65in;
+            }
           }
           
-          @page:first {
-            counter-reset: page 1;
-          }
-          
-          /* Fixed footer for page numbers - will appear on every printed page */
           .print-footer {
             position: fixed;
-            bottom: 0.1in;
+            bottom: 0.45in;
             left: 0;
             right: 0;
-            height: 0.3in;
+            min-height: 0.5in;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 0.5in;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: flex-start;
+            padding: 0 0 0 ${pageMarginLeft}in;
             font-size: 9pt;
             color: #666;
             font-weight: 600;
@@ -335,25 +343,35 @@ export function generateProposalHTML(data: {
           
           .print-footer::before {
             content: "Proposal #${proposalNumber}";
+            display: block;
+            text-align: left;
+            line-height: 1.3;
+            margin-bottom: 2px;
           }
           
           .print-footer::after {
             content: "Page " counter(page);
+            display: block;
+            text-align: left;
+            line-height: 1.3;
+            font-weight: 600;
           }
           
           @media print {
             body { 
               -webkit-print-color-adjust: exact; 
               print-color-adjust: exact;
+              padding-bottom: 1in;
             }
             .print-footer {
-              display: flex;
+              display: none !important;
             }
           }
           
           @media screen {
             .print-footer {
-              display: none;
+              display: flex;
+              bottom: 0.45in;
             }
           }
         </style>
@@ -424,11 +442,13 @@ export function generateProposalHTML(data: {
         <div class="intro-box" style="margin-top: 10px;">
           <div class="box-header">Work to be Completed</div>
           <div style="padding: 15px 10px 10px 10px;">
-            ${sections.map((section: any) => {
+            ${sections.map((section: any, sectionIndex: number) => {
+              const isFirstSection = sectionIndex === 0;
+              const sectionTitleMargin = isFirstSection ? '0' : '8px';
               let content = '<div class="section-wrapper">';
               
               if (showInternalDetails) {
-                content += '<div class="section-title" style="margin-top: 15px;">';
+                content += '<div class="section-title" style="margin-top: ' + sectionTitleMargin + ';">';
                 content += '<span style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">' + section.name + '</span>';
                 if (section.price) {
                   content += '<span class="section-price" style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
@@ -436,7 +456,7 @@ export function generateProposalHTML(data: {
                 content += '</div>';
                 
                 if (section.description) {
-                  content += '<div class="section-content" style="margin: 8px 0 15px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #2d5f3f;">' + section.description + '</div>';
+                  content += '<div class="section-content" style="margin: 6px 0 8px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #2d5f3f;">' + section.description + '</div>';
                 }
                 
                 if (section.items && section.items.length > 0) {
@@ -470,12 +490,12 @@ export function generateProposalHTML(data: {
                 }
               } else {
                 if (showSectionPrices && section.price) {
-                  content += '<div class="section-title" style="margin-top: 15px;">';
+                  content += '<div class="section-title" style="margin-top: ' + sectionTitleMargin + ';">';
                   content += '<span>' + section.name + '</span>';
                   content += '<span class="section-price">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
                   content += '</div>';
                 } else {
-                  content += '<div class="section-title" style="display: block; margin-top: 15px;">' + section.name + '</div>';
+                  content += '<div class="section-title" style="display: block; margin-top: ' + sectionTitleMargin + ';">' + section.name + '</div>';
                 }
                 
                 if (section.description) {

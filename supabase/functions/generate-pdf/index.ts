@@ -590,8 +590,20 @@ serve(async (req) => {
     console.log('📄 PDF generation requested for:', finalFilename);
     console.log('📊 HTML length:', finalHtml?.length || 0);
 
-    // Return HTML optimized for browser's native Print to PDF
-    // This is the most reliable cross-platform solution
+    // Proposal HTML is a full document with its own @page and footer; return it unchanged
+    // so the template's bottom margin and "Proposal # / Page N" footer print correctly.
+    const isProposalDoc = typeof finalHtml === 'string' && finalHtml.trimStart().startsWith('<!DOCTYPE html>');
+    if (isProposalDoc) {
+      console.log('✅ Returning proposal HTML as-is (preserves @page and footer)');
+      return new Response(finalHtml, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/html; charset=utf-8',
+        },
+      });
+    }
+
+    // For payroll/job-hours: wrap in print-optimized shell (no @page override so content can control layout)
     const printOptimizedHtml = `
       <!DOCTYPE html>
       <html>

@@ -33,8 +33,13 @@ interface CustomerPortalLink {
   show_documents: boolean;
   show_photos: boolean;
   show_financial_summary: boolean;
+  show_line_item_prices?: boolean;
   custom_message: string | null;
 }
+
+// Explicit column list omitting show_line_item_prices so app works when PostgREST schema cache is stale (PGRST204)
+const CUSTOMER_PORTAL_ACCESS_SELECT =
+  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
 
 interface CustomerPortalManagementProps {
   job: Job;
@@ -62,6 +67,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [showDocuments, setShowDocuments] = useState(true);
   const [showPhotos, setShowPhotos] = useState(true);
   const [showFinancialSummary, setShowFinancialSummary] = useState(true);
+  const [showLineItemPrices, setShowLineItemPrices] = useState(false);
   const [customMessage, setCustomMessage] = useState('');
 
   // Preview state
@@ -70,7 +76,6 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewSettings, setPreviewSettings] = useState<any>(null);
 
-  // Token shown in preview before creating; same token is used when user clicks Create Portal Link
   const [pendingToken, setPendingToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -79,12 +84,35 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     setPreviewJobs([]);
   }, [job.id]);
 
-  // When no portal links exist, show preview inline: load preview data and set pending token
+  // When no portal links exist, set pending token for new link
   useEffect(() => {
-    if (loading || portalLinks.length > 0 || !customerName || previewJobs.length > 0) return;
+    if (loading || portalLinks.length > 0 || !customerName?.trim()) return;
     setPendingToken((t) => t || crypto.randomUUID().replace(/-/g, ''));
-    loadPreviewData(false);
   }, [loading, portalLinks.length, customerName, job.id]);
+
+  // Load preview data whenever we have customer name so the portal page can show the customer view
+  useEffect(() => {
+    if (loading || !customerName?.trim()) return;
+    loadPreviewData(false);
+  }, [loading, customerName, job.id]);
+
+  // When we have an existing portal link for this job, sync sidebar form from it
+  useEffect(() => {
+    const link = portalLinks.find(l => l.job_id === job.id);
+    if (!link) return;
+    setCustomerName(link.customer_name);
+    setCustomerEmail(link.customer_email || '');
+    setCustomerPhone(link.customer_phone || '');
+    setShowProposal(link.show_proposal);
+    setShowPayments(link.show_payments);
+    setShowSchedule(link.show_schedule);
+    setShowDocuments(link.show_documents);
+    setShowPhotos(link.show_photos);
+    setShowFinancialSummary(link.show_financial_summary);
+    setShowLineItemPrices(link.show_line_item_prices ?? false);
+    setCustomMessage(link.custom_message || '');
+    setExpiresInDays(link.expires_at ? '' : '');
+  }, [portalLinks, job.id]);
 
   async function loadCustomerInfo() {
     try {
@@ -152,18 +180,155 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     }
   }
 
+  /** When no portal link exists, create one with defaults so the copy link is always valid. */
+  async function ensureOnePortalLink(): Promise<boolean> {
+    const jobEmail = (job as { customer_email?: string | null }).customer_email;
+    if (jobEmail && jobEmail.trim()) {
+      const token = generateAccessToken();
+      const payload = {
+        job_id: job.id,
+        customer_identifier: jobEmail.trim().toLowerCase(),
+        access_token: token,
+        customer_name: (job.client_name || '').trim() || 'Customer',
+        customer_email: jobEmail.trim(),
+        customer_phone: (job as { customer_phone?: string | null }).customer_phone?.trim() || null,
+        is_active: true,
+        expires_at: null,
+        created_by: profile?.id,
+        show_proposal: true,
+        show_payments: true,
+        show_schedule: true,
+        show_documents: true,
+        show_photos: true,
+        show_financial_summary: true,
+        custom_message: null,
+      };
+      let { data, error } = await supabase
+        .from('customer_portal_access')
+        .insert([payload])
+        .select(CUSTOMER_PORTAL_ACCESS_SELECT)
+        .single();
+      if (error?.code === '42501') {
+        const rpcResult = await supabase.rpc('create_customer_portal_link', {
+          p_job_id: payload.job_id,
+          p_customer_identifier: payload.customer_identifier,
+          p_access_token: payload.access_token,
+          p_customer_name: payload.customer_name,
+          p_customer_email: payload.customer_email,
+          p_customer_phone: payload.customer_phone,
+          p_is_active: payload.is_active,
+          p_expires_at: payload.expires_at,
+          p_created_by: payload.created_by,
+          p_show_proposal: payload.show_proposal,
+          p_show_payments: payload.show_payments,
+          p_show_schedule: payload.show_schedule,
+          p_show_documents: payload.show_documents,
+          p_show_photos: payload.show_photos,
+          p_show_financial_summary: payload.show_financial_summary,
+          p_custom_message: payload.custom_message,
+        });
+        if (!rpcResult.error) {
+          data = rpcResult.data;
+          error = null;
+        } else {
+          data = rpcResult.data;
+          error = rpcResult.error;
+        }
+      }
+      if (!error && data) {
+        toast.success('Portal link ready. Use Copy link to share with the customer.');
+        return true;
+      }
+    }
+    const { data: contactData } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('job_id', job.id)
+      .eq('category', 'customer')
+      .maybeSingle();
+    if (contactData?.email) {
+      const token = generateAccessToken();
+      const payload = {
+        job_id: job.id,
+        customer_identifier: contactData.email.trim().toLowerCase(),
+        access_token: token,
+        customer_name: (contactData.name || '').trim() || 'Customer',
+        customer_email: contactData.email.trim(),
+        customer_phone: contactData.phone?.trim() || null,
+        is_active: true,
+        expires_at: null,
+        created_by: profile?.id,
+        show_proposal: true,
+        show_payments: true,
+        show_schedule: true,
+        show_documents: true,
+        show_photos: true,
+        show_financial_summary: true,
+        custom_message: null,
+      };
+      let { data, error } = await supabase
+        .from('customer_portal_access')
+        .insert([payload])
+        .select(CUSTOMER_PORTAL_ACCESS_SELECT)
+        .single();
+      if (error?.code === '42501') {
+        const rpcResult = await supabase.rpc('create_customer_portal_link', {
+          p_job_id: payload.job_id,
+          p_customer_identifier: payload.customer_identifier,
+          p_access_token: payload.access_token,
+          p_customer_name: payload.customer_name,
+          p_customer_email: payload.customer_email,
+          p_customer_phone: payload.customer_phone,
+          p_is_active: payload.is_active,
+          p_expires_at: payload.expires_at,
+          p_created_by: payload.created_by,
+          p_show_proposal: payload.show_proposal,
+          p_show_payments: payload.show_payments,
+          p_show_schedule: payload.show_schedule,
+          p_show_documents: payload.show_documents,
+          p_show_photos: payload.show_photos,
+          p_show_financial_summary: payload.show_financial_summary,
+          p_custom_message: payload.custom_message,
+        });
+        if (!rpcResult.error) {
+          data = rpcResult.data;
+          error = null;
+        } else {
+          data = rpcResult.data;
+          error = rpcResult.error;
+        }
+      }
+      if (!error && data) {
+        toast.success('Portal link ready. Use Copy link to share with the customer.');
+        return true;
+      }
+    }
+    return false;
+  }
+
   async function loadPortalLinks() {
     try {
       const { data, error } = await supabase
         .from('customer_portal_access')
-        .select('*')
+        .select(CUSTOMER_PORTAL_ACCESS_SELECT)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // One link per job: only show the link for this job
       const jobLink = (data || []).filter(link => link.job_id === job.id);
       setPortalLinks(jobLink);
+
+      if (jobLink.length === 0) {
+        const created = await ensureOnePortalLink();
+        if (created) {
+          const { data: data2, error: err2 } = await supabase
+            .from('customer_portal_access')
+            .select(CUSTOMER_PORTAL_ACCESS_SELECT)
+            .eq('job_id', job.id)
+            .order('created_at', { ascending: false });
+          if (!err2 && data2?.length) setPortalLinks(data2);
+        }
+      }
     } catch (error: any) {
       console.error('Error loading portal links:', error);
       toast.error('Failed to load portal links');
@@ -258,8 +423,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       let data: any;
       let error: any;
 
+      // Try direct table access first (no RPC/schema cache). If blocked by RLS (42501), try RPC.
       if (isUpdate) {
-        const result = await supabase
+        const direct = await supabase
           .from('customer_portal_access')
           .update({
             customer_identifier: portalData.customer_identifier,
@@ -278,18 +444,70 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             updated_at: portalData.updated_at,
           })
           .eq('id', existingLink!.id)
-          .select()
+          .select(CUSTOMER_PORTAL_ACCESS_SELECT)
           .single();
-        data = result.data;
-        error = result.error;
+        data = direct.data;
+        error = direct.error;
+        if (error?.code === '42501') {
+          const rpcResult = await supabase.rpc('update_customer_portal_link', {
+            p_id: existingLink!.id,
+            p_customer_identifier: portalData.customer_identifier,
+            p_customer_name: portalData.customer_name,
+            p_customer_email: portalData.customer_email,
+            p_customer_phone: portalData.customer_phone,
+            p_is_active: portalData.is_active,
+            p_expires_at: portalData.expires_at,
+            p_show_proposal: portalData.show_proposal,
+            p_show_payments: portalData.show_payments,
+            p_show_schedule: portalData.show_schedule,
+            p_show_documents: portalData.show_documents,
+            p_show_photos: portalData.show_photos,
+            p_show_financial_summary: portalData.show_financial_summary,
+            p_custom_message: portalData.custom_message,
+          });
+          if (!rpcResult.error) {
+            data = rpcResult.data;
+            error = null;
+          } else {
+            data = rpcResult.data;
+            error = rpcResult.error;
+          }
+        }
       } else {
-        const result = await supabase
+        const direct = await supabase
           .from('customer_portal_access')
           .insert([{ ...portalData, created_by: profile?.id }])
-          .select()
+          .select(CUSTOMER_PORTAL_ACCESS_SELECT)
           .single();
-        data = result.data;
-        error = result.error;
+        data = direct.data;
+        error = direct.error;
+        if (error?.code === '42501') {
+          const rpcResult = await supabase.rpc('create_customer_portal_link', {
+            p_job_id: portalData.job_id,
+            p_customer_identifier: portalData.customer_identifier,
+            p_access_token: portalData.access_token,
+            p_customer_name: portalData.customer_name,
+            p_customer_email: portalData.customer_email,
+            p_customer_phone: portalData.customer_phone,
+            p_is_active: portalData.is_active,
+            p_expires_at: portalData.expires_at,
+            p_created_by: profile?.id,
+            p_show_proposal: portalData.show_proposal,
+            p_show_payments: portalData.show_payments,
+            p_show_schedule: portalData.show_schedule,
+            p_show_documents: portalData.show_documents,
+            p_show_photos: portalData.show_photos,
+            p_show_financial_summary: portalData.show_financial_summary,
+            p_custom_message: portalData.custom_message,
+          });
+          if (!rpcResult.error) {
+            data = rpcResult.data;
+            error = null;
+          } else {
+            data = rpcResult.data;
+            error = rpcResult.error;
+          }
+        }
       }
 
       if (error) {
@@ -313,10 +531,14 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             { duration: 6000 }
           );
         } else if (error.code === '42501') {
-          // Database RLS blocking insert – any office user should be allowed
           toast.error(
-            '❌ Database is blocking this action.\n\nAny office user can create portal links. Ask your project admin to run scripts/fix-customer-portal-access-rls.sql in the Supabase SQL Editor to allow it.',
+            '❌ Database is blocking this action.\n\nRun scripts/fix-customer-portal-access-rls.sql in the Supabase SQL Editor (same project as this app) to allow portal links. If that does not fix it, also run scripts/create-portal-link-rpc.sql.',
             { duration: 8000 }
+          );
+        } else if (error.code === 'PGRST202' || error.code === '42883' || (error.message && error.message.includes('does not exist'))) {
+          toast.error(
+            '❌ API can\'t see the portal link function.\n\n1. Run scripts/create-portal-link-rpc.sql in Supabase SQL Editor (same project as this app).\n2. Go to Project Settings → General → click "Restart project".\n3. Wait for the project to finish restarting, then try again.',
+            { duration: 10000 }
           );
         } else {
           toast.error(
@@ -359,7 +581,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     if (!selectedLink) return;
 
     try {
-      const { error } = await supabase
+      let result = await supabase
         .from('customer_portal_access')
         .update({
           show_proposal: showProposal,
@@ -371,8 +593,25 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           custom_message: customMessage || null,
         })
         .eq('id', selectedLink.id);
-
-      if (error) throw error;
+      if (result.error?.code === '42501') {
+        result = await supabase.rpc('update_customer_portal_link', {
+          p_id: selectedLink.id,
+          p_customer_identifier: selectedLink.customer_identifier,
+          p_customer_name: selectedLink.customer_name,
+          p_customer_email: selectedLink.customer_email ?? '',
+          p_customer_phone: selectedLink.customer_phone,
+          p_is_active: selectedLink.is_active,
+          p_expires_at: selectedLink.expires_at,
+          p_show_proposal: showProposal,
+          p_show_payments: showPayments,
+          p_show_schedule: showSchedule,
+          p_show_documents: showDocuments,
+          p_show_photos: showPhotos,
+          p_show_financial_summary: showFinancialSummary,
+          p_custom_message: customMessage || null,
+        });
+      }
+      if (result.error) throw result.error;
 
       toast.success('Portal settings updated');
       setShowSettingsDialog(false);
@@ -386,6 +625,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   function resetForm() {
     // Note: Customer name/email/phone are preserved - they'll be reloaded when dialog opens again
     setExpiresInDays('');
+    setShowLineItemPrices(false);
     setShowProposal(true);
     setShowPayments(true);
     setShowSchedule(true);
@@ -403,6 +643,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     }
 
     setPreviewLoading(true);
+    if (openDialog) setShowPreview(true);
     try {
       // Store current visibility settings for preview (so you can craft the view, then create)
       setPreviewSettings({
@@ -412,6 +653,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         show_documents: showDocuments,
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
+        show_line_item_prices: showLineItemPrices,
         custom_message: customMessage,
       });
 
@@ -423,7 +665,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .single();
 
       if (jobError || !jobRow) {
-        toast.error('Could not load job for preview');
+        console.error('Preview job load failed:', jobError);
+        setPreviewJobs([]);
+        toast.error('Could not load job for preview. Check that you have access to this job.');
         setPreviewLoading(false);
         return;
       }
@@ -459,7 +703,24 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .eq('job_id', j.id)
         .order('event_date', { ascending: true });
 
-      const proposalData = await loadProposalData(j.id);
+      let proposalData = await loadProposalData(j.id);
+      const hasProposalContent =
+        (proposalData.materialSheets?.length ?? 0) > 0 ||
+        (proposalData.customRows?.length ?? 0) > 0 ||
+        (proposalData.subcontractorEstimates?.length ?? 0) > 0;
+      if (!hasProposalContent && openDialog) {
+        toast.info('Preview will open; this job has no proposal content yet (no material sheets or line items).', { duration: 4000 });
+      }
+      let viewerLinks: { id: string; label: string; url: string }[] = [];
+      try {
+        const { data: linksData } = await supabase
+          .from('job_viewer_links')
+          .select('id, label, url')
+          .eq('job_id', j.id)
+          .order('order_index', { ascending: true });
+        if (linksData?.length) viewerLinks = linksData;
+      } catch (_) {}
+
       const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
       const estimatedPrice = proposalData.totals.grandTotal;
       const remainingBalance = estimatedPrice - totalPaid;
@@ -472,6 +733,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         photos: photosData || [],
         scheduleEvents: scheduleData || [],
         proposalData,
+        viewerLinks,
         totalPaid,
         estimatedPrice,
         remainingBalance,
@@ -481,6 +743,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       if (openDialog) setShowPreview(true);
     } catch (error: any) {
       console.error('Error loading preview data:', error);
+      setPreviewJobs([]);
       if (openDialog) toast.error('Failed to load preview data');
     } finally {
       setPreviewLoading(false);
@@ -503,29 +766,72 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           .select('*')
           .eq('workbook_id', workbookData.id)
           .order('order_index');
-        materialSheets = sheetsData || [];
+        const sheets = sheetsData || [];
+        const sheetIds = sheets.map((s: any) => s.id);
+        for (const sheet of sheets) {
+          const [{ data: items }, { data: laborRows }] = await Promise.all([
+            supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
+            supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
+          ]);
+          (sheet as any).items = items || [];
+          const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
+          (sheet as any).laborTotal = laborTotal;
+        }
+        if (sheetIds.length > 0) {
+          const { data: sheetLineItems } = await supabase
+            .from('custom_financial_row_items')
+            .select('*')
+            .in('sheet_id', sheetIds)
+            .is('row_id', null)
+            .order('order_index');
+          const bySheet: Record<string, any[]> = {};
+          (sheetLineItems || []).forEach((item: any) => {
+            const sid = item.sheet_id;
+            if (sid) {
+              if (!bySheet[sid]) bySheet[sid] = [];
+              bySheet[sid].push(item);
+            }
+          });
+          sheets.forEach((sheet: any) => {
+            const items = bySheet[sheet.id] || [];
+            const lineItemsTotal = items.reduce((s: number, item: any) => s + ((item.total_cost ?? 0) * (1 + ((item.markup_percent ?? 0) / 100))), 0);
+            (sheet as any).sheetLineItemsTotal = lineItemsTotal;
+          });
+        }
+        materialSheets = sheets;
       }
 
       const { data: customRowsData } = await supabase
         .from('custom_financial_rows')
-        .select('*')
+        .select('*, custom_financial_row_items(*)')
         .eq('job_id', jobId)
         .order('order_index');
 
       const { data: subEstimatesData } = await supabase
         .from('subcontractor_estimates')
-        .select('*')
+        .select('*, subcontractor_estimate_line_items(*)')
         .eq('job_id', jobId)
         .order('order_index');
 
       const TAX_RATE = 0.07;
-      const subtotal = 
-        (customRowsData || []).reduce((sum, row) => sum + row.selling_price, 0) +
-        (subEstimatesData || []).reduce((sum, est) => {
-          const baseAmount = est.total_amount || 0;
-          const markup = est.markup_percent || 0;
-          return sum + (baseAmount * (1 + markup / 100));
-        }, 0);
+      const sheetsSubtotal = (materialSheets || []).reduce((sum: number, sheet: any) => {
+        const itemsTotal = (sheet.items || []).reduce((s: number, item: any) => s + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
+        const labor = sheet.laborTotal ?? 0;
+        const sheetLineItemsTotal = sheet.sheetLineItemsTotal ?? 0;
+        return sum + itemsTotal + labor + sheetLineItemsTotal;
+      }, 0);
+      const subsTotal = (subEstimatesData || []).reduce((sum: number, est: any) => {
+        const lineItems = est.subcontractor_estimate_line_items || [];
+        const includedTotal = lineItems
+          .filter((item: any) => !item.excluded)
+          .reduce((s: number, item: any) => s + (item.total_price ?? 0), 0);
+        const markup = est.markup_percent ?? 0;
+        return sum + (includedTotal * (1 + markup / 100));
+      }, 0);
+      const subtotal =
+        sheetsSubtotal +
+        (customRowsData || []).reduce((sum, row) => sum + (row.selling_price ?? 0), 0) +
+        subsTotal;
       
       const tax = subtotal * TAX_RATE;
       const grandTotal = subtotal + tax;
@@ -555,6 +861,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     setShowDocuments(link.show_documents);
     setShowPhotos(link.show_photos);
     setShowFinancialSummary(link.show_financial_summary);
+    setShowLineItemPrices(link.show_line_item_prices ?? false);
     setCustomMessage(link.custom_message || '');
     setShowSettingsDialog(true);
   }
@@ -613,297 +920,163 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     return <div className="text-center py-4">Loading portal links...</div>;
   }
 
+  const currentLink = portalLinks.find(l => l.job_id === job.id);
+  const portalUrl = currentLink ? `${window.location.origin}/customer-portal?token=${currentLink.access_token}` : (pendingToken ? `${window.location.origin}/customer-portal?token=${pendingToken}` : null);
+  const visibilitySettings = {
+    show_proposal: showProposal,
+    show_payments: showPayments,
+    show_schedule: showSchedule,
+    show_documents: showDocuments,
+    show_photos: showPhotos,
+    show_financial_summary: showFinancialSummary,
+    show_line_item_prices: showLineItemPrices,
+    custom_message: customMessage,
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-12rem)] min-h-[500px]">
+      {/* Settings sidebar – built into the portal page */}
+      <aside className="w-full lg:w-[340px] shrink-0 flex flex-col gap-4 overflow-y-auto border rounded-lg bg-card p-4">
         <div>
-          <h3 className="text-lg font-semibold">Customer Portal Access</h3>
-          <p className="text-sm text-muted-foreground">
-            Any office user can create or update the portal link for this job. Share the link with the customer; use visibility settings to control what they see.
-          </p>
+          <h3 className="text-lg font-semibold">Portal settings</h3>
+          <p className="text-sm text-muted-foreground">Control what the customer sees. Changes update the preview.</p>
         </div>
-        <Button onClick={async () => {
-          if (portalLinks.length === 1) {
-            const link = portalLinks[0];
-            setCustomerName(link.customer_name);
-            setCustomerEmail(link.customer_email || '');
-            setCustomerPhone(link.customer_phone || '');
-            setShowProposal(link.show_proposal);
-            setShowPayments(link.show_payments);
-            setShowSchedule(link.show_schedule);
-            setShowDocuments(link.show_documents);
-            setShowPhotos(link.show_photos);
-            setShowFinancialSummary(link.show_financial_summary);
-            setCustomMessage(link.custom_message || '');
-            setExpiresInDays(link.expires_at ? '' : '');
-          } else {
-            await loadCustomerInfo();
-            setPendingToken(crypto.randomUUID().replace(/-/g, ''));
-          }
-          setShowCreateDialog(true);
-        }}>
-          {portalLinks.length === 1 ? (
-            <>
-              <Settings className="w-4 h-4 mr-2" />
-              Update Portal Link
-            </>
-          ) : (
-            <>
-              <Plus className="w-4 h-4 mr-2" />
-              Create Portal Link
-            </>
-          )}
-        </Button>
-      </div>
 
-      {portalLinks.length > 0 ? (
         <div className="space-y-3">
-          {portalLinks.map((link) => {
-            const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
-            const portalUrl = `${window.location.origin}/customer-portal?token=${link.access_token}`;
-
-            return (
-              <Card key={link.id} className={!link.is_active || isExpired ? 'opacity-60' : ''}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h4 className="font-semibold">{link.customer_name}</h4>
-                        {link.is_active && !isExpired ? (
-                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                            Active
-                          </Badge>
-                        ) : isExpired ? (
-                          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-300">
-                            Expired
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-slate-100 text-slate-700">
-                            Inactive
-                          </Badge>
-                        )}
-                      </div>
-
-                      {link.customer_email && (
-                        <p className="text-sm text-muted-foreground">{link.customer_email}</p>
-                      )}
-
-                      <div className="mt-3 p-3 bg-slate-50 rounded-lg font-mono text-xs break-all">
-                        {portalUrl}
-                      </div>
-
-                      {/* Visibility Summary */}
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {link.show_financial_summary && (
-                          <Badge variant="secondary" className="text-xs">Financial Summary</Badge>
-                        )}
-                        {link.show_proposal && (
-                          <Badge variant="secondary" className="text-xs">Proposal</Badge>
-                        )}
-                        {link.show_payments && (
-                          <Badge variant="secondary" className="text-xs">Payments</Badge>
-                        )}
-                        {link.show_schedule && (
-                          <Badge variant="secondary" className="text-xs">Schedule</Badge>
-                        )}
-                        {link.show_documents && (
-                          <Badge variant="secondary" className="text-xs">Documents</Badge>
-                        )}
-                        {link.show_photos && (
-                          <Badge variant="secondary" className="text-xs">Photos</Badge>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                        <span>Created: {new Date(link.created_at).toLocaleDateString()}</span>
-                        {link.expires_at && (
-                          <span>Expires: {new Date(link.expires_at).toLocaleDateString()}</span>
-                        )}
-                        {link.last_accessed_at && (
-                          <span>Last accessed: {new Date(link.last_accessed_at).toLocaleDateString()}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 ml-4">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openSettingsDialog(link)}
-                      >
-                        <Settings className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => copyPortalLink(link.access_token)}
-                      >
-                        {copied === link.access_token ? (
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openPortalLink(link.access_token)}
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => toggleLinkStatus(link.id, link.is_active)}
-                      >
-                        {link.is_active ? 'Deactivate' : 'Activate'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => deleteLink(link.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          <Label>Customer name *</Label>
+          <Input
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            placeholder="John Doe"
+          />
         </div>
-      ) : (
-        /* No links yet: show preview inline so you can craft the view, then create the link */
-        <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
-          {previewLoading ? (
-            <div className="flex items-center justify-center py-24">
-              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-3" />
-              <span className="text-muted-foreground">Loading preview…</span>
+        <div className="space-y-3">
+          <Label>Customer email *</Label>
+          <Input
+            type="email"
+            value={customerEmail}
+            onChange={(e) => setCustomerEmail(e.target.value)}
+            placeholder="customer@example.com"
+            className={!customerEmail ? 'border-amber-500 bg-amber-50/50' : ''}
+          />
+          {!customerEmail && (
+            <p className="text-xs text-amber-700">Email required for portal link.</p>
+          )}
+        </div>
+        <div className="space-y-3">
+          <Label>Phone (optional)</Label>
+          <Input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="(555) 123-4567" />
+        </div>
+        <div className="space-y-3">
+          <Label>Link expires (days)</Label>
+          <Input type="number" min={1} value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} placeholder="Empty = no expiration" />
+        </div>
+
+        <div className="border-t pt-4">
+          <h4 className="font-semibold mb-3">Visibility</h4>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Show final price</span>
+              <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
             </div>
-          ) : previewJobs.length > 0 && pendingToken ? (
-            <>
-              <div className="bg-slate-50 border-b px-4 py-3 flex items-center gap-3 flex-wrap">
-                <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Portal link (create link to activate):</span>
-                <code className="flex-1 min-w-0 text-sm text-slate-700 bg-white rounded px-2 py-1.5 truncate border">
-                  {`${typeof window !== 'undefined' ? window.location.origin : ''}/customer-portal?token=${pendingToken}`}
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const url = `${window.location.origin}/customer-portal?token=${pendingToken}`;
-                    navigator.clipboard.writeText(url);
-                    toast.success('Link copied. Create the link to activate it.');
-                  }}
-                  className="shrink-0"
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy link
-                </Button>
-              </div>
-              <div className="flex min-h-[400px]">
-                {/* Left sidebar – what the customer will see */}
-                <aside className="w-56 shrink-0 border-r border-slate-200 bg-white py-4 px-3 flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 mb-2">What customer sees</span>
-                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className="text-sm font-medium">Final price</span>
-                    <Switch
-                      checked={showFinancialSummary}
-                      onCheckedChange={(v) => {
-                        setShowFinancialSummary(v);
-                        setPreviewSettings((s) => (s ? { ...s, show_financial_summary: v } : s));
-                      }}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className="text-sm font-medium">Proposal</span>
-                    <Switch
-                      checked={showProposal}
-                      onCheckedChange={(v) => {
-                        setShowProposal(v);
-                        setPreviewSettings((s) => (s ? { ...s, show_proposal: v } : s));
-                      }}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className="text-sm font-medium">Payments</span>
-                    <Switch
-                      checked={showPayments}
-                      onCheckedChange={(v) => {
-                        setShowPayments(v);
-                        setPreviewSettings((s) => (s ? { ...s, show_payments: v } : s));
-                      }}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className="text-sm font-medium">Schedule</span>
-                    <Switch
-                      checked={showSchedule}
-                      onCheckedChange={(v) => {
-                        setShowSchedule(v);
-                        setPreviewSettings((s) => (s ? { ...s, show_schedule: v } : s));
-                      }}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className="text-sm font-medium">Documents</span>
-                    <Switch
-                      checked={showDocuments}
-                      onCheckedChange={(v) => {
-                        setShowDocuments(v);
-                        setPreviewSettings((s) => (s ? { ...s, show_documents: v } : s));
-                      }}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
-                    <span className="text-sm font-medium">Photos</span>
-                    <Switch
-                      checked={showPhotos}
-                      onCheckedChange={(v) => {
-                        setShowPhotos(v);
-                        setPreviewSettings((s) => (s ? { ...s, show_photos: v } : s));
-                      }}
-                    />
-                  </label>
-                </aside>
-                <div className="flex-1 min-w-0 bg-gradient-to-br from-slate-50 to-slate-100">
-                  <CustomerPortalPreview
-                    customerName={customerName}
-                    jobs={previewJobs}
-                    visibilitySettings={previewSettings}
-                    customMessage={previewSettings?.custom_message}
-                  />
-                </div>
-              </div>
-              <div className="border-t px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground">
-                  Toggle options on the left to control what the customer sees, then create the link.
-                </p>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setShowCreateDialog(true)}>
-                    <Settings className="w-4 h-4 mr-2" />
-                    More settings
-                  </Button>
-                  <Button onClick={createPortalLink}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Portal Link
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-12 px-4">
-              <Share2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">Enter customer name in the dialog to preview, or create a link.</p>
-              <Button onClick={() => setShowCreateDialog(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create Portal Link
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Proposal</span>
+              <Switch checked={showProposal} onCheckedChange={setShowProposal} />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Payments</span>
+              <Switch checked={showPayments} onCheckedChange={setShowPayments} />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Schedule</span>
+              <Switch checked={showSchedule} onCheckedChange={setShowSchedule} />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Documents</span>
+              <Switch checked={showDocuments} onCheckedChange={setShowDocuments} />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Photos</span>
+              <Switch checked={showPhotos} onCheckedChange={setShowPhotos} />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Line item prices</span>
+              <Switch checked={showLineItemPrices} onCheckedChange={setShowLineItemPrices} />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Custom welcome message</Label>
+          <Textarea
+            value={customMessage}
+            onChange={(e) => setCustomMessage(e.target.value)}
+            placeholder="Optional message for the customer..."
+            rows={2}
+            className="resize-none"
+          />
+        </div>
+
+        <div className="flex flex-col gap-2 pt-2 border-t">
+          {portalUrl && (
+            <div className="flex gap-2">
+              <Button size="sm" variant="default" className="flex-1" onClick={() => currentLink ? copyPortalLink(currentLink.access_token) : (navigator.clipboard.writeText(portalUrl), toast.success('Link copied'))}>
+                {currentLink && copied === currentLink.access_token ? <CheckCircle className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                Copy link
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => window.open(portalUrl, '_blank')}>
+                <ExternalLink className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+          <Button onClick={createPortalLink} className="w-full">
+            {currentLink ? 'Save changes' : 'Save & create link'}
+          </Button>
+          {currentLink && (
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="flex-1" onClick={() => toggleLinkStatus(currentLink.id, currentLink.is_active)}>
+                {currentLink.is_active ? 'Deactivate' : 'Activate'}
+              </Button>
+              <Button size="sm" variant="outline" className="text-destructive" onClick={() => deleteLink(currentLink.id)}>
+                <Trash2 className="w-4 h-4" />
               </Button>
             </div>
           )}
         </div>
-      )}
+      </aside>
+
+      {/* Customer portal preview – main content */}
+      <main className="flex-1 min-w-0 rounded-lg border bg-background overflow-hidden flex flex-col">
+        {!customerName?.trim() ? (
+          <div className="flex-1 flex items-center justify-center p-8 text-center">
+            <div>
+              <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+              <p className="font-medium text-muted-foreground">Enter customer name and email in the settings to load the portal preview.</p>
+            </div>
+          </div>
+        ) : previewLoading ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : previewJobs.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center p-8 text-center">
+            <div>
+              <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+              <p className="font-medium text-muted-foreground">Loading preview...</p>
+              <p className="text-sm text-muted-foreground mt-1">If this doesn’t update, check job access.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100">
+            <CustomerPortalPreview
+              customerName={customerName}
+              jobs={previewJobs}
+              visibilitySettings={visibilitySettings}
+              customMessage={customMessage}
+            />
+          </div>
+        )}
+      </main>
 
       {/* Portal Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
@@ -922,9 +1095,17 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
               <div className="flex items-center justify-between p-3 border rounded-lg">
                 <div>
                   <Label className="font-medium">Show final price</Label>
-                  <p className="text-sm text-muted-foreground">Show total amount, paid, balance, and proposal line-item prices. Turn off to hide pricing until you’re ready.</p>
+                  <p className="text-sm text-muted-foreground">Show subtotal, tax, and grand total at bottom of proposal. Turn off to hide all pricing.</p>
                 </div>
                 <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
+              </div>
+
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Show line item prices</Label>
+                  <p className="text-sm text-muted-foreground">When on, show $ on each proposal line. When off (default), only show total, tax, and grand total at bottom.</p>
+                </div>
+                <Switch checked={showLineItemPrices} onCheckedChange={setShowLineItemPrices} />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -995,12 +1176,10 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) setPendingToken(null); }}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{portalLinks.length === 1 ? 'Update Portal Link' : 'Create Customer Portal Link'}</DialogTitle>
-            {portalLinks.length === 1 ? (
-              <p className="text-sm text-muted-foreground font-normal mt-1">This job has one portal link. Change settings below; the same URL will keep working.</p>
-            ) : (
-              <p className="text-sm text-muted-foreground font-normal mt-1">Set visibility below, then click <strong>Preview Customer View</strong> to see the exact view and copy the link. When it looks right, click Create Portal Link.</p>
-            )}
+            <DialogTitle>Portal settings</DialogTitle>
+            <p className="text-sm text-muted-foreground font-normal mt-1">
+              {portalLinks.length === 1 ? 'Change visibility and customer info below. The same URL will keep working.' : 'Enter customer details and set visibility. Save to generate the portal link.'}
+            </p>
           </DialogHeader>
           <div className="space-y-6">
             {/* Pre-populated Notice */}
@@ -1150,7 +1329,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 Preview Customer View
               </Button>
               <Button onClick={createPortalLink} className="flex-1">
-                {portalLinks.length === 1 ? 'Update Portal Link' : 'Create Portal Link'}
+                Save
               </Button>
               <Button variant="outline" onClick={() => {
                 setShowCreateDialog(false);
@@ -1189,8 +1368,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   Close Preview
                 </Button>
                 <Button onClick={createPortalLink} className="flex-1">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Portal Link Anyway
+                  Save link
                 </Button>
               </div>
             </div>
@@ -1202,8 +1380,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <div className="flex items-center gap-3">
                     <Eye className="w-6 h-6" />
                     <div>
-                      <h2 className="text-xl font-bold">Preview – craft the view, then create the link</h2>
-                      <p className="text-purple-100 text-sm">This is exactly what the customer will see. Adjust settings and preview again until it’s right, then create the link.</p>
+                      <h2 className="text-xl font-bold">Preview – see what the customer will see</h2>
+                      <p className="text-purple-100 text-sm">This is exactly what the customer will see. Adjust settings and preview again until it’s then save. Use Copy link to share the portal URL with the customer.</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1241,8 +1419,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                       Copy link
                     </Button>
                     {!existingLink && pendingToken && (
-                      <span className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                        Link will be active when you click &quot;Create Portal Link&quot; below.
+                      <span className="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                        Save in the dialog to activate this link.
                       </span>
                     )}
                   </div>
@@ -1264,9 +1442,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 <Button onClick={() => setShowPreview(false)} variant="outline" className="flex-1">
                   Back to settings
                 </Button>
-                <Button onClick={createPortalLink} className="flex-1 bg-green-600 hover:bg-green-700">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Portal Link with These Settings
+                <Button onClick={createPortalLink} className="flex-1">
+                  Save settings
                 </Button>
               </div>
             </div>

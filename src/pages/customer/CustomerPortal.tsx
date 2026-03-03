@@ -27,7 +27,8 @@ import {
   MessageSquare,
   Inbox,
   Copy,
-  LayoutDashboard
+  LayoutDashboard,
+  Printer
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -62,6 +63,10 @@ interface JobSummary {
   scheduleEventCount: number;
 }
 
+// Omit show_line_item_prices so portal works when PostgREST schema cache is stale (PGRST204)
+const CUSTOMER_PORTAL_ACCESS_SELECT =
+  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
+
 export default function CustomerPortal() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -88,7 +93,7 @@ export default function CustomerPortal() {
       // Validate token
       const { data: accessData, error: accessError } = await supabase
         .from('customer_portal_access')
-        .select('*')
+        .select(CUSTOMER_PORTAL_ACCESS_SELECT)
         .eq('access_token', token)
         .eq('is_active', true)
         .maybeSingle();
@@ -252,33 +257,76 @@ export default function CustomerPortal() {
           .eq('workbook_id', workbookData.id)
           .order('order_index');
 
-        materialSheets = sheetsData || [];
+        const sheets = sheetsData || [];
+        const sheetIds = sheets.map((s: any) => s.id);
+        for (const sheet of sheets) {
+          const [{ data: items }, { data: laborRows }] = await Promise.all([
+            supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
+            supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
+          ]);
+          (sheet as any).items = items || [];
+          const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
+          (sheet as any).laborTotal = laborTotal;
+        }
+        if (sheetIds.length > 0) {
+          const { data: sheetLineItems } = await supabase
+            .from('custom_financial_row_items')
+            .select('*')
+            .in('sheet_id', sheetIds)
+            .is('row_id', null)
+            .order('order_index');
+          const bySheet: Record<string, any[]> = {};
+          (sheetLineItems || []).forEach((item: any) => {
+            const sid = item.sheet_id;
+            if (sid) {
+              if (!bySheet[sid]) bySheet[sid] = [];
+              bySheet[sid].push(item);
+            }
+          });
+          sheets.forEach((sheet: any) => {
+            const items = bySheet[sheet.id] || [];
+            const lineItemsTotal = items.reduce((s: number, item: any) => s + ((item.total_cost ?? 0) * (1 + ((item.markup_percent ?? 0) / 100))), 0);
+            (sheet as any).sheetLineItemsTotal = lineItemsTotal;
+          });
+        }
+        materialSheets = sheets;
       }
 
-      // Get custom rows
+      // Get custom rows with line items (so portal proposal matches actual proposal)
       const { data: customRowsData } = await supabase
         .from('custom_financial_rows')
-        .select('*')
+        .select('*, custom_financial_row_items(*)')
         .eq('job_id', jobId)
         .order('order_index');
 
-      // Get subcontractor estimates
+      // Get subcontractor estimates with line items for accurate total (included items only, with markup)
       const { data: subEstimatesData } = await supabase
         .from('subcontractor_estimates')
-        .select('*')
+        .select('*, subcontractor_estimate_line_items(*)')
         .eq('job_id', jobId)
         .order('order_index');
 
-      // Calculate totals
+      // Calculate totals: include material sheets (items + labor + sheet line items), custom rows, and subs
       const TAX_RATE = 0.07;
-      const subtotal = 
-        (customRowsData || []).reduce((sum, row) => sum + row.selling_price, 0) +
-        (subEstimatesData || []).reduce((sum, est) => {
-          const baseAmount = est.total_amount || 0;
-          const markup = est.markup_percent || 0;
-          return sum + (baseAmount * (1 + markup / 100));
-        }, 0);
-      
+      const sheetsSubtotal = (materialSheets || []).reduce((sum: number, sheet: any) => {
+        const itemsTotal = (sheet.items || []).reduce((s: number, item: any) => s + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
+        const labor = sheet.laborTotal ?? 0;
+        const sheetLineItemsTotal = sheet.sheetLineItemsTotal ?? 0;
+        return sum + itemsTotal + labor + sheetLineItemsTotal;
+      }, 0);
+      const subsTotal = (subEstimatesData || []).reduce((sum: number, est: any) => {
+        const lineItems = est.subcontractor_estimate_line_items || [];
+        const includedTotal = lineItems
+          .filter((item: any) => !item.excluded)
+          .reduce((s: number, item: any) => s + (item.total_price ?? 0), 0);
+        const markup = est.markup_percent ?? 0;
+        return sum + (includedTotal * (1 + markup / 100));
+      }, 0);
+      const subtotal =
+        sheetsSubtotal +
+        (customRowsData || []).reduce((sum, row) => sum + (row.selling_price ?? 0), 0) +
+        subsTotal;
+
       const tax = subtotal * TAX_RATE;
       const grandTotal = subtotal + tax;
 
@@ -340,6 +388,8 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
   const { job, quote, payments, documents, photos, scheduleEvents, emails, proposalData, viewerLinks = [], totalPaid, balance } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
   const showFinancial = !!customerInfo?.show_financial_summary;
+  /** When true, show $ on each line; when false (default), only show total / tax / grand total at bottom */
+  const showLineItemPrices = customerInfo?.show_line_item_prices === true;
   const showProposal = customerInfo?.show_proposal !== false;
   const showPayments = customerInfo?.show_payments !== false;
   const showSchedule = customerInfo?.show_schedule !== false;
@@ -416,30 +466,73 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .eq('workbook_id', workbookData.id)
           .order('order_index');
 
-        materialSheets = sheetsData || [];
+        const sheets = sheetsData || [];
+        const sheetIds = sheets.map((s: any) => s.id);
+        for (const sheet of sheets) {
+          const [{ data: items }, { data: laborRows }] = await Promise.all([
+            supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
+            supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
+          ]);
+          (sheet as any).items = items || [];
+          const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
+          (sheet as any).laborTotal = laborTotal;
+        }
+        if (sheetIds.length > 0) {
+          const { data: sheetLineItems } = await supabase
+            .from('custom_financial_row_items')
+            .select('*')
+            .in('sheet_id', sheetIds)
+            .is('row_id', null)
+            .order('order_index');
+          const bySheet: Record<string, any[]> = {};
+          (sheetLineItems || []).forEach((item: any) => {
+            const sid = item.sheet_id;
+            if (sid) {
+              if (!bySheet[sid]) bySheet[sid] = [];
+              bySheet[sid].push(item);
+            }
+          });
+          sheets.forEach((sheet: any) => {
+            const items = bySheet[sheet.id] || [];
+            const lineItemsTotal = items.reduce((s: number, item: any) => s + ((item.total_cost ?? 0) * (1 + ((item.markup_percent ?? 0) / 100))), 0);
+            (sheet as any).sheetLineItemsTotal = lineItemsTotal;
+          });
+        }
+        materialSheets = sheets;
       }
 
       const { data: customRowsData } = await supabase
         .from('custom_financial_rows')
-        .select('*')
+        .select('*, custom_financial_row_items(*)')
         .eq('job_id', jobId)
         .order('order_index');
 
       const { data: subEstimatesData } = await supabase
         .from('subcontractor_estimates')
-        .select('*')
+        .select('*, subcontractor_estimate_line_items(*)')
         .eq('job_id', jobId)
         .order('order_index');
 
       const TAX_RATE = 0.07;
-      const subtotal = 
-        (customRowsData || []).reduce((sum, row) => sum + row.selling_price, 0) +
-        (subEstimatesData || []).reduce((sum, est) => {
-          const baseAmount = est.total_amount || 0;
-          const markup = est.markup_percent || 0;
-          return sum + (baseAmount * (1 + markup / 100));
-        }, 0);
-      
+      const sheetsSubtotal = (materialSheets || []).reduce((sum: number, sheet: any) => {
+        const itemsTotal = (sheet.items || []).reduce((s: number, item: any) => s + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
+        const labor = sheet.laborTotal ?? 0;
+        const sheetLineItemsTotal = sheet.sheetLineItemsTotal ?? 0;
+        return sum + itemsTotal + labor + sheetLineItemsTotal;
+      }, 0);
+      const subsTotal = (subEstimatesData || []).reduce((sum: number, est: any) => {
+        const lineItems = est.subcontractor_estimate_line_items || [];
+        const includedTotal = lineItems
+          .filter((item: any) => !item.excluded)
+          .reduce((s: number, item: any) => s + (item.total_price ?? 0), 0);
+        const markup = est.markup_percent ?? 0;
+        return sum + (includedTotal * (1 + markup / 100));
+      }, 0);
+      const subtotal =
+        sheetsSubtotal +
+        (customRowsData || []).reduce((sum, row) => sum + (row.selling_price ?? 0), 0) +
+        subsTotal;
+
       const tax = subtotal * TAX_RATE;
       const grandTotal = subtotal + tax;
 
@@ -475,7 +568,6 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
   const viewOptions = [
     { value: 'overview', label: 'Overview', icon: LayoutDashboard },
-    ...(showProposal ? [{ value: 'proposal' as const, label: 'Proposal', icon: FileText }] : []),
     ...(showPayments ? [{ value: 'payments' as const, label: 'Payments', icon: DollarSign }] : []),
     ...(showSchedule ? [{ value: 'schedule' as const, label: 'Schedule', icon: Calendar }] : []),
     ...(showDocuments ? [{ value: 'documents' as const, label: 'Documents', icon: FileSpreadsheet }] : []),
@@ -485,26 +577,28 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
+      {/* Header: black, gold, dark green – matches portal settings preview */}
+      <div className="bg-gradient-to-r from-zinc-900 via-emerald-950 to-zinc-900 text-white shadow-xl border-b-2 border-amber-500/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold">{job.name}</h1>
-                <Badge variant="outline" className="bg-white/10 text-white border-white/30">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-3xl font-bold text-amber-400">{job.name}</h1>
+                <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-500/50">
                   #{proposalNumber}
                 </Badge>
               </div>
-              <p className="text-blue-100 mt-1">{job.client_name}</p>
-              <p className="text-blue-200 text-sm mt-1">
-                <MapPin className="w-4 h-4 inline mr-1" />
-                {job.address}
-              </p>
+              <p className="text-emerald-100/90 mt-1">{job.client_name}</p>
+              {job.address && (
+                <p className="text-emerald-200/80 text-sm mt-1 flex items-center gap-1">
+                  <MapPin className="w-4 h-4 shrink-0 text-amber-400/90" />
+                  {job.address}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <PWAInstallButton />
-              <Badge variant="outline" className="bg-white/10 text-white border-white/30 px-4 py-2">
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-300 border-amber-500/40 px-4 py-2">
                 Customer Portal
               </Badge>
             </div>
@@ -512,23 +606,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         </div>
       </div>
 
-      {/* Portal URL – copy link */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Portal link:</span>
-            <code className="flex-1 min-w-0 text-sm text-slate-700 bg-slate-100 rounded px-2 py-1.5 truncate">
-              {portalUrl}
-            </code>
-            <Button variant="outline" size="sm" onClick={copyPortalUrl} className="shrink-0">
-              <Copy className="w-4 h-4 mr-2" />
-              Copy link
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Content + viewing options – all on one page */}
+      {/* Content – all visibility-controlled sections from portal settings */}
       <div className="flex max-w-[1920px] mx-auto min-h-0">
         {/* Main content */}
         <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
@@ -557,57 +635,15 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
               })}
             </div>
 
-          {/* Overview Tab */}
+          {/* Overview Tab – order matches portal settings: custom message, drawings, proposal, project info */}
           <TabsContent value="overview" className="space-y-6">
+            {/* Custom welcome message (from Portal settings) */}
             {customerInfo?.custom_message && (
-              <Card className="border-blue-200 bg-blue-50/50">
+              <Card className="border-amber-200 bg-amber-50/50">
                 <CardContent className="pt-6">
                   <p className="text-slate-800 whitespace-pre-wrap">{customerInfo.custom_message}</p>
                 </CardContent>
               </Card>
-            )}
-            {showFinancial && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <DollarSign className="w-4 h-4" />
-                      Project Total
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-blue-600">
-                      ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Amount Paid
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-green-600">
-                      ${totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Balance Due
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className={`text-3xl font-bold ${balance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                      ${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
             )}
             {!showFinancial && (
               <Card className="border-amber-200 bg-amber-50/50">
@@ -616,6 +652,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                 </CardContent>
               </Card>
             )}
+            {/* Drawings & 3D Views (viewer links) */}
             {viewerLinks.length > 0 && (
               <Card>
                 <CardHeader>
@@ -643,113 +680,147 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
               </Card>
             )}
 
-            {/* Project Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5" />
-                  Project Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground flex items-center gap-2">
-                      <MapPin className="w-4 h-4" />
-                      Address
-                    </p>
-                    <p className="font-medium mt-1">{job.address}</p>
-                  </div>
+            {/* Project Proposal (visibility: Proposal + Show final price from portal settings) */}
+            {showProposal && (
+              <>
+                <style>{`
+                  @media print {
+                    body * { visibility: hidden; }
+                    .portal-proposal-print-area, .portal-proposal-print-area * { visibility: visible; }
+                    .portal-proposal-print-area { position: absolute; left: 0; top: 0; width: 100%; max-width: 100%; box-shadow: none; }
+                  }
+                `}</style>
+                <Card id="portal-proposal-print" className="portal-proposal-print-area border-emerald-200/60">
+                  <CardHeader className="flex flex-row items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-emerald-900">
+                        <FileSpreadsheet className="w-5 h-5" />
+                        Project Proposal
+                      </CardTitle>
+                      {!showFinancial && (
+                        <p className="text-sm text-muted-foreground font-normal mt-1">Pricing will be shared when ready. Below is the scope and description.</p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 print:hidden"
+                      onClick={() => window.print()}
+                    >
+                      <Printer className="w-4 h-4 mr-2" />
+                      Print proposal
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {(proposalData.materialSheets || []).map((sheet: any) => {
+                      const showSheetPrice = showFinancial && showLineItemPrices;
+                      const itemsTotal = (sheet.items || []).reduce((sum: number, item: any) => sum + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
+                      const sheetTotal = itemsTotal + (sheet.laborTotal ?? 0) + (sheet.sheetLineItemsTotal ?? 0);
+                      return (
+                        <div key={sheet.id} className="border rounded-lg p-4 flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
+                              {sheet.description && (
+                                <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                              )}
+                            </div>
+                            {showSheetPrice && sheetTotal > 0 && (
+                              <p className="text-xl font-bold text-emerald-700 shrink-0">
+                                ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {(proposalData.customRows || []).map((row: any) => {
+                      const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                      const showRowPrice = showFinancial && showLineItemPrices;
+                      return (
+                        <div key={row.id} className="border rounded-lg p-4 flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-bold text-lg">{row.description}</h3>
+                              {items.length > 0 ? (
+                                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
+                                  {items.map((item: any) => (
+                                    <li key={item.id}>{item.description}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                              {showRowPrice && (row.quantity != null || row.unit_cost != null) && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {row.quantity} × ${(row.unit_cost ?? 0).toFixed(2)}
+                                </p>
+                              )}
+                            </div>
+                            {showRowPrice && (
+                              <p className="text-xl font-bold text-emerald-700 shrink-0">
+                                ${(row.selling_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {(proposalData.subcontractorEstimates || []).map((est: any) => (
+                      <div key={est.id} className="border rounded-lg p-4">
+                        <h3 className="font-bold">{est.company_name}</h3>
+                        {est.scope_of_work && (
+                          <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
+                        )}
+                      </div>
+                    ))}
+                    {showFinancial && proposalData.totals && (
+                      <div className="border-t-2 pt-4 space-y-2">
+                        <div className="flex justify-between text-lg">
+                          <span className="font-medium">Subtotal:</span>
+                          <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between text-lg">
+                          <span className="font-medium">Tax (7%):</span>
+                          <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between text-2xl font-bold pt-2 border-t">
+                          <span>Grand Total:</span>
+                          <span className="text-emerald-700">
+                            ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
+
+            {/* Project Information (description & notes; address is in header) */}
+            {(job.description || job.notes) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="w-5 h-5" />
+                    Project Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   {job.description && (
                     <div>
                       <p className="text-sm text-muted-foreground">Description</p>
                       <p className="font-medium mt-1">{job.description}</p>
                     </div>
                   )}
-                </div>
-                {job.notes && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Notes</p>
-                    <p className="mt-1">{job.notes}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Proposal Tab - only visible when showProposal */}
-          {showProposal && (
-          <TabsContent value="proposal">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5" />
-                  Project Proposal
-                </CardTitle>
-                {!showFinancial && (
-                  <p className="text-sm text-muted-foreground font-normal mt-1">Pricing will be shared when ready. Below is the scope and description.</p>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {proposalData.materialSheets.map((sheet: any) => (
-                  <div key={sheet.id} className="border rounded-lg p-4">
-                    <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
-                    {sheet.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{sheet.description}</p>
-                    )}
-                  </div>
-                ))}
-
-                {proposalData.customRows.map((row: any) => (
-                  <div key={row.id} className="border rounded-lg p-4 flex items-center justify-between">
+                  {job.notes && (
                     <div>
-                      <h3 className="font-bold">{row.description}</h3>
-                      {showFinancial && (
-                        <p className="text-sm text-muted-foreground">
-                          {row.quantity} × ${row.unit_cost.toFixed(2)}
-                        </p>
-                      )}
+                      <p className="text-sm text-muted-foreground">Notes</p>
+                      <p className="mt-1">{job.notes}</p>
                     </div>
-                    {showFinancial && (
-                      <p className="text-xl font-bold text-blue-600">
-                        ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </p>
-                    )}
-                  </div>
-                ))}
-
-                {proposalData.subcontractorEstimates.map((est: any) => (
-                  <div key={est.id} className="border rounded-lg p-4">
-                    <h3 className="font-bold">{est.company_name}</h3>
-                    {est.scope_of_work && (
-                      <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
-                    )}
-                    {/* Subcontractor line-item prices are not shown to the customer */}
-                  </div>
-                ))}
-
-                {showFinancial && (
-                  <div className="border-t-2 pt-4 space-y-2">
-                    <div className="flex justify-between text-lg">
-                      <span className="font-medium">Subtotal:</span>
-                      <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-lg">
-                      <span className="font-medium">Tax (7%):</span>
-                      <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-2xl font-bold pt-2 border-t">
-                      <span>Grand Total:</span>
-                      <span className="text-blue-600">
-                        ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
-          )}
 
           {/* Payments Tab */}
           <TabsContent value="payments">

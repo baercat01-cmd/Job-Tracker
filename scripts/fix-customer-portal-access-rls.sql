@@ -25,8 +25,12 @@ CREATE TABLE IF NOT EXISTS public.customer_portal_access (
   show_documents boolean NOT NULL DEFAULT true,
   show_photos boolean NOT NULL DEFAULT true,
   show_financial_summary boolean NOT NULL DEFAULT true,
+  show_line_item_prices boolean NOT NULL DEFAULT false,
   custom_message text
 );
+
+-- Add column for existing tables (no-op if already present)
+ALTER TABLE public.customer_portal_access ADD COLUMN IF NOT EXISTS show_line_item_prices boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_customer_portal_access_job_id ON public.customer_portal_access (job_id);
 CREATE INDEX IF NOT EXISTS idx_customer_portal_access_access_token ON public.customer_portal_access (access_token);

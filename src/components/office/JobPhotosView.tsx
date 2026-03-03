@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, Calendar, X, ExternalLink, Camera, Upload, Trash2, RotateCw, RotateCcw } from 'lucide-react';
+import { MapPin, Calendar, X, ExternalLink, Camera, Upload, Trash2, RotateCw, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { formatCoordinates } from '@/lib/geolocation';
 import { rotateImageByUrl } from '@/lib/image-utils';
 import { toast } from 'sonner';
@@ -46,12 +46,21 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
   const [rotatingPhotoId, setRotatingPhotoId] = useState<string | null>(null);
   /** Object URL for rotated image so it flips on screen immediately before upload finishes */
   const [rotatedPreviewUrl, setRotatedPreviewUrl] = useState<string | null>(null);
+  /** Zoom level for photo viewer (1 = 100%, so we can zoom in on the original) */
+  const [viewerZoom, setViewerZoom] = useState(1);
+  /** Natural dimensions of the image in the viewer (for zoom/scroll) */
+  const [viewerImgSize, setViewerImgSize] = useState<{ w: number; h: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadPhotos();
   }, [job.id]);
+
+  useEffect(() => {
+    if (selectedPhoto) setViewerImgSize(null);
+  }, [selectedPhoto?.id]);
 
   useEffect(() => {
     // Add drag and drop event listeners
@@ -436,6 +445,8 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
         onOpenChange={(open) => {
           if (!open) {
             setSelectedPhoto(null);
+            setViewerZoom(1);
+            setViewerImgSize(null);
             setRotatedPreviewUrl((p) => {
               if (p) URL.revokeObjectURL(p);
               return null;
@@ -456,7 +467,33 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                     {new Date(selectedPhoto.photo_date).toLocaleDateString()} • {selectedPhoto.user_profiles?.username || 'Unknown'}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
+                  <span className="text-xs text-muted-foreground mr-1">Zoom:</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewerZoom((z) => Math.max(0.5, z - 0.25))}
+                    title="Zoom out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewerZoom(1)}
+                    title="Reset zoom"
+                    className="min-w-[3rem]"
+                  >
+                    {Math.round(viewerZoom * 100)}%
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewerZoom((z) => Math.min(4, z + 0.25))}
+                    title="Zoom in"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -497,14 +534,44 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                 </div>
               </div>
 
-              {/* Image — use rotated preview immediately when rotating, then real URL after save */}
-              <div className="flex-1 overflow-auto bg-muted/30 flex items-center justify-center p-4">
-                <img
-                  src={rotatingPhotoId === selectedPhoto.id && rotatedPreviewUrl ? rotatedPreviewUrl : selectedPhoto.photo_url}
-                  alt={selectedPhoto.caption || 'Job photo'}
-                  className="max-w-full max-h-full object-contain rounded-lg"
-                  style={{ imageOrientation: 'from-image' }}
-                />
+              {/* Image — original URL so we can zoom in; wrapper sized to scaled dimensions for scroll */}
+              <div
+                ref={viewerContainerRef}
+                className="flex-1 overflow-auto bg-muted/30 flex items-center justify-center p-4 min-h-0"
+                onWheel={(e) => {
+                  if (!e.ctrlKey && !e.metaKey) return;
+                  e.preventDefault();
+                  setViewerZoom((z) => {
+                    const delta = e.deltaY > 0 ? -0.2 : 0.2;
+                    return Math.max(0.5, Math.min(4, z + delta));
+                  });
+                }}
+              >
+                <div
+                  style={
+                    viewerImgSize
+                      ? {
+                          width: viewerImgSize.w * viewerZoom,
+                          height: viewerImgSize.h * viewerZoom,
+                          minWidth: viewerImgSize.w * viewerZoom,
+                          minHeight: viewerImgSize.h * viewerZoom,
+                        }
+                      : undefined
+                  }
+                  className="flex items-center justify-center"
+                >
+                  <img
+                    src={rotatingPhotoId === selectedPhoto.id && rotatedPreviewUrl ? rotatedPreviewUrl : selectedPhoto.photo_url}
+                    alt={selectedPhoto.caption || 'Job photo'}
+                    className="max-w-full max-h-full object-contain rounded-lg select-none"
+                    style={{ imageOrientation: 'from-image' }}
+                    draggable={false}
+                    onLoad={(e) => {
+                      const img = e.currentTarget;
+                      setViewerImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+                    }}
+                  />
+                </div>
               </div>
 
               {/* Footer */}
