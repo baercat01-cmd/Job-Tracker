@@ -769,7 +769,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. They are stored in the database so everyone on the job sees them.</p>
+          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all other users see them. If your team doesn’t see these links, run scripts/create-job-viewer-links.sql in Supabase SQL Editor once.</p>
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>Label</Label>
@@ -1081,7 +1081,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. They are stored in the database so everyone on the job sees them.</p>
+          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all other users see them. If your team doesn’t see these links, run scripts/create-job-viewer-links.sql in Supabase SQL Editor once.</p>
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>Label</Label>
@@ -1360,7 +1360,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             Viewer links
           </DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. They are stored in the database so everyone on the job sees them.</p>
+        <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all other users see them. If your team doesn’t see these links, run scripts/create-job-viewer-links.sql in Supabase SQL Editor once.</p>
         <div className="space-y-3">
           <div className="grid gap-2">
             <Label>Label</Label>
