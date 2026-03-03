@@ -352,7 +352,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
       setViewerLinks(fromStorage);
       const msg = err?.message ?? '';
       if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('fetch')) {
-        toast.info('Links are stored in the database so all users see them. Run scripts/create-job-viewer-links.sql in Supabase SQL Editor.', { duration: 6000 });
+        toast.info('One-time setup: Run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor so links are shared with everyone.', { duration: 6000 });
       }
     }
   }
@@ -476,7 +476,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             setManageLinkLabel('');
             setManageLinkUrl('');
             setEditingLinkId(null);
-            toast.success('Link updated on this device only. To share with your team, run scripts/create-job-viewer-links.sql in Supabase SQL Editor.', { duration: 6000 });
+            toast.success('Link saved on this device. To share with your team, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once.', { duration: 6000 });
           } else {
             toast.error('Could not find link to update.');
           }
@@ -494,7 +494,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           setManageLinkLabel('');
           setManageLinkUrl('');
           setEditingLinkId(null);
-          toast.success('Link saved on this device only. To share with your team, run scripts/create-job-viewer-links.sql in Supabase SQL Editor.', { duration: 6000 });
+          toast.success('Link saved on this device. To share with your team, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once.', { duration: 6000 });
         }
       } else {
         toast.error(msg || 'Failed to save link');
@@ -624,7 +624,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           {!viewerLinksDbAvailable && (
             <Alert className="mx-3 mt-2 border-blue-300 bg-blue-50 text-blue-900">
               <AlertDescription>
-                Other users cannot see viewer links until the database table exists. In Supabase Dashboard go to <strong>SQL Editor</strong> and run: <code className="text-xs bg-blue-100 px-1 rounded">scripts/create-job-viewer-links.sql</code>. Then reload this page.
+                One-time setup: In Supabase Dashboard open <strong>SQL Editor</strong> and run <code className="text-xs bg-blue-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> so viewer links are shared with all users (like documents). Then reload this page.
               </AlertDescription>
             </Alert>
           )}
@@ -781,9 +781,9 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all other users see them. If your team doesn’t see these links, run scripts/create-job-viewer-links.sql in Supabase SQL Editor once.
+          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all users see them (like documents). If your team doesn’t see these links, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once if your team doesn't see links yet.
           {!viewerLinksDbAvailable && (
-            <span className="mt-2 block text-sm font-medium text-amber-700">Other users cannot see links until an admin runs <code className="text-xs bg-amber-100 px-1 rounded">scripts/create-job-viewer-links.sql</code> in Supabase SQL Editor.</span>
+            <span className="mt-2 block text-sm font-medium text-amber-700">One-time setup: Run <code className="text-xs bg-amber-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> in Supabase SQL Editor so links are shared with everyone.</span>
           )}
           </p>
           <div className="space-y-3">
@@ -1097,9 +1097,9 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all other users see them. If your team doesn’t see these links, run scripts/create-job-viewer-links.sql in Supabase SQL Editor once.
+          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all users see them (like documents). If your team doesn’t see these links, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once if your team doesn't see links yet.
           {!viewerLinksDbAvailable && (
-            <span className="mt-2 block text-sm font-medium text-amber-700">Other users cannot see links until an admin runs <code className="text-xs bg-amber-100 px-1 rounded">scripts/create-job-viewer-links.sql</code> in Supabase SQL Editor.</span>
+            <span className="mt-2 block text-sm font-medium text-amber-700">One-time setup: Run <code className="text-xs bg-amber-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> in Supabase SQL Editor so links are shared with everyone.</span>
           )}
           </p>
           <div className="space-y-3">
@@ -1249,7 +1249,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
         {!viewerLinksDbAvailable && (
           <Alert className="mx-4 mt-2 border-blue-300 bg-blue-50 text-blue-900">
             <AlertDescription>
-              Other users cannot see viewer links until the database table exists. In Supabase Dashboard go to <strong>SQL Editor</strong> and run: <code className="text-xs bg-blue-100 px-1 rounded">scripts/create-job-viewer-links.sql</code>. Then reload this page.
+              One-time setup: In Supabase Dashboard open <strong>SQL Editor</strong> and run <code className="text-xs bg-blue-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> so viewer links are shared with all users (like documents). Then reload this page.
             </AlertDescription>
           </Alert>
         )}
@@ -1388,9 +1388,9 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             Viewer links
           </DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all other users see them. If your team doesn’t see these links, run scripts/create-job-viewer-links.sql in Supabase SQL Editor once.
+        <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all users see them (like documents). If your team doesn’t see these links, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once if your team doesn't see links yet.
         {!viewerLinksDbAvailable && (
-          <span className="mt-2 block text-sm font-medium text-amber-700">Other users cannot see links until an admin runs <code className="text-xs bg-amber-100 px-1 rounded">scripts/create-job-viewer-links.sql</code> in Supabase SQL Editor.</span>
+          <span className="mt-2 block text-sm font-medium text-amber-700">One-time setup: Run <code className="text-xs bg-amber-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> in Supabase SQL Editor so links are shared with everyone.</span>
         )}
         </p>
         <div className="space-y-3">
