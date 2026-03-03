@@ -17,23 +17,27 @@ CREATE INDEX IF NOT EXISTS idx_job_viewer_links_job_id ON public.job_viewer_link
 
 ALTER TABLE public.job_viewer_links ENABLE ROW LEVEL SECURITY;
 
--- RLS: allow authenticated users to read/insert/update/delete (same scope as job access in app)
+-- RLS: allow all authenticated users to read/insert/update/delete so everyone on the job sees the same links
+DROP POLICY IF EXISTS "Users can read job_viewer_links for jobs they can access" ON public.job_viewer_links;
 CREATE POLICY "Users can read job_viewer_links for jobs they can access"
   ON public.job_viewer_links FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Users can insert job_viewer_links" ON public.job_viewer_links;
 CREATE POLICY "Users can insert job_viewer_links"
   ON public.job_viewer_links FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users can update job_viewer_links" ON public.job_viewer_links;
 CREATE POLICY "Users can update job_viewer_links"
   ON public.job_viewer_links FOR UPDATE
   TO authenticated
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users can delete job_viewer_links" ON public.job_viewer_links;
 CREATE POLICY "Users can delete job_viewer_links"
   ON public.job_viewer_links FOR DELETE
   TO authenticated
