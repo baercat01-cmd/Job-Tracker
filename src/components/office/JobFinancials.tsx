@@ -5585,26 +5585,22 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   return (
     <div className="w-full">
 
-      {/* Proposal summary in blake space (just below green bar when on Proposal & Materials tab) */}
+      {/* Sticky header: project totals stay visible when scrolling (does not move with content) */}
       {quote && setProposalToolbar && (
-        <div className="flex flex-wrap items-center gap-4 py-1.5 px-3 mb-2 rounded-lg bg-gradient-to-r from-slate-100 to-slate-50 border border-slate-200 text-sm">
-          <span className="font-semibold text-slate-700">Proposal #{quote.proposal_number || quote.quote_number}</span>
-          <span className="text-slate-400">|</span>
-          <span className="font-semibold text-slate-700">Materials:</span>
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-4 py-2.5 px-4 mb-3 bg-white border-b border-slate-200 shadow-sm text-sm">
+          <span className="font-semibold text-slate-800">Proposal #{quote.proposal_number || quote.quote_number}</span>
+          <span className="text-slate-300">|</span>
+          <span className="text-slate-600">Materials:</span>
           <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-          {proposalLaborPrice > 0 && (
-            <>
-              <span className="font-semibold text-slate-700">Labor:</span>
-              <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-            </>
-          )}
-          <span className="text-slate-400">|</span>
+          <span className="text-slate-600">Labor:</span>
+          <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="text-slate-300">|</span>
           <span className="text-slate-600">Subtotal:</span>
-          <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
           <span className="text-slate-600">Tax (7%):</span>
           <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-          <span className="text-slate-400">|</span>
-          <span className="text-lg font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="text-slate-300">|</span>
+          <span className="text-base font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
         </div>
       )}
 

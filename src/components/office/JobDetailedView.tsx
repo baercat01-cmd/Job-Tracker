@@ -1222,7 +1222,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
-        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-[6rem]' : 'pt-14'}`}
+        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-20' : 'pt-14'}`}
       >
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">

@@ -31,6 +31,7 @@ import {
   Printer
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { loadViewerLinksForJob } from '@/lib/viewer-links';
 import { toast } from 'sonner';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 import {
@@ -204,16 +205,8 @@ export default function CustomerPortal() {
       // Load proposal data
       const proposalData = await loadProposalData(job.id);
 
-      // Load viewer links (drawings / 3D) for this job
-      let viewerLinks: { id: string; label: string; url: string }[] = [];
-      try {
-        const { data: linksData } = await supabase
-          .from('job_viewer_links')
-          .select('id, label, url')
-          .eq('job_id', job.id)
-          .order('order_index', { ascending: true });
-        if (linksData?.length) viewerLinks = linksData;
-      } catch (_) {}
+      // Load viewer links (Storage first — shared for all users like documents, then table)
+      const viewerLinks = await loadViewerLinksForJob(supabase, job.id);
 
       const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
 

@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, Building2, Calendar, DollarSign, FileText, Image, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { loadViewerLinksForJob } from '@/lib/viewer-links';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
@@ -711,15 +712,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       if (!hasProposalContent && openDialog) {
         toast.info('Preview will open; this job has no proposal content yet (no material sheets or line items).', { duration: 4000 });
       }
-      let viewerLinks: { id: string; label: string; url: string }[] = [];
-      try {
-        const { data: linksData } = await supabase
-          .from('job_viewer_links')
-          .select('id, label, url')
-          .eq('job_id', j.id)
-          .order('order_index', { ascending: true });
-        if (linksData?.length) viewerLinks = linksData;
-      } catch (_) {}
+      const viewerLinks = await loadViewerLinksForJob(supabase, j.id);
 
       const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
       const estimatedPrice = proposalData.totals.grandTotal;

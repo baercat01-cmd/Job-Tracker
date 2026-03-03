@@ -286,8 +286,10 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
   }
 
   const VIEWER_LINKS_STORAGE_KEY = (id: string) => `job_viewer_links_${id}`;
+  /** Same bucket as job documents — one JSON file per job so all users see the same links */
+  const VIEWER_LINKS_FILE_PATH = (id: string) => `${id}/viewer-links.json`;
 
-  function loadViewerLinksFromStorage(): JobViewerLink[] {
+  function loadViewerLinksFromLocalStorage(): JobViewerLink[] {
     try {
       const raw = localStorage.getItem(VIEWER_LINKS_STORAGE_KEY(jobId));
       if (!raw) return [];
@@ -298,7 +300,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
     }
   }
 
-  function saveViewerLinksToStorage(links: JobViewerLink[]) {
+  function saveViewerLinksToLocalStorage(links: JobViewerLink[]) {
     try {
       localStorage.setItem(VIEWER_LINKS_STORAGE_KEY(jobId), JSON.stringify(links));
     } catch (e) {
@@ -306,46 +308,71 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
     }
   }
 
+  /** Load viewer links from Supabase Storage (shared for all users, like documents) */
+  async function loadViewerLinksFromSupabaseStorage(): Promise<JobViewerLink[] | null> {
+    try {
+      const { data: blob, error } = await supabase.storage.from('job-files').download(VIEWER_LINKS_FILE_PATH(jobId));
+      if (error || !blob) return null;
+      const text = await blob.text();
+      const parsed = JSON.parse(text) as unknown;
+      if (!Array.isArray(parsed)) return null;
+      const links = parsed.filter(
+        (x): x is JobViewerLink =>
+          x != null && typeof x === 'object' && typeof (x as JobViewerLink).id === 'string' && typeof (x as JobViewerLink).label === 'string' && typeof (x as JobViewerLink).url === 'string'
+      );
+      return links.map((l, i) => ({ ...l, order_index: typeof l.order_index === 'number' ? l.order_index : i }));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Save viewer links to Supabase Storage so all users see them (like documents) */
+  async function saveViewerLinksToSupabaseStorage(links: JobViewerLink[]): Promise<boolean> {
+    try {
+      const body = JSON.stringify(links);
+      const { error } = await supabase.storage.from('job-files').upload(VIEWER_LINKS_FILE_PATH(jobId), body, {
+        contentType: 'application/json',
+        upsert: true,
+      });
+      return !error;
+    } catch {
+      return false;
+    }
+  }
+
   async function loadViewerLinks() {
     try {
-      const { data, error } = await supabase
+      // 1) Prefer Storage (same as documents) — shared for all users, no SQL script needed
+      const fromStorage = await loadViewerLinksFromSupabaseStorage();
+      if (fromStorage !== null) {
+        setViewerLinks(fromStorage);
+        return;
+      }
+      // 2) Optional: table job_viewer_links (if script was run)
+      const { data: fromDb, error } = await supabase
         .from('job_viewer_links')
         .select('*')
         .eq('job_id', jobId)
         .order('order_index', { ascending: true });
-      if (error) throw error;
-      const fromDb = (data as JobViewerLink[]) || [];
-      if (fromDb.length > 0) {
-        setViewerLinks(fromDb);
+      if (!error && fromDb && fromDb.length > 0) {
+        setViewerLinks(fromDb as JobViewerLink[]);
         return;
       }
-      // DB empty: try to migrate any localStorage links into DB so other users can see them
-      const fromStorage = loadViewerLinksFromStorage();
-      if (fromStorage.length > 0) {
-        let migrated = 0;
-        for (let i = 0; i < fromStorage.length; i++) {
-          const { error: insertErr } = await supabase.from('job_viewer_links').insert({
-            job_id: jobId,
-            label: fromStorage[i].label,
-            url: fromStorage[i].url,
-            order_index: fromStorage[i].order_index ?? i,
-          });
-          if (!insertErr) migrated++;
-        }
-        if (migrated > 0) {
-          saveViewerLinksToStorage([]);
-          toast.success(`${migrated} link(s) saved to the database so your team can see them.`);
-          const { data: after } = await supabase.from('job_viewer_links').select('*').eq('job_id', jobId).order('order_index', { ascending: true });
-          setViewerLinks((after as JobViewerLink[]) || []);
+      // 3) Migrate localStorage to Storage so other users see them
+      const fromLocal = loadViewerLinksFromLocalStorage();
+      if (fromLocal.length > 0) {
+        const ok = await saveViewerLinksToSupabaseStorage(fromLocal);
+        if (ok) {
+          saveViewerLinksToLocalStorage([]);
+          setViewerLinks(fromLocal);
           return;
         }
       }
-      setViewerLinks(fromStorage);
+      setViewerLinks(fromLocal);
     } catch (err: any) {
       console.error('Error loading viewer links:', err);
-      const fromStorage = loadViewerLinksFromStorage();
-      setViewerLinks(fromStorage);
-      const msg = err?.message ?? '';
+      const fromLocal = loadViewerLinksFromLocalStorage();
+      setViewerLinks(fromLocal);
     }
   }
 
@@ -429,98 +456,95 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
     }
     setSavingLink(true);
     try {
+      const maxOrder = viewerLinks.reduce((m, l) => Math.max(m, l.order_index), -1);
+      let newList: JobViewerLink[];
       if (editingLinkId) {
-        const { error } = await supabase
-          .from('job_viewer_links')
-          .update({ label, url, updated_at: new Date().toISOString() })
-          .eq('id', editingLinkId);
-        if (error) throw error;
-        toast.success('Link updated');
-        setManageLinkLabel('');
-        setManageLinkUrl('');
-        setEditingLinkId(null);
-        await loadViewerLinks();
+        const idx = viewerLinks.findIndex((l) => l.id === editingLinkId);
+        if (idx < 0) {
+          toast.error('Could not find link to update.');
+          return;
+        }
+        newList = viewerLinks.map((l) => (l.id === editingLinkId ? { ...l, label, url } : l));
       } else {
-        const maxOrder = viewerLinks.reduce((m, l) => Math.max(m, l.order_index), -1);
-        const { error } = await supabase
-          .from('job_viewer_links')
-          .insert({ job_id: jobId, label, url, order_index: maxOrder + 1 });
-        if (error) throw error;
-        toast.success('Link added');
+        newList = [
+          ...viewerLinks,
+          { id: crypto.randomUUID(), job_id: jobId, label, url, order_index: maxOrder + 1 },
+        ];
+      }
+      // Save to Storage first (shared for all users, like documents)
+      const stored = await saveViewerLinksToSupabaseStorage(newList);
+      if (stored) {
+        setViewerLinks(newList);
         setManageLinkLabel('');
         setManageLinkUrl('');
         setEditingLinkId(null);
-        await loadViewerLinks();
+        toast.success(editingLinkId ? 'Link updated' : 'Link added');
+        setSavingLink(false);
+        return;
       }
-    } catch (e: any) {
-      const msg = e?.message ?? '';
-      const isNetworkOrMissingTable = msg === 'Failed to fetch' || msg.includes('fetch') || msg.includes('does not exist') || msg.includes('relation');
-      if (isNetworkOrMissingTable) {
-        // Fallback: save to localStorage so the feature still works
-        const list = loadViewerLinksFromStorage();
-        const maxOrder = list.reduce((m, l) => Math.max(m, l.order_index), -1);
-        if (editingLinkId) {
-          const idx = list.findIndex((l) => l.id === editingLinkId);
-          if (idx >= 0) {
-            list[idx] = { ...list[idx], label, url };
-            saveViewerLinksToStorage(list);
-            setViewerLinks(list);
-            setManageLinkLabel('');
-            setManageLinkUrl('');
-            setEditingLinkId(null);
-            toast.success('Link saved on this device.');
-          } else {
-            toast.error('Could not find link to update.');
-          }
-        } else {
-          const newLink: JobViewerLink = {
-            id: crypto.randomUUID(),
-            job_id: jobId,
-            label,
-            url,
-            order_index: maxOrder + 1,
-          };
-          list.push(newLink);
-          saveViewerLinksToStorage(list);
-          setViewerLinks(list);
+      // Fallback: try job_viewer_links table if it exists
+      if (editingLinkId) {
+        const { error } = await supabase.from('job_viewer_links').update({ label, url, updated_at: new Date().toISOString() }).eq('id', editingLinkId);
+        if (!error) {
+          await loadViewerLinks();
           setManageLinkLabel('');
           setManageLinkUrl('');
           setEditingLinkId(null);
-          toast.success('Link saved on this device.');
+          toast.success('Link updated');
+          setSavingLink(false);
+          return;
         }
       } else {
-        toast.error(msg || 'Failed to save link');
+        const { error } = await supabase.from('job_viewer_links').insert({ job_id: jobId, label, url, order_index: maxOrder + 1 });
+        if (!error) {
+          await loadViewerLinks();
+          setManageLinkLabel('');
+          setManageLinkUrl('');
+          setEditingLinkId(null);
+          toast.success('Link added');
+          setSavingLink(false);
+          return;
+        }
       }
+      // Last resort: localStorage (device-only)
+      saveViewerLinksToLocalStorage(newList);
+      setViewerLinks(newList);
+      setManageLinkLabel('');
+      setManageLinkUrl('');
+      setEditingLinkId(null);
+      toast.success('Link saved on this device.');
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Failed to save link');
     } finally {
       setSavingLink(false);
     }
   }
 
   async function deleteViewerLink(id: string) {
+    const newList = viewerLinks.filter((l) => l.id !== id);
+    if (selectedViewerLink?.id === id) {
+      setSelectedViewerLink(null);
+      setViewMode('grid');
+    }
     try {
+      // Prefer Storage (shared for all users)
+      const stored = await saveViewerLinksToSupabaseStorage(newList);
+      if (stored) {
+        setViewerLinks(newList);
+        toast.success('Link removed');
+        return;
+      }
       const { error } = await supabase.from('job_viewer_links').delete().eq('id', id);
-      if (error) throw error;
-      if (selectedViewerLink?.id === id) {
-        setSelectedViewerLink(null);
-        setViewMode('grid');
+      if (!error) {
+        await loadViewerLinks();
+        toast.success('Link removed');
+        return;
       }
-      toast.success('Link removed');
-      await loadViewerLinks();
-    } catch (e: any) {
-      const msg = e?.message ?? '';
-      const isMissingTableOrNetwork = msg === 'Failed to fetch' || msg.includes('fetch') || msg.includes('does not exist') || msg.includes('relation');
-      if (isMissingTableOrNetwork) {
-        const list = loadViewerLinksFromStorage().filter((l) => l.id !== id);
-        saveViewerLinksToStorage(list);
-        setViewerLinks(list);
-        if (selectedViewerLink?.id === id) {
-          setSelectedViewerLink(null);
-          setViewMode('grid');
-        }
-        toast.success('Link removed.');
-      } else {
-        toast.error(msg || 'Failed to delete link');
-      }
+      throw new Error(error.message);
+    } catch {
+      saveViewerLinksToLocalStorage(newList);
+      setViewerLinks(newList);
+      toast.success('Link removed.');
     }
   }
 
