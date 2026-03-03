@@ -198,7 +198,32 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
     setViewMode('grid');
   }
 
+  /** Hosts that block iframe embedding; open these in a new tab instead of the proxy frame. */
+  const OPEN_IN_NEW_TAB_HOST_PATTERNS = [
+    /postframesolver\.azurewebsites\.net/i,
+    /\.azurewebsites\.net/i,
+    /smartbuild/i,
+  ];
+
+  function shouldOpenViewerInNewTab(url: string): boolean {
+    try {
+      const parsed = new URL((url || '').trim().replace(/^\/\//, 'https://'));
+      const host = parsed.hostname;
+      return OPEN_IN_NEW_TAB_HOST_PATTERNS.some((re) => re.test(host));
+    } catch {
+      return false;
+    }
+  }
+
   function openViewerLink(link: JobViewerLink) {
+    const url = (link?.url ?? '').trim();
+    if (!url) return;
+    const normalized = normalizeViewerUrl(url);
+    if (shouldOpenViewerInNewTab(normalized)) {
+      window.open(normalized, '_blank', 'noopener,noreferrer');
+      toast.info(`"${link.label}" opened in a new tab (this link can't be shown in the document view).`);
+      return;
+    }
     setSelectedViewerLink(link);
     setViewMode('sketchup');
   }
