@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,10 +30,21 @@ import {
   Link as LinkIcon,
   Pencil,
   Trash2,
+  Upload,
+  FolderPlus,
+  Folder,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+interface JobDocumentFolder {
+  id: string;
+  job_id: string;
+  name: string;
+  parent_id: string | null;
+  order_index: number;
+}
 
 interface JobDocument {
   id: string;
@@ -41,6 +53,7 @@ interface JobDocument {
   current_version: number;
   latest_file_url?: string;
   created_at: string;
+  folder_id?: string | null;
 }
 
 export interface JobViewerLink {
@@ -64,8 +77,13 @@ interface FloatingDocumentViewerProps {
   sketchUpViewerUrl?: string;
 }
 
+const DEFAULT_DOC_CATEGORIES = ['Drawings', 'Specifications', 'Materials', 'Purchase Orders', 'Plans', 'Site Documents', 'Other'];
+
 export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, backLabel = 'Back to Workbook', sketchUpViewerUrl }: FloatingDocumentViewerProps) {
+  const { profile } = useAuth();
   const [documents, setDocuments] = useState<JobDocument[]>([]);
+  const [folders, setFolders] = useState<JobDocumentFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedDocId, setSelectedDocId] = useState<string>('');
   const [selectedDoc, setSelectedDoc] = useState<JobDocument | null>(null);
@@ -79,11 +97,17 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'viewer' | 'sketchup'>('grid');
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       loadDocuments();
       loadViewerLinks();
+      loadFolders();
     }
   }, [jobId, open]);
 
@@ -135,6 +159,119 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
     }
   }
 
+  async function loadFolders() {
+    try {
+      const { data, error } = await supabase
+        .from('job_document_folders')
+        .select('*')
+        .eq('job_id', jobId)
+        .order('order_index', { ascending: true });
+      if (error) throw error;
+      setFolders((data as JobDocumentFolder[]) || []);
+    } catch {
+      setFolders([]);
+    }
+  }
+
+  const documentsInFolder = selectedFolderId === null
+    ? documents
+    : documents.filter((d) => (d as any).folder_id === selectedFolderId);
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) handleFilesUpload(files);
+  }
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length) handleFilesUpload(files);
+    e.target.value = '';
+  }
+  async function handleFilesUpload(files: File[]) {
+    if (!files.length) return;
+    setUploading(true);
+    let success = 0;
+    try {
+      for (const file of files) {
+        try {
+          if (file.size > 50 * 1024 * 1024) {
+            toast.error(`Skipped ${file.name}: over 50 MB`);
+            continue;
+          }
+          const path = `${jobId}/documents/${Date.now()}_${file.name}`;
+          const { error: upErr } = await supabase.storage.from('job-files').upload(path, file, { cacheControl: '3600', upsert: false });
+          if (upErr) throw upErr;
+          const { data: { publicUrl } } = supabase.storage.from('job-files').getPublicUrl(path);
+          const name = file.name.replace(/\.[^/.]+$/, '') || file.name;
+          const insertPayload: Record<string, unknown> = {
+            job_id: jobId,
+            name,
+            category: DEFAULT_DOC_CATEGORIES[0],
+            current_version: 1,
+            visible_to_crew: false,
+            created_by: profile?.id ?? null,
+          };
+          if (selectedFolderId != null) insertPayload.folder_id = selectedFolderId;
+          const { data: docData, error: docErr } = await supabase
+            .from('job_documents')
+            .insert(insertPayload)
+            .select()
+            .single();
+          if (docErr) throw docErr;
+          const { error: revErr } = await supabase
+            .from('job_document_revisions')
+            .insert({
+              document_id: docData.id,
+              version_number: 1,
+              file_url: publicUrl,
+              revision_description: 'Initial upload',
+              uploaded_by: profile?.id ?? null,
+            });
+          if (revErr) throw revErr;
+          success++;
+        } catch (err: any) {
+          console.error('Upload error:', err);
+          toast.error(`${file.name}: ${err?.message || 'Upload failed'}`);
+        }
+      }
+      if (success > 0) {
+        toast.success(`Uploaded ${success} file(s)`);
+        await loadDocuments();
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function createFolder() {
+    const name = newFolderName.trim();
+    if (!name) return;
+    try {
+      const { error } = await supabase
+        .from('job_document_folders')
+        .insert({ job_id: jobId, name, order_index: folders.length });
+      if (error) throw error;
+      toast.success('Folder created');
+      setShowNewFolderDialog(false);
+      setNewFolderName('');
+      await loadFolders();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to create folder');
+    }
+  }
+
   function downloadDocument() {
     if (selectedDoc?.latest_file_url) {
       const link = document.createElement('a');
@@ -182,12 +319,36 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
         setViewerLinks(fromDb);
         return;
       }
+      // DB empty: try to migrate any localStorage links into DB so other users can see them
       const fromStorage = loadViewerLinksFromStorage();
+      if (fromStorage.length > 0) {
+        let migrated = 0;
+        for (let i = 0; i < fromStorage.length; i++) {
+          const { error: insertErr } = await supabase.from('job_viewer_links').insert({
+            job_id: jobId,
+            label: fromStorage[i].label,
+            url: fromStorage[i].url,
+            order_index: fromStorage[i].order_index ?? i,
+          });
+          if (!insertErr) migrated++;
+        }
+        if (migrated > 0) {
+          saveViewerLinksToStorage([]);
+          toast.success(`${migrated} link(s) saved to the database so your team can see them.`);
+          const { data: after } = await supabase.from('job_viewer_links').select('*').eq('job_id', jobId).order('order_index', { ascending: true });
+          setViewerLinks((after as JobViewerLink[]) || []);
+          return;
+        }
+      }
       setViewerLinks(fromStorage);
     } catch (err: any) {
       console.error('Error loading viewer links:', err);
       const fromStorage = loadViewerLinksFromStorage();
       setViewerLinks(fromStorage);
+      const msg = err?.message ?? '';
+      if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('fetch')) {
+        toast.info('Links are stored in the database so all users see them. Run scripts/create-job-viewer-links.sql in Supabase SQL Editor.', { duration: 6000 });
+      }
     }
   }
 
@@ -310,7 +471,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             setManageLinkLabel('');
             setManageLinkUrl('');
             setEditingLinkId(null);
-            toast.success('Link updated (saved locally). Run the SQL script in Supabase to use the database.');
+            toast.success('Link updated on this device only. To share with your team, run scripts/create-job-viewer-links.sql in Supabase SQL Editor.', { duration: 6000 });
           } else {
             toast.error('Could not find link to update.');
           }
@@ -328,7 +489,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           setManageLinkLabel('');
           setManageLinkUrl('');
           setEditingLinkId(null);
-          toast.success('Link saved locally. It will appear in the list. Run scripts/create-job-viewer-links.sql in Supabase to save to the database.');
+          toast.success('Link saved on this device only. To share with your team, run scripts/create-job-viewer-links.sql in Supabase SQL Editor.', { duration: 6000 });
         }
       } else {
         toast.error(msg || 'Failed to save link');
@@ -476,7 +637,43 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                 </div>
               </div>
             ) : viewMode === 'grid' ? (
-              <div className="p-4">
+              <div
+                className="p-4 flex flex-col gap-3 min-h-0"
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <Button
+                    variant={selectedFolderId === null ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setSelectedFolderId(null)}
+                  >
+                    All
+                  </Button>
+                  {folders.map((f) => (
+                    <Button
+                      key={f.id}
+                      variant={selectedFolderId === f.id ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setSelectedFolderId(f.id)}
+                    >
+                      <Folder className="w-3 h-3 mr-1" />
+                      {f.name}
+                    </Button>
+                  ))}
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNewFolderDialog(true)}>
+                    <FolderPlus className="w-3 h-3 mr-1" />
+                    New folder
+                  </Button>
+                  <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                    <Upload className="w-3 h-3 mr-1" />
+                    {uploading ? 'Uploading...' : 'Upload files'}
+                  </Button>
+                </div>
                 {loading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center">
@@ -484,49 +681,58 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                       <p className="text-muted-foreground text-sm">Loading documents...</p>
                     </div>
                   </div>
-                ) : documents.length === 0 ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="text-center">
-                      <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                      <p className="text-muted-foreground text-sm">No documents available</p>
-                    </div>
-                  </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3">
-                    {documents.map((doc) => (
-                      <Card
-                        key={doc.id}
-                        className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-blue-400 overflow-hidden"
-                        onClick={() => selectDocument(doc.id)}
-                      >
-                        <div className="flex gap-3">
-                          <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0">
-                            {doc.latest_file_url ? (
-                              <iframe
-                                src={doc.latest_file_url}
-                                className="w-full h-full border-0 pointer-events-none scale-50 origin-top-left"
-                                style={{ width: '200%', height: '200%' }}
-                                title={doc.name}
-                              />
-                            ) : (
-                              <div className="flex items-center justify-center h-full">
-                                <FileText className="w-12 h-12 text-muted-foreground opacity-30" />
+                  <div
+                    className={`rounded-lg border-2 border-dashed flex-1 min-h-[120px] transition-colors ${
+                      isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+                    }`}
+                  >
+                    {documentsInFolder.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                        <Upload className="w-10 h-10 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground mb-1">
+                          {isDragging ? 'Drop files here' : 'Drag and drop files here, or use Upload files'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Documents are stored for the job and visible to your team</p>
+                      </div>
+                    ) : (
+                      <div className="p-2 grid grid-cols-1 gap-3">
+                        {documentsInFolder.map((doc) => (
+                          <Card
+                            key={doc.id}
+                            className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-blue-400 overflow-hidden"
+                            onClick={() => selectDocument(doc.id)}
+                          >
+                            <div className="flex gap-3">
+                              <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0">
+                                {doc.latest_file_url ? (
+                                  <iframe
+                                    src={doc.latest_file_url}
+                                    className="w-full h-full border-0 pointer-events-none scale-50 origin-top-left"
+                                    style={{ width: '200%', height: '200%' }}
+                                    title={doc.name}
+                                  />
+                                ) : (
+                                  <div className="flex items-center justify-center h-full">
+                                    <FileText className="w-12 h-12 text-muted-foreground opacity-30" />
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/10" />
                               </div>
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/10" />
-                          </div>
-                          <div className="flex-1 py-3 pr-3 min-w-0">
-                            <p className="font-semibold text-sm truncate mb-1">{doc.name}</p>
-                            <Badge variant="outline" className="text-xs mb-2">
-                              {doc.category}
-                            </Badge>
-                            <p className="text-xs text-muted-foreground">
-                              Version {doc.current_version}
-                            </p>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
+                              <div className="flex-1 py-3 pr-3 min-w-0">
+                                <p className="font-semibold text-sm truncate mb-1">{doc.name}</p>
+                                <Badge variant="outline" className="text-xs mb-2">
+                                  {doc.category}
+                                </Badge>
+                                <p className="text-xs text-muted-foreground">
+                                  Version {doc.current_version}
+                                </p>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -563,12 +769,12 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp 3D, SmartBuild, blueprints) to open in the Documents panel for this job.</p>
+          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. They are stored in the database so everyone on the job sees them.</p>
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>Label</Label>
               <Input
-                placeholder="e.g. SketchUp 3D, SmartBuild"
+                placeholder="e.g. SketchUp, SmartBuild"
                 value={manageLinkLabel}
                 onChange={(e) => setManageLinkLabel(e.target.value)}
               />
@@ -611,6 +817,26 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                 </div>
               ))
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label>Folder name</Label>
+            <Input
+              placeholder="e.g. Drawings, Invoices"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>Cancel</Button>
+              <Button onClick={createFolder} disabled={!newFolderName.trim()}>Create</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -745,7 +971,19 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                   </div>
                 </div>
               ) : viewMode === 'grid' ? (
-                <div className="p-4">
+                <div className="p-4 flex flex-col gap-3" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant={selectedFolderId === null ? 'default' : 'outline'} size="sm" onClick={() => setSelectedFolderId(null)}>All</Button>
+                    {folders.map((f) => (
+                      <Button key={f.id} variant={selectedFolderId === f.id ? 'default' : 'outline'} size="sm" onClick={() => setSelectedFolderId(f.id)}>
+                        <Folder className="w-3 h-3 mr-1" />{f.name}
+                      </Button>
+                    ))}
+                    <Button variant="outline" size="sm" onClick={() => setShowNewFolderDialog(true)}><FolderPlus className="w-3 h-3 mr-1" />New folder</Button>
+                    <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                      <Upload className="w-3 h-3 mr-1" />{uploading ? 'Uploading...' : 'Upload files'}
+                    </Button>
+                  </div>
                   {loading ? (
                     <div className="flex items-center justify-center py-12">
                       <div className="text-center">
@@ -753,16 +991,16 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                         <p className="text-muted-foreground">Loading documents...</p>
                       </div>
                     </div>
-                  ) : documents.length === 0 ? (
-                    <div className="flex items-center justify-center py-12">
+                  ) : documentsInFolder.length === 0 ? (
+                    <div className={`flex items-center justify-center py-12 rounded-lg border-2 border-dashed ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}`}>
                       <div className="text-center">
-                        <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                        <p className="text-muted-foreground">No documents available for this job</p>
+                        <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                        <p className="text-muted-foreground">{isDragging ? 'Drop files here' : 'No documents in this folder. Drag and drop or use Upload files.'}</p>
                       </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-4">
-                      {documents.map((doc) => (
+                      {documentsInFolder.map((doc) => (
                         <Card
                           key={doc.id}
                           className="cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-blue-400"
@@ -822,6 +1060,19 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>New folder</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Label>Folder name</Label>
+            <Input placeholder="e.g. Drawings, Invoices" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createFolder()} />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>Cancel</Button>
+              <Button onClick={createFolder} disabled={!newFolderName.trim()}>Create</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={showManageLinks} onOpenChange={setShowManageLinks}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -830,7 +1081,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp 3D, SmartBuild, blueprints) to open in the Documents panel for this job.</p>
+          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. They are stored in the database so everyone on the job sees them.</p>
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>Label</Label>
@@ -997,7 +1248,19 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               </div>
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="p-4">
+            <div className="p-4 flex flex-col gap-3" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant={selectedFolderId === null ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setSelectedFolderId(null)}>All</Button>
+                {folders.map((f) => (
+                  <Button key={f.id} variant={selectedFolderId === f.id ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setSelectedFolderId(f.id)}>
+                    <Folder className="w-3 h-3 mr-1" />{f.name}
+                  </Button>
+                ))}
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowNewFolderDialog(true)}><FolderPlus className="w-3 h-3 mr-1" />New folder</Button>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                  <Upload className="w-3 h-3 mr-1" />{uploading ? 'Uploading...' : 'Upload files'}
+                </Button>
+              </div>
               {loading ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="text-center">
@@ -1005,16 +1268,16 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                     <p className="text-muted-foreground text-sm">Loading documents...</p>
                   </div>
                 </div>
-              ) : documents.length === 0 ? (
-                <div className="flex items-center justify-center py-12">
+              ) : documentsInFolder.length === 0 ? (
+                <div className={`flex items-center justify-center py-12 rounded-lg border-2 border-dashed ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}`}>
                   <div className="text-center">
-                    <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                    <p className="text-muted-foreground text-sm">No documents available</p>
+                    <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground text-sm">{isDragging ? 'Drop files here' : 'No documents. Drag and drop or use Upload files.'}</p>
                   </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {documents.map((doc) => (
+                  {documentsInFolder.map((doc) => (
                     <Card
                       key={doc.id}
                       className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-blue-400 overflow-hidden"
@@ -1076,6 +1339,19 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
         </CardContent>
       </Card>
     </div>
+    <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader><DialogTitle>New folder</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <Label>Folder name</Label>
+          <Input placeholder="e.g. Drawings, Invoices" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createFolder()} />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>Cancel</Button>
+            <Button onClick={createFolder} disabled={!newFolderName.trim()}>Create</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
     <Dialog open={showManageLinks} onOpenChange={setShowManageLinks}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -1084,7 +1360,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             Viewer links
           </DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp 3D, SmartBuild, blueprints) to open in the Documents panel for this job.</p>
+        <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. They are stored in the database so everyone on the job sees them.</p>
         <div className="space-y-3">
           <div className="grid gap-2">
             <Label>Label</Label>

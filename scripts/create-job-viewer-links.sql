@@ -1,5 +1,6 @@
--- Job Viewer Links: per-job links (e.g. SketchUp 3D, blueprints) shown in the Documents section
--- Run in Supabase SQL Editor.
+-- Job Viewer Links: per-job links (e.g. SketchUp, Smartbuild) shown in the Documents section.
+-- Links are stored in the database so all users who can access the job see the same list.
+-- Run this script in Supabase SQL Editor once so links are shared across the team.
 -- Note: job_id is not a foreign key so this works even if your jobs table has a different name or schema.
 
 CREATE TABLE IF NOT EXISTS public.job_viewer_links (
