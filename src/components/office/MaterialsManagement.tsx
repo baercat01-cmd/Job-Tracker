@@ -1490,11 +1490,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           <span>Upload</span>
         </TabsTrigger>
       </TabsList>
-      {(jobQuotes.length === 1 || proposalNumber) && (
-        <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md shrink-0">
-          Proposal #{proposalLabel}
-        </Badge>
-      )}
     </div>
   );
 

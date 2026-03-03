@@ -53,7 +53,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
             isSplit ? 'w-2/5 min-w-[280px] border-r border-slate-200' : 'w-full'
           } ${showProposal ? '' : 'hidden'}`}
         >
-          <div className="max-w-4xl mx-auto space-y-3 py-2 px-3 w-full">
+          <div className="max-w-4xl mx-auto space-y-2 pt-0 pb-2 px-3 w-full">
             <Suspense fallback={<PanelFallback />}>
               <JobFinancials
                 job={job}

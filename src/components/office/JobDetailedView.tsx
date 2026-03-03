@@ -27,7 +27,7 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 import { JobDetailProposalToolbarContext } from '@/contexts/JobDetailProposalToolbarContext';
 import { JobDetailMaterialsToolbarSlotContext } from '@/contexts/JobDetailMaterialsToolbarContext';
-import { ProposalSummaryProvider, ProposalSummaryRow } from '@/contexts/ProposalSummaryContext';
+import { ProposalSummaryProvider } from '@/contexts/ProposalSummaryContext';
 
 interface JobDetailedViewProps {
   job: Job;
@@ -1222,7 +1222,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
-        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-28' : 'pt-14'}`}
+        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-[6rem]' : 'pt-14'}`}
       >
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
@@ -1324,23 +1324,6 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
           {activeTab === 'proposal-materials' && (
             <div className="bg-green-900/80 border-t border-yellow-600/30">
               <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-                {proposalToolbarContent && (
-                  <>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {proposalToolbarContent}
-                    </div>
-                    <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
-                    <div
-                      ref={(el) => {
-                        (materialsToolbarSlotRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-                        setMaterialsToolbarSlotReady(!!el);
-                      }}
-                      className="flex items-center gap-2 flex-1 min-w-0"
-                    />
-                  </>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-1.5 border-t border-yellow-600/20">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-yellow-100/90 mr-2">View:</span>
                   <Button
@@ -1371,8 +1354,22 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
                     Materials
                   </Button>
                 </div>
-                <div className="h-5 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
-                <ProposalSummaryRow className="flex-1 min-w-0" />
+                {proposalToolbarContent && (
+                  <>
+                    <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {proposalToolbarContent}
+                    </div>
+                    <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
+                    <div
+                      ref={(el) => {
+                        (materialsToolbarSlotRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+                        setMaterialsToolbarSlotReady(!!el);
+                      }}
+                      className="flex items-center gap-2 flex-1 min-w-0"
+                    />
+                  </>
+                )}
               </div>
             </div>
           )}
