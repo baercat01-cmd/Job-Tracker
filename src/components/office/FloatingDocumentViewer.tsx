@@ -37,7 +37,6 @@ import {
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface JobDocumentFolder {
   id: string;
@@ -103,8 +102,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  /** When false, job_viewer_links table is missing or inaccessible — links are device-only until script is run */
-  const [viewerLinksDbAvailable, setViewerLinksDbAvailable] = useState(true);
 
   useEffect(() => {
     if (open) {
@@ -317,7 +314,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
         .eq('job_id', jobId)
         .order('order_index', { ascending: true });
       if (error) throw error;
-      setViewerLinksDbAvailable(true);
       const fromDb = (data as JobViewerLink[]) || [];
       if (fromDb.length > 0) {
         setViewerLinks(fromDb);
@@ -347,13 +343,9 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
       setViewerLinks(fromStorage);
     } catch (err: any) {
       console.error('Error loading viewer links:', err);
-      setViewerLinksDbAvailable(false);
       const fromStorage = loadViewerLinksFromStorage();
       setViewerLinks(fromStorage);
       const msg = err?.message ?? '';
-      if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('fetch')) {
-        toast.info('One-time setup: Run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor so links are shared with everyone.', { duration: 6000 });
-      }
     }
   }
 
@@ -476,7 +468,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             setManageLinkLabel('');
             setManageLinkUrl('');
             setEditingLinkId(null);
-            toast.success('Link saved on this device. To share with your team, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once.', { duration: 6000 });
+            toast.success('Link saved on this device.');
           } else {
             toast.error('Could not find link to update.');
           }
@@ -494,7 +486,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           setManageLinkLabel('');
           setManageLinkUrl('');
           setEditingLinkId(null);
-          toast.success('Link saved on this device. To share with your team, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once.', { duration: 6000 });
+          toast.success('Link saved on this device.');
         }
       } else {
         toast.error(msg || 'Failed to save link');
@@ -516,7 +508,8 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
       await loadViewerLinks();
     } catch (e: any) {
       const msg = e?.message ?? '';
-      if (msg === 'Failed to fetch' || msg.includes('fetch')) {
+      const isMissingTableOrNetwork = msg === 'Failed to fetch' || msg.includes('fetch') || msg.includes('does not exist') || msg.includes('relation');
+      if (isMissingTableOrNetwork) {
         const list = loadViewerLinksFromStorage().filter((l) => l.id !== id);
         saveViewerLinksToStorage(list);
         setViewerLinks(list);
@@ -524,7 +517,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           setSelectedViewerLink(null);
           setViewMode('grid');
         }
-        toast.success('Link removed from local list.');
+        toast.success('Link removed.');
       } else {
         toast.error(msg || 'Failed to delete link');
       }
@@ -621,13 +614,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               )}
             </div>
           </div>
-          {!viewerLinksDbAvailable && (
-            <Alert className="mx-3 mt-2 border-blue-300 bg-blue-50 text-blue-900">
-              <AlertDescription>
-                One-time setup: In Supabase Dashboard open <strong>SQL Editor</strong> and run <code className="text-xs bg-blue-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> so viewer links are shared with all users (like documents). Then reload this page.
-              </AlertDescription>
-            </Alert>
-          )}
           <CardContent className="flex-1 p-0 overflow-auto min-h-0">
             {viewMode === 'sketchup' && currentViewerUrl ? (
               <div className="h-full min-h-[300px] bg-slate-100 flex flex-col">
@@ -781,11 +767,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all users see them (like documents). If your team doesn’t see these links, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once if your team doesn't see links yet.
-          {!viewerLinksDbAvailable && (
-            <span className="mt-2 block text-sm font-medium text-amber-700">One-time setup: Run <code className="text-xs bg-amber-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> in Supabase SQL Editor so links are shared with everyone.</span>
-          )}
-          </p>
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>Label</Label>
@@ -1097,11 +1078,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               Viewer links
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all users see them (like documents). If your team doesn’t see these links, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once if your team doesn't see links yet.
-          {!viewerLinksDbAvailable && (
-            <span className="mt-2 block text-sm font-medium text-amber-700">One-time setup: Run <code className="text-xs bg-amber-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> in Supabase SQL Editor so links are shared with everyone.</span>
-          )}
-          </p>
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>Label</Label>
@@ -1246,14 +1222,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           </div>
         </div>
 
-        {!viewerLinksDbAvailable && (
-          <Alert className="mx-4 mt-2 border-blue-300 bg-blue-50 text-blue-900">
-            <AlertDescription>
-              One-time setup: In Supabase Dashboard open <strong>SQL Editor</strong> and run <code className="text-xs bg-blue-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> so viewer links are shared with all users (like documents). Then reload this page.
-            </AlertDescription>
-          </Alert>
-        )}
-
         {/* Content */}
         <CardContent className="flex-1 p-0 overflow-auto">
           {viewMode === 'sketchup' && currentViewerUrl ? (
@@ -1388,11 +1356,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             Viewer links
           </DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">Add links (e.g. SketchUp, SmartBuild) for this job. Links are stored in the database so all users see them (like documents). If your team doesn’t see these links, run scripts/setup-documents-and-viewer-links.sql in Supabase SQL Editor once if your team doesn't see links yet.
-        {!viewerLinksDbAvailable && (
-          <span className="mt-2 block text-sm font-medium text-amber-700">One-time setup: Run <code className="text-xs bg-amber-100 px-1 rounded">scripts/setup-documents-and-viewer-links.sql</code> in Supabase SQL Editor so links are shared with everyone.</span>
-        )}
-        </p>
         <div className="space-y-3">
           <div className="grid gap-2">
             <Label>Label</Label>
