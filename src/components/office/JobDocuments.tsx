@@ -150,9 +150,14 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
   const [viewingDocument, setViewingDocument] = useState<{ url: string; name: string } | null>(null);
 
   useEffect(() => {
+    if (!job?.id) {
+      setLoading(false);
+      setDocuments([]);
+      return;
+    }
     loadDocuments();
     loadCategories();
-  }, [job.id]);
+  }, [job?.id]);
 
   async function loadCategories() {
     try {
@@ -179,6 +184,11 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
   }
 
   async function loadDocuments() {
+    if (!job?.id) {
+      setLoading(false);
+      setDocuments([]);
+      return;
+    }
     try {
       setLoading(true);
 
@@ -190,27 +200,31 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
       if (error) throw error;
 
-      // Fetch latest revision URL for each document
-      const documentsWithUrls = await Promise.all(
-        (data || []).map(async (doc: any) => {
-          const { data: latestRevision } = await supabase
-            .from('job_document_revisions')
-            .select('file_url')
-            .eq('document_id', doc.id)
-            .eq('version_number', doc.current_version)
-            .single();
+      // Fetch latest revision URL for each document (skip if no docs to avoid extra queries)
+      const list = data || [];
+      const documentsWithUrls = list.length === 0
+        ? []
+        : await Promise.all(
+            list.map(async (doc: any) => {
+              const { data: latestRevision } = await supabase
+                .from('job_document_revisions')
+                .select('file_url')
+                .eq('document_id', doc.id)
+                .eq('version_number', doc.current_version ?? 1)
+                .maybeSingle();
 
-          return {
-            ...doc,
-            latest_file_url: latestRevision?.file_url || null,
-          };
-        })
-      );
+              return {
+                ...doc,
+                latest_file_url: latestRevision?.file_url ?? null,
+              };
+            })
+          );
 
       setDocuments(documentsWithUrls);
     } catch (error: any) {
       console.error('Error loading documents:', error);
       toast.error('Failed to load documents');
+      setDocuments([]);
     } finally {
       setLoading(false);
     }

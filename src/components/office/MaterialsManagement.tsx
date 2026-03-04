@@ -785,6 +785,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         // Reload on error to revert optimistic update
         workbookCache.delete(`${job.id}:${effectiveQuoteId ?? null}`);
         await loadWorkbook();
+      } else {
+        // Notify proposal panel to refresh totals in real time
+        window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id } }));
       }
 
       requestAnimationFrame(() => {
@@ -891,6 +894,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
       if (error) throw error;
       toast.success('Material deleted');
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id } }));
 
       // Restore scroll position
       requestAnimationFrame(() => {
@@ -930,6 +934,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       toast.success('Material moved');
       setShowMoveDialog(false);
       setMovingItem(null);
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id } }));
       
       // Reload to reflect move across sheets
       await loadWorkbook();
@@ -1073,6 +1078,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       setSelectedCatalogMaterials([]);
       setCatalogAddQuantity('1');
       setCatalogAddColor('');
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id } }));
       await loadWorkbook();
       setShowAddDialog(false);
     } catch (error: any) {
@@ -1419,6 +1425,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
       toast.success('Material added');
       setShowAddDialog(false);
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id } }));
       
       // Reload workbook to show new material
       await loadWorkbook();
@@ -2026,7 +2033,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-6 text-xs text-center"
+                                          onFocus={(e) => e.target.select()}
+                                          className="h-6 text-xs text-center min-w-[3rem] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                         />
                                       ) : (
                                         <div
@@ -2097,7 +2105,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-6 text-xs text-right"
+                                          onFocus={(e) => e.target.select()}
+                                          className="h-6 text-xs text-right min-w-[4rem] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                         />
                                       ) : (
                                         <div
@@ -2125,10 +2134,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                               if (e.key === 'Escape') { e.preventDefault(); cancelCellEdit(); }
                                             }}
                                             autoFocus
-                                            className="h-6 text-xs text-center w-14"
-                                            placeholder="35"
+                                            onFocus={(e) => e.target.select()}
+                                            className="h-6 text-xs text-center min-w-[3.5rem] w-16 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                            placeholder="0"
                                           />
-                                          <span className="text-[10px] text-muted-foreground">%</span>
+                                          <span className="text-[10px] text-muted-foreground shrink-0">%</span>
                                         </div>
                                       ) : (
                                         <div
@@ -2142,12 +2152,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                           title="Click to edit markup %"
                                         >
                                           {(item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null) || (item.markup_percent != null && item.markup_percent > 0) || markupPercent > 0 ? (
-                                            <Badge variant="secondary" className="bg-green-100 text-green-800 font-semibold text-[10px] px-1.5 py-0">
-                                              <Percent className="w-2.5 h-2.5 mr-0.5" />
-                                              {(item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
-                                                ? markupPercent.toFixed(1)
-                                                : (item.markup_percent != null ? (item.markup_percent * 100).toFixed(1) : markupPercent.toFixed(1))
-                                              }%
+                                            <Badge variant="outline" className="font-semibold text-xs px-2 py-0.5 border-slate-200 bg-slate-50 text-slate-700">
+                                              <Percent className="w-3 h-3 mr-1" />
+                                              {(() => {
+                                                const val = (item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
+                                                  ? markupPercent
+                                                  : (item.markup_percent != null ? item.markup_percent * 100 : markupPercent);
+                                                return val % 1 === 0 ? val.toFixed(0) : val.toFixed(1);
+                                              })()}
                                             </Badge>
                                           ) : (
                                             <span className="text-[10px] text-muted-foreground">Set</span>
@@ -2169,7 +2181,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-6 text-xs text-right"
+                                          onFocus={(e) => e.target.select()}
+                                          className="h-6 text-xs text-right min-w-[4rem] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                         />
                                       ) : (
                                         <div

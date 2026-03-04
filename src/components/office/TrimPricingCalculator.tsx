@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown } from 'lucide-react';
+import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
@@ -165,13 +165,14 @@ export function TrimPricingCalculator() {
     return num.toFixed(decimals).replace(/\.?0+$/, '');
   }
 
-  // Helper function to draw a hem
+  // Helper function to draw a hem (optional lineWidthForExport: use same as main lines for PDF)
   function drawHem(
     ctx: CanvasRenderingContext2D, 
     segment: LineSegment, 
     scale: number, 
     isPreview: boolean = false,
-    previewSide?: 'left' | 'right'
+    previewSide?: 'left' | 'right',
+    lineWidthForExport?: number
   ) {
     const hemPoint = segment.hemAtStart ? segment.start : segment.end;
     const otherPoint = segment.hemAtStart ? segment.end : segment.start;
@@ -218,7 +219,7 @@ export function TrimPricingCalculator() {
       ctx.setLineDash([5, 5]);
     } else {
       ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = lineWidthForExport ?? 3;
       ctx.setLineDash([]);
     }
     
@@ -233,24 +234,15 @@ export function TrimPricingCalculator() {
     
     // Reset stroke style
     ctx.strokeStyle = isPreview ? '#9333ea' : '#000000';
-    ctx.lineWidth = isPreview ? 2 : 3;
+    ctx.lineWidth = isPreview ? 2 : (lineWidthForExport ?? 3);
     
-    // Label offset perpendicular so it doesn't sit on the line
+    // Label only in preview mode (no HEM / 0.5" text on final drawing)
     if (isPreview) {
       ctx.fillStyle = '#9333ea';
       ctx.font = 'bold 14px sans-serif';
       const labelX = (p1x + p2x) / 2 + perpX * 10 * scale;
       const labelY = (p1y + p2y) / 2 + perpY * 10 * scale;
       ctx.fillText(`${side.toUpperCase()}?`, labelX - 20, labelY + 5);
-    } else {
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px sans-serif';
-      const labelX = (p1x + p2x) / 2 + perpX * 10 * scale;
-      const labelY = (p1y + p2y) / 2 + perpY * 10 * scale;
-      ctx.fillText('HEM', labelX - 15, labelY + 4);
-      ctx.fillStyle = '#666666';
-      ctx.font = '10px sans-serif';
-      ctx.fillText('0.5"', labelX - 10, labelY + 16);
     }
   }
 
@@ -507,35 +499,9 @@ export function TrimPricingCalculator() {
       ctx.lineTo(endX, endY);
       ctx.stroke();
 
-      // Draw hem if exists (U-shaped fold - no exposed edge)
+      // Draw hem if exists (U-shaped fold - no exposed edge). No degree label at hems.
       if (segment.hasHem) {
         drawHem(ctx, segment, scale, false);
-        
-        // Draw 180° angle for hem at the corner where hem starts
-        const hemPoint = segment.hemAtStart ? segment.start : segment.end;
-        const hemX = hemPoint.x * scale;
-        const hemY = hemPoint.y * scale;
-        
-        // Position the 180° label at the hem corner
-        const side = segment.hemSide || 'right';
-        const otherPoint = segment.hemAtStart ? segment.end : segment.start;
-        const dx = otherPoint.x - hemPoint.x;
-        const dy = otherPoint.y - hemPoint.y;
-        const unitX = dx / Math.sqrt(dx * dx + dy * dy);
-        const unitY = dy / Math.sqrt(dx * dx + dy * dy);
-        
-        const perpX = side === 'right' ? unitY : -unitY;
-        const perpY = side === 'right' ? -unitX : unitX;
-        
-        // Position radially from corner
-        const hemAngleX = hemX + perpX * 50;
-        const hemAngleY = hemY + perpY * 50;
-        
-        ctx.fillStyle = '#6b21a8';
-        ctx.font = 'bold 14px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('180°', hemAngleX, hemAngleY);
-        ctx.textAlign = 'left';
       }
 
       // Calculate measurements
@@ -605,30 +571,18 @@ export function TrimPricingCalculator() {
         const currDx = segment.end.x - segment.start.x;
         const currDy = segment.end.y - segment.start.y;
         
+        // Two rays FROM the corner: backward along prev segment, forward along current segment
         const prevAngle = Math.atan2(prevDy, prevDx);
         const currAngle = Math.atan2(currDy, currDx);
+        const fromCornerBack = prevAngle + Math.PI;
+        const fromCornerFwd = currAngle;
+        // Exterior bisector = same angular distance from both lines, pointing outside the bend
+        const exteriorBisector = (fromCornerBack + fromCornerFwd) / 2 + Math.PI;
+        const angleDistance = 58;
+        const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
+        const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
         
-        // Calculate the EXTERIOR bisector angle
-        // The exterior bisector points away from the interior of the angle
-        let bisectorAngle = (prevAngle + currAngle) / 2;
-        
-        // Determine if we need to add PI to point outward
-        let angleDiff = currAngle - prevAngle;
-        if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        
-        // If the turn is to the left (counter-clockwise), the bisector should point outward by adding PI
-        if (angleDiff > 0) {
-          bisectorAngle += Math.PI;
-        }
-        
-        // Position angle label RADIALLY from the corner point along the bisector
-        // Use larger distance to keep angles clearly separated from measurements
-        const angleDistance = 75; // Increased distance for better clarity
-        const angleX = startX + Math.cos(bisectorAngle) * angleDistance;
-        const angleY = startY + Math.sin(bisectorAngle) * angleDistance;
-        
-        // Draw angle text (no background box)
+        // Draw degree text out from corner, equidistant from both sides of the bend (on the 45° bisector)
         ctx.fillStyle = '#6b21a8'; // Purple for angles
         ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
@@ -744,19 +698,18 @@ export function TrimPricingCalculator() {
       
       const startX = segment.start.x * scale;
       const startY = segment.start.y * scale;
-      
       const prevDx = prevSegment.end.x - prevSegment.start.x;
       const prevDy = prevSegment.end.y - prevSegment.start.y;
       const currDx = segment.end.x - segment.start.x;
       const currDy = segment.end.y - segment.start.y;
-      
       const prevAngle = Math.atan2(prevDy, prevDx);
       const currAngle = Math.atan2(currDy, currDx);
-      const bisectorAngle = (prevAngle + currAngle) / 2;
-      
-      const angleOffsetDist = 35;
-      const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
-      const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
+      const fromCornerBack = prevAngle + Math.PI;
+      const fromCornerFwd = currAngle;
+      const exteriorBisector = (fromCornerBack + fromCornerFwd) / 2 + Math.PI;
+      const angleDistance = 58;
+      const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
+      const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
       
       // Check if click is near the angle label (click in canvas pixels)
       const clickPixelX = (e.clientX - rect.left) * scaleX;
@@ -1111,13 +1064,181 @@ export function TrimPricingCalculator() {
 
   function clearDrawing() {
     if (drawing.segments.length > 0 && !confirm('Clear all segments?')) return;
-    
+
     setDrawing({
       segments: [],
       selectedSegmentId: null,
       currentPoint: null,
       nextLabel: 65
     });
+  }
+
+  /** Draw trim only (no grid, no helper text) to ctx, scaled to fit width x height. Used for PDF export. */
+  function drawTrimToPdfCanvas(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    segments: LineSegment[],
+    angleDisplayModeRecord: Record<string, boolean>
+  ) {
+    if (segments.length === 0) return;
+    const pad = 0.5; // inch padding around bbox
+    const points: Point[] = [];
+    segments.forEach(seg => {
+      points.push(seg.start, seg.end);
+      if (seg.hasHem) {
+        const hemPoint = seg.hemAtStart ? seg.start : seg.end;
+        const other = seg.hemAtStart ? seg.end : seg.start;
+        const dx = other.x - hemPoint.x, dy = other.y - hemPoint.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const perpX = (seg.hemSide === 'right' ? uy : -uy);
+        const perpY = (seg.hemSide === 'right' ? -ux : ux);
+        const lw = 0.03125 * 2;
+        const baseX = hemPoint.x + perpX * lw, baseY = hemPoint.y + perpY * lw;
+        points.push({ x: baseX + ux * 0.5, y: baseY + uy * 0.5 });
+      }
+    });
+    // Include angle label position in bbox so degree is not cut off
+    const angleDistInches = 58 / 80; // ~0.725" offset for angle label so bbox includes it
+    segments.forEach((segment, segmentIndex) => {
+      if (segmentIndex > 0) {
+        const prevSegment = segments[segmentIndex - 1];
+        const prevDx = prevSegment.end.x - prevSegment.start.x;
+        const prevDy = prevSegment.end.y - prevSegment.start.y;
+        const currDx = segment.end.x - segment.start.x;
+        const currDy = segment.end.y - segment.start.y;
+        const prevAngle = Math.atan2(prevDy, prevDx);
+        const currAngle = Math.atan2(currDy, currDx);
+        const exteriorBisector = (prevAngle + Math.PI + currAngle) / 2 + Math.PI;
+        const cornerX = segment.start.x;
+        const cornerY = segment.start.y;
+        points.push({
+          x: cornerX + Math.cos(exteriorBisector) * angleDistInches,
+          y: cornerY + Math.sin(exteriorBisector) * angleDistInches
+        });
+      }
+    });
+    const minX = Math.min(...points.map(p => p.x));
+    const minY = Math.min(...points.map(p => p.y));
+    const maxX = Math.max(...points.map(p => p.x));
+    const maxY = Math.max(...points.map(p => p.y));
+    const boxW = maxX - minX + 2 * pad;
+    const boxH = maxY - minY + 2 * pad;
+    const scale = Math.min((width - 1) / boxW, (height - 1) / boxH);
+    const contentW = boxW * scale;
+    const contentH = boxH * scale;
+    const originX = (width - contentW) / 2 + (pad - minX) * scale;
+    const originY = (height - contentH) / 2 + (pad - minY) * scale;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.save();
+    ctx.translate(originX, originY);
+
+    const mainLineWidth = Math.max(2, 3 * (scale / 80));
+    const centroid = calculateCentroid(segments);
+    const labelMeasurementGap = 14; // more space between segment letter (A, B) and length
+    segments.forEach((segment, segmentIndex) => {
+      const startX = segment.start.x * scale;
+      const startY = segment.start.y * scale;
+      const endX = segment.end.x * scale;
+      const endY = segment.end.y * scale;
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = mainLineWidth;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      if (segment.hasHem) drawHem(ctx, segment, scale, false, undefined, mainLineWidth);
+
+      const dx = segment.end.x - segment.start.x;
+      const dy = segment.end.y - segment.start.y;
+      const lengthInInches = Math.sqrt(dx * dx + dy * dy);
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+      const length = lengthInInches || 1;
+      const perpX = -dy / length;
+      const perpY = dx / length;
+      const toCentroidX = centroid.x - (segment.start.x + segment.end.x) / 2;
+      const toCentroidY = centroid.y - (segment.start.y + segment.end.y) / 2;
+      const direction = perpX * toCentroidX + perpY * toCentroidY > 0 ? -1 : 1;
+      const outwardPerpX = perpX * direction;
+      const outwardPerpY = perpY * direction;
+      const stackOffset = lengthInInches < 1.0 ? 50 : 35;
+      const baseX = midX + outwardPerpX * stackOffset;
+      const baseY = midY + outwardPerpY * stackOffset;
+      const fontSize = Math.max(10, 12 * (scale / 80));
+      const fontBold = Math.max(12, 16 * (scale / 80));
+      ctx.fillStyle = '#999999';
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(segment.label, baseX, baseY - labelMeasurementGap);
+      ctx.fillStyle = '#000000';
+      ctx.font = `bold ${fontBold}px sans-serif`;
+      ctx.fillText(`${cleanNumber(lengthInInches)}"`, baseX, baseY + labelMeasurementGap);
+
+      if (segmentIndex > 0) {
+        const prevSegment = segments[segmentIndex - 1];
+        const angle = calculateAngleBetweenSegments(prevSegment, segment);
+        const useComplement = angleDisplayModeRecord[segment.id] || false;
+        const displayAngle = useComplement ? (360 - angle) : angle;
+        const prevDx = prevSegment.end.x - prevSegment.start.x;
+        const prevDy = prevSegment.end.y - prevSegment.start.y;
+        const currDx = segment.end.x - segment.start.x;
+        const currDy = segment.end.y - segment.start.y;
+        const prevAngle = Math.atan2(prevDy, prevDx);
+        const currAngle = Math.atan2(currDy, currDx);
+        const fromCornerBack = prevAngle + Math.PI;
+        const fromCornerFwd = currAngle;
+        const exteriorBisector = (fromCornerBack + fromCornerFwd) / 2 + Math.PI;
+        const angleDist = 58 * (scale / 80);
+        const angleX = startX + Math.cos(exteriorBisector) * angleDist;
+        const angleY = startY + Math.sin(exteriorBisector) * angleDist;
+        ctx.fillStyle = '#6b21a8';
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
+      }
+    });
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+
+  async function handleSaveTrimDrawingPDF() {
+    if (!showDrawing || !canvasReady) {
+      toast.error('Drawing not ready. Wait for the canvas to load.');
+      return;
+    }
+    if (drawing.segments.length === 0) {
+      toast.error('Draw at least one segment before saving as PDF.');
+      return;
+    }
+    try {
+      toast.loading('Saving PDF...', { id: 'trim-pdf' });
+      const { default: jsPDF } = await import('jspdf');
+      const doc = new jsPDF('p', 'pt', 'letter');
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const pdfW = pageW - margin * 2;
+      const pdfH = pageH - margin * 2;
+      const dpr = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = pdfW * dpr;
+      canvas.height = pdfH * dpr;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+      drawTrimToPdfCanvas(ctx, pdfW * dpr, pdfH * dpr, drawing.segments, angleDisplayMode);
+      const imgData = canvas.toDataURL('image/png');
+      doc.addImage(imgData, 'PNG', margin, margin, pdfW, pdfH);
+      const filename = `Trim-Drawing-${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(filename);
+      toast.success('Trim drawing saved as PDF', { id: 'trim-pdf' });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to save PDF', { id: 'trim-pdf' });
+    }
   }
 
   function calculateTotalLength() {
@@ -1894,6 +2015,17 @@ export function TrimPricingCalculator() {
               >
                 <Trash className="w-3 h-3 mr-1" />
                 Clear
+              </Button>
+              
+              <Button
+                onClick={handleSaveTrimDrawingPDF}
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 border border-blue-600 text-blue-600 hover:bg-blue-50 text-xs"
+                title="Save drawing as PDF"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                Save as PDF
               </Button>
               
               {/* Add Hem Button - Available when segment selected or last segment exists */}

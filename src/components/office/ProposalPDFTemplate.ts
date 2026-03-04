@@ -27,8 +27,9 @@ export function generateProposalHTML(data: {
   showInternalDetails?: boolean;
   templateSettings?: any; // Template customization settings
   theme?: 'default' | 'premium'; // premium = dark green + gold modern look
+  taxExempt?: boolean; // when true, show "Tax Exempt" on printout and tax amount is 0
 }): string {
-  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false, templateSettings, theme = 'default' } = data;
+  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false, templateSettings, theme = 'default', taxExempt = false } = data;
   const isPremium = theme === 'premium';
 
   // Apply template settings or use defaults
@@ -651,8 +652,8 @@ export function generateProposalHTML(data: {
                 <td style="text-align: right; padding: 5px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
-                <td style="text-align: right; padding: 5px;"><strong>Sales Tax (7%):</strong></td>
-                <td style="text-align: right; padding: 5px;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right; padding: 5px;"><strong>${taxExempt ? 'Tax:' : 'Sales Tax (7%):'}</strong></td>
+                <td style="text-align: right; padding: 5px;">${taxExempt ? 'Tax Exempt' : '$' + totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr class="summary-table-total" style="border-top: 2px solid #333;">
                 <td style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 12pt;">GRAND TOTAL:</strong></td>
@@ -724,8 +725,8 @@ export function generateProposalHTML(data: {
                 <td style="text-align: right; width: 150px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
-                <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
-                <td style="text-align: right;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right;"><strong>${taxExempt ? 'Tax:' : 'Sales Tax (7%):'}</strong></td>
+                <td style="text-align: right;">${taxExempt ? 'Tax Exempt' : '$' + totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr class="summary-table-total">
                 <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>

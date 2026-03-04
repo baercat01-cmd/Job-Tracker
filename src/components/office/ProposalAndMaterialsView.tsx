@@ -50,10 +50,10 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
         {/* Proposal panel — narrower in split so materials workbook has more room */}
         <div
           className={`min-w-0 flex flex-col bg-white overflow-auto transition-all ${
-            isSplit ? 'w-2/5 min-w-[280px] border-r border-slate-200' : 'w-full'
+            isSplit ? 'w-2/5 min-w-[260px] border-r border-slate-200' : 'w-full'
           } ${showProposal ? '' : 'hidden'}`}
         >
-          <div className="max-w-4xl mx-auto space-y-2 pt-0 pb-2 px-3 w-full">
+          <div className="w-full max-w-full mx-auto space-y-2 pt-0 pb-2 px-3">
             <Suspense fallback={<PanelFallback />}>
               <JobFinancials
                 job={job}
@@ -64,11 +64,11 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
           </div>
         </div>
 
-        {/* Materials panel — wider in split to show full workbook */}
+        {/* Materials panel — flex-1 so it uses remaining space; scrolls to show all data */}
         <div
-          className={`min-w-0 flex flex-col bg-slate-50 overflow-auto flex-1 ${
-            isSplit ? 'min-w-0' : 'w-full'
-          } ${showMaterials ? '' : 'hidden'}`}
+          className={`min-w-0 flex flex-col bg-slate-50 overflow-auto flex-1 w-full ${
+            showMaterials ? '' : 'hidden'
+          }`}
         >
           <Suspense fallback={<PanelFallback />}>
             <MaterialsManagement

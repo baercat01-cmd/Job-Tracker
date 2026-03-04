@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, Calendar, FileText, Settings, Printer, Send, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, Settings, Printer, Send, CheckCircle, GitCompare } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -37,6 +37,7 @@ import { generateProposalHTML } from './ProposalPDFTemplate';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 import { ProposalTemplateEditor } from './ProposalTemplateEditor';
 import { BulkMaterialMover } from './BulkMaterialMover';
+import { ProposalComparisonView } from './ProposalComparisonView';
 import { useProposalToolbar } from '@/contexts/JobDetailProposalToolbarContext';
 import { useProposalSummary } from '@/contexts/ProposalSummaryContext';
 import type { Job } from '@/types';
@@ -160,6 +161,8 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
     openAddDialog,
     openLineItemDialog,
     openSubcontractorDialog,
+    openAddSubcontractorLineItemDialog,
+    openEditSubcontractorLineItemDialog,
     deleteRow,
     deleteSheetLabor,
     toggleSubcontractorLineItem,
@@ -856,11 +859,21 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                     <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
                                       ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                     </p>
+                                    {!isReadOnly && (
+                                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700" onClick={() => openEditSubcontractorLineItemDialog(lineItem)} title="Edit line item">
+                                        <Edit className="w-3 h-3" />
+                                      </Button>
+                                    )}
                                   </div>
                                 </div>
                               </div>
                             ))}
                           </div>
+                        )}
+                        {!isReadOnly && (
+                          <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={() => openAddSubcontractorLineItemDialog(sub.id)}>
+                            <Plus className="w-3 h-3 mr-1" />Add line item
+                          </Button>
                         )}
                         {sub.exclusions && (
                           <div className="mt-3 pt-3 border-t border-slate-200">
@@ -1363,11 +1376,21 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                       <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
                                         ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                       </p>
+                                      {!isReadOnly && (
+                                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700" onClick={() => openEditSubcontractorLineItemDialog(lineItem)} title="Edit line item">
+                                          <Edit className="w-3 h-3" />
+                                        </Button>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
                               ))}
                             </div>
+                          )}
+                          {!isReadOnly && (
+                            <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={() => openAddSubcontractorLineItemDialog(sub.id)}>
+                              <Plus className="w-3 h-3 mr-1" />Add line item
+                            </Button>
                           )}
                           {sub.exclusions && (
                             <div className="mt-3 pt-3 border-t border-slate-200">
@@ -1613,11 +1636,22 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                           <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
                             ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
+                          {!isReadOnly && (
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700" onClick={() => openEditSubcontractorLineItemDialog(lineItem)} title="Edit line item">
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
+              )}
+
+              {!isReadOnly && (
+                <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={() => openAddSubcontractorLineItemDialog(est.id)}>
+                  <Plus className="w-3 h-3 mr-1" />Add line item
+                </Button>
               )}
 
               {est.exclusions && (
@@ -1734,6 +1768,17 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [subcontractorMode, setSubcontractorMode] = useState<'select' | 'upload'>('select');
   const [selectedExistingSubcontractor, setSelectedExistingSubcontractor] = useState<string>('');
 
+  // Add line item to subcontractor section
+  const [showAddSubcontractorLineItemDialog, setShowAddSubcontractorLineItemDialog] = useState(false);
+  const [addSubcontractorLineItemEstimateId, setAddSubcontractorLineItemEstimateId] = useState<string | null>(null);
+  const [subLineItemDescription, setSubLineItemDescription] = useState('');
+  const [subLineItemQuantity, setSubLineItemQuantity] = useState('1');
+  const [subLineItemUnitPrice, setSubLineItemUnitPrice] = useState('');
+  const [subLineItemType, setSubLineItemType] = useState<'material' | 'labor'>('material');
+  const [subLineItemTaxable, setSubLineItemTaxable] = useState(true);
+  const [showEditSubcontractorLineItemDialog, setShowEditSubcontractorLineItemDialog] = useState(false);
+  const [editingSubcontractorLineItemId, setEditingSubcontractorLineItemId] = useState<string | null>(null);
+
   // Remove tab state - this is now a single-view component (Proposal only)
 
   // Form state for custom rows
@@ -1773,6 +1818,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
+  const [showProposalComparison, setShowProposalComparison] = useState(false);
   const [templateQuoteIdForNewProposal, setTemplateQuoteIdForNewProposal] = useState<string | null>(null);
   
   // Use ref to track user's selected quote ID (persists across re-renders)
@@ -1790,12 +1836,21 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [initializingVersions, setInitializingVersions] = useState(false);
-  
-  // Computed: Read-only when viewing historical proposal, or when proposal was marked as sent
-  const isReadOnly = !!quote && (
+  // When user explicitly unlocks a historical proposal for editing, allow edits until they lock again or switch proposal
+  const [historicalUnlockedQuoteId, setHistoricalUnlockedQuoteId] = useState<string | null>(null);
+
+  // Clear unlock when switching to a different proposal so each historical proposal starts locked
+  useEffect(() => {
+    if (quote?.id && quote.id !== historicalUnlockedQuoteId) setHistoricalUnlockedQuoteId(null);
+  }, [quote?.id]);
+
+  // Default locked: historical (not first) or marked as sent
+  const isDefaultLocked = !!quote && (
     (allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id) ||
     !!(quote as any).sent_at
   );
+  // Read-only unless user has unlocked this proposal for editing
+  const isReadOnly = isDefaultLocked && quote?.id !== historicalUnlockedQuoteId;
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -1849,10 +1904,14 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     setBuildingDescription((quote as any)?.description ?? '');
   }, [quote?.id, (quote as any)?.description]);
 
-  // Sync tax exempt checkbox from quote when quote loads/changes (DB may have tax_exempt; if not, local state still drives total)
+  // Sync tax exempt from quote when quote loads (persists after refresh: loadQuoteData merges tax_exempt from API or get_job_quotes_tax_exempt RPC)
   useEffect(() => {
-    const fromQuote = quote != null && (quote as any).tax_exempt === true;
-    setTaxExemptChecked(fromQuote);
+    if (quote == null) {
+      setTaxExemptChecked(false);
+      return;
+    }
+    const taxExempt = (quote as any).tax_exempt;
+    setTaxExemptChecked(taxExempt === true);
   }, [quote?.id, (quote as any)?.tax_exempt]);
 
   // Notify parent when proposal changes (for combined Proposal+Materials view).
@@ -1892,6 +1951,19 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       userSelectedQuoteIdRef.current = controlledQuoteId;
     }
   }, [controlledQuoteId, allJobQuotes.length, quote?.id]);
+
+  // When the materials workbook saves a change, refresh materials (and thus proposal totals) in real time
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { jobId, quoteId } = (e as CustomEvent).detail ?? {};
+      if (jobId !== job.id) return;
+      if (quoteId != null && quote?.id != null && quoteId !== quote.id) return;
+      const isHist = !!quote && allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id && quote.id !== historicalUnlockedQuoteId;
+      loadMaterialsData(quote?.id ?? null, isHist);
+    };
+    window.addEventListener('materials-workbook-updated', handler as EventListener);
+    return () => window.removeEventListener('materials-workbook-updated', handler as EventListener);
+  }, [job.id, quote?.id, allJobQuotes.length, historicalUnlockedQuoteId]);
 
   // Auto-create first proposal (with -1 suffix) for new jobs
   useEffect(() => {
@@ -2465,7 +2537,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     try {
       let quoteData: any = null;
       
-      // Single query: load ALL quotes for this job (for navigation + selected quote)
+      // Single query: load ALL quotes for this job (tax_exempt is in * when column exists)
       const { data: allQuotes, error: allQuotesError } = await supabase
         .from('quotes')
         .select('*')
@@ -2477,10 +2549,20 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         return undefined;
       }
       
-      const quotesList = allQuotes || [];
+      let quotesList: any[] = allQuotes || [];
+
+      // Persist tax exempt after refresh: if API didn't return tax_exempt (e.g. schema cache not reloaded), fetch via RPC and merge
+      if (quotesList.length > 0 && quotesList.some((q: any) => q.tax_exempt === undefined)) {
+        const { data: taxRows, error: taxErr } = await supabase.rpc('get_job_quotes_tax_exempt', { p_job_id: job.id });
+        if (!taxErr && Array.isArray(taxRows) && taxRows.length > 0) {
+          const byId = new Map((taxRows as { quote_id: string; tax_exempt: boolean }[]).map((r) => [r.quote_id, r.tax_exempt]));
+          quotesList = quotesList.map((q: any) => (byId.has(q.id) ? { ...q, tax_exempt: byId.get(q.id) } : q));
+        }
+      }
+
       setAllJobQuotes(quotesList);
 
-      // When job already has quotes, use that list (no second query)
+      // When job already has quotes, use that list (no second query). Prefer entry from quotesList so tax_exempt is from DB/RPC.
       if (quotesList.length > 0) {
         if (userSelectedQuoteIdRef.current) {
           const selectedQuote = quotesList.find((q: any) => q.id === userSelectedQuoteIdRef.current);
@@ -2490,7 +2572,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
           quoteData = quotesList[0];
           userSelectedQuoteIdRef.current = quoteData.id;
         } else {
-          quoteData = quote;
+          const fromList = quotesList.find((q: any) => q.id === quote.id);
+          quoteData = fromList ?? quote;
         }
         setQuote(quoteData);
         return quoteData;
@@ -2597,6 +2680,12 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         if (!newQuoteId) throw new Error('No quote_id returned');
         const { data: newQuote, error: fetchError } = await supabase.from('quotes').select('*').eq('id', newQuoteId).single();
         if (fetchError) throw fetchError;
+        // Keep job tax-exempt: if any existing quote for this job is tax exempt, set the new quote too
+        const jobTaxExempt = allJobQuotes.some((q: any) => q.tax_exempt === true) || (quote?.tax_exempt === true);
+        if (jobTaxExempt && !(newQuote as any).tax_exempt) {
+          await supabase.from('quotes').update({ tax_exempt: true }).eq('id', newQuoteId);
+          (newQuote as any).tax_exempt = true;
+        }
         setQuote(newQuote);
         userSelectedQuoteIdRef.current = newQuote.id;
         toast.success(`New proposal ${newQuote.proposal_number} created. You can add materials and rows.`);
@@ -2621,40 +2710,83 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       const oldQuoteId = templateQuoteIdForNewProposal;
       const isCloningCurrent = oldQuoteId === quote?.id;
 
+      // ── Step 0: When cloning current proposal, persist any in-memory labor (and ensure source is saved) so copy uses latest data ──
+      if (isCloningCurrent) {
+        try {
+          for (const sheet of materialSheets) {
+            const sheetId = sheet.id ?? sheet.sheetId;
+            if (!sheetId) continue;
+            const labor = sheetLabor[sheetId];
+            if (!labor) continue;
+            const laborData = {
+              sheet_id: sheetId,
+              description: labor.description ?? null,
+              estimated_hours: labor.estimated_hours ?? 0,
+              hourly_rate: labor.hourly_rate ?? 0,
+              notes: labor.notes ?? null,
+            };
+            if (labor.id) {
+              await supabase.from('material_sheet_labor').update(laborData).eq('id', labor.id);
+            } else {
+              await supabase.from('material_sheet_labor').insert([laborData]);
+            }
+          }
+        } catch (e) {
+          console.warn('Persist source labor before copy (non-fatal):', e);
+        }
+      }
+
       // ── Step 1: Create the new quotes row (from template quote data) ──
-      const { data: newQuoteRow, error: quoteErr } = await supabase
-        .from('quotes')
-        .insert({
-          job_id: job.id,
-          customer_name:    (sourceQuote as any).customer_name    ?? null,
-          customer_address: (sourceQuote as any).customer_address ?? null,
-          customer_email:   (sourceQuote as any).customer_email   ?? null,
-          customer_phone:   (sourceQuote as any).customer_phone   ?? null,
-          project_name:     (sourceQuote as any).project_name     ?? null,
-          width:            (sourceQuote as any).width             ?? 0,
-          length:           (sourceQuote as any).length            ?? 0,
-          status:           'draft',
-          created_by:       profile.id,
-          description:      (sourceQuote as any).description       ?? null,
-          estimated_price:  (sourceQuote as any).estimated_price   ?? null,
-        })
-        .select()
-        .single();
-      if (quoteErr) throw new Error(`Step 1 (create quote): ${quoteErr.message}`);
+      const quotePayload: Record<string, unknown> = {
+        job_id: job.id,
+        customer_name:    (sourceQuote as any).customer_name    ?? null,
+        customer_address: (sourceQuote as any).customer_address ?? null,
+        customer_email:   (sourceQuote as any).customer_email   ?? null,
+        customer_phone:   (sourceQuote as any).customer_phone   ?? null,
+        project_name:     (sourceQuote as any).project_name     ?? null,
+        width:            (sourceQuote as any).width             ?? 0,
+        length:           (sourceQuote as any).length            ?? 0,
+        status:           'draft',
+        created_by:       profile.id,
+        estimated_price:  (sourceQuote as any).estimated_price   ?? null,
+        tax_exempt:       (sourceQuote as any).tax_exempt === true,
+      };
+      const payloadWithDescription = { ...quotePayload, description: (sourceQuote as any).description ?? null };
+      let result = await supabase.from('quotes').insert(payloadWithDescription).select().single();
+      if (result.error && /description.*schema cache|column.*description/i.test(result.error.message)) {
+        result = await supabase.from('quotes').insert(quotePayload).select().single();
+      }
+      if (result.error && /tax_exempt|schema cache|column.*tax_exempt/i.test(result.error.message)) {
+        const { tax_exempt: _te, ...payloadWithoutTaxExempt } = quotePayload as Record<string, unknown>;
+        result = await supabase.from('quotes').insert(payloadWithoutTaxExempt).select().single();
+      }
+      const quoteErr = result.error;
+      const newQuoteRow = result.data;
+      if (quoteErr || !newQuoteRow) throw new Error(`Step 1 (create quote): ${quoteErr?.message ?? 'No data returned'}`);
       const newQuoteId: string = newQuoteRow.id;
       console.log('✅ Step 1 — new quote row created:', newQuoteRow.proposal_number);
 
-      // ── Step 2: Copy material_workbooks → sheets → items / labor / markups ──
+      // ── Step 2: Copy material_workbooks → sheets → items / labor / markups (single snapshot, no further reads of source) ──
       const sheetIdMap: Record<string, string> = {};
       const snapshotSheets: any[]                          = [];
       const snapshotCategoryMarkups: Record<string, number> = {};
       const snapshotSheetLabor: any[]                      = [];
 
-      const { data: oldWorkbooks, error: wbFetchErr } = await supabase
-        .from('material_workbooks').select('*').eq('quote_id', oldQuoteId);
+      const wbSelect = `
+        id,
+        material_sheets (
+          id, sheet_name, order_index, is_option, description,
+          material_items (*),
+          material_sheet_labor (*),
+          material_category_markups (*)
+        )
+      `;
+      const { data: oldWorkbooksFull, error: wbFetchErr } = await supabase
+        .from('material_workbooks')
+        .select(wbSelect)
+        .eq('quote_id', oldQuoteId);
       if (wbFetchErr) throw new Error(`Step 2 (fetch workbooks): ${wbFetchErr.message}`);
 
-      // Find the highest version_number already used for this job so new workbooks don't collide
       const { data: maxWbRow } = await supabase
         .from('material_workbooks')
         .select('version_number')
@@ -2664,18 +2796,15 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         .maybeSingle();
       let nextWbVersion = (maxWbRow?.version_number ?? 0) + 1;
 
-      for (const wb of (oldWorkbooks || [])) {
+      for (const wb of (oldWorkbooksFull || [])) {
         const { data: newWb, error: wbErr } = await supabase
           .from('material_workbooks')
           .insert({ job_id: job.id, quote_id: newQuoteId, version_number: nextWbVersion++, status: 'working', created_by: profile.id })
           .select('id').single();
         if (wbErr) throw new Error(`Step 2 (insert workbook): ${wbErr.message}`);
 
-        const { data: oldSheets, error: shFetchErr } = await supabase
-          .from('material_sheets').select('*').eq('workbook_id', wb.id).order('order_index');
-        if (shFetchErr) throw new Error(`Step 2 (fetch sheets): ${shFetchErr.message}`);
-
-        for (const sheet of (oldSheets || [])) {
+        const oldSheets = ((wb as any).material_sheets || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        for (const sheet of oldSheets) {
           const { data: newSheet, error: shErr } = await supabase
             .from('material_sheets')
             .insert({ workbook_id: newWb.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index, is_option: sheet.is_option, description: sheet.description })
@@ -2683,57 +2812,42 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
           if (shErr) throw new Error(`Step 2 (insert sheet): ${shErr.message}`);
           sheetIdMap[sheet.id] = newSheet.id;
 
-          // Items
-          const { data: items, error: iFetchErr } = await supabase
-            .from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index');
-          if (iFetchErr) throw new Error(`Step 2 (fetch items): ${iFetchErr.message}`);
-          if (items?.length) {
+          const items = (sheet.material_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+          if (items.length) {
             const { error: iErr } = await supabase.from('material_items').insert(
               items.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }) => ({ ...r, sheet_id: newSheet.id }))
             );
             if (iErr) throw new Error(`Step 2 (insert items): ${iErr.message}`);
           }
 
-          // Labor
-          const { data: labor, error: lFetchErr } = await supabase
-            .from('material_sheet_labor').select('*').eq('sheet_id', sheet.id);
-          if (lFetchErr) throw new Error(`Step 2 (fetch labor): ${lFetchErr.message}`);
-          if (labor?.length) {
+          const labor = sheet.material_sheet_labor || [];
+          if (labor.length) {
             const { error: lErr } = await supabase.from('material_sheet_labor').insert(
-              labor.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }) => ({ ...r, sheet_id: newSheet.id }))
+              labor.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }: any) => ({ ...r, sheet_id: newSheet.id }))
             );
             if (lErr) throw new Error(`Step 2 (insert labor): ${lErr.message}`);
-            labor.forEach(l => snapshotSheetLabor.push({ ...l, sheet_id: sheet.id }));
+            labor.forEach((l: any) => snapshotSheetLabor.push({ ...l, sheet_id: sheet.id }));
           }
 
-          // Category markups
-          const { data: markups, error: mFetchErr } = await supabase
-            .from('material_category_markups').select('*').eq('sheet_id', sheet.id);
-          if (mFetchErr) throw new Error(`Step 2 (fetch markups): ${mFetchErr.message}`);
-          if (markups?.length) {
+          const markups = sheet.material_category_markups || [];
+          if (markups.length) {
             const { error: mErr } = await supabase.from('material_category_markups').insert(
-              markups.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }) => ({ ...r, sheet_id: newSheet.id }))
+              markups.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }: any) => ({ ...r, sheet_id: newSheet.id }))
             );
             if (mErr) throw new Error(`Step 2 (insert markups): ${mErr.message}`);
-            markups.forEach(m => { snapshotCategoryMarkups[`${sheet.id}_${m.category_name}`] = m.markup_percent; });
+            markups.forEach((m: any) => { snapshotCategoryMarkups[`${sheet.id}_${m.category_name}`] = m.markup_percent; });
           }
 
           snapshotSheets.push({
             id: sheet.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index,
             is_option: sheet.is_option, description: sheet.description,
-            items: (items || []),
+            items,
           });
         }
       }
       console.log(`✅ Step 2 — copied ${Object.keys(sheetIdMap).length} sheets`);
 
-      // ── Step 2b: Lock the old proposal's workbooks so edits only affect the new proposal ──
-      const { error: lockErr } = await supabase
-        .from('material_workbooks')
-        .update({ status: 'locked', updated_at: new Date().toISOString() })
-        .eq('quote_id', oldQuoteId);
-      if (lockErr) console.warn('⚠️ Could not lock old workbooks (non-fatal):', lockErr.message);
-      else console.log('✅ Step 2b — locked old proposal workbooks');
+      // (No lock of source proposal — leave template proposal completely unchanged so all data stays intact.)
 
       // ── Step 3: Copy custom_financial_rows and their line items ──
       const rowIdMap: Record<string, string> = {};
@@ -3031,7 +3145,21 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }
 
-  async function loadData(silent = false, targetQuote?: any) {
+  async function unlockHistoricalForEditing() {
+    if (!quote || !isDefaultLocked) return;
+    setHistoricalUnlockedQuoteId(quote.id);
+    await loadData(false, quote, { forceLive: true });
+    toast.success('Editing enabled for this proposal. Changes save to this proposal.');
+  }
+
+  function lockHistoricalAgain() {
+    if (!quote) return;
+    setHistoricalUnlockedQuoteId(null);
+    setTimeout(() => loadData(false, quote), 0);
+    toast.info('Proposal locked. Viewing read-only.');
+  }
+
+  async function loadData(silent = false, targetQuote?: any, options?: { forceLive?: boolean }) {
     // targetQuote must be passed explicitly from navigation functions to avoid
     // the stale-closure bug: setQuote() is async, so `quote` state hasn't
     // committed by the time the load functions run. When undefined (polling),
@@ -3040,11 +3168,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     const effectiveQuote = targetQuote !== undefined ? targetQuote : quote;
     const targetQuoteId: string | null = effectiveQuote?.id ?? null;
 
-    // Compute isHistorical using allJobQuotes — this is safe because allJobQuotes
-    // is only updated by loadQuoteData() and doesn't change during navigation.
-    const isHistorical = !!effectiveQuote
+    // When user has unlocked a historical proposal for editing, load live data for it (or forceLive for this load)
+    const isHistorical = !options?.forceLive && !!effectiveQuote
       && allJobQuotes.length > 0
-      && effectiveQuote.id !== allJobQuotes[0]?.id;
+      && effectiveQuote.id !== allJobQuotes[0]?.id
+      && effectiveQuote.id !== historicalUnlockedQuoteId;
 
     if (!silent) {
       setLoading(true);
@@ -3338,11 +3466,23 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         }
         setCategoryMarkups(categoryMarkupsMap);
         
-        // Load sheet labor from snapshot
+        // Load sheet labor from snapshot first
         const laborMap: Record<string, any> = {};
         if (snapshot.sheet_labor) {
           snapshot.sheet_labor.forEach((labor: any) => {
             laborMap[labor.sheet_id] = labor;
+          });
+        }
+        // Supplement with live labor from DB so labor does not disappear when viewing a locked proposal
+        const sheetIds = sheetsData.map((s: any) => s.id).filter(Boolean);
+        if (sheetIds.length > 0) {
+          const { data: liveLaborRows } = await supabase
+            .from('material_sheet_labor')
+            .select('*')
+            .in('sheet_id', sheetIds);
+          (liveLaborRows || []).forEach((labor: any) => {
+            const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
+            laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
           });
         }
         setSheetLabor(laborMap);
@@ -4568,7 +4708,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
 
     try {
       if (editingLineItem) {
-        const { data: updated, error } = await supabase
+        const { error } = await supabase
           .from('custom_financial_row_items')
           .update(itemData)
           .eq('id', editingLineItem.id)
@@ -4613,7 +4753,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
             .maybeSingle();
 
           if (existing?.id) {
-            const { data: updated, error } = await supabase
+            const { error } = await supabase
               .from('custom_financial_row_items')
               .update(itemData)
               .eq('id', existing.id)
@@ -4752,6 +4892,103 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     } catch (error: any) {
       console.error('Error toggling item type:', error);
       toast.error('Failed to update item type');
+    }
+  }
+
+  function openAddSubcontractorLineItemDialog(estimateId: string) {
+    setAddSubcontractorLineItemEstimateId(estimateId);
+    setSubLineItemDescription('');
+    setSubLineItemQuantity('1');
+    setSubLineItemUnitPrice('');
+    setSubLineItemType('material');
+    setSubLineItemTaxable(true);
+    setShowAddSubcontractorLineItemDialog(true);
+  }
+
+  async function saveAddSubcontractorLineItem() {
+    if (!addSubcontractorLineItemEstimateId || !subLineItemDescription.trim()) {
+      toast.error('Enter a description');
+      return;
+    }
+    const qty = parseFloat(subLineItemQuantity) || 0;
+    const unitPrice = parseFloat(subLineItemUnitPrice) || 0;
+    const totalPrice = qty * unitPrice;
+    if (qty <= 0 || unitPrice < 0) {
+      toast.error('Enter valid quantity and unit price');
+      return;
+    }
+    try {
+      const existing = subcontractorLineItems[addSubcontractorLineItemEstimateId] || [];
+      const maxOrder = existing.length > 0
+        ? Math.max(...existing.map((i: any) => i.order_index ?? 0), -1)
+        : -1;
+      const { error } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .insert({
+          estimate_id: addSubcontractorLineItemEstimateId,
+          description: subLineItemDescription.trim(),
+          quantity: qty,
+          unit_price: unitPrice,
+          total_price: totalPrice,
+          item_type: subLineItemType,
+          taxable: subLineItemType === 'labor' ? false : subLineItemTaxable,
+          excluded: false,
+          order_index: maxOrder + 1,
+          markup_percent: 0,
+        });
+      if (error) throw error;
+      toast.success('Line item added');
+      setShowAddSubcontractorLineItemDialog(false);
+      setAddSubcontractorLineItemEstimateId(null);
+      await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error adding subcontractor line item:', error);
+      toast.error(error?.message || 'Failed to add line item');
+    }
+  }
+
+  function openEditSubcontractorLineItemDialog(lineItem: any) {
+    setSubLineItemDescription(lineItem.description ?? '');
+    setSubLineItemQuantity(String(lineItem.quantity ?? 1));
+    setSubLineItemUnitPrice(lineItem.unit_price != null ? String(lineItem.unit_price) : '');
+    setSubLineItemType((lineItem.item_type || 'material') as 'material' | 'labor');
+    setSubLineItemTaxable(lineItem.item_type === 'labor' ? false : (lineItem.taxable !== false));
+    setEditingSubcontractorLineItemId(lineItem.id);
+    setShowEditSubcontractorLineItemDialog(true);
+  }
+
+  async function saveEditSubcontractorLineItem() {
+    if (!editingSubcontractorLineItemId || !subLineItemDescription.trim()) {
+      toast.error('Enter a description');
+      return;
+    }
+    const qty = parseFloat(subLineItemQuantity) || 0;
+    const unitPrice = parseFloat(subLineItemUnitPrice) || 0;
+    const totalPrice = qty * unitPrice;
+    if (qty <= 0 || unitPrice < 0) {
+      toast.error('Enter valid quantity and unit price');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .update({
+          description: subLineItemDescription.trim(),
+          quantity: qty,
+          unit_price: unitPrice,
+          total_price: totalPrice,
+          item_type: subLineItemType,
+          taxable: subLineItemType === 'labor' ? false : subLineItemTaxable,
+        })
+        .eq('id', editingSubcontractorLineItemId);
+      if (error) throw error;
+      toast.success('Line item updated');
+      setShowEditSubcontractorLineItemDialog(false);
+      setEditingSubcontractorLineItemId(null);
+      await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error updating subcontractor line item:', error);
+      toast.error(error?.message || 'Failed to update line item');
     }
   }
 
@@ -4904,21 +5141,51 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }
 
-  function setQuoteTaxExempt(value: boolean) {
+  async function setQuoteTaxExempt(value: boolean) {
     if (!quote || isReadOnly) return;
-    // Update local state immediately so the total updates (tax removed from grand total)
     setTaxExemptChecked(value);
     setQuote((prev) => (prev ? { ...prev, tax_exempt: value } : prev));
-    setAllJobQuotes((prev) => prev.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q)));
-    toast.success(value ? 'Tax removed from total' : 'Tax applied to total');
-    // Persist to DB in background when column exists (no error toast if it fails)
-    supabase
-      .from('quotes')
-      .update({ tax_exempt: value })
-      .eq('id', quote.id)
-      .then(({ error }) => {
-        if (error) console.warn('Tax exempt preference not persisted (column may not exist):', error.message);
-      });
+    const updatedQuotes = value
+      ? allJobQuotes.map((q: any) => ({ ...q, tax_exempt: true }))
+      : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q));
+    setAllJobQuotes(updatedQuotes);
+
+    // 1) Try direct table update first (works when schema cache exposes tax_exempt)
+    if (value) {
+      const { error: directError } = await supabase.from('quotes').update({ tax_exempt: true }).eq('job_id', job.id).select('id');
+      if (!directError) {
+        toast.success('Job marked tax exempt (saved).');
+        await loadQuoteData();
+        return;
+      }
+    } else {
+      const { error: directError } = await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id).select('id');
+      if (!directError) {
+        toast.success('Tax applied to this proposal.');
+        await loadQuoteData();
+        return;
+      }
+    }
+
+    // 2) Fallback: RPC (works when schema cache does not expose tax_exempt)
+    const { error: rpcError } = await supabase.rpc('set_quote_tax_exempt', {
+      p_job_id: job.id,
+      p_quote_id: quote.id,
+      p_value: value,
+    });
+    if (!rpcError) {
+      toast.success(value ? 'Job marked tax exempt (saved).' : 'Tax applied to this proposal.');
+      await loadQuoteData();
+      return;
+    }
+    console.warn('Tax exempt save failed. Direct error: table update may be blocked by schema. RPC error:', rpcError.message);
+
+    const needRpcSetup = /function.*set_quote_tax_exempt|could not find the function|permission denied|execute.*denied/i.test(rpcError.message);
+    toast.error(
+      needRpcSetup
+        ? 'Tax exempt not saved. Run fix-tax-exempt.sql in Supabase SQL Editor (copy entire file), then in a NEW query run: NOTIFY pgrst, \'reload schema\'; then refresh page.'
+        : 'Tax exempt not saved. Run fix-tax-exempt.sql in Supabase, then NOTIFY pgrst, \'reload schema\'; and refresh.'
+    );
   }
 
   /** Fetch print-ready HTML from the Edge Function for in-app PDF view. */
@@ -5123,6 +5390,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         showSectionPrices: isOfficeView ? false : showLineItems, // Customer version: controlled by checkbox, Office view: always false
         showInternalDetails: isOfficeView,
         theme: exportTheme,
+        taxExempt: taxExemptChecked,
       });
 
       console.log('Generating PDF with HTML');
@@ -5612,8 +5880,40 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   // When inside JobDetailView Proposal & Materials tab, register action buttons for the black header bar
   useEffect(() => {
     if (!setProposalToolbar) return;
+    const currentIndex = quote ? allJobQuotes.findIndex((q: any) => q.id === quote.id) : -1;
     setProposalToolbar(
       <div className="flex flex-wrap items-center gap-1.5">
+        {allJobQuotes.length > 1 && (
+          <>
+            <Button size="sm" variant="outline" onClick={navigateToFirstProposal} disabled={currentIndex <= 0} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40 disabled:opacity-50" title="Go to first proposal">
+              First
+            </Button>
+            <span className="text-xs text-yellow-100/90 font-medium px-1">
+              {currentIndex >= 0 ? currentIndex + 1 : 0} of {allJobQuotes.length}
+            </span>
+            <Button size="sm" variant="outline" onClick={navigateToPreviousProposal} disabled={currentIndex < 0 || currentIndex >= allJobQuotes.length - 1} className="h-8 w-8 p-0 border-yellow-600/40 hover:bg-white/20 text-yellow-100 disabled:opacity-50" title="Previous (older) proposal">
+              <ChevronDown className="w-4 h-4 rotate-90" />
+            </Button>
+            <Button size="sm" variant="outline" onClick={navigateToNextProposal} disabled={currentIndex <= 0} className="h-8 w-8 p-0 border-yellow-600/40 hover:bg-white/20 text-yellow-100 disabled:opacity-50" title="Next (newer) proposal">
+              <ChevronDown className="w-4 h-4 -rotate-90" />
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowProposalComparison(true)} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40" title="Compare any two proposals">
+              <GitCompare className="w-3 h-3 mr-1" />Compare
+            </Button>
+            <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
+          </>
+        )}
+        {quote && isDefaultLocked && (
+          isReadOnly ? (
+            <Button size="sm" variant="outline" onClick={unlockHistoricalForEditing} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40" title="Allow editing this proposal">
+              <LockOpen className="w-3 h-3 mr-1" />Unlock for editing
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={lockHistoricalAgain} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40" title="Switch back to read-only">
+              <Lock className="w-3 h-3 mr-1" />Lock (read-only)
+            </Button>
+          )
+        )}
         <Button onClick={() => setEditingDescription(true)} variant="outline" size="sm" className={headerBtn}>
           <Edit className="w-3 h-3 mr-1" />
           {buildingDescription ? 'Edit Description' : 'Add Description'}
@@ -5649,7 +5949,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       </div>
     );
     return () => { setProposalToolbar(null); };
-  }, [setProposalToolbar, quote?.id, buildingDescription, creatingVersion, isReadOnly, proposalVersions?.length, quote?.signed_version]);
+  }, [setProposalToolbar, quote?.id, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version]);
 
   // Sync proposal summary to green header bar (Proposal #, Materials, Labor, Grand Total)
   useEffect(() => {
@@ -5732,6 +6032,17 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                     Historical View
                   </Badge>
                 )}
+                {isDefaultLocked && (
+                  isReadOnly ? (
+                    <Button size="sm" variant="outline" onClick={unlockHistoricalForEditing} className="h-7 text-xs border-amber-400 text-amber-800 hover:bg-amber-50" title="Allow editing this proposal">
+                      <LockOpen className="w-3 h-3 mr-1" />Unlock for editing
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={lockHistoricalAgain} className="h-7 text-xs border-slate-400 text-slate-700 hover:bg-slate-50" title="Switch back to read-only">
+                      <Lock className="w-3 h-3 mr-1" />Lock (read-only)
+                    </Button>
+                  )
+                )}
               </div>
 
               {/* Right: Navigation Controls (only show if multiple proposals exist) */}
@@ -5773,6 +6084,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                     </Button>
                   </div>
                 </div>
+              )}
+              {allJobQuotes.length > 1 && (
+                <Button size="sm" variant="outline" onClick={() => setShowProposalComparison(true)} className="border-blue-300 text-blue-700 hover:bg-blue-50">
+                  <GitCompare className="w-3 h-3 mr-1" />Compare proposals
+                </Button>
               )}
             </div>
           </CardContent>
@@ -5847,9 +6163,9 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         </div>
         )}
 
-        {/* Proposal Content - Full width */}
-          <div className="max-w-[1400px] mx-auto px-4">
-            <div className="w-full">
+        {/* Proposal content — full width of container so it fits any screen */}
+          <div className="w-full max-w-full mx-auto px-3 sm:px-4">
+            <div className="w-full min-w-0">
               <div className="flex-1 min-w-0 space-y-1">
                 <DndContext
                   sensors={sensors}
@@ -5885,6 +6201,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                         openAddDialog={openAddDialog}
                         openLineItemDialog={openLineItemDialog}
                         openSubcontractorDialog={openSubcontractorDialog}
+                        openAddSubcontractorLineItemDialog={openAddSubcontractorLineItemDialog}
+                        openEditSubcontractorLineItemDialog={openEditSubcontractorLineItemDialog}
                         deleteRow={deleteRow}
                         deleteSheetLabor={deleteSheetLabor}
                         toggleSubcontractorLineItem={toggleSubcontractorLineItem}
@@ -5937,6 +6255,140 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
               <Button onClick={saveSheetDescription}>
                 Save
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add line item to subcontractor */}
+      <Dialog open={showAddSubcontractorLineItemDialog} onOpenChange={(open) => { if (!open) setAddSubcontractorLineItemEstimateId(null); setShowAddSubcontractorLineItemDialog(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add line item to subcontractor</DialogTitle>
+            <DialogDescription>
+              Add a custom material or labor line item to this subcontract section.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={subLineItemDescription}
+                onChange={(e) => setSubLineItemDescription(e.target.value)}
+                placeholder="e.g., Additional trim, Installation labor"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={subLineItemQuantity}
+                  onChange={(e) => setSubLineItemQuantity(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Unit price ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={subLineItemUnitPrice}
+                  onChange={(e) => setSubLineItemUnitPrice(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select value={subLineItemType} onValueChange={(v: 'material' | 'labor') => { setSubLineItemType(v); if (v === 'labor') setSubLineItemTaxable(false); }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="material">Material</SelectItem>
+                  <SelectItem value="labor">Labor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {subLineItemType === 'material' && (
+              <label className="flex items-center gap-2">
+                <Checkbox checked={subLineItemTaxable} onCheckedChange={(c) => setSubLineItemTaxable(!!c)} />
+                <span className="text-sm">Taxable</span>
+              </label>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowAddSubcontractorLineItemDialog(false)}>Cancel</Button>
+              <Button onClick={saveAddSubcontractorLineItem}>Add line item</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit subcontractor line item */}
+      <Dialog open={showEditSubcontractorLineItemDialog} onOpenChange={(open) => { if (!open) setEditingSubcontractorLineItemId(null); setShowEditSubcontractorLineItemDialog(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit line item</DialogTitle>
+            <DialogDescription>
+              Change description, quantity, unit price, or type for this subcontractor line item.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={subLineItemDescription}
+                onChange={(e) => setSubLineItemDescription(e.target.value)}
+                placeholder="e.g., Additional trim, Installation labor"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={subLineItemQuantity}
+                  onChange={(e) => setSubLineItemQuantity(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Unit price ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={subLineItemUnitPrice}
+                  onChange={(e) => setSubLineItemUnitPrice(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select value={subLineItemType} onValueChange={(v: 'material' | 'labor') => { setSubLineItemType(v); if (v === 'labor') setSubLineItemTaxable(false); }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="material">Material</SelectItem>
+                  <SelectItem value="labor">Labor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {subLineItemType === 'material' && (
+              <label className="flex items-center gap-2">
+                <Checkbox checked={subLineItemTaxable} onCheckedChange={(c) => setSubLineItemTaxable(!!c)} />
+                <span className="text-sm">Taxable</span>
+              </label>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowEditSubcontractorLineItemDialog(false)}>Cancel</Button>
+              <Button onClick={saveEditSubcontractorLineItem}>Save changes</Button>
             </div>
           </div>
         </DialogContent>
@@ -6836,6 +7288,17 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Compare two proposals */}
+      <Dialog open={showProposalComparison} onOpenChange={setShowProposalComparison}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <ProposalComparisonView
+            job={job}
+            quotes={allJobQuotes.map((q: any) => ({ id: q.id, proposal_number: q.proposal_number, quote_number: q.quote_number, created_at: q.created_at }))}
+            onClose={() => setShowProposalComparison(false)}
+          />
         </DialogContent>
       </Dialog>
 

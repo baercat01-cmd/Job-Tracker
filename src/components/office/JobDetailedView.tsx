@@ -1725,7 +1725,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </TabsContent>
 
         {/* forceMount keeps the panel alive across tab switches — data persists, no cold-restart */}
-        <TabsContent forceMount value="proposal-materials" className="w-full h-[calc(100vh-8rem)] min-h-[600px] data-[state=inactive]:hidden">
+        <TabsContent forceMount value="proposal-materials" className="w-full flex flex-col min-h-0 data-[state=inactive]:hidden h-[calc(100vh-8rem)] min-h-[400px] sm:min-h-[520px]">
           <ProposalAndMaterialsView job={job} userId={profile?.id} viewMode={proposalViewMode} onViewModeChange={setProposalViewMode} />
         </TabsContent>
 
