@@ -4708,7 +4708,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
 
     try {
       if (editingLineItem) {
-        const { error } = await supabase
+        const { data: updated, error } = await supabase
           .from('custom_financial_row_items')
           .update(itemData)
           .eq('id', editingLineItem.id)
@@ -4753,7 +4753,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
             .maybeSingle();
 
           if (existing?.id) {
-            const { error } = await supabase
+            const { data: updated, error } = await supabase
               .from('custom_financial_row_items')
               .update(itemData)
               .eq('id', existing.id)
