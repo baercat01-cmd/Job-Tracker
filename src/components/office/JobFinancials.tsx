@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, Calendar, FileText, Settings, Printer, Send, CheckCircle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
@@ -167,12 +168,18 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
     unlinkSubcontractor,
     updateSubcontractorMarkup,
     updateCustomRowMarkup,
+    updateCustomRowBaseCost,
+    updateLineItemCost,
     deleteLineItem,
     loadMaterialsData,
     loadCustomRows,
     loadSubcontractorEstimates,
     customRows,
     savingMarkupsRef,
+    emptyNotesById = {},
+    setEmptyNotesById = () => {},
+    emptyScopeById = {},
+    setEmptyScopeById = () => {},
   } = props;
 
   const content = (() => {
@@ -515,7 +522,23 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             </Badge>
                             {!isLabor && (
                               <div className="flex items-center gap-1">
-                              <span className="text-xs text-slate-600">${itemCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <Input
+                                type="number"
+                                key={`linked-row-cost-${row.id}-${itemCost}`}
+                                defaultValue={itemCost}
+                                onBlur={(e) => {
+                                  if (isReadOnly) return;
+                                  const raw = parseFloat(e.target.value);
+                                  if (!Number.isFinite(raw) || raw < 0) return;
+                                  const v = Math.round(raw * 100) / 100;
+                                  if (Math.abs(v - itemCost) < 0.01) return;
+                                  updateCustomRowBaseCost(row.id, v, 0);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
+                                step="0.01"
+                                min="0"
+                              />
                               <span className="text-xs text-slate-500">+</span>
                               <Input
                                 type="number"
@@ -606,7 +629,23 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                 {isLabor ? '👷 Labor' : '📦 Material'}
                               </Badge>
                               <div className="flex items-center gap-1">
-                                <span className="text-xs text-slate-600">${itemCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <Input
+                                  type="number"
+                                  key={`sheet-li-cost-${lineItem.id}-${itemCost}`}
+                                  defaultValue={itemCost}
+                                  onBlur={(e) => {
+                                    if (isReadOnly) return;
+                                    const raw = parseFloat(e.target.value);
+                                    if (!Number.isFinite(raw) || raw < 0) return;
+                                    const v = Math.round(raw * 100) / 100;
+                                    if (Math.abs(v - itemCost) < 0.01) return;
+                                    updateLineItemCost(lineItem.id, v);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
+                                  step="0.01"
+                                  min="0"
+                                />
                                 <span className="text-xs text-slate-500">+</span>
                                 <Input
                                   type="number"
@@ -994,55 +1033,66 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
 
           {/* Two-column layout: Description + Pricing */}
           <div className="ml-2 flex gap-2 mt-1">
-            {/* Description column (wide) */}
+            {/* Description column (full width, height fits content) */}
             <div className="flex-1 min-w-0">
-              {row.notes ? (
-                <Textarea
-                  key={`row-notes-${row.id}-${row.notes}`}
-                  defaultValue={row.notes || ''}
-                  placeholder="Click to add notes..."
-                  className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={(() => {
-                    const lines = row.notes.split('\n');
-                    const lineCount = lines.length;
-                    // Estimate wrapped lines (assume ~90 chars per line with current width)
-                    const wrappedLines = lines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0);
-                    return Math.max(2, wrappedLines);
-                  })()}
-                  onBlur={async (e) => {
-                    if (isReadOnly) {
-                      toast.error('Cannot edit in historical view');
-                      e.target.value = row.notes || '';
-                      return;
+              <Textarea
+                key={`row-notes-${row.id}-${row.notes ?? ''}`}
+                defaultValue={row.notes || ''}
+                placeholder="Add description..."
+                className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0 placeholder:italic placeholder:text-muted-foreground w-full min-w-0 min-h-0 resize-none"
+                rows={row.notes ? (() => {
+                  const lines = row.notes.split('\n');
+                  const wrappedLines = lines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0);
+                  return Math.max(2, wrappedLines);
+                })() : 2}
+                onChange={(e) => setEmptyNotesById((prev) => ({ ...prev, [row.id]: e.target.value.trim() === '' }))}
+                onBlur={async (e) => {
+                  if (isReadOnly) {
+                    toast.error('Cannot edit in historical view');
+                    e.target.value = row.notes || '';
+                    return;
+                  }
+                  const newValue = e.target.value.trim();
+                  setEmptyNotesById((prev) => ({ ...prev, [row.id]: newValue === '' }));
+                  if (newValue !== (row.notes || '')) {
+                    try {
+                      await supabase
+                        .from('custom_financial_rows')
+                        .update({ notes: newValue || null })
+                        .eq('id', row.id);
+                      await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+                      await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+                    } catch (error) {
+                      console.error('Error saving notes:', error);
                     }
-                    const newValue = e.target.value.trim();
-                    if (newValue !== (row.notes || '')) {
-                      try {
-                        await supabase
-                          .from('custom_financial_rows')
-                          .update({ notes: newValue || null })
-                          .eq('id', row.id);
-                        await loadCustomRows(quote?.id ?? null, !!isReadOnly);
-                        await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
-                      } catch (error) {
-                        console.error('Error saving notes:', error);
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div className="text-xs text-muted-foreground italic py-1">
-                  No description
-                </div>
-              )}
+                  }
+                }}
+              />
             </div>
 
             {/* Pricing column (narrow) */}
             <div className="w-[120px] flex-shrink-0 text-right">
               {/* Only show row-level markup if NO line items exist */}
               {lineItems.length === 0 && (
-                <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
-                  <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1 flex-wrap">
+                  <span className="shrink-0">Base:</span>
+                  <Input
+                    type="number"
+                    key={`base-cost-${row.id}-${baseCost}`}
+                    defaultValue={baseCost}
+                    onBlur={(e) => {
+                      if (isReadOnly) return;
+                      const raw = parseFloat(e.target.value);
+                      if (!Number.isFinite(raw) || raw < 0) return;
+                      const newBase = Math.round(raw * 100) / 100;
+                      if (Math.abs(newBase - baseCost) < 0.01) return;
+                      updateCustomRowBaseCost(row.id, newBase, linkedSubsTaxableTotal);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
+                    step="0.01"
+                    min="0"
+                  />
                   <span>+</span>
                   <Input
                     type="number"
@@ -1103,7 +1153,23 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                 {isLabor ? '👷 Labor' : '📦 Material'}
                               </Badge>
                               <div className="flex items-center gap-1">
-                                <span className="text-xs text-slate-600">${itemCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <Input
+                                  type="number"
+                                  key={`row-li-cost-${lineItem.id}-${itemCost}`}
+                                  defaultValue={itemCost}
+                                  onBlur={(e) => {
+                                    if (isReadOnly) return;
+                                    const raw = parseFloat(e.target.value);
+                                    if (!Number.isFinite(raw) || raw < 0) return;
+                                    const v = Math.round(raw * 100) / 100;
+                                    if (Math.abs(v - itemCost) < 0.01) return;
+                                    updateLineItemCost(lineItem.id, v);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
+                                  step="0.01"
+                                  min="0"
+                                />
                                 <span className="text-xs text-slate-500">+</span>
                                 <Input
                                   type="number"
@@ -1400,46 +1466,40 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
 
           {/* Two-column layout: Description + Pricing */}
           <div className="ml-2 flex gap-2 mt-1">
-            {/* Description column (wide) */}
+            {/* Description column (full width, height fits content) */}
             <div className="flex-1 min-w-0">
-              {est.scope_of_work ? (
-                <Textarea
-                  key={`sub-scope-${est.id}-${est.scope_of_work}`}
-                  defaultValue={est.scope_of_work || ''}
-                  placeholder="Click to add description..."
-                  className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={(() => {
-                    const lines = est.scope_of_work.split('\n');
-                    const lineCount = lines.length;
-                    // Estimate wrapped lines (assume ~90 chars per line with current width)
-                    const wrappedLines = lines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0);
-                    return Math.max(2, wrappedLines);
-                  })()}
-                  onBlur={async (e) => {
-                    if (isReadOnly) {
-                      toast.error('Cannot edit in historical view');
-                      e.target.value = est.scope_of_work || '';
-                      return;
+              <Textarea
+                key={`sub-scope-${est.id}-${est.scope_of_work ?? ''}`}
+                defaultValue={est.scope_of_work || ''}
+                placeholder="Add description..."
+                className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0 placeholder:italic placeholder:text-muted-foreground w-full min-w-0 min-h-0 resize-none"
+                rows={est.scope_of_work ? (() => {
+                  const lines = est.scope_of_work.split('\n');
+                  const wrappedLines = lines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0);
+                  return Math.max(2, wrappedLines);
+                })() : 2}
+                onChange={(e) => setEmptyScopeById((prev) => ({ ...prev, [est.id]: e.target.value.trim() === '' }))}
+                onBlur={async (e) => {
+                  if (isReadOnly) {
+                    toast.error('Cannot edit in historical view');
+                    e.target.value = est.scope_of_work || '';
+                    return;
+                  }
+                  const newValue = e.target.value.trim();
+                  setEmptyScopeById((prev) => ({ ...prev, [est.id]: newValue === '' }));
+                  if (newValue !== (est.scope_of_work || '')) {
+                    try {
+                      await supabase
+                        .from('subcontractor_estimates')
+                        .update({ scope_of_work: newValue || null })
+                        .eq('id', est.id);
+                      await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+                    } catch (error) {
+                      console.error('Error saving scope of work:', error);
                     }
-                    const newValue = e.target.value.trim();
-                    if (newValue !== (est.scope_of_work || '')) {
-                      try {
-                        await supabase
-                          .from('subcontractor_estimates')
-                          .update({ scope_of_work: newValue || null })
-                          .eq('id', est.id);
-                        await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
-                      } catch (error) {
-                        console.error('Error saving scope of work:', error);
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div className="text-xs text-muted-foreground italic py-1">
-                  No description
-                </div>
-              )}
+                  }
+                }}
+              />
             </div>
 
             {/* Pricing column: Material (taxable) and Labor (non-taxable) split */}
@@ -1660,7 +1720,13 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
   const [subcontractorLineItems, setSubcontractorLineItems] = useState<Record<string, any[]>>({});
   const [linkedSubcontractors, setLinkedSubcontractors] = useState<Record<string, any[]>>({});
-  
+  // Track empty description boxes so we can show narrow width (width of placeholder text)
+  const [emptyNotesById, setEmptyNotesById] = useState<Record<string, boolean>>({});
+  const [emptyScopeById, setEmptyScopeById] = useState<Record<string, boolean>>({});
+
+  // Tax exempt: local state so the total updates immediately; optional DB persist when column exists
+  const [taxExemptChecked, setTaxExemptChecked] = useState(false);
+
   // Subcontractor dialog state
   const [showSubcontractorDialog, setShowSubcontractorDialog] = useState(false);
   const [subcontractorParentId, setSubcontractorParentId] = useState<string | null>(null);
@@ -1687,8 +1753,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLineItems, setShowLineItems] = useState(false); // Default to false - no row pricing by default
   const [exportViewType, setExportViewType] = useState<'customer' | 'office'>('customer');
+  const [exportTheme, setExportTheme] = useState<'default' | 'premium'>('default'); // default = black & white; premium = dark green + gold
   const [exporting, setExporting] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [showPdfView, setShowPdfView] = useState(false);
   const [pdfViewHtml, setPdfViewHtml] = useState<string | null>(null);
   const [pdfViewFilename, setPdfViewFilename] = useState<string>('');
@@ -1782,6 +1848,12 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   useEffect(() => {
     setBuildingDescription((quote as any)?.description ?? '');
   }, [quote?.id, (quote as any)?.description]);
+
+  // Sync tax exempt checkbox from quote when quote loads/changes (DB may have tax_exempt; if not, local state still drives total)
+  useEffect(() => {
+    const fromQuote = quote != null && (quote as any).tax_exempt === true;
+    setTaxExemptChecked(fromQuote);
+  }, [quote?.id, (quote as any)?.tax_exempt]);
 
   // Notify parent when proposal changes (for combined Proposal+Materials view).
   // Track last notified ID so we don't send a redundant update that re-triggers sync.
@@ -4766,6 +4838,50 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }
 
+  async function updateCustomRowBaseCost(rowId: string, newTotalBase: number, linkedSubsTotal: number) {
+    if (isReadOnly) return;
+    const newRowCost = Math.max(0, newTotalBase - linkedSubsTotal);
+    try {
+      const { error } = await supabase
+        .from('custom_financial_rows')
+        .update({
+          total_cost: newRowCost,
+          quantity: 1,
+          unit_cost: newRowCost,
+        })
+        .eq('id', rowId);
+
+      if (error) throw error;
+      await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+      await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error updating base cost:', error);
+      toast.error('Failed to update cost');
+    }
+  }
+
+  async function updateLineItemCost(lineItemId: string, newTotalCost: number) {
+    if (isReadOnly) return;
+    const value = Math.max(0, newTotalCost);
+    try {
+      const { error } = await supabase
+        .from('custom_financial_row_items')
+        .update({
+          total_cost: value,
+          quantity: 1,
+          unit_cost: value,
+        })
+        .eq('id', lineItemId);
+
+      if (error) throw error;
+      await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+      await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error updating line item cost:', error);
+      toast.error('Failed to update cost');
+    }
+  }
+
   async function saveBuildingDescription() {
     if (!quote) {
       toast.error('No active proposal to save description to');
@@ -4786,6 +4902,23 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       console.error('Error saving description:', error);
       toast.error('Failed to save description');
     }
+  }
+
+  function setQuoteTaxExempt(value: boolean) {
+    if (!quote || isReadOnly) return;
+    // Update local state immediately so the total updates (tax removed from grand total)
+    setTaxExemptChecked(value);
+    setQuote((prev) => (prev ? { ...prev, tax_exempt: value } : prev));
+    setAllJobQuotes((prev) => prev.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q)));
+    toast.success(value ? 'Tax removed from total' : 'Tax applied to total');
+    // Persist to DB in background when column exists (no error toast if it fails)
+    supabase
+      .from('quotes')
+      .update({ tax_exempt: value })
+      .eq('id', quote.id)
+      .then(({ error }) => {
+        if (error) console.warn('Tax exempt preference not persisted (column may not exist):', error.message);
+      });
   }
 
   /** Fetch print-ready HTML from the Edge Function for in-app PDF view. */
@@ -4838,11 +4971,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         return;
       }
       win.focus();
-      if (forPdf) {
-        toast.info(`Choose "Save as PDF" to download. File will be named ${pdfViewFilename}.`, { duration: 6000 });
-      } else {
-        toast.info('Select your printer to print the proposal.');
-      }
+      if (!forPdf) toast.info('Select your printer to print the proposal.');
       setTimeout(() => {
         try {
           if (!win.closed) win.print();
@@ -4856,45 +4985,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }
 
-  async function handleDownloadPdf() {
+  /** Download PDF using the same print layout — opens print dialog; user chooses "Save as PDF" to get a file that matches the printout exactly. */
+  function handleDownloadPdf() {
     if (!pdfViewHtml || !pdfViewFilename) return;
-    setDownloadingPdf(true);
-    try {
-      const html2pdf = (await import('html2pdf.js')).default;
-      const iframe = document.createElement('iframe');
-      iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden');
-      document.body.appendChild(iframe);
-      const doc = iframe.contentDocument;
-      if (!doc) throw new Error('Could not create document');
-      doc.open();
-      doc.write(pdfViewHtml);
-      doc.close();
-      await new Promise<void>((resolve, reject) => {
-        iframe.onload = () => resolve();
-        iframe.onerror = () => reject(new Error('Failed to load proposal'));
-        if (doc.readyState === 'complete') resolve();
-      });
-      await new Promise(r => setTimeout(r, 400));
-      const element = iframe.contentDocument?.body;
-      if (!element) throw new Error('Could not get proposal content');
-      await html2pdf()
-        .set({
-          margin: 10,
-          filename: pdfViewFilename,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2 },
-          jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
-        })
-        .from(element)
-        .save();
-      document.body.removeChild(iframe);
-      toast.success(`Downloaded ${pdfViewFilename}`);
-    } catch (err: any) {
-      console.error('PDF export error:', err);
-      toast.error(err?.message || 'Failed to download PDF. Try Print then Save as PDF.');
-    } finally {
-      setDownloadingPdf(false);
-    }
+    openPrintDialog(true);
+    toast.info('Choose "Save as PDF" in the dialog to download. The file will look exactly like the printout.', { duration: 6000 });
   }
 
   function handlePrintProposal() {
@@ -5027,6 +5122,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         showLineItems: isOfficeView ? true : showLineItems,
         showSectionPrices: isOfficeView ? false : showLineItems, // Customer version: controlled by checkbox, Office view: always false
         showInternalDetails: isOfficeView,
+        theme: exportTheme,
       });
 
       console.log('Generating PDF with HTML');
@@ -5408,10 +5504,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const materialsSubtotal = proposalMaterialsPrice + subcontractorMaterialsPrice;
   const laborSubtotal = proposalLaborPrice;
   
-  // Tax calculated only on TAXABLE materials (includes taxable portion of custom rows already)
-  const proposalTotalTax = ((Number(proposalMaterialsTaxableOnly) || 0) + (Number(subcontractorMaterialsTaxableOnly) || 0)) * TAX_RATE;
+  // Tax: use local checkbox state so total updates immediately when user checks "Tax exempt"
+  const proposalTotalTaxRaw = ((Number(proposalMaterialsTaxableOnly) || 0) + (Number(subcontractorMaterialsTaxableOnly) || 0)) * TAX_RATE;
+  const proposalTotalTax = taxExemptChecked ? 0 : proposalTotalTaxRaw;
   
-  // Grand total (guard against NaN from missing/undefined breakdown)
+  // Grand total: subtotal + tax (tax is 0 when tax exempt)
   const proposalSubtotal = (Number(materialsSubtotal) || 0) + (Number(laborSubtotal) || 0);
   const proposalGrandTotal = (Number(proposalSubtotal) || 0) + (Number(proposalTotalTax) || 0);
 
@@ -5587,7 +5684,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
 
       {/* Sticky header: project totals stay visible when scrolling (does not move with content) */}
       {quote && setProposalToolbar && (
-        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-4 py-2.5 px-4 mb-3 bg-white border-b border-slate-200 shadow-sm text-sm">
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-4 py-2.5 px-4 mb-0 bg-white border-b border-slate-200 shadow-sm text-sm">
           <span className="font-semibold text-slate-800">Proposal #{quote.proposal_number || quote.quote_number}</span>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Materials:</span>
@@ -5597,8 +5694,17 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Subtotal:</span>
           <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-          <span className="text-slate-600">Tax (7%):</span>
-          <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          {taxExemptChecked ? (
+            <span className="text-amber-700 font-medium">Tax exempt</span>
+          ) : (
+            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></span>
+          )}
+          {!isReadOnly && (
+            <label className="flex items-center gap-1.5 cursor-pointer text-slate-600">
+              <Checkbox checked={taxExemptChecked} onCheckedChange={(c) => setQuoteTaxExempt(!!c)} />
+              <span className="text-xs">Tax exempt</span>
+            </label>
+          )}
           <span className="text-slate-300">|</span>
           <span className="text-base font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
         </div>
@@ -5731,8 +5837,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
           <span className="text-slate-400">|</span>
           <span className="text-slate-600">Subtotal:</span>
           <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-          <span className="text-slate-600">Tax (7%):</span>
-          <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          {taxExemptChecked ? (
+            <span className="text-amber-700 font-medium">Tax exempt</span>
+          ) : (
+            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></span>
+          )}
           <span className="text-slate-400">|</span>
           <span className="text-lg font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
         </div>
@@ -5784,12 +5893,18 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                         unlinkSubcontractor={unlinkSubcontractor}
                         updateSubcontractorMarkup={updateSubcontractorMarkup}
                         updateCustomRowMarkup={updateCustomRowMarkup}
+                        updateCustomRowBaseCost={updateCustomRowBaseCost}
+                        updateLineItemCost={updateLineItemCost}
                         deleteLineItem={deleteLineItem}
                         loadMaterialsData={loadMaterialsData}
                         loadCustomRows={loadCustomRows}
                         loadSubcontractorEstimates={loadSubcontractorEstimates}
                         customRows={customRows}
                         savingMarkupsRef={savingMarkupsRef}
+                        emptyNotesById={emptyNotesById}
+                        setEmptyNotesById={setEmptyNotesById}
+                        emptyScopeById={emptyScopeById}
+                        setEmptyScopeById={setEmptyScopeById}
                         isReadOnly={isReadOnly}
                         quote={quote}
                       />
@@ -6458,6 +6573,20 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
               </Select>
             </div>
 
+            <div>
+              <Label className="mb-2 block">Style</Label>
+              <Select value={exportTheme} onValueChange={(v) => setExportTheme(v as 'default' | 'premium')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Default (black &amp; white)</SelectItem>
+                  <SelectItem value="premium">Dark Green &amp; Gold</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Premium uses dark green and gold for a modern, polished look.</p>
+            </div>
+
             {exportViewType === 'customer' && (
               <div className="flex items-center gap-2">
                 <input
@@ -6520,18 +6649,21 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       {/* In-app PDF viewer - proposal preview */}
       <Dialog open={showPdfView} onOpenChange={(open) => { if (!open) closePdfView(); }}>
         <DialogContent className="!max-w-[95vw] w-[95vw] !h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2 border-b bg-slate-50 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b bg-slate-50 shrink-0">
             <DialogTitle className="text-base font-semibold">Proposal Preview</DialogTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handlePrintProposal} disabled={!pdfViewHtml}>
-                <Printer className="w-4 h-4 mr-1" />Print
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={!pdfViewHtml || downloadingPdf}>
-                {downloadingPdf ? <><div className="w-3 h-3 mr-1 border-2 border-current border-t-transparent rounded-full animate-spin" />Downloading...</> : <><Download className="w-4 h-4 mr-1" />Export PDF</>}
-              </Button>
-              <Button variant="outline" size="sm" onClick={closePdfView}>
-                Close
-              </Button>
+            <div className="flex items-center gap-3">
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handlePrintProposal} disabled={!pdfViewHtml}>
+                  <Printer className="w-4 h-4 mr-1" />Print
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={!pdfViewHtml} title="Opens print dialog — choose Save as PDF to download a file that looks exactly like the printout">
+                  <Download className="w-4 h-4 mr-1" />Export PDF
+                </Button>
+                <Button variant="outline" size="sm" onClick={closePdfView}>
+                  Close
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground hidden sm:block">PDF and print use the same layout. For Export PDF, choose &quot;Save as PDF&quot; in the dialog.</p>
             </div>
           </div>
           <div className="flex-1 min-h-[400px] relative bg-white overflow-hidden">

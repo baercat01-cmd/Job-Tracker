@@ -1222,11 +1222,11 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
-        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-20' : 'pt-14'}`}
+        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-[92px]' : 'pt-14'}`}
       >
-        {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
-        <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
-          <div className="flex items-center gap-2 px-4 py-1.5 min-h-14">
+        {/* Main Navigation Tabs - Black bar always at top; green bar below when on Proposal & Materials */}
+        <div className="fixed top-0 left-0 right-0 z-50 border-b-4 border-yellow-600 shadow-2xl bg-black">
+          <div className="flex items-center gap-2 px-4 py-1.5 min-h-14 bg-black">
             {onBack && (
               <Button
                 variant="ghost"
@@ -1320,9 +1320,9 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
           </TabsList>
           </div>
 
-          {/* Proposal & Materials: proposal buttons | divider | materials tabs (Workbook, Breakdown, etc.) + View row */}
+          {/* Proposal & Materials: green bar below black bar */}
           {activeTab === 'proposal-materials' && (
-            <div className="bg-green-900/80 border-t border-yellow-600/30">
+            <div className="border-t border-yellow-600/30 bg-green-900/95">
               <div className="flex flex-wrap items-center gap-2 px-4 py-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-yellow-100/90 mr-2">View:</span>

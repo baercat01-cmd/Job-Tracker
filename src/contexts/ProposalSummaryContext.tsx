@@ -49,8 +49,11 @@ export function ProposalSummaryRow({ className }: { className?: string }) {
       <span className="text-yellow-600/80">|</span>
       <span className="text-yellow-100/90">Subtotal:</span>
       <span className="font-semibold text-yellow-100">${fmt(s.subtotal)}</span>
-      <span className="text-yellow-100/90">Tax (7%):</span>
-      <span className="font-semibold text-amber-200">${fmt(s.tax)}</span>
+      {s.tax === 0 ? (
+        <span className="font-medium text-amber-200">Tax exempt</span>
+      ) : (
+        <span className="text-yellow-100/90">Tax (7%): <span className="font-semibold text-amber-200">${fmt(s.tax)}</span></span>
+      )}
       <span className="text-yellow-600/80">|</span>
       <span className="font-bold text-green-300">GRAND TOTAL: ${fmt(s.grandTotal)}</span>
     </div>

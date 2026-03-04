@@ -26,8 +26,10 @@ export function generateProposalHTML(data: {
   showSectionPrices?: boolean;
   showInternalDetails?: boolean;
   templateSettings?: any; // Template customization settings
+  theme?: 'default' | 'premium'; // premium = dark green + gold modern look
 }): string {
-  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false, templateSettings } = data;
+  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false, templateSettings, theme = 'default' } = data;
+  const isPremium = theme === 'premium';
 
   // Apply template settings or use defaults
   const t = templateSettings || {};
@@ -75,6 +77,98 @@ export function generateProposalHTML(data: {
             padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px; 
             font-size: ${bodyFontSize}pt;
           }
+          ${isPremium ? `
+          /* Premium theme: dark green + gold */
+          body.theme-premium { color: #1a1a1a; }
+          .theme-premium .proposal-title { color: #1a3d2e; font-size: 28pt; letter-spacing: 0.02em; }
+          .theme-premium .proposal-info-table { border: 2px solid #1a3d2e; }
+          .theme-premium .proposal-info-table th { background: #1a3d2e; color: #fff; border-color: #1a3d2e; padding: 10px 18px; }
+          .theme-premium .proposal-info-table td { border-color: #2d5a45; color: #1a1a1a; }
+          .theme-premium .info-box { border: 1px solid #2d5a45; }
+          .theme-premium .box-header { background: #1a3d2e; color: #f5e6c8; border-bottom-color: #1a3d2e; padding: 8px 12px; font-weight: 600; }
+          .theme-premium .intro-box { border: 2px solid #2d5a45; }
+          .theme-premium .intro-box .box-header { background: linear-gradient(135deg, #1a3d2e 0%, #2d5a45 100%); color: #f5e6c8; }
+          .theme-premium .section-title span:first-child { color: #1a3d2e; }
+          .theme-premium .section-price { color: #b8860b; font-weight: 700; }
+          .theme-premium .section-content { color: #333; }
+          .theme-premium .items-table { border-color: #2d5a45; }
+          .theme-premium .items-table thead tr { background: #1a3d2e; border-bottom-color: #1a3d2e; }
+          .theme-premium .items-table th { color: #f5e6c8; }
+          .theme-premium .items-table .total-row { border-top-color: #b8860b; background: #faf8f3; }
+          .theme-premium .items-table .total-row td { color: #1a3d2e; font-weight: 700; }
+          .theme-premium .terms-header { border-bottom-color: #1a3d2e; }
+          .theme-premium .terms-title { color: #1a3d2e; }
+          .theme-premium .terms-section-title { color: #1a3d2e; }
+          .theme-premium .print-footer-proposal { color: #1a3d2e; }
+          .theme-premium .print-footer-page { color: #2d5a45; }
+          .theme-premium .doc-footer span:first-child { color: #1a3d2e; }
+          .theme-premium .doc-footer span:last-child { color: #2d5a45; }
+          .theme-premium .grand-total-amount { color: #b8860b; font-weight: 700; }
+          .theme-premium .summary-table-total { border-top: 2px solid #b8860b; }
+          /* Premium: header/footer with triangular twist (3 colors: dark green, gold, cream) */
+          .premium-header-wrapper {
+            margin: -${bodyPaddingTop}px -${bodyPaddingRight}px 0 -${bodyPaddingLeft}px;
+            overflow: hidden;
+          }
+          .premium-header-twist {
+            height: 12px;
+            background: linear-gradient(115deg,
+              #1a3d2e 0%, #1a3d2e 28%,
+              #b8860b 28%, #b8860b 56%,
+              #f5e6c8 56%, #f5e6c8 84%,
+              #1a3d2e 84%, #1a3d2e 100%);
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .premium-header {
+            background: #1a3d2e;
+            color: #f5e6c8;
+            padding: 14px ${bodyPaddingLeft}px 14px ${bodyPaddingRight}px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .premium-header-brand { display: flex; flex-direction: column; gap: 4px; }
+          .premium-header-company { font-size: 18pt; font-weight: 700; color: #f5e6c8; letter-spacing: 0.02em; }
+          .premium-header-contact { font-size: ${bodyFontSize - 1}pt; color: #f5e6c8; line-height: 1.4; opacity: 0.95; }
+          .premium-header-logo-wrap { display: flex; align-items: center; }
+          .premium-header-logo { height: 48px; width: auto; max-width: 180px; object-fit: contain; }
+          .premium-header-accent { height: 4px; background: linear-gradient(90deg, #1a3d2e, #b8860b 50%, #1a3d2e); margin: 0 -${bodyPaddingRight}px 20px -${bodyPaddingLeft}px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .premium-footer-twist {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 12px;
+            background: linear-gradient(245deg,
+              #1a3d2e 0%, #1a3d2e 28%,
+              #b8860b 28%, #b8860b 56%,
+              #f5e6c8 56%, #f5e6c8 84%,
+              #1a3d2e 84%, #1a3d2e 100%);
+            z-index: 9998;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .premium-footer {
+            position: fixed;
+            bottom: 12px;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: #1a3d2e;
+            z-index: 9997;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .theme-premium .print-footer { bottom: 22px !important; }
+          .theme-premium .header-row .logo-section { display: none; }
+          .theme-premium .header-row { margin-bottom: 10px; }
+          .theme-premium .proposal-header { margin-left: 0; }
+          ` : ''}
           
           .header-row { 
             display: flex; 
@@ -310,79 +404,101 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Print: use @page footer so counter(page) is 1, 2, 3...; fixed footer only for screen preview */
           @page {
             margin: ${pageMarginTop}in ${pageMarginRight}in ${pageMarginBottom}in ${pageMarginLeft}in;
             size: letter;
-            @bottom-left {
-              content: "Proposal #${proposalNumber}   Page " counter(page);
-              font-size: 9pt;
-              color: #666;
-              font-weight: 600;
-              vertical-align: bottom;
-              padding-bottom: 0.65in;
-            }
           }
           
           .print-footer {
             position: fixed;
-            bottom: 0.45in;
+            bottom: 0;
             left: 0;
             right: 0;
-            min-height: 0.5in;
+            min-height: 0.45in;
             display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            align-items: flex-start;
-            padding: 0 0 0 ${pageMarginLeft}in;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px ${pageMarginRight}in 6px ${pageMarginLeft}in;
             font-size: 9pt;
-            color: #666;
+            color: #333;
             font-weight: 600;
             z-index: 9999;
-            background: transparent;
+            background: #fff;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
           
-          .print-footer::before {
-            content: "Proposal #${proposalNumber}";
-            display: block;
+          .print-footer-proposal {
             text-align: left;
-            line-height: 1.3;
-            margin-bottom: 2px;
           }
           
-          .print-footer::after {
-            content: "Page " counter(page);
-            display: block;
-            text-align: left;
-            line-height: 1.3;
+          .print-footer-page {
+            text-align: right;
+          }
+          
+          /* In-document footer at end of body: shows on last page when Save as PDF clips fixed footer */
+          .doc-footer {
+            margin-top: 40px;
+            padding-top: 10px;
+            font-size: 9pt;
+            color: #333;
             font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+          }
+          
+          /* Keep hereby text + subtotal + tax + grand total on same page; if no room, move block to next page */
+          .financial-summary-block {
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin-top: 32px;
           }
           
           @media print {
             body { 
               -webkit-print-color-adjust: exact; 
               print-color-adjust: exact;
-              padding-bottom: 1in;
+              padding-bottom: 0.75in;
             }
             .print-footer {
-              display: none !important;
+              display: flex !important;
+              position: fixed !important;
+              bottom: 0 !important;
+              background: #fff !important;
             }
+            .theme-premium .print-footer { bottom: 24px !important; }
+            .premium-footer, .premium-footer-twist { display: block !important; position: fixed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .premium-footer-twist { bottom: 0 !important; }
+            .premium-footer { bottom: 12px !important; }
           }
           
-          @media screen {
-            .print-footer {
-              display: flex;
-              bottom: 0.45in;
-            }
-            .print-footer::after {
-              content: "Page 1";
-            }
-          }
         </style>
       </head>
-      <body>
-        <!-- Print Footer - appears on every page -->
-        <div class="print-footer"></div>
+      <body class="${isPremium ? 'theme-premium' : ''}">
+        ${isPremium ? `
+        <!-- Premium theme: header with triangular twist (green, gold, cream) and clear structure -->
+        <div class="premium-header-wrapper">
+          <div class="premium-header-twist" aria-hidden="true"></div>
+          <div class="premium-header">
+            <div class="premium-header-brand">
+              <span class="premium-header-company">${companyName.toUpperCase()}</span>
+              <div class="premium-header-contact">
+                Office: ${companyPhone} | Fax: ${companyFax}<br/>${companyEmail}
+              </div>
+            </div>
+            <div class="premium-header-logo-wrap">
+              <img src="${companyLogoUrl}" alt="${companyName}" class="premium-header-logo" />
+            </div>
+          </div>
+          <div class="premium-header-accent" aria-hidden="true"></div>
+        </div>
+        ` : ''}
+        <!-- Print Footer - proposal number only (repeats on each page when printing/saving as PDF) -->
+        <div class="print-footer">
+          <span class="print-footer-proposal">Proposal #${proposalNumber}</span>
+        </div>
+        ${isPremium ? '<div class="premium-footer" aria-hidden="true"></div><div class="premium-footer-twist" aria-hidden="true"></div>' : ''}
         
         <!-- Main Content -->
         <div class="header-row">
@@ -514,8 +630,8 @@ export function generateProposalHTML(data: {
         </div>
         
         ${showInternalDetails ? `
-          <!-- Office View - Summary Only -->
-          <div style="margin-top: 30px; padding: 20px; background: #f5f5f5; border: 2px solid #333; border-radius: 8px;">
+          <!-- Office View - Summary Only (kept together on same page) -->
+          <div class="financial-summary-block" style="margin-top: 30px; padding: 20px; background: #f5f5f5; border: 2px solid #333; border-radius: 8px;">
             <h3 style="margin: 0 0 15px 0; font-size: 14pt;">Proposal Summary - Office View</h3>
             <table style="width: 100%;">
               ${totals.materials > 0 ? `
@@ -538,9 +654,9 @@ export function generateProposalHTML(data: {
                 <td style="text-align: right; padding: 5px;"><strong>Sales Tax (7%):</strong></td>
                 <td style="text-align: right; padding: 5px;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
-              <tr style="border-top: 2px solid #333;">
+              <tr class="summary-table-total" style="border-top: 2px solid #333;">
                 <td style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 12pt;">GRAND TOTAL:</strong></td>
-                <td style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 14pt;">$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+                <td class="grand-total-amount" style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 14pt;">$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
               </tr>
             </table>
           </div>
@@ -598,23 +714,25 @@ export function generateProposalHTML(data: {
             </div>
           </div>
         ` : `
-          <!-- Customer Version - Full Footer -->
-          <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
-          
-          <table style="margin-top: 15px;">
-            <tr>
-              <td style="text-align: right;"><strong>Subtotal:</strong></td>
-              <td style="text-align: right; width: 150px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            <tr>
-              <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
-              <td style="text-align: right;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            <tr>
-              <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
-              <td style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
-            </tr>
-          </table>
+          <!-- Customer Version - hereby + subtotal + tax + grand total kept together on same page -->
+          <div class="financial-summary-block">
+            <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
+            
+            <table style="margin-top: 15px;">
+              <tr>
+                <td style="text-align: right;"><strong>Subtotal:</strong></td>
+                <td style="text-align: right; width: 150px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
+                <td style="text-align: right;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr class="summary-table-total">
+                <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
+                <td class="grand-total-amount" style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+              </tr>
+            </table>
+          </div>
           
           <div class="footer">
             <p style="margin-bottom: 10px;">${paymentText}</p>
@@ -688,6 +806,10 @@ export function generateProposalHTML(data: {
             </div>
           </div>
         `}
+        <!-- Footer at end of document so it appears in saved PDF (proposal number only) -->
+        <div class="doc-footer">
+          <span>Proposal #${proposalNumber}</span>
+        </div>
       </body>
     </html>
   `;
