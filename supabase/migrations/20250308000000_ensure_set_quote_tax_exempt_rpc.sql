@@ -1,7 +1,6 @@
--- RPC to set tax_exempt on quotes so the app can save even when PostgREST schema cache
--- does not yet expose the tax_exempt column. Finds the job-link column on quotes dynamically.
+-- Ensure set_quote_tax_exempt exists and is callable. Finds the job-link column on quotes dynamically.
 
-CREATE OR REPLACE FUNCTION set_quote_tax_exempt(
+CREATE OR REPLACE FUNCTION public.set_quote_tax_exempt(
   p_job_id uuid,
   p_quote_id uuid,
   p_value boolean
@@ -35,9 +34,6 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION set_quote_tax_exempt(uuid, uuid, boolean) IS 'Set tax_exempt on quote(s). When true: all quotes for job_id; when false: single quote by id. Use when PostgREST schema cache does not expose tax_exempt column.';
-
--- Required: allow the app (authenticated user) to call this function via the API
 GRANT EXECUTE ON FUNCTION public.set_quote_tax_exempt(uuid, uuid, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.set_quote_tax_exempt(uuid, uuid, boolean) TO service_role;
 

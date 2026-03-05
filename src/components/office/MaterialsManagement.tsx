@@ -72,8 +72,6 @@ import { MaterialItemPhotos } from './MaterialItemPhotos';
 import { PhotoRecoveryTool } from './PhotoRecoveryTool';
 import { MaterialPackages } from './MaterialPackages';
 import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
-import { MaterialComparison } from './MaterialComparison';
-import { TrendingUp } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
@@ -150,7 +148,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const effectiveQuoteId = isControlled ? controlledQuoteId : selectedQuoteId;
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'comparison' | 'upload'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'upload'>('manage');
   const [activeSheetId, setActiveSheetId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
@@ -1471,7 +1469,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   const materialsToolbarContent = (
     <div className="flex items-center gap-2 flex-wrap">
-      <TabsList className="grid grid-cols-6 h-8 bg-white/95 shadow-sm border border-slate-200/80 rounded-md">
+      <TabsList className="grid grid-cols-5 h-8 bg-white/95 shadow-sm border border-slate-200/80 rounded-md">
         <TabsTrigger value="manage" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
           <FileSpreadsheet className="w-3.5 h-3.5" />
           <span>Workbook</span>
@@ -1479,10 +1477,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         <TabsTrigger value="breakdown" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
           <DollarSign className="w-3.5 h-3.5" />
           <span>Breakdown</span>
-        </TabsTrigger>
-        <TabsTrigger value="comparison" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
-          <TrendingUp className="w-3.5 h-3.5" />
-          <span>Comparison</span>
         </TabsTrigger>
         <TabsTrigger value="packages" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
           <Package className="w-3.5 h-3.5" />
@@ -1537,7 +1531,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   </Badge>
                 </div>
               ) : null}
-              <TabsList className="grid w-full grid-cols-6 h-9 bg-white shadow-sm">
+              <TabsList className="grid w-full grid-cols-5 h-9 bg-white shadow-sm">
                 <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
                   <FileSpreadsheet className="w-3.5 h-3.5" />
                   <span>Workbook</span>
@@ -1545,10 +1539,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 <TabsTrigger value="breakdown" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
                   <DollarSign className="w-3.5 h-3.5" />
                   <span>Breakdown</span>
-                </TabsTrigger>
-                <TabsTrigger value="comparison" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Comparison</span>
                 </TabsTrigger>
                 <TabsTrigger value="packages" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
                   <Package className="w-3.5 h-3.5" />
@@ -2414,10 +2404,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               </CardContent>
             </Card>
           )}
-        </TabsContent>
-
-        <TabsContent value="comparison" className="space-y-2">
-          <MaterialComparison jobId={job.id} />
         </TabsContent>
 
         <TabsContent value="packages" className="space-y-2">

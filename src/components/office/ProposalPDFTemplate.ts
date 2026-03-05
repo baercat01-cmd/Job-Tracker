@@ -13,6 +13,18 @@ export function generateProposalHTML(data: {
     name: string;
     description: string;
     price?: number;
+    optional?: boolean;
+    comparisonData?: {
+      baseName: string;
+      optionName: string;
+      baseMaterialsPrice: number;
+      optionMaterialsPrice: number;
+      baseLaborPrice: number;
+      optionLaborPrice: number;
+      baseTotal: number;
+      optionTotal: number;
+      categoryRows: Array<{ name: string; basePrice: number; optionPrice: number }>;
+    };
     items?: Array<{ description: string; price?: number; quantity?: number; unit?: string }>;
   }>;
   totals: {
@@ -563,7 +575,7 @@ export function generateProposalHTML(data: {
         <div class="intro-box" style="margin-top: 10px;">
           <div class="box-header">Work to be Completed</div>
           <div style="padding: 15px 10px 10px 10px;">
-            ${sections.map((section: any, sectionIndex: number) => {
+            ${sections.filter((s: any) => !s.optional).map((section: any, sectionIndex: number) => {
               const isFirstSection = sectionIndex === 0;
               const sectionTitleMargin = isFirstSection ? '0' : '8px';
               let content = '<div class="section-wrapper">';
@@ -629,6 +641,122 @@ export function generateProposalHTML(data: {
             }).join('')}
           </div>
         </div>
+
+        ${sections.some((s: any) => s.optional) ? `
+        <div class="intro-box" style="margin-top: 10px; border-color: #d97706;">
+          <div class="box-header" style="background: #b45309;">Optional Items <span style="font-size: 9pt; font-weight: normal;">(not included in contract total)</span></div>
+          <div style="padding: 15px 10px 10px 10px;">
+            ${sections.filter((s: any) => s.optional).map((section: any, sectionIndex: number) => {
+              const isFirstSection = sectionIndex === 0;
+              const sectionTitleMargin = isFirstSection ? '0' : '8px';
+              let content = '<div class="section-wrapper">';
+              
+              if (showInternalDetails) {
+                content += '<div class="section-title" style="margin-top: ' + sectionTitleMargin + ';">';
+                content += '<span style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">' + section.name + '</span>';
+                if (section.price) {
+                  content += '<span class="section-price" style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+                }
+                content += '</div>';
+                
+                if (section.description) {
+                  content += '<div class="section-content" style="margin: 6px 0 8px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #b45309;">' + section.description + '</div>';
+                }
+                
+                if (section.items && section.items.length > 0) {
+                  content += '<div style="margin: 10px 0 20px 0;">';
+                  content += '<p style="font-size: 10pt; font-weight: 600; color: #666; margin-bottom: 8px;">LINE ITEM BREAKDOWN:</p>';
+                  content += '<table class="items-table"><thead><tr>';
+                  content += '<th style="width: 45%;">Item Description</th>';
+                  content += '<th style="width: 15%; text-align: center;">Quantity</th>';
+                  content += '<th style="width: 20%; text-align: right;">Unit Price</th>';
+                  content += '<th style="width: 20%; text-align: right;">Total Price</th>';
+                  content += '</tr></thead><tbody>';
+                  
+                  section.items.forEach((item: any) => {
+                    const qty = item.quantity || 1;
+                    const totalPrice = item.price || 0;
+                    const unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
+                    content += '<tr>';
+                    content += '<td style="padding: 8px;">' + item.description + '</td>';
+                    content += '<td style="text-align: center; padding: 8px;">' + qty + (item.unit ? ' ' + item.unit : '') + '</td>';
+                    content += '<td style="text-align: right; padding: 8px;">$' + unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                    content += '<td style="text-align: right; padding: 8px; font-weight: 600;">$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                    content += '</tr>';
+                  });
+                  
+                  content += '<tr class="total-row">';
+                  content += '<td colspan="3" style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0;">Section Total:</td>';
+                  content += '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: ' + bodyFontSize + 'pt;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                  content += '</tr>';
+                  content += '</tbody></table>';
+                  content += '</div>';
+                }
+              } else {
+                if (showSectionPrices && section.price) {
+                  content += '<div class="section-title" style="margin-top: ' + sectionTitleMargin + ';">';
+                  content += '<span>' + section.name + '</span>';
+                  content += '<span class="section-price">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+                  content += '</div>';
+                } else {
+                  content += '<div class="section-title" style="display: block; margin-top: ' + sectionTitleMargin + ';">' + section.name + '</div>';
+                }
+                
+                if (section.description) {
+                  content += '<div class="section-content">' + section.description + '</div>';
+                }
+              }
+
+              // Comparison table (optional sections with a base section linked)
+              if (section.comparisonData) {
+                const cd = section.comparisonData;
+                const diff = cd.optionTotal - cd.baseTotal;
+                const diffStr = (diff > 0 ? '+' : '') + '$' + Math.abs(diff).toLocaleString('en-US', { minimumFractionDigits: 2 }) + (diff > 0 ? ' more' : diff < 0 ? ' less' : ' same');
+                const diffColor = diff > 0 ? '#dc2626' : diff < 0 ? '#16a34a' : '#64748b';
+                content += '<div style="margin: 10px 0 6px 0; border: 1px solid #bfdbfe; border-radius: 6px; overflow: hidden;">';
+                content += '<div style="background: #eff6ff; padding: 6px 10px; font-weight: 700; font-size: 9pt; color: #1e40af; border-bottom: 1px solid #bfdbfe;">Price Comparison</div>';
+                content += '<table style="width:100%; border-collapse:collapse; font-size:9pt;">';
+                content += '<thead><tr style="border-bottom:1px solid #e2e8f0;">';
+                content += '<th style="text-align:left; padding:5px 8px; color:#64748b; font-weight:600; width:35%;"></th>';
+                content += '<th style="text-align:right; padding:5px 8px; color:#1e40af; font-weight:700;">' + cd.baseName + ' <span style="font-size:8pt; font-weight:normal;">(included)</span></th>';
+                content += '<th style="text-align:right; padding:5px 8px; color:#b45309; font-weight:700;">' + cd.optionName + ' <span style="font-size:8pt; font-weight:normal;">(option)</span></th>';
+                content += '<th style="text-align:right; padding:5px 8px; color:#64748b; font-weight:600;">Difference</th>';
+                content += '</tr></thead><tbody>';
+                cd.categoryRows.forEach((row: any) => {
+                  const rowDiff = row.optionPrice - row.basePrice;
+                  const rowDiffColor = rowDiff > 0 ? '#dc2626' : rowDiff < 0 ? '#16a34a' : '#94a3b8';
+                  content += '<tr style="border-bottom:1px solid #f1f5f9;">';
+                  content += '<td style="padding:4px 8px; color:#475569;">' + row.name + '</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; color:#1e3a8a;">' + (row.basePrice > 0 ? '$' + row.basePrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; color:#92400e;">' + (row.optionPrice > 0 ? '$' + row.optionPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; font-weight:600; color:' + rowDiffColor + ';">' + (rowDiff !== 0 ? (rowDiff > 0 ? '+' : '') + '$' + Math.abs(rowDiff).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '</tr>';
+                });
+                if (cd.baseLaborPrice > 0 || cd.optionLaborPrice > 0) {
+                  const laborDiff = cd.optionLaborPrice - cd.baseLaborPrice;
+                  content += '<tr style="border-bottom:1px solid #e2e8f0;">';
+                  content += '<td style="padding:4px 8px; color:#475569;">Labor</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; color:#1e3a8a;">' + (cd.baseLaborPrice > 0 ? '$' + cd.baseLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; color:#92400e;">' + (cd.optionLaborPrice > 0 ? '$' + cd.optionLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; font-weight:600; color:' + (laborDiff > 0 ? '#dc2626' : laborDiff < 0 ? '#16a34a' : '#94a3b8') + ';">' + (laborDiff !== 0 ? (laborDiff > 0 ? '+' : '') + '$' + Math.abs(laborDiff).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '</tr>';
+                }
+                content += '<tr style="background:#eff6ff;">';
+                content += '<td style="padding:6px 8px; font-weight:700; color:#1e293b;">Total</td>';
+                content += '<td style="text-align:right; padding:6px 8px; font-weight:700; color:#1e40af; font-size:10pt;">$' + cd.baseTotal.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                content += '<td style="text-align:right; padding:6px 8px; font-weight:700; color:#b45309; font-size:10pt;">$' + cd.optionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                content += '<td style="text-align:right; padding:6px 8px; font-weight:700; font-size:10pt; color:' + diffColor + ';">' + diffStr + '</td>';
+                content += '</tr>';
+                content += '</tbody></table>';
+                content += '</div>';
+              }
+              
+              content += '</div>';
+              return content;
+            }).join('')}
+          </div>
+        </div>
+        ` : ''}
         
         ${showInternalDetails ? `
           <!-- Office View - Summary Only (kept together on same page) -->

@@ -33,6 +33,7 @@ import {
   Upload,
   FolderPlus,
   Folder,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -133,19 +134,41 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
 
       if (error) throw error;
 
-      // Fetch latest revision URL for each document
+      // Fetch latest revision URL for each document (resilient: try current_version then latest by version)
       const documentsWithUrls = await Promise.all(
         (data || []).map(async (doc: any) => {
-          const { data: latestRevision } = await supabase
+          let fileUrl: string | null = null;
+          const { data: byVersion } = await supabase
             .from('job_document_revisions')
             .select('file_url')
             .eq('document_id', doc.id)
             .eq('version_number', doc.current_version)
-            .single();
-
+            .maybeSingle();
+          if (byVersion?.file_url) {
+            fileUrl = byVersion.file_url;
+          } else {
+            const { data: latest } = await supabase
+              .from('job_document_revisions')
+              .select('file_url')
+              .eq('document_id', doc.id)
+              .order('version_number', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (latest?.file_url) fileUrl = latest.file_url;
+          }
+          // Use signed URL for job-files storage so private buckets work in iframe/new tab
+          let latest_file_url: string | null = fileUrl;
+          if (fileUrl && fileUrl.includes('/job-files/')) {
+            const after = fileUrl.split('/job-files/')[1];
+            const path = after ? after.replace(/\?.*$/, '').trim() : null;
+            if (path) {
+              const { data: signed } = await supabase.storage.from('job-files').createSignedUrl(path, 60 * 60);
+              if (signed?.signedUrl) latest_file_url = signed.signedUrl;
+            }
+          }
           return {
             ...doc,
-            latest_file_url: latestRevision?.file_url || null,
+            latest_file_url,
           };
         })
       );
@@ -631,10 +654,20 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                 )}
               </div>
               {selectedDoc?.latest_file_url && viewMode === 'viewer' && (
-                <Button onClick={downloadDocument} variant="outline" size="sm">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(selectedDoc.latest_file_url!, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Open in new tab
+                  </Button>
+                  <Button onClick={downloadDocument} variant="outline" size="sm">
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -772,11 +805,27 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                     <p className="text-muted-foreground">No file available</p>
                   </div>
                 ) : (
-                  <iframe
-                    src={selectedDoc.latest_file_url}
-                    className="w-full h-full min-h-[300px] border-0"
-                    title={selectedDoc.name}
-                  />
+                  <div className="h-full flex flex-col min-h-[300px]">
+                    <iframe
+                      src={selectedDoc.latest_file_url}
+                      className="w-full flex-1 min-h-[280px] border-0"
+                      title={selectedDoc.name}
+                    />
+                    <div className="px-3 py-2 bg-slate-100 border-t flex items-center justify-between gap-2 flex-wrap">
+                      <p className="text-xs text-muted-foreground">
+                        Document not displaying? Open it in a new tab to view or download.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs shrink-0"
+                        onClick={() => window.open(selectedDoc.latest_file_url!, '_blank', 'noopener,noreferrer')}
+                      >
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        Open in new tab
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
             )}

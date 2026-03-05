@@ -183,6 +183,11 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
     setEmptyNotesById = () => {},
     emptyScopeById = {},
     setEmptyScopeById = () => {},
+    setComparePickerSheetId = () => {},
+    setShowComparePickerDialog = () => {},
+    expandedComparisons = new Set(),
+    setExpandedComparisons = () => {},
+    materialsBreakdown = { sheetBreakdowns: [], totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 } },
   } = props;
 
   const content = (() => {
@@ -281,8 +286,13 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-base font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
+                  {(sheet as any).isOptional && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                      Optional
+                    </span>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -306,6 +316,43 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                   <Edit className="w-3 h-3 mr-2" />
                   Edit Description
                 </DropdownMenuItem>
+                {!isReadOnly && (
+                  (sheet as any).isOptional ? (
+                    <>
+                      <DropdownMenuItem onClick={async () => {
+                        // Always update is_option first (column is guaranteed to exist)
+                        await supabase.from('material_sheets').update({ is_option: false }).eq('id', sheet.sheetId);
+                        // Best-effort: clear comparison link (column may not exist on older DBs)
+                        await supabase.from('material_sheets').update({ compare_to_sheet_id: null } as any).eq('id', sheet.sheetId);
+                        await loadMaterialsData(quote?.id ?? null, false);
+                      }}>
+                        <Check className="w-3 h-3 mr-2 text-green-600" />
+                        Include in Total
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { setComparePickerSheetId(sheet.sheetId); setShowComparePickerDialog(true); }}>
+                        <GitCompare className="w-3 h-3 mr-2 text-blue-600" />
+                        {(sheet as any).compareToSheetId ? 'Change Comparison Section' : 'Compare with Section...'}
+                      </DropdownMenuItem>
+                      {(sheet as any).compareToSheetId && (
+                        <DropdownMenuItem onClick={async () => {
+                          await supabase.from('material_sheets').update({ compare_to_sheet_id: null } as any).eq('id', sheet.sheetId);
+                          await loadMaterialsData(quote?.id ?? null, false);
+                        }}>
+                          <X className="w-3 h-3 mr-2 text-slate-500" />
+                          Clear Comparison
+                        </DropdownMenuItem>
+                      )}
+                    </>
+                  ) : (
+                    <DropdownMenuItem onClick={async () => {
+                      await supabase.from('material_sheets').update({ is_option: true }).eq('id', sheet.sheetId);
+                      await loadMaterialsData(quote?.id ?? null, false);
+                    }}>
+                      <Eye className="w-3 h-3 mr-2 text-amber-600" />
+                      Mark as Optional (exclude from total)
+                    </DropdownMenuItem>
+                  )
+                )}
                 <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'materials')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material Row
@@ -375,12 +422,15 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
 
             {/* Pricing column (narrow) */}
             <div className="w-[100px] flex-shrink-0 text-right">
+              {(sheet as any).isOptional && (
+                <p className="text-xs text-amber-700 font-medium mb-0.5">Not in total</p>
+              )}
               <p className="text-sm text-slate-500">Materials</p>
-              <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
               {totalLaborCost > 0 && (
                 <>
                   <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </>
               )}
             </div>
@@ -887,6 +937,164 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                 );
               })}
             </div>
+
+            {/* Comparison panel — only for optional sections that have a comparison target */}
+            {(sheet as any).isOptional && (sheet as any).compareToSheetId && (() => {
+              const baseSheet = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === (sheet as any).compareToSheetId);
+              if (!baseSheet) return null;
+
+              // Calculate base sheet price using same formula as sheetFinalPrice
+              const baseLinkedRows = customRows.filter((r: any) => r.sheet_id === baseSheet.sheetId);
+              const baseLinkedRowsTotal = baseLinkedRows.reduce((rowSum: number, row: any) => {
+                const lineItems = customRowLineItems[row.id] || [];
+                const baseCost = lineItems.length > 0
+                  ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
+                  : row.total_cost;
+                return rowSum + (baseCost * (1 + row.markup_percent / 100));
+              }, 0);
+              const baseLinkedSubs = linkedSubcontractors[baseSheet.sheetId] || [];
+              const baseLinkedSubsTaxableTotal = baseLinkedSubs.reduce((sum: number, sub: any) => {
+                const lineItems = subcontractorLineItems[sub.id] || [];
+                const taxableTotal = lineItems
+                  .filter((item: any) => !item.excluded && item.taxable)
+                  .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
+                const estMarkup = sub.markup_percent || 0;
+                return sum + (taxableTotal * (1 + estMarkup / 100));
+              }, 0);
+              const baseCategoryTotals = (baseSheet.categories || []).reduce((sum: number, cat: any) => {
+                const categoryKey = `${baseSheet.sheetId}_${cat.name}`;
+                const markup = categoryMarkups[categoryKey] ?? 10;
+                return sum + (cat.totalCost * (1 + markup / 100));
+              }, 0);
+              const baseFinalPrice = baseCategoryTotals + baseLinkedRowsTotal + baseLinkedSubsTaxableTotal;
+
+              // Base sheet labor
+              const baseSheetLaborTotal = sheetLabor[baseSheet.sheetId] ? sheetLabor[baseSheet.sheetId].total_labor_cost : 0;
+              const baseSheetLaborLineItems = customRowLineItems[baseSheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
+              const baseSheetLaborLineItemsTotal = baseSheetLaborLineItems.reduce((sum: number, item: any) => {
+                const markup = item.markup_percent ?? 0;
+                return sum + (item.total_cost * (1 + markup / 100));
+              }, 0);
+              const baseLinkedSubsNonTaxableTotal = baseLinkedSubs.reduce((sum: number, sub: any) => {
+                const lineItems = subcontractorLineItems[sub.id] || [];
+                const nonTaxableTotal = lineItems
+                  .filter((item: any) => !item.excluded && !item.taxable)
+                  .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
+                const estMarkup = sub.markup_percent || 0;
+                return sum + (nonTaxableTotal * (1 + estMarkup / 100));
+              }, 0);
+              const baseLaborCost = baseSheetLaborTotal + baseSheetLaborLineItemsTotal + baseLinkedSubsNonTaxableTotal;
+
+              const baseTotal = baseFinalPrice + baseLaborCost;
+              const optionTotal = sheetFinalPrice + totalLaborCost;
+              const priceDiff = optionTotal - baseTotal;
+              const isExpanded = expandedComparisons.has(sheet.sheetId);
+
+              return (
+                <div className="mt-3 border border-blue-200 rounded-lg overflow-hidden">
+                  <button
+                    className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+                    onClick={() => {
+                      const next = new Set(expandedComparisons);
+                      if (next.has(sheet.sheetId)) next.delete(sheet.sheetId);
+                      else next.add(sheet.sheetId);
+                      setExpandedComparisons(next);
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <GitCompare className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-semibold text-blue-800">Price Comparison</span>
+                      <span className="text-xs text-blue-600">vs {baseSheet.sheetName}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-sm font-bold ${priceDiff > 0 ? 'text-red-600' : priceDiff < 0 ? 'text-green-600' : 'text-slate-600'}`}>
+                        {priceDiff > 0 ? '+' : ''}{priceDiff.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                      </span>
+                      <ChevronDown className={`w-4 h-4 text-blue-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="p-3 bg-white">
+                      <table className="w-full text-sm border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200">
+                            <th className="text-left py-1.5 pr-3 text-slate-600 font-medium w-[35%]"></th>
+                            <th className="text-right py-1.5 px-2 text-slate-700 font-semibold">{baseSheet.sheetName}</th>
+                            <th className="text-right py-1.5 px-2 text-amber-800 font-semibold">{sheet.sheetName} <span className="text-xs font-normal">(option)</span></th>
+                            <th className="text-right py-1.5 pl-2 text-slate-600 font-medium">Difference</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Category rows */}
+                          {(() => {
+                            const allCatNames = Array.from(new Set([
+                              ...(baseSheet.categories || []).map((c: any) => c.name),
+                              ...(sheet.categories || []).map((c: any) => c.name),
+                            ])).sort();
+                            return allCatNames.map((catName: string) => {
+                              const baseCat = (baseSheet.categories || []).find((c: any) => c.name === catName);
+                              const optCat = (sheet.categories || []).find((c: any) => c.name === catName);
+                              const baseCatMarkup = categoryMarkups[`${baseSheet.sheetId}_${catName}`] ?? 10;
+                              const optCatMarkup = categoryMarkups[`${sheet.sheetId}_${catName}`] ?? 10;
+                              const baseCatPrice = baseCat ? baseCat.totalCost * (1 + baseCatMarkup / 100) : 0;
+                              const optCatPrice = optCat ? optCat.totalCost * (1 + optCatMarkup / 100) : 0;
+                              const diff = optCatPrice - baseCatPrice;
+                              return (
+                                <tr key={catName} className="border-b border-slate-100">
+                                  <td className="py-1.5 pr-3 text-slate-600">{catName}</td>
+                                  <td className="text-right py-1.5 px-2 text-slate-800">{baseCatPrice > 0 ? '$' + baseCatPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
+                                  <td className="text-right py-1.5 px-2 text-amber-800">{optCatPrice > 0 ? '$' + optCatPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
+                                  <td className={`text-right py-1.5 pl-2 font-medium ${diff > 0 ? 'text-red-600' : diff < 0 ? 'text-green-600' : 'text-slate-400'}`}>
+                                    {diff !== 0 ? (diff > 0 ? '+' : '') + '$' + diff.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                          {/* Materials subtotal */}
+                          <tr className="border-b border-slate-200 bg-slate-50">
+                            <td className="py-1.5 pr-3 font-medium text-slate-700">Materials Total</td>
+                            <td className="text-right py-1.5 px-2 font-semibold text-blue-700">${baseFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right py-1.5 px-2 font-semibold text-amber-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td className={`text-right py-1.5 pl-2 font-semibold ${sheetFinalPrice - baseFinalPrice > 0 ? 'text-red-600' : sheetFinalPrice - baseFinalPrice < 0 ? 'text-green-600' : 'text-slate-400'}`}>
+                              {sheetFinalPrice !== baseFinalPrice ? (sheetFinalPrice - baseFinalPrice > 0 ? '+' : '') + '$' + (sheetFinalPrice - baseFinalPrice).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                            </td>
+                          </tr>
+                          {/* Labor row (only if either has labor) */}
+                          {(baseLaborCost > 0 || totalLaborCost > 0) && (
+                            <tr className="border-b border-slate-100">
+                              <td className="py-1.5 pr-3 text-slate-600">Labor</td>
+                              <td className="text-right py-1.5 px-2 text-slate-800">{baseLaborCost > 0 ? '$' + baseLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
+                              <td className="text-right py-1.5 px-2 text-amber-800">{totalLaborCost > 0 ? '$' + totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
+                              <td className={`text-right py-1.5 pl-2 font-medium ${totalLaborCost - baseLaborCost > 0 ? 'text-red-600' : totalLaborCost - baseLaborCost < 0 ? 'text-green-600' : 'text-slate-400'}`}>
+                                {totalLaborCost !== baseLaborCost ? (totalLaborCost - baseLaborCost > 0 ? '+' : '') + '$' + (totalLaborCost - baseLaborCost).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                              </td>
+                            </tr>
+                          )}
+                          {/* Grand total row */}
+                          <tr className="bg-blue-50">
+                            <td className="py-2 pr-3 font-bold text-slate-800">Section Total</td>
+                            <td className="text-right py-2 px-2 font-bold text-blue-800 text-base">${baseTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right py-2 px-2 font-bold text-amber-800 text-base">${optionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td className={`text-right py-2 pl-2 font-bold text-base ${priceDiff > 0 ? 'text-red-600' : priceDiff < 0 ? 'text-green-600' : 'text-slate-400'}`}>
+                              {priceDiff > 0 ? '+' : ''}{priceDiff.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <p className="text-xs text-slate-400 mt-2">
+                        {priceDiff > 0
+                          ? `Choosing "${sheet.sheetName}" costs ${priceDiff.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} more than "${baseSheet.sheetName}".`
+                          : priceDiff < 0
+                          ? `Choosing "${sheet.sheetName}" saves ${Math.abs(priceDiff).toLocaleString('en-US', { style: 'currency', currency: 'USD' })} compared to "${baseSheet.sheetName}".`
+                          : `"${sheet.sheetName}" and "${baseSheet.sheetName}" have the same total price.`}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </CollapsibleContent>
         </Collapsible>
       );
@@ -1820,6 +2028,13 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
   const [showProposalComparison, setShowProposalComparison] = useState(false);
   const [templateQuoteIdForNewProposal, setTemplateQuoteIdForNewProposal] = useState<string | null>(null);
+  const [showMarkAsSentManualDialog, setShowMarkAsSentManualDialog] = useState(false);
+  const [markAsSentManualSql, setMarkAsSentManualSql] = useState('');
+
+  // Optional section comparison state
+  const [showComparePickerDialog, setShowComparePickerDialog] = useState(false);
+  const [comparePickerSheetId, setComparePickerSheetId] = useState<string | null>(null); // optional sheet being set up
+  const [expandedComparisons, setExpandedComparisons] = useState<Set<string>>(new Set());
   
   // Use ref to track user's selected quote ID (persists across re-renders)
   const userSelectedQuoteIdRef = useRef<string | null>(null);
@@ -2102,25 +2317,20 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       return;
     }
     if (!confirm('Mark this proposal as sent? This will lock the proposal and materials and record the date/time. You can still create a new proposal to continue editing.')) return;
+
+    const done = async () => {
+      toast.success('Proposal marked as sent. It is now locked with a timestamp.');
+      await loadQuoteData();
+      await loadData(true);
+    };
+
     try {
-      const { error: rpcErr } = await supabase.rpc('mark_proposal_as_sent', {
-        p_quote_id: quote.id,
-        p_user_id: profile.id,
-      });
-      const isRpcNotFound =
-        rpcErr?.message?.includes('mark_proposal_as_sent') &&
-        (rpcErr?.message?.includes('schema cache') || rpcErr?.message?.includes('could not find the function'));
-
-      if (rpcErr && !isRpcNotFound) throw rpcErr;
-
-      if (rpcErr && isRpcNotFound) {
-        // Fallback: do the same updates directly (works if schema cache has sent_at/sent_by on quotes)
-        const { error: lockErr } = await supabase
-          .from('material_workbooks')
-          .update({ status: 'locked', updated_at: new Date().toISOString() })
-          .eq('quote_id', quote.id);
-        if (lockErr) throw lockErr;
-
+      // 1) Direct table updates (works when columns exist and API sees them)
+      const { error: lockErr } = await supabase
+        .from('material_workbooks')
+        .update({ status: 'locked', updated_at: new Date().toISOString() })
+        .eq('quote_id', quote.id);
+      if (!lockErr) {
         const { error: updateErr } = await supabase
           .from('quotes')
           .update({
@@ -2128,25 +2338,52 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
             sent_by: profile.id,
           })
           .eq('id', quote.id);
-        if (updateErr) throw updateErr;
+        if (!updateErr) {
+          await done();
+          return;
+        }
       }
 
-      toast.success('Proposal marked as sent. It is now locked with a timestamp.');
-      await loadQuoteData();
-      await loadData(true);
+      // 2) RPC (atomic; works when PostgREST schema cache has the function)
+      const { error: rpcErr } = await supabase.rpc('mark_proposal_as_sent', {
+        p_quote_id: quote.id,
+        p_user_id: profile.id,
+      });
+      if (!rpcErr) {
+        await done();
+        return;
+      }
+
+      // 3) Edge Function (runs on server with service role; bypasses RLS)
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('mark-proposal-as-sent', {
+        body: { quote_id: quote.id, user_id: profile.id },
+      });
+
+      if (fnData?.ok) {
+        await done();
+        return;
+      }
+
+      // Extract the real error message from the Edge Function response body
+      const fnErrMsg: string =
+        fnData?.error ||
+        fnData?.hint ||
+        fnErr?.message ||
+        rpcErr?.message ||
+        '';
+
+      throw new Error(fnErrMsg || 'Mark as sent failed');
     } catch (error: any) {
       console.error('Error marking proposal as sent:', error);
       const msg = error?.message || '';
-      const isSchemaCacheError =
-        (msg.includes('sent_at') && msg.includes('schema cache')) ||
-        (msg.includes('mark_proposal_as_sent') && (msg.includes('schema cache') || msg.includes('could not find the function')));
-      if (isSchemaCacheError) {
-        toast.error(
-          'Mark as Sent: run the two SQL scripts in Supabase SQL Editor, then run: select pg_notification_queue_usage(); then NOTIFY pgrst, \'reload schema\'; (see scripts/mark-proposal-as-sent-rpc.sql)'
-        );
-      } else {
-        toast.error(msg || 'Failed to mark as sent');
-      }
+      // Show manual SQL fallback: ensure columns exist, then update (run in Supabase SQL Editor)
+      const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${quote.id}';
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote.id}';`;
+      setMarkAsSentManualSql(manualSql);
+      setShowMarkAsSentManualDialog(true);
+      toast.error(msg || 'Mark as sent failed. Use the dialog below to run the SQL manually.');
     }
   }
 
@@ -2551,8 +2788,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       
       let quotesList: any[] = allQuotes || [];
 
-      // Persist tax exempt after refresh: if API didn't return tax_exempt (e.g. schema cache not reloaded), fetch via RPC and merge
-      if (quotesList.length > 0 && quotesList.some((q: any) => q.tax_exempt === undefined)) {
+      // Always merge tax_exempt from RPC so saved value persists (API may not expose column or may cache)
+      if (quotesList.length > 0) {
         const { data: taxRows, error: taxErr } = await supabase.rpc('get_job_quotes_tax_exempt', { p_job_id: job.id });
         if (!taxErr && Array.isArray(taxRows) && taxRows.length > 0) {
           const byId = new Map((taxRows as { quote_id: string; tax_exempt: boolean }[]).map((r) => [r.quote_id, r.tax_exempt]));
@@ -3546,6 +3783,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
             sheetName: sheet.sheet_name,
             sheetDescription: sheet.description || '',
             orderIndex: sheet.order_index,
+            isOptional: sheet.is_option ?? false,
+            compareToSheetId: sheet.compare_to_sheet_id ?? null,
             categories,
             totalCost: sheetTotalCost,
             totalPrice: sheetTotalPrice,
@@ -3761,6 +4000,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
           sheetName: sheet.sheet_name,
           sheetDescription: sheet.description || '',
           orderIndex: sheet.order_index,
+          isOptional: sheet.is_option ?? false,
+          compareToSheetId: sheet.compare_to_sheet_id ?? null,
           categories,
           totalCost: sheetTotalCost,
           totalPrice: sheetTotalPrice,
@@ -5142,7 +5383,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   }
 
   async function setQuoteTaxExempt(value: boolean) {
-    if (!quote || isReadOnly) return;
+    if (!quote?.id || !job?.id || isReadOnly) return;
     setTaxExemptChecked(value);
     setQuote((prev) => (prev ? { ...prev, tax_exempt: value } : prev));
     const updatedQuotes = value
@@ -5150,24 +5391,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q));
     setAllJobQuotes(updatedQuotes);
 
-    // 1) Try direct table update first (works when schema cache exposes tax_exempt)
-    if (value) {
-      const { error: directError } = await supabase.from('quotes').update({ tax_exempt: true }).eq('job_id', job.id).select('id');
-      if (!directError) {
-        toast.success('Job marked tax exempt (saved).');
-        await loadQuoteData();
-        return;
-      }
-    } else {
-      const { error: directError } = await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id).select('id');
-      if (!directError) {
-        toast.success('Tax applied to this proposal.');
-        await loadQuoteData();
-        return;
-      }
-    }
-
-    // 2) Fallback: RPC (works when schema cache does not expose tax_exempt)
+    // Try RPC first (works regardless of quotes table column name — uses dynamic SQL in DB)
     const { error: rpcError } = await supabase.rpc('set_quote_tax_exempt', {
       p_job_id: job.id,
       p_quote_id: quote.id,
@@ -5178,13 +5402,28 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       await loadQuoteData();
       return;
     }
-    console.warn('Tax exempt save failed. Direct error: table update may be blocked by schema. RPC error:', rpcError.message);
 
-    const needRpcSetup = /function.*set_quote_tax_exempt|could not find the function|permission denied|execute.*denied/i.test(rpcError.message);
+    // Fallback: direct table update (if your quotes table uses job_id and RLS allows it)
+    const jobCol = 'job_id';
+    if (value) {
+      const { data, error: directError } = await supabase.from('quotes').update({ tax_exempt: true }).eq(jobCol, job.id).select('id');
+      if (!directError && data && data.length > 0) {
+        toast.success('Job marked tax exempt (saved).');
+        await loadQuoteData();
+        return;
+      }
+    } else {
+      const { data, error: directError } = await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id).select('id');
+      if (!directError && data && data.length > 0) {
+        toast.success('Tax applied to this proposal.');
+        await loadQuoteData();
+        return;
+      }
+    }
+
+    console.warn('Tax exempt save failed. RPC error:', rpcError?.message);
     toast.error(
-      needRpcSetup
-        ? 'Tax exempt not saved. Run fix-tax-exempt.sql in Supabase SQL Editor (copy entire file), then in a NEW query run: NOTIFY pgrst, \'reload schema\'; then refresh page.'
-        : 'Tax exempt not saved. Run fix-tax-exempt.sql in Supabase, then NOTIFY pgrst, \'reload schema\'; and refresh.'
+      `Tax exempt not saved: ${rpcError?.message ?? 'Unknown error'}. Run fix-tax-exempt.sql in Supabase, then NOTIFY pgrst, 'reload schema'; and refresh.`
     );
   }
 
@@ -5270,8 +5509,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       // Get proposal number from quote if available, otherwise use job ID
       const proposalNumber = quote?.proposal_number || job.id.split('-')[0].toUpperCase();
       
-      // Prepare sections data for the template
-      const sections = allItems.map((item, index) => {
+      // Prepare sections data for the template (required items first, then optional at end)
+      const sections = allItemsUnsorted.map((item, index) => {
         if (item.type === 'material') {
           const sheet = item.data;
           const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
@@ -5297,11 +5536,90 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
           const sheetBaseCost = sheet.totalPrice + linkedRowsTotal + linkedSubsTaxableTotal;
           const sheetMarkup = sheet.markup_percent || 10;
           const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
+
+          // Build comparison data for optional sections that have a linked base section
+          let comparisonData: any = undefined;
+          if ((sheet as any).isOptional && (sheet as any).compareToSheetId) {
+            const baseSheetBd = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === (sheet as any).compareToSheetId);
+            if (baseSheetBd) {
+              const baseLinkedRows2 = customRows.filter((r: any) => r.sheet_id === baseSheetBd.sheetId);
+              const baseLinkedRowsTotal2 = baseLinkedRows2.reduce((rowSum: number, row: any) => {
+                const lineItems2 = customRowLineItems[row.id] || [];
+                const bc = lineItems2.length > 0 ? lineItems2.reduce((s2: number, it: any) => s2 + it.total_cost, 0) : row.total_cost;
+                return rowSum + (bc * (1 + row.markup_percent / 100));
+              }, 0);
+              const baseLinkedSubs2 = linkedSubcontractors[baseSheetBd.sheetId] || [];
+              const baseLinkedSubsTotal2 = baseLinkedSubs2.reduce((s2: number, sub: any) => {
+                const li2 = subcontractorLineItems[sub.id] || [];
+                const tt = li2.filter((it: any) => !it.excluded && it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
+                return s2 + (tt * (1 + (sub.markup_percent || 0) / 100));
+              }, 0);
+              const baseCatTotals2 = (baseSheetBd.categories || []).reduce((s2: number, cat: any) => {
+                const mu = categoryMarkups[`${baseSheetBd.sheetId}_${cat.name}`] ?? 10;
+                return s2 + (cat.totalCost * (1 + mu / 100));
+              }, 0);
+              const baseMaterialsPrice = baseCatTotals2 + baseLinkedRowsTotal2 + baseLinkedSubsTotal2;
+              const baseSheetLaborData = sheetLabor[baseSheetBd.sheetId];
+              const baseSheetLaborTotal2 = baseSheetLaborData ? baseSheetLaborData.total_labor_cost : 0;
+              const baseSheetLaborLineItems2 = customRowLineItems[baseSheetBd.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
+              const baseSheetLaborLineItemsTotal2 = baseSheetLaborLineItems2.reduce((s2: number, it: any) => s2 + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
+              const baseNonTaxable2 = baseLinkedSubs2.reduce((s2: number, sub: any) => {
+                const li2 = subcontractorLineItems[sub.id] || [];
+                const nt = li2.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
+                return s2 + (nt * (1 + (sub.markup_percent || 0) / 100));
+              }, 0);
+              const baseLaborPrice = baseSheetLaborTotal2 + baseSheetLaborLineItemsTotal2 + baseNonTaxable2;
+
+              // Option sheet labor
+              const optSheetLaborData = sheetLabor[sheet.sheetId];
+              const optSheetLaborTotal = optSheetLaborData ? optSheetLaborData.total_labor_cost : 0;
+              const optSheetLaborLineItems = customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
+              const optSheetLaborLineItemsTotal = optSheetLaborLineItems.reduce((s2: number, it: any) => s2 + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
+              const optLinkedSubs2 = linkedSubcontractors[sheet.sheetId] || [];
+              const optNonTaxable = optLinkedSubs2.reduce((s2: number, sub: any) => {
+                const li2 = subcontractorLineItems[sub.id] || [];
+                const nt = li2.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
+                return s2 + (nt * (1 + (sub.markup_percent || 0) / 100));
+              }, 0);
+              const optLaborPrice = optSheetLaborTotal + optSheetLaborLineItemsTotal + optNonTaxable;
+
+              // Category-level comparison rows
+              const allCatNames = Array.from(new Set([
+                ...(baseSheetBd.categories || []).map((c: any) => c.name),
+                ...(sheet.categories || []).map((c: any) => c.name),
+              ])).sort();
+              const categoryRows = allCatNames.map((catName: string) => {
+                const baseCat = (baseSheetBd.categories || []).find((c: any) => c.name === catName);
+                const optCat = (sheet.categories || []).find((c: any) => c.name === catName);
+                const baseMu = categoryMarkups[`${baseSheetBd.sheetId}_${catName}`] ?? 10;
+                const optMu = categoryMarkups[`${sheet.sheetId}_${catName}`] ?? 10;
+                return {
+                  name: catName,
+                  basePrice: baseCat ? baseCat.totalCost * (1 + baseMu / 100) : 0,
+                  optionPrice: optCat ? optCat.totalCost * (1 + optMu / 100) : 0,
+                };
+              });
+
+              comparisonData = {
+                baseName: baseSheetBd.sheetName,
+                optionName: sheet.sheetName,
+                baseMaterialsPrice,
+                optionMaterialsPrice: sheetFinalPrice,
+                baseLaborPrice,
+                optionLaborPrice: optLaborPrice,
+                baseTotal: baseMaterialsPrice + baseLaborPrice,
+                optionTotal: sheetFinalPrice + optLaborPrice,
+                categoryRows,
+              };
+            }
+          }
           
           return {
             name: sheet.sheetName,
             description: sheet.sheetDescription || '',
             price: sheetFinalPrice,
+            optional: (sheet as any).isOptional ?? false,
+            comparisonData,
             items: showLineItems ? sheet.categories?.map((cat: any) => ({
               description: cat.name,
               quantity: cat.itemCount,
@@ -5574,12 +5892,20 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     customRowsLaborTotal += rowLaborTotal * rowMarkup;
   });
   
+  // Build set of optional sheet IDs so they can be excluded from all totals
+  const optionalSheetIds = new Set(
+    materialsBreakdown.sheetBreakdowns.filter((s: any) => s.isOptional).map((s: any) => s.sheetId)
+  );
+
   // Materials: material sheets + custom material rows (ALL materials, not just taxable)
   // Also track taxable-only materials for tax calculation
   let materialSheetsPrice = 0;
   let materialSheetsTaxableOnly = 0;
   
   materialsBreakdown.sheetBreakdowns.forEach(sheet => {
+    // Skip optional sections — they are shown but not included in totals
+    if ((sheet as any).isOptional) return;
+
     // Calculate cost from linked custom rows (ALL materials, with their own markup)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
     let linkedRowsMaterialsTotal = 0;
@@ -5698,10 +6024,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   
   // Labor: sheet labor + sheet labor line items + custom row labor + custom rows labor + linked rows labor + subcontractor labor items
   // Use all sheet IDs (from sheetBreakdowns and materialSheets) so labor from line items is never missed when sheetBreakdowns is empty
+  // Exclude optional sheets from labor as well
   const allSheetIds = Array.from(new Set([
     ...materialsBreakdown.sheetBreakdowns.map((s: any) => s.sheetId),
     ...materialSheets.map((s: any) => s.id),
-  ])).filter(Boolean);
+  ])).filter(id => !!id && !optionalSheetIds.has(id));
   const totalSheetLaborCost = allSheetIds.reduce((sum, sheetId) => {
     const labor = sheetLabor[sheetId];
     
@@ -5755,8 +6082,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   }, 0);
   
   // Custom row labor (estimated_hours * rate) only for rows that don't already have labor line items,
-  // so the top labor total equals the sum of labor shown in the section (no double-count, no under-count)
+  // so the top labor total equals the sum of labor shown in the section (no double-count, no under-count).
+  // Also exclude rows that are linked to optional sheets.
   const totalCustomRowLaborCost = Object.entries(customRowLabor).reduce((sum: number, [rowId, labor]: [string, any]) => {
+    const row = customRows.find(r => r.id === rowId);
+    if (row && optionalSheetIds.has((row as any).sheet_id)) return sum;
     const lineItems = customRowLineItems[rowId] || [];
     const hasLaborLineItems = lineItems.some((item: any) => (item.item_type || 'material') === 'labor');
     if (hasLaborLineItems) return sum;
@@ -5803,7 +6133,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   };
 
   // Create unified list of all proposal items sorted by order_index (only standalone subs)
-  const allItems = [
+  const allItemsUnsorted = [
     ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
       type: 'material' as const,
       id: sheet.sheetId,
@@ -5826,6 +6156,10 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     })),
   ].sort((a, b) => a.orderIndex - b.orderIndex);
 
+  // Split into required (included in total) and optional (excluded from total) for separate rendering
+  const allItems = allItemsUnsorted.filter(item => !(item.type === 'material' && (item.data as any).isOptional));
+  const optionalItems = allItemsUnsorted.filter(item => item.type === 'material' && (item.data as any).isOptional);
+
   // Handle drag end
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -5838,13 +6172,13 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       return;
     }
 
-    const oldIndex = allItems.findIndex(item => item.id === active.id);
-    const newIndex = allItems.findIndex(item => item.id === over.id);
+    const oldIndex = allItemsUnsorted.findIndex(item => item.id === active.id);
+    const newIndex = allItemsUnsorted.findIndex(item => item.id === over.id);
 
     if (oldIndex === -1 || newIndex === -1) return;
 
     // Reorder items
-    const reorderedItems = arrayMove(allItems, oldIndex, newIndex);
+    const reorderedItems = arrayMove(allItemsUnsorted, oldIndex, newIndex);
 
     // Update order_index for all affected items
     const updates = reorderedItems.map((item, index) => {
@@ -6173,7 +6507,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                   onDragEnd={handleDragEnd}
                 >
                   <SortableContext
-                    items={allItems.map(item => item.id)}
+                    items={allItemsUnsorted.map(item => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
                     {allItems.map((item) => (
@@ -6225,14 +6559,145 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                         setEmptyScopeById={setEmptyScopeById}
                         isReadOnly={isReadOnly}
                         quote={quote}
+                        setComparePickerSheetId={setComparePickerSheetId}
+                        setShowComparePickerDialog={setShowComparePickerDialog}
+                        expandedComparisons={expandedComparisons}
+                        setExpandedComparisons={setExpandedComparisons}
+                        materialsBreakdown={materialsBreakdown}
                       />
                     ))}
                   </SortableContext>
                 </DndContext>
+
+                {/* Optional Items Section */}
+                {optionalItems.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 py-2 px-3 mb-2 rounded-lg bg-amber-50 border border-amber-200">
+                      <span className="text-sm font-semibold text-amber-800 uppercase tracking-wide">Optional Items</span>
+                      <span className="text-xs text-amber-600 font-normal">(not included in proposal total)</span>
+                    </div>
+                    <div className="space-y-1">
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <SortableContext
+                          items={optionalItems.map(item => item.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {optionalItems.map((item) => (
+                            <SortableRow
+                              key={item.id}
+                              item={item}
+                              sheetMarkups={sheetMarkups}
+                              setSheetMarkups={setSheetMarkups}
+                              categoryMarkups={categoryMarkups}
+                              setCategoryMarkups={setCategoryMarkups}
+                              customRowLineItems={customRowLineItems}
+                              sheetLabor={sheetLabor}
+                              customRowLabor={customRowLabor}
+                              subcontractorLineItems={subcontractorLineItems}
+                              linkedSubcontractors={linkedSubcontractors}
+                              editingRowName={editingRowName}
+                              editingRowNameType={editingRowNameType}
+                              tempRowName={tempRowName}
+                              setTempRowName={setTempRowName}
+                              startEditingRowName={startEditingRowName}
+                              saveRowName={saveRowName}
+                              cancelEditingRowName={cancelEditingRowName}
+                              openSheetDescDialog={openSheetDescDialog}
+                              openLaborDialog={openLaborDialog}
+                              openAddDialog={openAddDialog}
+                              openLineItemDialog={openLineItemDialog}
+                              openSubcontractorDialog={openSubcontractorDialog}
+                              openAddSubcontractorLineItemDialog={openAddSubcontractorLineItemDialog}
+                              openEditSubcontractorLineItemDialog={openEditSubcontractorLineItemDialog}
+                              deleteRow={deleteRow}
+                              deleteSheetLabor={deleteSheetLabor}
+                              toggleSubcontractorLineItem={toggleSubcontractorLineItem}
+                              toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
+                              toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
+                              unlinkSubcontractor={unlinkSubcontractor}
+                              updateSubcontractorMarkup={updateSubcontractorMarkup}
+                              updateCustomRowMarkup={updateCustomRowMarkup}
+                              updateCustomRowBaseCost={updateCustomRowBaseCost}
+                              updateLineItemCost={updateLineItemCost}
+                              deleteLineItem={deleteLineItem}
+                              loadMaterialsData={loadMaterialsData}
+                              loadCustomRows={loadCustomRows}
+                              loadSubcontractorEstimates={loadSubcontractorEstimates}
+                              customRows={customRows}
+                              savingMarkupsRef={savingMarkupsRef}
+                              emptyNotesById={emptyNotesById}
+                              setEmptyNotesById={setEmptyNotesById}
+                              emptyScopeById={emptyScopeById}
+                              setEmptyScopeById={setEmptyScopeById}
+                              isReadOnly={isReadOnly}
+                              quote={quote}
+                              setComparePickerSheetId={setComparePickerSheetId}
+                              setShowComparePickerDialog={setShowComparePickerDialog}
+                              expandedComparisons={expandedComparisons}
+                              setExpandedComparisons={setExpandedComparisons}
+                              materialsBreakdown={materialsBreakdown}
+                            />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
       </div>
+
+      {/* Compare Picker Dialog — lets user choose which required section to compare an optional section against */}
+      <Dialog open={showComparePickerDialog} onOpenChange={setShowComparePickerDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Compare with Section</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Select the included section you want to compare this optional section against. The price difference will be shown side-by-side.
+            </p>
+            <div className="space-y-2">
+              {allItems
+                .filter(item => item.type === 'material')
+                .map(item => {
+                  const s = item.data as any;
+                  return (
+                    <button
+                      key={s.sheetId}
+                      className="w-full text-left px-3 py-2 rounded border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                      onClick={async () => {
+                        if (!comparePickerSheetId) return;
+                        await supabase.from('material_sheets').update({ compare_to_sheet_id: s.sheetId } as any).eq('id', comparePickerSheetId);
+                        await loadMaterialsData(quote?.id ?? null, false);
+                        // Auto-expand the comparison panel for this optional sheet
+                        setExpandedComparisons(prev => new Set([...prev, comparePickerSheetId]));
+                        setShowComparePickerDialog(false);
+                        setComparePickerSheetId(null);
+                      }}
+                    >
+                      <span className="font-medium text-slate-800">{s.sheetName}</span>
+                      {s.sheetDescription && <span className="text-xs text-slate-500 ml-2">{s.sheetDescription.slice(0, 60)}</span>}
+                    </button>
+                  );
+                })}
+              {allItems.filter(item => item.type === 'material').length === 0 && (
+                <p className="text-sm text-slate-400 italic">No included sections found. Add a required section first.</p>
+              )}
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => { setShowComparePickerDialog(false); setComparePickerSheetId(null); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialogs remain unchanged - copying from original */}
       {/* Sheet Description Dialog */}
@@ -6256,6 +6721,37 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                 Save
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark as Sent — manual SQL fallback */}
+      <Dialog open={showMarkAsSentManualDialog} onOpenChange={setShowMarkAsSentManualDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mark as Sent — run this in Supabase</DialogTitle>
+            <DialogDescription>
+              Automatic mark-as-sent failed. Copy the SQL below, open Supabase Dashboard → SQL Editor, paste it, and click Run. Then refresh this page.
+            </DialogDescription>
+          </DialogHeader>
+          <pre className="bg-slate-100 dark:bg-slate-800 p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap font-mono">{markAsSentManualSql}</pre>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(markAsSentManualSql);
+                  toast.success('SQL copied to clipboard');
+                } catch {
+                  toast.error('Could not copy');
+                }
+              }}
+            >
+              Copy SQL
+            </Button>
+            <Button onClick={() => { setShowMarkAsSentManualDialog(false); loadQuoteData(); loadData(true); }}>
+              Done / Refresh
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

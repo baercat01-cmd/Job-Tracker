@@ -534,7 +534,7 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                 </div>
               </div>
 
-              {/* Image — original URL so we can zoom in; wrapper sized to scaled dimensions for scroll */}
+              {/* Image — fit entire picture to screen when opened; zoom scales from fitted size */}
               <div
                 ref={viewerContainerRef}
                 className="flex-1 overflow-auto bg-muted/30 flex items-center justify-center p-4 min-h-0"
@@ -548,6 +548,7 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                 }}
               >
                 <div
+                  className="flex items-center justify-center"
                   style={
                     viewerImgSize
                       ? {
@@ -556,9 +557,8 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                           minWidth: viewerImgSize.w * viewerZoom,
                           minHeight: viewerImgSize.h * viewerZoom,
                         }
-                      : undefined
+                      : { width: '100%', height: '100%', minHeight: 0 }
                   }
-                  className="flex items-center justify-center"
                 >
                   <img
                     src={rotatingPhotoId === selectedPhoto.id && rotatedPreviewUrl ? rotatedPreviewUrl : selectedPhoto.photo_url}
@@ -568,7 +568,18 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                     draggable={false}
                     onLoad={(e) => {
                       const img = e.currentTarget;
-                      setViewerImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+                      const container = viewerContainerRef.current;
+                      if (container) {
+                        const cw = container.clientWidth - 32;
+                        const ch = container.clientHeight - 32;
+                        const fitScale = Math.min(cw / img.naturalWidth, ch / img.naturalHeight, 1);
+                        setViewerImgSize({
+                          w: img.naturalWidth * fitScale,
+                          h: img.naturalHeight * fitScale,
+                        });
+                      } else {
+                        setViewerImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+                      }
                     }}
                   />
                 </div>

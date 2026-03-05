@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Job {
   id: string;
@@ -155,12 +162,14 @@ export default function CustomerPortal() {
         job = jobsData[0];
       }
 
-      // Load quote for this job
-      const { data: quoteData } = await supabase
+      // Load all quotes (proposals) for this job so customer can switch if multiple
+      const { data: quotesData } = await supabase
         .from('quotes')
         .select('*')
         .eq('job_id', job.id)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
+      const jobQuotes = quotesData || [];
+      const quoteData = jobQuotes[0] ?? null;
 
       // Load payments
       const { data: paymentsData } = await supabase
@@ -202,26 +211,29 @@ export default function CustomerPortal() {
         .order('email_date', { ascending: false })
         .limit(100);
 
-      // Load proposal data
-      const proposalData = await loadProposalData(job.id);
-
-      // Load viewer links (Storage first — shared for all users like documents, then table)
+      // Proposal data is loaded per-quote in JobDetailView when customer selects a proposal
       const viewerLinks = await loadViewerLinksForJob(supabase, job.id);
-
       const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+
+      // Ensure tax_exempt is available on quotes (in case PostgREST schema cache doesn't expose it)
+      let quotesWithTax = jobQuotes;
+      if (jobQuotes.length > 0 && jobQuotes.some((q: any) => q.tax_exempt === undefined)) {
+        const { data: taxRows } = await supabase.rpc('get_job_quotes_tax_exempt', { p_job_id: job.id });
+        const taxByQuote = new Map((taxRows || []).map((r: any) => [r.quote_id, r.tax_exempt]));
+        quotesWithTax = jobQuotes.map((q: any) => ({ ...q, tax_exempt: taxByQuote.get(q.id) ?? false }));
+      }
 
       setJobData({
         job,
         quote: quoteData,
+        jobQuotes: quotesWithTax,
         payments: paymentsData || [],
         documents: documentsData || [],
         photos: photosData || [],
         scheduleEvents: scheduleData || [],
         emails: emailsData || [],
-        proposalData,
         viewerLinks,
         totalPaid,
-        balance: proposalData.totals.grandTotal - totalPaid,
       });
 
       setLoading(false);
@@ -229,114 +241,6 @@ export default function CustomerPortal() {
       console.error('Error loading customer data:', error);
       toast.error('Failed to load your project');
       setLoading(false);
-    }
-  }
-
-  async function loadProposalData(jobId: string) {
-    try {
-      // Get workbook
-      const { data: workbookData } = await supabase
-        .from('material_workbooks')
-        .select('id')
-        .eq('job_id', jobId)
-        .eq('status', 'working')
-        .maybeSingle();
-
-      let materialSheets: any[] = [];
-      if (workbookData) {
-        const { data: sheetsData } = await supabase
-          .from('material_sheets')
-          .select('*')
-          .eq('workbook_id', workbookData.id)
-          .order('order_index');
-
-        const sheets = sheetsData || [];
-        const sheetIds = sheets.map((s: any) => s.id);
-        for (const sheet of sheets) {
-          const [{ data: items }, { data: laborRows }] = await Promise.all([
-            supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
-            supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
-          ]);
-          (sheet as any).items = items || [];
-          const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
-          (sheet as any).laborTotal = laborTotal;
-        }
-        if (sheetIds.length > 0) {
-          const { data: sheetLineItems } = await supabase
-            .from('custom_financial_row_items')
-            .select('*')
-            .in('sheet_id', sheetIds)
-            .is('row_id', null)
-            .order('order_index');
-          const bySheet: Record<string, any[]> = {};
-          (sheetLineItems || []).forEach((item: any) => {
-            const sid = item.sheet_id;
-            if (sid) {
-              if (!bySheet[sid]) bySheet[sid] = [];
-              bySheet[sid].push(item);
-            }
-          });
-          sheets.forEach((sheet: any) => {
-            const items = bySheet[sheet.id] || [];
-            const lineItemsTotal = items.reduce((s: number, item: any) => s + ((item.total_cost ?? 0) * (1 + ((item.markup_percent ?? 0) / 100))), 0);
-            (sheet as any).sheetLineItemsTotal = lineItemsTotal;
-          });
-        }
-        materialSheets = sheets;
-      }
-
-      // Get custom rows with line items (so portal proposal matches actual proposal)
-      const { data: customRowsData } = await supabase
-        .from('custom_financial_rows')
-        .select('*, custom_financial_row_items(*)')
-        .eq('job_id', jobId)
-        .order('order_index');
-
-      // Get subcontractor estimates with line items for accurate total (included items only, with markup)
-      const { data: subEstimatesData } = await supabase
-        .from('subcontractor_estimates')
-        .select('*, subcontractor_estimate_line_items(*)')
-        .eq('job_id', jobId)
-        .order('order_index');
-
-      // Calculate totals: include material sheets (items + labor + sheet line items), custom rows, and subs
-      const TAX_RATE = 0.07;
-      const sheetsSubtotal = (materialSheets || []).reduce((sum: number, sheet: any) => {
-        const itemsTotal = (sheet.items || []).reduce((s: number, item: any) => s + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
-        const labor = sheet.laborTotal ?? 0;
-        const sheetLineItemsTotal = sheet.sheetLineItemsTotal ?? 0;
-        return sum + itemsTotal + labor + sheetLineItemsTotal;
-      }, 0);
-      const subsTotal = (subEstimatesData || []).reduce((sum: number, est: any) => {
-        const lineItems = est.subcontractor_estimate_line_items || [];
-        const includedTotal = lineItems
-          .filter((item: any) => !item.excluded)
-          .reduce((s: number, item: any) => s + (item.total_price ?? 0), 0);
-        const markup = est.markup_percent ?? 0;
-        return sum + (includedTotal * (1 + markup / 100));
-      }, 0);
-      const subtotal =
-        sheetsSubtotal +
-        (customRowsData || []).reduce((sum, row) => sum + (row.selling_price ?? 0), 0) +
-        subsTotal;
-
-      const tax = subtotal * TAX_RATE;
-      const grandTotal = subtotal + tax;
-
-      return {
-        materialSheets,
-        customRows: customRowsData || [],
-        subcontractorEstimates: subEstimatesData || [],
-        totals: { subtotal, tax, grandTotal },
-      };
-    } catch (error) {
-      console.error('Error loading proposal data:', error);
-      return {
-        materialSheets: [],
-        customRows: [],
-        subcontractorEstimates: [],
-        totals: { subtotal: 0, tax: 0, grandTotal: 0 },
-      };
     }
   }
 
@@ -378,8 +282,13 @@ export default function CustomerPortal() {
 
 // Job Detail View Component
 function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: any }) {
-  const { job, quote, payments, documents, photos, scheduleEvents, emails, proposalData, viewerLinks = [], totalPaid, balance } = jobData;
+  const { job, quote, jobQuotes = [], payments, documents, photos, scheduleEvents, emails, viewerLinks = [], totalPaid } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(quote?.id ?? null);
+  const selectedQuote = jobQuotes.find((q: any) => q.id === selectedQuoteId) ?? jobQuotes[0] ?? quote;
+  const [proposalData, setProposalData] = useState<any>(null);
+  const [proposalDataLoading, setProposalDataLoading] = useState(false);
+  const proposalDataCacheRef = useRef<Record<string, any>>({});
   const showFinancial = !!customerInfo?.show_financial_summary;
   /** When true, show $ on each line; when false (default), only show total / tax / grand total at bottom */
   const showLineItemPrices = customerInfo?.show_line_item_prices === true;
@@ -442,14 +351,30 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
     }
   }
 
-  async function loadProposalData(jobId: string) {
+  async function loadProposalDataForQuote(jobId: string, quoteId: string | null, taxExempt: boolean) {
     try {
-      const { data: workbookData } = await supabase
-        .from('material_workbooks')
-        .select('id')
-        .eq('job_id', jobId)
-        .eq('status', 'working')
-        .maybeSingle();
+      // Workbook: quote-specific first, then legacy (quote_id null)
+      let workbookData: { id: string } | null = null;
+      if (quoteId) {
+        const { data: wb } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', jobId)
+          .eq('quote_id', quoteId)
+          .eq('status', 'working')
+          .maybeSingle();
+        workbookData = wb ?? null;
+      }
+      if (!workbookData) {
+        const { data: wb } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', jobId)
+          .is('quote_id', null)
+          .eq('status', 'working')
+          .maybeSingle();
+        workbookData = wb ?? null;
+      }
 
       let materialSheets: any[] = [];
       if (workbookData) {
@@ -458,7 +383,6 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .select('*')
           .eq('workbook_id', workbookData.id)
           .order('order_index');
-
         const sheets = sheetsData || [];
         const sheetIds = sheets.map((s: any) => s.id);
         for (const sheet of sheets) {
@@ -494,17 +418,27 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         materialSheets = sheets;
       }
 
-      const { data: customRowsData } = await supabase
-        .from('custom_financial_rows')
-        .select('*, custom_financial_row_items(*)')
-        .eq('job_id', jobId)
-        .order('order_index');
+      // Custom rows: quote-specific + job-level (quote_id null), merged and sorted
+      const [quoteRowsRes, jobRowsRes] = await Promise.all([
+        quoteId
+          ? supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).eq('quote_id', quoteId).order('order_index')
+          : { data: [] as any[] },
+        supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
+      ]);
+      const quoteRows = quoteRowsRes.data || [];
+      const jobRows = jobRowsRes.data || [];
+      const customRowsData = [...quoteRows, ...jobRows].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
 
-      const { data: subEstimatesData } = await supabase
-        .from('subcontractor_estimates')
-        .select('*, subcontractor_estimate_line_items(*)')
-        .eq('job_id', jobId)
-        .order('order_index');
+      // Subcontractor estimates: same pattern
+      const [quoteSubsRes, jobSubsRes] = await Promise.all([
+        quoteId
+          ? supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).eq('quote_id', quoteId).order('order_index')
+          : { data: [] as any[] },
+        supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
+      ]);
+      const quoteSubs = quoteSubsRes.data || [];
+      const jobSubs = jobSubsRes.data || [];
+      const subEstimatesData = [...quoteSubs, ...jobSubs].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
 
       const TAX_RATE = 0.07;
       const sheetsSubtotal = (materialSheets || []).reduce((sum: number, sheet: any) => {
@@ -526,13 +460,13 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         (customRowsData || []).reduce((sum, row) => sum + (row.selling_price ?? 0), 0) +
         subsTotal;
 
-      const tax = subtotal * TAX_RATE;
-      const grandTotal = subtotal + tax;
+      const tax = taxExempt ? 0 : subtotal * TAX_RATE;
+      const grandTotal = taxExempt ? subtotal : subtotal + tax;
 
       return {
         materialSheets,
-        customRows: customRowsData || [],
-        subcontractorEstimates: subEstimatesData || [],
+        customRows: customRowsData,
+        subcontractorEstimates: subEstimatesData,
         totals: { subtotal, tax, grandTotal },
       };
     } catch (error) {
@@ -546,7 +480,29 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
     }
   }
 
-  const proposalNumber = quote?.proposal_number || quote?.quote_number || 'N/A';
+  useEffect(() => {
+    if (!job?.id || !selectedQuoteId) {
+      setProposalData(null);
+      return;
+    }
+    const cacheKey = selectedQuoteId;
+    if (proposalDataCacheRef.current[cacheKey]) {
+      setProposalData(proposalDataCacheRef.current[cacheKey]);
+      return;
+    }
+    let cancelled = false;
+    setProposalDataLoading(true);
+    const taxExempt = !!selectedQuote?.tax_exempt;
+    loadProposalDataForQuote(job.id, selectedQuoteId, taxExempt).then((data) => {
+      if (cancelled) return;
+      proposalDataCacheRef.current[cacheKey] = data;
+      setProposalData(data);
+      setProposalDataLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [job?.id, selectedQuoteId, selectedQuote?.tax_exempt]);
+
+  const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
   const portalUrl = typeof window !== 'undefined' ? window.location.href : '';
 
   async function copyPortalUrl() {
@@ -577,9 +533,24 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-3xl font-bold text-amber-400">{job.name}</h1>
-                <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-500/50">
-                  #{proposalNumber}
-                </Badge>
+                {jobQuotes.length > 1 ? (
+                  <Select value={selectedQuoteId ?? ''} onValueChange={(v) => setSelectedQuoteId(v || null)}>
+                    <SelectTrigger className="w-[180px] bg-amber-500/20 text-amber-300 border-amber-500/50">
+                      <SelectValue placeholder="Select proposal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jobQuotes.map((q: any) => (
+                        <SelectItem key={q.id} value={q.id}>
+                          #{q.proposal_number || q.quote_number || q.id.slice(0, 8)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-500/50">
+                    #{proposalNumber}
+                  </Badge>
+                )}
               </div>
               <p className="text-emerald-100/90 mt-1">{job.client_name}</p>
               {job.address && (
@@ -705,84 +676,49 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                     </Button>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {(proposalData.materialSheets || []).map((sheet: any) => {
-                      const showSheetPrice = showFinancial && showLineItemPrices;
-                      const itemsTotal = (sheet.items || []).reduce((sum: number, item: any) => sum + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
-                      const sheetTotal = itemsTotal + (sheet.laborTotal ?? 0) + (sheet.sheetLineItemsTotal ?? 0);
-                      return (
-                        <div key={sheet.id} className="border rounded-lg p-4 flex flex-col gap-2">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
-                              {sheet.description && (
-                                <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
-                              )}
-                            </div>
-                            {showSheetPrice && sheetTotal > 0 && (
-                              <p className="text-xl font-bold text-emerald-700 shrink-0">
-                                ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                              </p>
+                    {proposalDataLoading && !proposalData ? (
+                      <div className="flex items-center justify-center py-8 text-muted-foreground">
+                        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                        Loading proposal…
+                      </div>
+                    ) : proposalData ? (
+                      <>
+                        {/* Line items (per-sheet and per-row breakdown) are hidden; only scope and totals shown. */}
+                        {(proposalData.subcontractorEstimates || []).map((est: any) => (
+                          <div key={est.id} className="border rounded-lg p-4">
+                            <h3 className="font-bold">{est.company_name}</h3>
+                            {est.scope_of_work && (
+                              <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
                             )}
                           </div>
-                        </div>
-                      );
-                    })}
-                    {(proposalData.customRows || []).map((row: any) => {
-                      const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
-                      const showRowPrice = showFinancial && showLineItemPrices;
-                      return (
-                        <div key={row.id} className="border rounded-lg p-4 flex flex-col gap-2">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-bold text-lg">{row.description}</h3>
-                              {items.length > 0 ? (
-                                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
-                                  {items.map((item: any) => (
-                                    <li key={item.id}>{item.description}</li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                              {showRowPrice && (row.quantity != null || row.unit_cost != null) && (
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  {row.quantity} × ${(row.unit_cost ?? 0).toFixed(2)}
-                                </p>
-                              )}
+                        ))}
+                        {showFinancial && proposalData.totals && (
+                          <div className="border-t-2 pt-4 space-y-2">
+                            <div className="flex justify-between text-lg">
+                              <span className="font-medium">Subtotal:</span>
+                              <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </div>
-                            {showRowPrice && (
-                              <p className="text-xl font-bold text-emerald-700 shrink-0">
-                                ${(row.selling_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                              </p>
+                            {selectedQuote?.tax_exempt ? (
+                              <div className="flex items-center gap-2 text-lg text-amber-700">
+                                <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                                <span className="font-medium">Tax exempt</span>
+                              </div>
+                            ) : (
+                              <div className="flex justify-between text-lg">
+                                <span className="font-medium">Tax (7%):</span>
+                                <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              </div>
                             )}
+                            <div className="flex justify-between items-center text-2xl font-bold pt-2 border-t">
+                              <span>Grand Total:</span>
+                              <span className="text-emerald-700">
+                                ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                    {(proposalData.subcontractorEstimates || []).map((est: any) => (
-                      <div key={est.id} className="border rounded-lg p-4">
-                        <h3 className="font-bold">{est.company_name}</h3>
-                        {est.scope_of_work && (
-                          <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
                         )}
-                      </div>
-                    ))}
-                    {showFinancial && proposalData.totals && (
-                      <div className="border-t-2 pt-4 space-y-2">
-                        <div className="flex justify-between text-lg">
-                          <span className="font-medium">Subtotal:</span>
-                          <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="flex justify-between text-lg">
-                          <span className="font-medium">Tax (7%):</span>
-                          <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="flex justify-between text-2xl font-bold pt-2 border-t">
-                          <span>Grand Total:</span>
-                          <span className="text-emerald-700">
-                            ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                      </>
+                    ) : null}
                   </CardContent>
                 </Card>
               </>
