@@ -2028,6 +2028,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
   const [showProposalComparison, setShowProposalComparison] = useState(false);
   const [templateQuoteIdForNewProposal, setTemplateQuoteIdForNewProposal] = useState<string | null>(null);
+  const [recoveringProposal, setRecoveringProposal] = useState(false);
   const [showMarkAsSentManualDialog, setShowMarkAsSentManualDialog] = useState(false);
   const [markAsSentManualSql, setMarkAsSentManualSql] = useState('');
 
@@ -2669,6 +2670,68 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     }
   }
 
+  /**
+   * Policy: Proposal (quotes table) rows must never be deleted. Only child data (material_workbooks,
+   * custom_financial_rows, subcontractor_estimates) may be replaced when restoring/copying into an existing quote.
+   */
+
+  /** Finds material workbooks for this job whose quote_id no longer exists (orphaned), creates a new proposal row, and reassigns those workbooks to it. Use when a proposal was accidentally deleted but materials remain. */
+  async function recoverMissingProposal() {
+    if (!profile?.id || !job?.id) {
+      toast.error('You must be signed in to recover a proposal.');
+      return;
+    }
+    setRecoveringProposal(true);
+    try {
+      const { data: jobQuotes, error: qErr } = await supabase.from('quotes').select('id').eq('job_id', job.id);
+      if (qErr) throw qErr;
+      const quoteIds = new Set((jobQuotes || []).map((q: any) => q.id));
+
+      const { data: workbooks, error: wbErr } = await supabase
+        .from('material_workbooks')
+        .select('id, quote_id')
+        .eq('job_id', job.id);
+      if (wbErr) throw wbErr;
+
+      const orphaned = (workbooks || []).filter((wb: any) => wb.quote_id && !quoteIds.has(wb.quote_id));
+      if (orphaned.length === 0) {
+        toast.info('No missing proposal data found. All workbooks are already linked to a proposal.');
+        setRecoveringProposal(false);
+        return;
+      }
+
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: null,
+        p_job_id: job.id,
+        p_user_id: profile.id,
+        p_change_notes: 'Recovered proposal (materials were orphaned)',
+      });
+      if (rpcErr) throw rpcErr;
+      const newQuoteId = (rpcData as any)?.quote_id;
+      if (!newQuoteId) throw new Error('No quote_id returned from create_proposal_version');
+
+      const { error: updateErr } = await supabase
+        .from('material_workbooks')
+        .update({ quote_id: newQuoteId, updated_at: new Date().toISOString() })
+        .in('id', orphaned.map((w: any) => w.id));
+      if (updateErr) throw updateErr;
+
+      await loadQuoteData();
+      const newQuote = (await supabase.from('quotes').select('*').eq('id', newQuoteId).single()).data;
+      if (newQuote) {
+        setQuote(newQuote);
+        userSelectedQuoteIdRef.current = newQuote.id;
+        await loadData(false, newQuote);
+      }
+      toast.success(`Recovered proposal with ${orphaned.length} workbook(s). It appears as a new proposal in the list.`);
+    } catch (e: any) {
+      console.error('Recover proposal failed:', e);
+      toast.error('Recover failed: ' + (e?.message || 'see console'));
+    } finally {
+      setRecoveringProposal(false);
+    }
+  }
+
   /** Copies all proposal data (workbook, sheets, items, financial rows, subs) from source quote to target. DELETES existing data for target quote. Only call after explicit user confirmation. */
   async function copyProposalDataFromQuoteToQuote(
     sourceQuoteId: string,
@@ -2893,6 +2956,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     }
   }
 
+  /** Creates a new proposal (empty or cloned from a template). Existing proposals are never deleted or modified. */
   async function createNewProposal() {
     if (!profile) return;
     setCreatingProposal(true);
@@ -2950,6 +3014,22 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       // ── Step 0: When cloning current proposal, persist any in-memory labor (and ensure source is saved) so copy uses latest data ──
       if (isCloningCurrent) {
         try {
+          // Persist labor currently in the Add/Edit Labor dialog if open for a sheet (so unsaved labor is included in copy)
+          if (editingLaborSheetId && laborForm) {
+            const laborData = {
+              sheet_id: editingLaborSheetId,
+              description: laborForm.description ?? null,
+              estimated_hours: laborForm.estimated_hours ?? 0,
+              hourly_rate: laborForm.hourly_rate ?? 0,
+              notes: laborForm.notes ?? null,
+            };
+            const existing = sheetLabor[editingLaborSheetId];
+            if (existing?.id) {
+              await supabase.from('material_sheet_labor').update(laborData).eq('id', existing.id);
+            } else {
+              await supabase.from('material_sheet_labor').insert([laborData]);
+            }
+          }
           for (const sheet of materialSheets) {
             const sheetId = sheet.id ?? sheet.sheetId;
             if (!sheetId) continue;
@@ -3454,13 +3534,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         }
         
         if (!versionData || !versionData.subcontractor_snapshot) {
-          console.log('No subcontractor snapshot found for this proposal');
-          setSubcontractorEstimates([]);
-          setSubcontractorLineItems({});
-          setLinkedSubcontractors({});
-          return;
-        }
-        
+          // No snapshot — fall through to load live data so proposal info is always visible
+          console.log('No subcontractor snapshot; loading live data for read-only display');
+          isHistorical = false;
+        } else {
         const snapshot = versionData.subcontractor_snapshot;
         const estimatesData = Array.isArray(snapshot) ? snapshot : [];
         
@@ -3488,6 +3565,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         setSubcontractorLineItems(lineItemsMap);
         console.log('✅ Loaded subcontractors from snapshot');
         return;
+        }
       }
       
       // Live path: load estimates for this proposal OR job-level uploads (quote_id null) so subs
@@ -3676,17 +3754,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         }
         
         if (!versionData || !versionData.workbook_snapshot) {
-          console.log('No snapshot found for this proposal');
-          setMaterialsBreakdown({
-            sheetBreakdowns: [],
-            totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
-          });
-          setMaterialSheets([]);
-          setSheetLabor({});
-          setCategoryMarkups({});
-          return;
-        }
-        
+          // No snapshot — load live data so proposal info is always visible (read-only until Unlock)
+          console.log('No workbook snapshot; loading live materials for read-only display');
+          isHistorical = false;
+        } else {
         // Parse and use the snapshot data
         const snapshot = versionData.workbook_snapshot;
         const sheetsData = snapshot.sheets || [];
@@ -3811,6 +3882,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         
         console.log('✅ Loaded materials from snapshot');
         return;
+        }
       }
       
       // Air-gap: when a quote is active load ONLY by quote_id; fall back to job_id only when no quote.
@@ -3912,16 +3984,24 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         setMaterialSheets(sheetsFlat);
       }
 
-      // Build labor map from nested data
+      // Build labor map from nested data (include total_labor_cost so UI displays correctly)
       const laborMap: Record<string, any> = {};
       sheetsData.forEach((sheet: any) => {
         (sheet.material_sheet_labor || []).forEach((labor: any) => {
-          laborMap[labor.sheet_id] = labor;
+          const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
+          laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
         });
       });
-      if (JSON.stringify(laborMap) !== JSON.stringify(sheetLabor)) {
-        setSheetLabor(laborMap);
-      }
+      // Merge in any existing sheet labor not in fetch (e.g. just-saved row not yet visible) so it doesn't glitch away
+      setSheetLabor(prev => {
+        const next = { ...laborMap };
+        if (prev && typeof prev === 'object') {
+          Object.keys(prev).forEach(sid => {
+            if (!(sid in next)) next[sid] = prev[sid];
+          });
+        }
+        return next;
+      });
 
       // Build category markups map, preserving any in-progress saves
       const freshMarkups: Record<string, number> = {};
@@ -4103,13 +4183,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       }
       
       if (!versionData || !versionData.financial_rows_snapshot) {
-        console.log('No custom rows snapshot found for this proposal');
-        setCustomRows([]);
-        setCustomRowLineItems({});
-        setCustomRowLabor({});
-        return;
-      }
-      
+        // No snapshot — show live data so proposal info is always visible (read-only until Unlock)
+        console.log('No custom rows snapshot; loading live data for read-only display');
+        isHistorical = false;
+      } else {
       const snapshot = versionData.financial_rows_snapshot;
       const rowsData = Array.isArray(snapshot) ? snapshot : [];
       const dedupedRows = dedupeRowsByDescription(rowsData);
@@ -4156,6 +4233,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       setCustomRowLineItems(lineItemsMap);
       console.log('✅ Loaded custom rows from snapshot (deduped)');
       return;
+      }
     }
     
     // Normal flow: fetch rows + their line items. When viewing a proposal, include both
@@ -4246,20 +4324,33 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       (row.custom_financial_row_items || []) as CustomRowLineItem[]
     );
 
-    // Fetch sheet-linked items (row_id IS NULL). Use same workbook as materials so Add Labor / line items appear.
-    // When proposal workbook has no sheets, use any job workbook with content (match loadMaterialsData fallback).
+    // Fetch sheet-linked items (row_id IS NULL). Use the SAME workbook/sheet selection as loadMaterialsData
+    // so Add Labor line items (saved with sheet_id from the displayed sheet) are always found on reload.
     let sheetLinkedItems: CustomRowLineItem[] = [];
     let sheetIds: string[] = [];
     if (targetQuoteId) {
-      const { data: quoteWb } = await supabase
+      let quoteWb: any = null;
+      let { data: wbData } = await supabase
         .from('material_workbooks')
-        .select('id, material_sheets(id)')
+        .select('id, material_sheets(id, material_items(id))')
         .eq('quote_id', targetQuoteId)
         .eq('status', 'working')
         .maybeSingle();
+      quoteWb = wbData;
+      if (!quoteWb) {
+        const fallback = await supabase
+          .from('material_workbooks')
+          .select('id, material_sheets(id, material_items(id))')
+          .eq('quote_id', targetQuoteId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        quoteWb = fallback.data;
+      }
       const quoteSheets = (quoteWb as any)?.material_sheets || [];
-      sheetIds = quoteSheets.map((s: any) => s.id);
-      if (sheetIds.length === 0) {
+      let quoteSheetIds = quoteSheets.map((s: any) => s.id);
+      const itemCount = quoteSheets.reduce((n: number, s: any) => n + ((s.material_items || []).length), 0);
+      if (quoteSheetIds.length === 0 || itemCount === 0) {
         const { data: allJobWbs } = await supabase
           .from('material_workbooks')
           .select('id, material_sheets(id)')
@@ -4268,11 +4359,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         for (const wb of allJobWbs || []) {
           const sids = ((wb as any).material_sheets || []).map((s: any) => s.id);
           if (sids.length > 0) {
-            sheetIds = sids;
+            quoteSheetIds = sids;
             break;
           }
         }
       }
+      sheetIds = quoteSheetIds;
     } else {
       const { data: jobWb } = await supabase
         .from('material_workbooks')
@@ -4307,7 +4399,20 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         lineItemsMap[parentId].push(item);
       }
     });
-    setCustomRowLineItems(lineItemsMap);
+    // Merge with previous state so just-saved line items (e.g. Add Labor) are not lost if fetch is stale
+    setCustomRowLineItems(prev => {
+      const next: Record<string, CustomRowLineItem[]> = { ...lineItemsMap };
+      if (prev && typeof prev === 'object') {
+        for (const parentId of Object.keys(prev)) {
+          const prevList = prev[parentId] || [];
+          const baseList = next[parentId] || [];
+          const baseIds = new Set(baseList.map((i: any) => i.id));
+          const missing = prevList.filter((i: any) => i.id && !baseIds.has(i.id));
+          if (missing.length) next[parentId] = [...baseList, ...missing];
+        }
+      }
+      return next;
+    });
   }
 
   async function loadLaborPricing() {
@@ -4692,7 +4797,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       };
 
       try {
-        if (existingLabor) {
+        if (existingLabor?.id) {
           const { error } = await supabase
             .from('material_sheet_labor')
             .update(laborData)
@@ -4700,20 +4805,30 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
           if (error) throw error;
           toast.success('Labor updated');
+          const total = (laborData.estimated_hours ?? 0) * (laborData.hourly_rate ?? 0);
+          setSheetLabor(prev => ({ ...prev, [editingLaborSheetId]: { ...existingLabor, ...laborData, total_labor_cost: total } }));
         } else {
-          const { error } = await supabase
+          const { data: inserted, error } = await supabase
             .from('material_sheet_labor')
-            .insert([laborData]);
+            .insert([laborData])
+            .select('id, sheet_id, description, estimated_hours, hourly_rate, notes')
+            .single();
 
           if (error) throw error;
           toast.success('Labor added');
+          const total = (laborData.estimated_hours ?? 0) * (laborData.hourly_rate ?? 0);
+          if (inserted) setSheetLabor(prev => ({ ...prev, [editingLaborSheetId]: { ...inserted, total_labor_cost: total } }));
         }
 
         setShowLaborDialog(false);
+        setEditingLaborSheetId(null);
+        // Brief delay so DB commit is visible to the next read; then reload to refresh totals and keep UI in sync
+        await new Promise(r => setTimeout(r, 150));
         await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
       } catch (error: any) {
         console.error('Error saving labor:', error);
-        toast.error('Failed to save labor');
+        const msg = error?.message || error?.error_description || 'Failed to save labor';
+        toast.error(msg.length > 80 ? 'Failed to save labor' : msg);
       }
     } else if (editingLaborRowId) {
       // Save custom row labor (store in notes as JSON)
@@ -5026,9 +5141,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         }
       }
 
-      loadCustomRows(quote?.id ?? null, !!isReadOnly).then(() => {
-        loadMaterialsData(quote?.id ?? null, !!isReadOnly);
-      });
+      await new Promise(r => setTimeout(r, 150));
+      await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+      await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
 
       if (keepDialogOpen) {
         // Reset form for adding another item, keeping type (labor/material) and defaults
@@ -5057,7 +5172,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       }
     } catch (error: any) {
       console.error('Error saving line item:', error);
-      toast.error('Failed to save line item');
+      const msg = error?.message || error?.error_description || 'Failed to save line item';
+      toast.error(msg.length > 80 ? 'Failed to save line item' : msg);
     } finally {
       savingLineItemRef.current = false;
       setSavingLineItem(false);
@@ -7757,19 +7873,20 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 Document what changed in this new proposal version
               </p>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowCreateProposalDialog(false);
-                  setProposalChangeNotes('');
-                  setTemplateQuoteIdForNewProposal(quote?.id ?? null);
-                }}
-                disabled={creatingProposal}
-              >
-                Cancel
-              </Button>
-              <Button onClick={createNewProposal} disabled={creatingProposal}>
+            <div className="flex flex-col gap-3">
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowCreateProposalDialog(false);
+                    setProposalChangeNotes('');
+                    setTemplateQuoteIdForNewProposal(quote?.id ?? null);
+                  }}
+                  disabled={creatingProposal}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={createNewProposal} disabled={creatingProposal}>
                 {creatingProposal ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
@@ -7782,6 +7899,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                   </>
                 )}
               </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
