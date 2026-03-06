@@ -367,32 +367,32 @@ serve(async (req) => {
           const lineItems = [];
           for (const item of materialItems) {
             const partLength = item.part_length ?? item.length ?? '';
-            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', partLength, '- Color:', item.color);
+            const trimmedLength = partLength ? String(partLength).trim() : '';
+            const trimmedColor = item.color ? String(item.color).trim() : '';
+            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', trimmedLength, '- Color:', trimmedColor);
             
             const itemId = await ensurePurchasableItem(
               accessToken,
               settings.countywide_org_id,
               item
             );
+
+            const customFields: { label: string; value: string }[] = [];
+            if (trimmedLength) customFields.push({ label: 'Part Length', value: trimmedLength });
+            if (trimmedColor) customFields.push({ label: 'Color', value: trimmedColor });
             
-            // Description: material name first, then usage/category, then color (for Description column)
-            const descParts = [item.material_name];
-            if (item.usage || item.category) {
-              descParts.push(item.usage || item.category || '');
-            }
-            if (item.color && String(item.color).trim()) {
-              descParts.push(`Color: ${String(item.color).trim()}`);
-            }
-            const description = descParts.filter(Boolean).join(' | ');
-            
-            lineItems.push({
+            const lineItem: any = {
               item_id: itemId,
-              name: item.material_name, // Item column in sales order
+              name: item.material_name,
               quantity: item.quantity,
               rate: item.price_per_unit || item.cost_per_unit || 0,
-              unit: partLength || undefined, // Part length from workbook → Part Length column in Zoho Books
-              description, // Description column in sales order
-            });
+              unit: 'piece',
+              description: item.material_name,
+            };
+
+            if (customFields.length > 0) lineItem.custom_fields = customFields;
+
+            lineItems.push(lineItem);
           }
           
           const salesOrderData = {
@@ -442,32 +442,32 @@ serve(async (req) => {
           const lineItems = [];
           for (const item of materialItems) {
             const partLength = item.part_length ?? item.length ?? '';
-            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', partLength, '- Color:', item.color);
+            const trimmedLength = partLength ? String(partLength).trim() : '';
+            const trimmedColor = item.color ? String(item.color).trim() : '';
+            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', trimmedLength, '- Color:', trimmedColor);
             
             const itemId = await ensurePurchasableItem(
               accessToken,
               settings.countywide_org_id,
               item
             );
-            
-            // Description: material name first, then usage/category, then color (for Description column in PO)
-            const descParts = [item.material_name];
-            if (item.usage || item.category) {
-              descParts.push(item.usage || item.category || '');
-            }
-            if (item.color && String(item.color).trim()) {
-              descParts.push(`Color: ${String(item.color).trim()}`);
-            }
-            const description = descParts.filter(Boolean).join(' | ');
-            
-            lineItems.push({
+
+            const customFields: { label: string; value: string }[] = [];
+            if (trimmedLength) customFields.push({ label: 'Part Length', value: trimmedLength });
+            if (trimmedColor) customFields.push({ label: 'Color', value: trimmedColor });
+
+            const lineItem: any = {
               item_id: itemId,
-              name: item.material_name, // Item column in purchase order
+              name: item.material_name,
               quantity: item.quantity,
               rate: item.cost_per_unit || item.price_per_unit || 0,
-              unit: partLength || undefined, // Part length from workbook
-              description, // Description column in purchase order
-            });
+              unit: 'piece',
+              description: item.material_name,
+            };
+
+            if (customFields.length > 0) lineItem.custom_fields = customFields;
+
+            lineItems.push(lineItem);
           }
           
           const purchaseOrderData = {
@@ -1005,18 +1005,24 @@ async function ensurePurchasableItem(
   console.log('📝 Creating new item in Zoho Books - SKU:', sku, '- Name:', itemName);
   
   const partLength = materialItem.part_length ?? materialItem.length ?? '';
-  const itemData = {
+  const trimmedLength = partLength ? String(partLength).trim() : '';
+  const trimmedColor = materialItem.color ? String(materialItem.color).trim() : '';
+  const itemData: any = {
     name: itemName,
-    sku: sku, // SKU is the defining factor for item identification
-    description: materialItem.usage || materialItem.category || '',
+    sku: sku,
+    description: itemName,
     rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
     purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
-    unit: partLength, // Part length from workbook → Part Length in Zoho Books
-    // CRITICAL: Mark as both purchasable and sellable
+    unit: 'piece',
     is_taxable: materialItem.taxable !== false,
-    tax_id: '', // Empty for now, can be configured later
-    item_type: 'sales_and_purchases', // This makes it both purchasable and sellable
+    tax_id: '',
+    item_type: 'sales_and_purchases',
   };
+
+  const itemCustomFields: { label: string; value: string }[] = [];
+  if (trimmedLength) itemCustomFields.push({ label: 'Part Length', value: trimmedLength });
+  if (trimmedColor) itemCustomFields.push({ label: 'Color', value: trimmedColor });
+  if (itemCustomFields.length > 0) itemData.custom_fields = itemCustomFields;
   
   const createResponse = await fetch(
     `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}`,
@@ -1253,15 +1259,22 @@ async function updateItemPurchasable(
   
   // Update with ALL information from the SKU in materials_catalog
   const partLength = materialItem.part_length ?? materialItem.length ?? '';
-  const updateData = {
+  const trimmedLength = partLength ? String(partLength).trim() : '';
+  const trimmedColor = materialItem.color ? String(materialItem.color).trim() : '';
+  const updateData: any = {
     name: materialItem.material_name,
-    sku: materialItem.sku, // Ensure SKU is set
+    sku: materialItem.sku,
     rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
     purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
-    unit: partLength, // Part length from workbook
-    description: materialItem.usage || materialItem.category || '',
-    item_type: 'sales_and_purchases', // Ensure it's both purchasable and sellable
+    unit: 'piece',
+    description: materialItem.material_name,
+    item_type: 'sales_and_purchases',
   };
+
+  const updateCustomFields: { label: string; value: string }[] = [];
+  if (trimmedLength) updateCustomFields.push({ label: 'Part Length', value: trimmedLength });
+  if (trimmedColor) updateCustomFields.push({ label: 'Color', value: trimmedColor });
+  if (updateCustomFields.length > 0) updateData.custom_fields = updateCustomFields;
   
   const updateResponse = await fetch(
     `https://www.zohoapis.com/books/v3/items/${itemId}?organization_id=${orgId}`,

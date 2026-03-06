@@ -293,6 +293,19 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
           categories.get(category)!.push({ ...row, originalIndex: rowIndex });
         });
 
+        // Case-insensitive column lookup — tries each key name in order until a non-empty value is found
+        const col = (row: any, ...keys: string[]): any => {
+          const normalized: Record<string, any> = {};
+          for (const k of Object.keys(row)) {
+            normalized[k.toLowerCase().trim()] = row[k];
+          }
+          for (const key of keys) {
+            const v = normalized[key.toLowerCase().trim()];
+            if (v !== undefined && v !== null && v !== '') return v;
+          }
+          return null;
+        };
+
         // Insert items for each category
         let itemIndex = 0;
 
@@ -301,23 +314,26 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
             try {
               // Ensure category is a valid string
               const cleanCategory = String(category || 'Uncategorized').trim();
-              
+
+              const rawTaxable = col(row, 'taxable');
+              const taxable = rawTaxable === false || rawTaxable === 'false' || rawTaxable === 0 ? false : true;
+
               const item = {
                 sheet_id: newSheet.id,
                 category: cleanCategory,
-                usage: String(row['Usage'] || row['usage'] || '').trim() || null,
-                sku: String(row['Sku'] || row['sku'] || row['SKU'] || '').trim() || null,
-                material_name: String(row['Material'] || row['material'] || '').trim(),
-                quantity: parseNumericValue(row['Qty'] || row['qty'] || row['Quantity']) || 0,
-                length: String(row['Length'] || row['length'] || '').trim() || null,
-                color: String(row['Color'] || row['color'] || '').trim() || null,
-                cost_per_unit: parseNumericValue(row['Cost per unit'] || row['cost_per_unit']),
-                markup_percent: parsePercentValue(row['CF.Mark Up'] || row['CF. Mark Up'] || row['Markup']),
-                price_per_unit: parseNumericValue(row['Price per unit'] || row['price_per_unit']),
-                extended_cost: parseNumericValue(row['Extended cost'] || row['extended_cost']),
-                extended_price: parseNumericValue(row['Extended price'] || row['extended_price']),
-                taxable: true,
-                notes: null,
+                usage: col(row, 'usage') != null ? String(col(row, 'usage')).trim() || null : null,
+                sku: col(row, 'sku') != null ? String(col(row, 'sku')).trim() || null : null,
+                material_name: String(col(row, 'material') ?? '').trim(),
+                quantity: parseNumericValue(col(row, 'qty', 'quantity')) || 0,
+                length: col(row, 'length') != null ? String(col(row, 'length')).trim() || null : null,
+                color: col(row, 'color') != null ? String(col(row, 'color')).trim() || null : null,
+                cost_per_unit: parseNumericValue(col(row, 'cost per unit', 'cost_per_unit')),
+                markup_percent: parsePercentValue(col(row, 'mark up', 'markup', 'cf.mark up', 'cf. mark up', 'markup_percent')),
+                price_per_unit: parseNumericValue(col(row, 'price per unit', 'price_per_unit')),
+                extended_cost: parseNumericValue(col(row, 'extended cost', 'extended_cost')),
+                extended_price: parseNumericValue(col(row, 'extended price', 'extended_price')),
+                taxable,
+                notes: col(row, 'notes') != null ? String(col(row, 'notes')).trim() || null : null,
                 order_index: itemIndex++,
               };
 
