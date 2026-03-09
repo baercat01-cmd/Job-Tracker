@@ -264,6 +264,24 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return () => { mounted = false; };
   }, [job.id, isControlled]);
 
+  // When parent selects a proposal that's not in our list yet (e.g. just created), refetch quotes so the new proposal appears
+  useEffect(() => {
+    if (!isControlled || !effectiveQuoteId || jobQuotes.some((q: any) => q.id === effectiveQuoteId)) return;
+    let mounted = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('id, proposal_number, quote_number, created_at')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false });
+      if (!mounted) return;
+      if (error) return;
+      const quotes = (data || []) as JobQuote[];
+      setJobQuotes(quotes);
+    })();
+    return () => { mounted = false; };
+  }, [isControlled, effectiveQuoteId, job.id, jobQuotes]);
+
   // When job or quote changes, reset active sheet so the first sheet in the workbook is shown
   useEffect(() => {
     setActiveSheetId('');
@@ -291,16 +309,26 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return () => { supabase.removeChannel(packagesChannel); };
   }, [job.id]);
 
-  // Real-time: reload workbook silently when any material_item or material_sheet changes for this
-  // job — ensures crew orders (and status updates made in OfficeCrewOrders) are always reflected.
+  // Real-time: reload workbook when any material_item or material_sheet changes so newest crew
+  // orders appear in the Field Request workbook immediately (invalidate cache so we don't show stale data).
   useEffect(() => {
     const ch = supabase
       .channel(`mgmt_items_${job.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'material_items' },
-        () => { loadWorkbook(true); }
+        () => {
+          for (const key of workbookCache.keys()) {
+            if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+          }
+          loadWorkbook(true);
+        }
       )
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'material_sheets' },
-        () => { loadWorkbook(true); }
+        () => {
+          for (const key of workbookCache.keys()) {
+            if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+          }
+          loadWorkbook(true);
+        }
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -562,7 +590,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             .from('material_sheets')
             .select('*')
             .in('workbook_id', workingWbIds)
-            .in('sheet_name', ['Crew Orders', 'Field Requests'])
+            .in('sheet_name', ['Field Request', 'Field Requests', 'Crew Orders'])
             .order('created_at', { ascending: true });
 
           if ((allCrewSheets || []).length > 0) {
@@ -582,14 +610,37 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               (a, b) => (allCrewItems[b.id]?.length ?? 0) - (allCrewItems[a.id]?.length ?? 0)
             )[0];
 
+            // Move any crew-requested items that are in a different sheet into the Field Request sheet
+            // so they appear in the workbook like the valley trim (e.g. Smart Vent with valley).
+            const { data: wrongSheetItems } = await supabase
+              .from('material_items')
+              .select('id')
+              .not('requested_by', 'is', null)
+              .neq('sheet_id', canonical.id);
+            if ((wrongSheetItems?.length ?? 0) > 0) {
+              const ids = wrongSheetItems!.map((r: { id: string }) => r.id);
+              await supabase
+                .from('material_items')
+                .update({ sheet_id: canonical.id, updated_at: new Date().toISOString() })
+                .in('id', ids);
+              // Re-fetch canonical sheet items so moved items are included
+              const { data: canonicalItems } = await supabase
+                .from('material_items')
+                .select('*')
+                .eq('sheet_id', canonical.id)
+                .order('order_index');
+              allCrewItems[canonical.id] = canonicalItems ?? [];
+            }
+
             if (existingSheetIds.has(canonical.id)) {
-              // The canonical sheet is already in this workbook – nothing to do
+              // Ensure itemsData includes the full Field Request sheet (including any we just moved)
+              itemsData = itemsData.filter((i: any) => i.sheet_id !== canonical.id).concat(allCrewItems[canonical.id] ?? []);
             } else {
               // The canonical sheet belongs to another workbook.
               // Remove any empty crew-orders placeholder already in sheetsData (don't show two).
               const emptyCrewIdx = sheetsData.findIndex(
                 (s: any) =>
-                  (s.sheet_name === 'Crew Orders' || s.sheet_name === 'Field Requests') &&
+                  (s.sheet_name === 'Field Request' || s.sheet_name === 'Field Requests' || s.sheet_name === 'Crew Orders') &&
                   (allCrewItems[s.id]?.length ?? itemsData.filter((i: any) => i.sheet_id === s.id).length) === 0
               );
               if (emptyCrewIdx !== -1) {

@@ -2754,6 +2754,99 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     }
   }
 
+  /** Deletes a proposal (quote) and all its data. Only allowed when job has more than one proposal. */
+  async function deleteProposal(quoteIdToDelete: string) {
+    if (allJobQuotes.length <= 1) {
+      toast.error('Cannot delete the only proposal. A job must have at least one proposal.');
+      return;
+    }
+    const q = allJobQuotes.find((x: any) => x.id === quoteIdToDelete);
+    const label = q ? `Proposal #${q.proposal_number || q.quote_number || q.id}` : 'This proposal';
+    if (!confirm(`Delete ${label}? All materials, financial rows, and subcontractor estimates for this proposal will be permanently removed.\n\nThis cannot be undone.`)) {
+      return;
+    }
+    try {
+      // Prefer server RPC so delete works even with RLS (migration: 20250312000000_delete_proposal_rpc.sql)
+      const { data: rpcData, error: rpcError } = await supabase.rpc('delete_proposal', { p_quote_id: quoteIdToDelete });
+      if (!rpcError && rpcData?.ok === true) {
+        const remaining = allJobQuotes.filter((x: any) => x.id !== quoteIdToDelete);
+        setAllJobQuotes(remaining);
+        const switchTo = remaining[0];
+        setQuote(switchTo);
+        userSelectedQuoteIdRef.current = switchTo.id;
+        await loadQuoteData();
+        await loadData(false, switchTo);
+        if (onProposalChange) onProposalChange(switchTo.id);
+        toast.success('Proposal deleted.');
+        return;
+      }
+      // Fallback: client-side deletes (if RPC missing or failed, e.g. permission)
+      let err: any = rpcError || null;
+      if (rpcError) console.warn('delete_proposal RPC failed, trying client-side deletes:', rpcError.message);
+
+      err = (await supabase.from('proposal_versions').delete().eq('quote_id', quoteIdToDelete)).error;
+      if (err) throw err;
+
+      const { data: existingRows } = await supabase.from('custom_financial_rows').select('id').eq('quote_id', quoteIdToDelete);
+      const rowIds = (existingRows || []).map((r: any) => r.id);
+      if (rowIds.length > 0) {
+        err = (await supabase.from('custom_financial_row_items').delete().in('row_id', rowIds)).error;
+        if (err) throw err;
+        err = (await supabase.from('custom_financial_rows').delete().eq('quote_id', quoteIdToDelete)).error;
+        if (err) throw err;
+      }
+
+      const { data: existingWbs } = await supabase.from('material_workbooks').select('id').eq('quote_id', quoteIdToDelete);
+      const wbIds = (existingWbs || []).map((x: any) => x.id);
+      if (wbIds.length > 0) {
+        const { data: allSheets } = await supabase.from('material_sheets').select('id').in('workbook_id', wbIds);
+        const sheetIds = (allSheets || []).map((s: any) => s.id);
+        if (sheetIds.length > 0) {
+          err = (await supabase.from('material_items').delete().in('sheet_id', sheetIds)).error;
+          if (err) throw err;
+          err = (await supabase.from('material_sheet_labor').delete().in('sheet_id', sheetIds)).error;
+          if (err) throw err;
+          err = (await supabase.from('material_category_markups').delete().in('sheet_id', sheetIds)).error;
+          if (err) throw err;
+          err = (await supabase.from('custom_financial_row_items').delete().in('sheet_id', sheetIds)).error;
+          if (err) throw err;
+          err = (await supabase.from('material_sheets').delete().in('workbook_id', wbIds)).error;
+          if (err) throw err;
+        }
+        err = (await supabase.from('material_workbooks').delete().eq('quote_id', quoteIdToDelete)).error;
+        if (err) throw err;
+      }
+
+      const { data: existingEsts } = await supabase.from('subcontractor_estimates').select('id').eq('quote_id', quoteIdToDelete);
+      const estIds = (existingEsts || []).map((e: any) => e.id);
+      if (estIds.length > 0) {
+        err = (await supabase.from('subcontractor_estimate_line_items').delete().in('estimate_id', estIds)).error;
+        if (err) throw err;
+        err = (await supabase.from('subcontractor_estimates').delete().eq('quote_id', quoteIdToDelete)).error;
+        if (err) throw err;
+      }
+
+      err = (await supabase.from('quotes').delete().eq('id', quoteIdToDelete)).error;
+      if (err) throw err;
+
+      const remaining = allJobQuotes.filter((x: any) => x.id !== quoteIdToDelete);
+      setAllJobQuotes(remaining);
+      const switchTo = remaining[0];
+      setQuote(switchTo);
+      userSelectedQuoteIdRef.current = switchTo.id;
+      await loadQuoteData();
+      await loadData(false, switchTo);
+      if (onProposalChange) onProposalChange(switchTo.id);
+      toast.success('Proposal deleted.');
+    } catch (e: any) {
+      console.error('Delete proposal failed:', e);
+      const msg = e?.message || (e?.error_description) || String(e);
+      toast.error(msg.includes('policy') || msg.includes('RLS') || msg.includes('row-level')
+        ? 'Permission denied. You may not have permission to delete proposals.'
+        : 'Failed to delete proposal: ' + msg);
+    }
+  }
+
   /** Copies all proposal data (workbook, sheets, items, financial rows, subs) from source quote to target. DELETES existing data for target quote. Only call after explicit user confirmation. */
   async function copyProposalDataFromQuoteToQuote(
     sourceQuoteId: string,
@@ -3931,11 +4024,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             material_category_markups (*)
           )
         `;
+        // Use newest working workbook for this quote (so re-uploaded workbook wins over copied-from-template)
         let { data, error } = await supabase
           .from('material_workbooks')
           .select(wbSelect)
           .eq('quote_id', targetQuoteId)
           .eq('status', 'working')
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         workbookData = data;
         workbookError = error;
@@ -6380,6 +6476,11 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             <Button size="sm" variant="outline" onClick={() => setShowProposalComparison(true)} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40" title="Compare any two proposals">
               <GitCompare className="w-3 h-3 mr-1" />Compare
             </Button>
+            {quote && (
+              <Button size="sm" variant="outline" onClick={() => deleteProposal(quote.id)} className="h-8 text-xs bg-white/10 hover:bg-red-500/20 text-red-200 border-red-500/40 hover:border-red-400" title="Delete this proposal">
+                <Trash2 className="w-3 h-3 mr-1" />Delete proposal
+              </Button>
+            )}
             <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
           </>
         )}
@@ -6568,6 +6669,11 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
               {allJobQuotes.length > 1 && (
                 <Button size="sm" variant="outline" onClick={() => setShowProposalComparison(true)} className="border-blue-300 text-blue-700 hover:bg-blue-50">
                   <GitCompare className="w-3 h-3 mr-1" />Compare proposals
+                </Button>
+              )}
+              {quote && allJobQuotes.length > 1 && (
+                <Button size="sm" variant="outline" onClick={() => deleteProposal(quote.id)} className="border-red-300 text-red-700 hover:bg-red-50" title="Delete this proposal">
+                  <Trash2 className="w-3 h-3 mr-1" />Delete proposal
                 </Button>
               )}
             </div>

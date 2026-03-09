@@ -21,6 +21,7 @@ import {
 import { Calendar, User, Clock, AlertTriangle, Package, CheckCircle, Palette } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
+import { getOrCreateCrewOrdersSheetId, safeQuantityForInsert } from '@/lib/materialWorkbook';
 
 interface MaterialItem {
   id: string;
@@ -219,14 +220,48 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
         updated_at: new Date().toISOString(),
       };
 
-      // If changing to ordered, set request tracking
+      // If changing to ordered, set request tracking and sync legacy to workbook
+      const orderRequestedAt = new Date().toISOString();
       if (!selectedMaterial.requested_by) {
         if (selectedMaterial.source === 'legacy') {
           updateData.ordered_by = userId;
+          updateData.order_requested_at = orderRequestedAt;
+          // Add this material to the job's Field Request / Crew Orders sheet so it appears in the workbook
+          try {
+            const sheetId = await getOrCreateCrewOrdersSheetId(job.id, userId);
+            const { value: qty } = safeQuantityForInsert(selectedMaterial.quantity ?? 1);
+            const { error: insertErr } = await supabase
+              .from('material_items')
+              .insert({
+                sheet_id: sheetId,
+                category: selectedMaterial.category || 'Crew Orders',
+                material_name: selectedMaterial.material_name,
+                quantity: qty,
+                length: (selectedMaterial as any).length ?? null,
+                color: selectedMaterial.color ?? null,
+                status: 'not_ordered',
+                notes: (selectedMaterial as any).notes ?? `Requested from field (legacy material)`,
+                order_index: 0,
+                cost_per_unit: null,
+                price_per_unit: null,
+                markup_percent: null,
+                extended_cost: null,
+                extended_price: null,
+                requested_by: userId,
+                order_requested_at: orderRequestedAt,
+              });
+            if (insertErr) {
+              console.warn('Could not add legacy material to workbook:', insertErr);
+              toast.warning('Order recorded; could not add to material workbook. Office may need to add it manually.');
+            }
+          } catch (syncErr: any) {
+            console.warn('Sync legacy to workbook failed:', syncErr);
+            toast.warning('Order recorded; could not add to material workbook.');
+          }
         } else {
           updateData.requested_by = userId;
+          updateData.order_requested_at = orderRequestedAt;
         }
-        updateData.order_requested_at = new Date().toISOString();
       }
 
       const table = selectedMaterial.source === 'legacy' ? 'materials' : 'material_items';

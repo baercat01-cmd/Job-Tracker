@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -54,6 +55,7 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
   const [creatingWorkbook, setCreatingWorkbook] = useState(false);
   const [workbookName, setWorkbookName] = useState('');
   const [quote, setQuote] = useState<any>(null);
+  const [replaceExistingWorkbook, setReplaceExistingWorkbook] = useState(false);
 
   useEffect(() => {
     loadWorkbooks();
@@ -78,6 +80,20 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
 
   async function loadQuote() {
     try {
+      // When viewing a specific proposal (quoteId), load that quote so the badge shows the correct proposal number
+      if (quoteId) {
+        const { data, error } = await supabase
+          .from('quotes')
+          .select('*')
+          .eq('id', quoteId)
+          .single();
+        if (error && error.code !== 'PGRST116') {
+          console.error('Error loading quote:', error);
+          return;
+        }
+        setQuote(data);
+        return;
+      }
       const { data, error } = await supabase
         .from('quotes')
         .select('*')
@@ -139,18 +155,16 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
     try {
       setCreatingWorkbook(true);
 
-      // Get next version number (per job, or per quote when proposal-scoped)
-      let versionQuery = supabase
+      // Next version must be unique per job (DB: material_workbooks_job_id_version_number_key).
+      const { data: latestVersion } = await supabase
         .from('material_workbooks')
         .select('version_number')
-        .eq('job_id', jobId);
-      if (quoteId) versionQuery = versionQuery.eq('quote_id', quoteId);
-      const { data: latestVersion } = await versionQuery
+        .eq('job_id', jobId)
         .order('version_number', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      const nextVersion = (latestVersion?.version_number || 0) + 1;
+      const nextVersion = (latestVersion?.version_number ?? 0) + 1;
 
       // Create empty workbook (tied to proposal when quoteId is set)
       const insertPayload: Record<string, unknown> = {
@@ -186,6 +200,7 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
       setWorkbookName('');
       await loadWorkbooks();
       onWorkbookCreated?.();
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { jobId, quoteId: quoteId ?? null } }));
     } catch (error: any) {
       console.error('Error creating workbook:', error);
       toast.error('Failed to create workbook: ' + error.message);
@@ -217,160 +232,162 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
 
       toast.info(`Found ${workbook.sheets.length} sheets. Uploading...`);
 
-      // Get next version number (per job, or per quote when proposal-scoped)
-      let versionQuery = supabase
-        .from('material_workbooks')
-        .select('version_number')
-        .eq('job_id', jobId);
-      if (quoteId) versionQuery = versionQuery.eq('quote_id', quoteId);
-      const { data: latestVersion } = await versionQuery
-        .order('version_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const nextVersion = (latestVersion?.version_number || 0) + 1;
-
-      // Create workbook record (tied to proposal when quoteId is set)
-      const uploadPayload: Record<string, unknown> = {
-        job_id: jobId,
-        version_number: nextVersion,
-        status: 'working',
-        created_by: profile.id,
+      // Helper: case-insensitive column lookup
+      const col = (row: any, ...keys: string[]): any => {
+        const normalized: Record<string, any> = {};
+        for (const k of Object.keys(row)) {
+          normalized[k.toLowerCase().trim()] = row[k];
+        }
+        for (const key of keys) {
+          const v = normalized[key.toLowerCase().trim()];
+          if (v !== undefined && v !== null && v !== '') return v;
+        }
+        return null;
       };
-      if (quoteId) uploadPayload.quote_id = quoteId;
-      const { data: newWorkbook, error: workbookError } = await supabase
-        .from('material_workbooks')
-        .insert(uploadPayload)
-        .select()
-        .single();
 
-      if (workbookError) throw workbookError;
-
-      // Insert sheets and items
-      let totalItems = 0;
-
-      for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
-        const sheet = workbook.sheets[sheetIndex];
-
-        // Check if sheet name contains "(Option)" to mark as option sheet
-        const isOptionSheet = sheet.name.toLowerCase().includes('(option)');
-
-        // Create sheet record
-        const { data: newSheet, error: sheetError} = await supabase
-          .from('material_sheets')
-          .insert({
-            workbook_id: newWorkbook.id,
-            sheet_name: sheet.name,
-            order_index: sheetIndex,
-            is_option: isOptionSheet,
-          })
-          .select()
-          .single();
-
-        if (sheetError) throw sheetError;
-
-        // Group rows by category
+      // Helper: insert material items from an Excel sheet into a given sheet_id; returns count
+      const insertMaterialItemsForSheet = async (sheetId: string, excelSheet: typeof workbook.sheets[0]): Promise<number> => {
         const categories = new Map<string, any[]>();
-
-        sheet.rows.forEach((row, rowIndex) => {
-          // Use Category column if available, otherwise use sheet name as category
+        excelSheet.rows.forEach((row: any, rowIndex: number) => {
           let category: string;
           if (row['Category'] || row['category']) {
             category = String(row['Category'] || row['category']).trim();
           } else {
-            // No Category column - use sheet name as the category
-            category = sheet.name;
+            category = excelSheet.name;
           }
-          
-          if (!category || category === '') {
-            category = 'Uncategorized';
-          }
-          
-          if (!categories.has(category)) {
-            categories.set(category, []);
-          }
-          
+          if (!category || category === '') category = 'Uncategorized';
+          if (!categories.has(category)) categories.set(category, []);
           categories.get(category)!.push({ ...row, originalIndex: rowIndex });
         });
-
-        // Case-insensitive column lookup — tries each key name in order until a non-empty value is found
-        const col = (row: any, ...keys: string[]): any => {
-          const normalized: Record<string, any> = {};
-          for (const k of Object.keys(row)) {
-            normalized[k.toLowerCase().trim()] = row[k];
-          }
-          for (const key of keys) {
-            const v = normalized[key.toLowerCase().trim()];
-            if (v !== undefined && v !== null && v !== '') return v;
-          }
-          return null;
-        };
-
-        // Insert items for each category
+        let count = 0;
         let itemIndex = 0;
-
         for (const [category, categoryRows] of categories) {
           for (const row of categoryRows) {
-            try {
-              // Ensure category is a valid string
-              const cleanCategory = String(category || 'Uncategorized').trim();
-
-              const rawTaxable = col(row, 'taxable');
-              const taxable = rawTaxable === false || rawTaxable === 'false' || rawTaxable === 0 ? false : true;
-
-              const item = {
-                sheet_id: newSheet.id,
-                category: cleanCategory,
-                usage: col(row, 'usage') != null ? String(col(row, 'usage')).trim() || null : null,
-                sku: col(row, 'sku') != null ? String(col(row, 'sku')).trim() || null : null,
-                material_name: String(col(row, 'material') ?? '').trim(),
-                quantity: parseNumericValue(col(row, 'qty', 'quantity')) || 0,
-                length: col(row, 'length') != null ? String(col(row, 'length')).trim() || null : null,
-                color: col(row, 'color') != null ? String(col(row, 'color')).trim() || null : null,
-                cost_per_unit: parseNumericValue(col(row, 'cost per unit', 'cost_per_unit')),
-                markup_percent: parsePercentValue(col(row, 'mark up', 'markup', 'cf.mark up', 'cf. mark up', 'markup_percent')),
-                price_per_unit: parseNumericValue(col(row, 'price per unit', 'price_per_unit')),
-                extended_cost: parseNumericValue(col(row, 'extended cost', 'extended_cost')),
-                extended_price: parseNumericValue(col(row, 'extended price', 'extended_price')),
-                taxable,
-                notes: col(row, 'notes') != null ? String(col(row, 'notes')).trim() || null : null,
-                order_index: itemIndex++,
-              };
-
-              const { error: itemError } = await supabase
-                .from('material_items')
-                .insert(item);
-
-              if (itemError) {
-                console.error('Error inserting item:', {
-                  error: itemError,
-                  item,
-                  sheet: sheet.name,
-                  category: cleanCategory,
-                  row: row.originalIndex,
-                });
-                throw new Error(
-                  `Failed to insert item in sheet "${sheet.name}", category "${cleanCategory}": ${itemError.message}`
-                );
-              }
-
-              totalItems++;
-            } catch (itemError: any) {
-              console.error('Error processing item:', itemError);
-              // Continue to next item instead of failing entire upload
-              toast.error(`Skipped item in "${sheet.name}" - ${itemError.message}`, {
-                duration: 5000,
-              });
-            }
+            const cleanCategory = String(category || 'Uncategorized').trim();
+            const rawTaxable = col(row, 'taxable');
+            const taxable = rawTaxable === false || rawTaxable === 'false' || rawTaxable === 0 ? false : true;
+            const item = {
+              sheet_id: sheetId,
+              category: cleanCategory,
+              usage: col(row, 'usage') != null ? String(col(row, 'usage')).trim() || null : null,
+              sku: col(row, 'sku') != null ? String(col(row, 'sku')).trim() || null : null,
+              material_name: String(col(row, 'material') ?? '').trim(),
+              quantity: parseNumericValue(col(row, 'qty', 'quantity')) || 0,
+              length: col(row, 'length') != null ? String(col(row, 'length')).trim() || null : null,
+              color: col(row, 'color') != null ? String(col(row, 'color')).trim() || null : null,
+              cost_per_unit: parseNumericValue(col(row, 'cost per unit', 'cost_per_unit')),
+              markup_percent: parsePercentValue(col(row, 'mark up', 'markup', 'cf.mark up', 'cf. mark up', 'markup_percent')),
+              price_per_unit: parseNumericValue(col(row, 'price per unit', 'price_per_unit')),
+              extended_cost: parseNumericValue(col(row, 'extended cost', 'extended_cost')),
+              extended_price: parseNumericValue(col(row, 'extended price', 'extended_price')),
+              taxable,
+              notes: col(row, 'notes') != null ? String(col(row, 'notes')).trim() || null : null,
+              order_index: itemIndex++,
+            };
+            const { error: itemError } = await supabase.from('material_items').insert(item);
+            if (itemError) throw new Error(`Failed to insert item in sheet "${excelSheet.name}", category "${cleanCategory}": ${itemError.message}`);
+            count++;
           }
         }
+        return count;
+      };
+
+      let newWorkbook: { id: string };
+      let totalItems = 0;
+
+      if (replaceExistingWorkbook) {
+        // Replace: update only material items in the existing workbook. Preserve sheets, labor, category markups, and any added line items.
+        let wbQuery = supabase.from('material_workbooks').select('id').eq('job_id', jobId).eq('status', 'working');
+        if (quoteId != null) wbQuery = wbQuery.eq('quote_id', quoteId);
+        else wbQuery = wbQuery.is('quote_id', null);
+        const { data: existingWbs } = await wbQuery.order('updated_at', { ascending: false }).limit(1);
+        if (!existingWbs?.length) {
+          toast.error('No existing workbook to replace. Create or upload a workbook first, then use Replace.');
+          setUploading(false);
+          return;
+        }
+        const targetWorkbookId = existingWbs[0].id;
+        const { data: existingSheets } = await supabase
+          .from('material_sheets')
+          .select('id, order_index')
+          .eq('workbook_id', targetWorkbookId)
+          .order('order_index');
+        const sheetsByIndex = (existingSheets || []).sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+
+        for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+          const excelSheet = workbook.sheets[sheetIndex];
+          const existingSheet = sheetsByIndex[sheetIndex];
+          if (existingSheet) {
+            await supabase.from('material_items').delete().eq('sheet_id', existingSheet.id);
+            totalItems += await insertMaterialItemsForSheet(existingSheet.id, excelSheet);
+          } else {
+            const isOptionSheet = excelSheet.name.toLowerCase().includes('(option)');
+            const { data: newSheet, error: sheetError } = await supabase
+              .from('material_sheets')
+              .insert({
+                workbook_id: targetWorkbookId,
+                sheet_name: excelSheet.name,
+                order_index: sheetIndex,
+                is_option: isOptionSheet,
+              })
+              .select()
+              .single();
+            if (sheetError) throw sheetError;
+            totalItems += await insertMaterialItemsForSheet(newSheet.id, excelSheet);
+          }
+        }
+        newWorkbook = { id: targetWorkbookId };
+        toast.success(`Updated material numbers in ${workbook.sheets.length} sheet(s) (${totalItems} items). Labor and added line items were kept.`);
+      } else {
+        // Create new workbook and sheets
+        const { data: latestVersion } = await supabase
+          .from('material_workbooks')
+          .select('version_number')
+          .eq('job_id', jobId)
+          .order('version_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const nextVersion = (latestVersion?.version_number ?? 0) + 1;
+        const uploadPayload: Record<string, unknown> = {
+          job_id: jobId,
+          version_number: nextVersion,
+          status: 'working',
+          created_by: profile.id,
+        };
+        if (quoteId) uploadPayload.quote_id = quoteId;
+        const { data: created, error: workbookError } = await supabase
+          .from('material_workbooks')
+          .insert(uploadPayload)
+          .select()
+          .single();
+        if (workbookError) throw workbookError;
+        newWorkbook = created;
+
+        for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+          const sheet = workbook.sheets[sheetIndex];
+          const isOptionSheet = sheet.name.toLowerCase().includes('(option)');
+          const { data: newSheet, error: sheetError } = await supabase
+            .from('material_sheets')
+            .insert({
+              workbook_id: newWorkbook.id,
+              sheet_name: sheet.name,
+              order_index: sheetIndex,
+              is_option: isOptionSheet,
+            })
+            .select()
+            .single();
+          if (sheetError) throw sheetError;
+          totalItems += await insertMaterialItemsForSheet(newSheet.id, sheet);
+        }
+        toast.success(`Uploaded ${workbook.sheets.length} sheets with ${totalItems} items`);
       }
 
-      toast.success(`Uploaded ${workbook.sheets.length} sheets with ${totalItems} items`);
       setShowUploadDialog(false);
       setSelectedFile(null);
+      setReplaceExistingWorkbook(false);
       await loadWorkbooks();
       onWorkbookCreated?.();
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { jobId, quoteId: quoteId ?? null } }));
       // Open the uploaded workbook immediately instead of staying on this overview
       window.location.href = `/office/workbooks/${newWorkbook.id}`;
     } catch (error: any) {
@@ -382,7 +399,11 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
   }
 
   async function deleteWorkbook(workbookId: string) {
-    if (!confirm('Delete this entire workbook? This cannot be undone.')) {
+    if (
+      !confirm(
+        'Delete this workbook? All sheets and materials in it will be removed. You can then create or upload a new workbook.\n\nThis cannot be undone.'
+      )
+    ) {
       return;
     }
 
@@ -394,11 +415,14 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
 
       if (error) throw error;
 
-      toast.success('Workbook deleted');
+      toast.success('Workbook deleted. You can now create or upload a new one.');
       await loadWorkbooks();
+      onWorkbookCreated?.();
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { jobId, quoteId: quoteId ?? null } }));
     } catch (error: any) {
       console.error('Error deleting workbook:', error);
-      toast.error('Failed to delete workbook');
+      const msg = error?.message ?? 'Unknown error';
+      toast.error(msg.includes('policy') || msg.includes('RLS') ? 'You do not have permission to delete this workbook.' : 'Failed to delete workbook');
     }
   }
 
@@ -494,11 +518,12 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
                   </Button>
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => deleteWorkbook(workingVersion.id)}
-                    className="text-destructive"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Delete
                   </Button>
                 </div>
               </div>
@@ -671,6 +696,23 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
           </DialogHeader>
 
           <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
+              <Checkbox
+                id="replace-existing"
+                checked={replaceExistingWorkbook}
+                onCheckedChange={(checked) => setReplaceExistingWorkbook(checked === true)}
+                disabled={uploading}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="replace-existing" className="text-sm font-semibold cursor-pointer text-amber-900">
+                  Replace existing workbook
+                </Label>
+                <p className="text-xs text-amber-800">
+                  Delete the current workbook(s) for this {quoteId ? 'proposal' : 'job'} and use the uploaded file as the only workbook. This cannot be undone.
+                </p>
+              </div>
+            </div>
+
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h4 className="font-semibold text-blue-900 mb-2">Excel Workbook Requirements:</h4>
               <ul className="space-y-1 text-sm text-blue-800">
@@ -718,6 +760,7 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
                 onClick={() => {
                   setShowUploadDialog(false);
                   setSelectedFile(null);
+                  setReplaceExistingWorkbook(false);
                 }}
                 disabled={uploading}
               >

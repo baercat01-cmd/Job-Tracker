@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { createNotification } from '@/lib/notifications';
+import { getOrCreateCrewOrdersSheetId, safeQuantityForInsert } from '@/lib/materialWorkbook';
 import { cleanMaterialValue } from '@/lib/utils';
 import type { Job } from '@/types';
 
@@ -126,7 +127,18 @@ function catalogPricing(mat: CatalogMaterial | null, qty: number) {
   };
 }
 
-/** Safe integer for order_index / version_number. */
+/** Crew inserts omit cost/price to avoid numeric overflow when DB columns are narrow. Office workbook fills prices from catalog by SKU. */
+function crewInsertPricing(_mat: CatalogMaterial | null, _qty: number) {
+  return {
+    cost_per_unit: null,
+    price_per_unit: null,
+    markup_percent: null,
+    extended_cost: null,
+    extended_price: null,
+  };
+}
+
+/** Safe integer for order_index / version_number (local use in this file). */
 function toSafeInt(value: unknown, max = 2147483647): number {
   const n = Number(value);
   if (value === undefined || value === null || Number.isNaN(n) || !Number.isFinite(n)) return 0;
@@ -257,7 +269,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           .from('material_sheets')
           .select('id')
           .in('workbook_id', workingWbIds)
-          .in('sheet_name', ['Crew Orders', 'Field Requests']);
+          .in('sheet_name', ['Field Request', 'Field Requests', 'Crew Orders']);
 
         const crewSheetIds = (crewSheets || []).map((s: any) => s.id);
         if (crewSheetIds.length > 0) {
@@ -535,82 +547,6 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     return total;
   }
 
-  /**
-   * Returns the single canonical "Crew Orders" sheet ID for this job.
-   * Searches across ALL working workbooks so we never create duplicates.
-   * Creates a new workbook + sheet only when truly nothing exists.
-   */
-  async function getOrCreateCrewOrdersSheetId(createdBy: string | null): Promise<string> {
-    // Step 1 – find any existing working workbooks
-    const { data: workingWbs } = await supabase
-      .from('material_workbooks')
-      .select('id')
-      .eq('job_id', job.id)
-      .eq('status', 'working')
-      .order('created_at', { ascending: true });
-
-    const workingWbIds = (workingWbs || []).map((w: any) => w.id);
-
-    // Step 2 – look for a "Crew Orders" (or legacy "Field Requests") sheet in ANY of them
-    if (workingWbIds.length > 0) {
-      const { data: crewSheet } = await supabase
-        .from('material_sheets')
-        .select('id')
-        .in('workbook_id', workingWbIds)
-        .in('sheet_name', ['Crew Orders', 'Field Requests'])
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (crewSheet) return crewSheet.id;
-    }
-
-    // Step 3 – no existing sheet found; resolve which workbook to use
-    let workbookId: string;
-    if (workingWbIds.length > 0) {
-      workbookId = workingWbIds[0]; // use oldest working workbook
-    } else {
-      const { data: maxWb } = await supabase
-        .from('material_workbooks')
-        .select('version_number')
-        .eq('job_id', job.id)
-        .order('version_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const nextVersion = toSafeInt(Number(maxWb?.version_number ?? 0) + 1);
-      const { data: newWorkbook, error: workbookError } = await supabase
-        .from('material_workbooks')
-        .insert({ job_id: job.id, version_number: nextVersion, status: 'working', created_by: createdBy })
-        .select()
-        .single();
-      if (workbookError) throw workbookError;
-      workbookId = newWorkbook.id;
-    }
-
-    // Step 4 – create the sheet in that workbook
-    const { data: sheetRows } = await supabase
-      .from('material_sheets')
-      .select('order_index')
-      .eq('workbook_id', workbookId)
-      .order('order_index', { ascending: false })
-      .limit(1);
-    const nextOrderIndex = toSafeInt(
-      (sheetRows && sheetRows.length > 0) ? (Number(sheetRows[0].order_index) + 1) : 0
-    );
-    const { data: newSheet, error: sheetError } = await supabase
-      .from('material_sheets')
-      .insert({
-        workbook_id: workbookId,
-        sheet_name: 'Crew Orders',
-        description: 'Materials requested by crew from the field',
-        order_index: nextOrderIndex,
-      })
-      .select()
-      .single();
-    if (sheetError) throw sheetError;
-    return newSheet.id;
-  }
-
   async function addMaterialToJob() {
     if (!selectedCatalogMaterial) return;
 
@@ -636,12 +572,14 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       const requestFields = { requested_by: effectiveUserId, order_requested_at: new Date().toISOString() };
 
       // Get the single canonical "Crew Orders" sheet for this job
-      const sheetId = await getOrCreateCrewOrdersSheetId(userId || null);
+      const sheetId = await getOrCreateCrewOrdersSheetId(job.id, userId || null);
 
       if (showCustomLength) {
         const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Crew Orders';
+        let quantityCapped = false;
         const materialsToInsert = materialPieces.map(piece => {
-          const qty = Math.max(1, Math.round(Number(piece.quantity) * 10000) / 10000);
+          const { value: qty, capped } = safeQuantityForInsert(Number(piece.quantity) || 1);
+          if (capped) quantityCapped = true;
           return {
             sheet_id: sheetId,
             category: catalogCategory,
@@ -653,7 +591,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
             color: addMaterialColor.trim() || null,
             order_index: 0,
-            ...catalogPricing(selectedCatalogMaterial, qty),
+            ...crewInsertPricing(selectedCatalogMaterial, qty),
             ...requestFields,
           };
         });
@@ -679,22 +617,27 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           },
         });
 
-        toast.success(`Added ${getTotalPiecesCount()} pieces in ${materialPieces.length} different lengths`);
+        if (quantityCapped) {
+          toast.warning(`Added ${getTotalPiecesCount()} pieces (quantity limited to 9.9999; run DB fix script in Supabase for larger quantities).`);
+        } else {
+          toast.success(`Added ${getTotalPiecesCount()} pieces in ${materialPieces.length} different lengths`);
+        }
       } else if (materialVariants.length > 0) {
         const materialsToInsert = [];
         const variantDetails = [];
         
+        let quantityCappedVariants = false;
         for (const [sku, quantity] of selectedVariants.entries()) {
           const variant = materialVariants.find(v => v.sku === sku);
           if (!variant || quantity <= 0) continue;
           
-          // CRITICAL: Look up the exact catalog material by SKU to get ALL attached info
           const catalogMaterial = catalogMaterials.find(m => m.sku === sku);
           if (!catalogMaterial) continue;
           
           const catalogCategory = cleanCatalogCategory(catalogMaterial.category) || 'Crew Orders';
           const catalogLength = catalogMaterial.part_length;
-          const qty = Math.max(1, Math.round(Number(quantity) * 10000) / 10000);
+          const { value: qty, capped } = safeQuantityForInsert(Number(quantity) || 1);
+          if (capped) quantityCappedVariants = true;
 
           materialsToInsert.push({
             sheet_id: sheetId,
@@ -707,7 +650,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             notes: addMaterialNotes || `Requested from field (SKU: ${catalogMaterial.sku})`,
             color: addMaterialColor.trim() || null,
             order_index: 0,
-            ...catalogPricing(catalogMaterial, qty),
+            ...crewInsertPricing(catalogMaterial, qty),
             ...requestFields,
           });
           
@@ -739,11 +682,15 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           },
         });
 
-        toast.success(`Added ${getTotalVariantsCount()} pieces in ${selectedVariants.size} different lengths`);
+        if (quantityCappedVariants) {
+          toast.warning(`Added ${getTotalVariantsCount()} pieces (quantity limited to 9.9999; run DB fix script in Supabase for larger quantities).`);
+        } else {
+          toast.success(`Added ${getTotalVariantsCount()} pieces in ${selectedVariants.size} different lengths`);
+        }
       } else {
         const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Crew Orders';
         const catalogLength = selectedCatalogMaterial.part_length;
-        const qty = Math.max(1, Math.round(Number(typeof addMaterialQuantity === 'number' ? addMaterialQuantity : 1) * 10000) / 10000);
+        const { value: qty, capped: qtyCapped } = safeQuantityForInsert(Number(typeof addMaterialQuantity === 'number' ? addMaterialQuantity : 1) || 1);
 
         const { error: materialError } = await supabase
           .from('material_items')
@@ -758,7 +705,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
             color: addMaterialColor.trim() || null,
             order_index: 0,
-            ...catalogPricing(selectedCatalogMaterial, qty),
+            ...crewInsertPricing(selectedCatalogMaterial, qty),
             ...requestFields,
           });
 
@@ -777,7 +724,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           },
         });
 
-        toast.success('Material request sent to office');
+        if (qtyCapped) {
+          toast.warning('Material added (quantity limited to 9.9999; run DB fix script in Supabase for larger quantities).');
+        } else {
+          toast.success('Material request sent to office');
+        }
       }
 
       setShowAddMaterialDialog(false);
@@ -791,15 +742,17 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     } catch (error: any) {
       console.error('Error adding material:', error);
       const details = error?.details || error?.hint || '';
-      const msg = error?.message || error?.error_description || 'Unknown error';
-      // Detect the narrow numeric(5,4) column issue and give a clear actionable message
-      if (msg?.includes('numeric field overflow') || msg?.includes('precision')) {
+      const rawMsg = error?.message || error?.error_description || 'Unknown error';
+      const msg = rawMsg.toLowerCase();
+      const isNumericColumnError =
+        msg.includes('numeric') && (msg.includes('overflow') || msg.includes('precision') || msg.includes('out of range') || msg.includes('too long') || msg.includes('value'));
+      if (isNumericColumnError) {
         toast.error(
-          'Database column too narrow for this quantity/price. Run scripts/fix-material-items-quantity-precision.sql in Supabase SQL Editor to fix.',
-          { duration: 10000 }
+          `Database column too narrow. In Supabase SQL Editor run the 6 ALTER lines from scripts/fix-material-items-quantity-precision.sql (paste entire file, then Run). Server said: ${rawMsg}`,
+          { duration: 18000 }
         );
       } else {
-        const full = details ? `${msg} (${details})` : msg;
+        const full = details ? `${rawMsg} (${details})` : rawMsg;
         toast.error(`Failed to add material: ${full}`);
       }
     } finally {
@@ -903,9 +856,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       const requestFields = { requested_by: effectiveUserId, order_requested_at: new Date().toISOString() };
 
       // Get the single canonical "Crew Orders" sheet for this job
-      const sheetId = await getOrCreateCrewOrdersSheetId(userId || null);
+      const sheetId = await getOrCreateCrewOrdersSheetId(job.id, userId || null);
 
-      const qty = Math.max(1, Math.round(Number(typeof customMaterialQuantity === 'number' ? customMaterialQuantity : 1) * 10000) / 10000);
+      const { value: qty, capped: qtyCapped } = safeQuantityForInsert(Number(typeof customMaterialQuantity === 'number' ? customMaterialQuantity : 1) || 1);
       const { data: materialData, error: materialError } = await supabase
         .from('material_items')
         .insert({
@@ -970,7 +923,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         },
       });
 
-      toast.success('Custom material added successfully');
+      if (qtyCapped) {
+        toast.warning('Custom material added (quantity limited to 9.9999; run DB fix script in Supabase for larger quantities).');
+      } else {
+        toast.success('Custom material added successfully');
+      }
       setShowCustomMaterialDialog(false);
       
       setCustomMaterialName('');
@@ -988,14 +945,17 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     } catch (error: any) {
       console.error('Error adding custom material:', error);
       const details = error?.details || error?.hint || '';
-      const msg = error?.message || error?.error_description || 'Unknown error';
-      if (msg?.includes('numeric field overflow') || msg?.includes('precision')) {
+      const rawMsg = error?.message || error?.error_description || 'Unknown error';
+      const msg = rawMsg.toLowerCase();
+      const isNumericColumnError =
+        msg.includes('numeric') && (msg.includes('overflow') || msg.includes('precision') || msg.includes('out of range') || msg.includes('too long') || msg.includes('value'));
+      if (isNumericColumnError) {
         toast.error(
-          'Database column too narrow for this quantity. Run scripts/fix-material-items-quantity-precision.sql in Supabase SQL Editor to fix.',
-          { duration: 10000 }
+          `Database column too narrow. In Supabase SQL Editor run the 6 ALTER lines from scripts/fix-material-items-quantity-precision.sql (paste entire file, then Run). Server said: ${rawMsg}`,
+          { duration: 18000 }
         );
       } else {
-        const full = details ? `${msg} (${details})` : msg;
+        const full = details ? `${rawMsg} (${details})` : rawMsg;
         toast.error(`Failed to add custom material: ${full}`);
       }
     } finally {
@@ -1699,11 +1659,6 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                         <div key={variant.sku} className="flex items-center gap-3 p-2 bg-white rounded border">
                           <div className="flex-1">
                             <div className="font-medium text-sm">{variant.length}</div>
-                            {variant.purchaseCost > 0 && (
-                              <div className="text-xs text-muted-foreground">
-                                ${variant.purchaseCost.toFixed(2)} each
-                              </div>
-                            )}
                           </div>
                           <Input
                             type="number"
@@ -1718,17 +1673,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                       ))}
                     </div>
                     {getTotalVariantsCount() > 0 && (
-                      <div className="mt-3 pt-3 border-t space-y-1">
+                      <div className="mt-3 pt-3 border-t">
                         <div className="flex justify-between text-sm font-semibold">
                           <span>Total Pieces:</span>
                           <span>{getTotalVariantsCount()}</span>
                         </div>
-                        {getTotalVariantsCost() > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span>Estimated Cost:</span>
-                            <span className="font-semibold">${getTotalVariantsCost().toFixed(2)}</span>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -1792,11 +1741,6 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                               <div className="font-medium text-sm">
                                 {piece.quantity}x @ {piece.displayLength}
                               </div>
-                              {piece.costPerPiece > 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  ${(piece.costPerPiece * piece.quantity).toFixed(2)}
-                                </div>
-                              )}
                             </div>
                             <Button
                               onClick={() => removePiece(index)}
@@ -1809,17 +1753,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                           </div>
                         ))}
                       </div>
-                      <div className="mt-3 pt-3 border-t space-y-1">
+                      <div className="mt-3 pt-3 border-t">
                         <div className="flex justify-between text-sm font-semibold">
                           <span>Total Pieces:</span>
                           <span>{getTotalPiecesCount()}</span>
                         </div>
-                        {getTotalCost() > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span>Estimated Cost:</span>
-                            <span className="font-semibold">${getTotalCost().toFixed(2)}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   )}
