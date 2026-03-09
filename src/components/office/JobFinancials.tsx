@@ -5626,46 +5626,47 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
   async function setQuoteTaxExempt(value: boolean) {
     if (!quote?.id || !job?.id || isReadOnly) return;
+    // Optimistic UI update
     setTaxExemptChecked(value);
     setQuote((prev) => (prev ? { ...prev, tax_exempt: value } : prev));
-    const updatedQuotes = value
+    setAllJobQuotes(value
       ? allJobQuotes.map((q: any) => ({ ...q, tax_exempt: true }))
-      : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q));
-    setAllJobQuotes(updatedQuotes);
+      : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q)),
+    );
 
-    // Try RPC first (works regardless of quotes table column name — uses dynamic SQL in DB)
+    // 1) Try RPC (handles any job-link column name via dynamic SQL in DB)
     const { error: rpcError } = await supabase.rpc('set_quote_tax_exempt', {
       p_job_id: job.id,
       p_quote_id: quote.id,
       p_value: value,
     });
     if (!rpcError) {
-      toast.success(value ? 'Job marked tax exempt (saved).' : 'Tax applied to this proposal.');
+      toast.success(value ? 'Job marked tax exempt.' : 'Tax applied to this proposal.');
       await loadQuoteData();
       return;
     }
 
-    // Fallback: direct table update (if your quotes table uses job_id and RLS allows it)
-    const jobCol = 'job_id';
-    if (value) {
-      const { data, error: directError } = await supabase.from('quotes').update({ tax_exempt: true }).eq(jobCol, job.id).select('id');
-      if (!directError && data && data.length > 0) {
-        toast.success('Job marked tax exempt (saved).');
-        await loadQuoteData();
-        return;
-      }
-    } else {
-      const { data, error: directError } = await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id).select('id');
-      if (!directError && data && data.length > 0) {
-        toast.success('Tax applied to this proposal.');
-        await loadQuoteData();
-        return;
-      }
+    // 2) Fallback: direct PostgREST update (works when tax_exempt column is visible in schema cache)
+    const fallbackError = value
+      ? (await supabase.from('quotes').update({ tax_exempt: true  }).eq('job_id', job.id)).error
+      : (await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id)).error;
+
+    if (!fallbackError) {
+      toast.success(value ? 'Job marked tax exempt.' : 'Tax applied to this proposal.');
+      await loadQuoteData();
+      return;
     }
 
-    console.warn('Tax exempt save failed. RPC error:', rpcError?.message);
+    // Both paths failed — revert optimistic UI
+    setTaxExemptChecked(!value);
+    setQuote((prev) => (prev ? { ...prev, tax_exempt: !value } : prev));
+    setAllJobQuotes(!value
+      ? allJobQuotes.map((q: any) => ({ ...q, tax_exempt: true }))
+      : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: !value } : q)),
+    );
+    console.warn('Tax exempt save failed. RPC:', rpcError?.message, '| Direct:', fallbackError?.message);
     toast.error(
-      `Tax exempt not saved: ${rpcError?.message ?? 'Unknown error'}. Run fix-tax-exempt.sql in Supabase, then NOTIFY pgrst, 'reload schema'; and refresh.`
+      'Could not save tax exempt. Run the migration supabase/migrations/20250313000000_fix_set_quote_tax_exempt_rpc.sql in your Supabase SQL editor, then refresh.'
     );
   }
 
