@@ -314,7 +314,7 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
                         </p>
                       )}
                       {material.source === 'legacy' && (
-                        <Badge variant="outline" className="mt-1 text-xs">Field Request</Badge>
+                        <Badge variant="outline" className="mt-1 text-xs">Crew Order</Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-2">

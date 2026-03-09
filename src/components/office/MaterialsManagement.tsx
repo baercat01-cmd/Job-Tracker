@@ -66,7 +66,7 @@ import {
 import { toast } from 'sonner';
 import type { Job } from '@/types';
 import { ExtrasManagement } from './ExtrasManagement';
-import { CrewMaterialProcessing } from './CrewMaterialProcessing';
+import { OfficeCrewOrders } from './OfficeCrewOrders';
 import { MaterialWorkbookManager } from './MaterialWorkbookManager';
 import { MaterialItemPhotos } from './MaterialItemPhotos';
 import { PhotoRecoveryTool } from './PhotoRecoveryTool';
@@ -149,7 +149,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'upload'>('manage');
+  const [pendingCrewCount, setPendingCrewCount] = useState(0);
   const [activeSheetId, setActiveSheetId] = useState<string>('');
+  const activeSheetIdRef = useRef<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [movingItem, setMovingItem] = useState<MaterialItem | null>(null);
@@ -160,6 +162,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [cellValue, setCellValue] = useState('');
   const scrollPositionRef = useRef<number>(0);
+
+  // Keep ref in sync so loadWorkbook (called from realtime/subscription) always sees latest selection
+  useEffect(() => {
+    activeSheetIdRef.current = activeSheetId;
+  }, [activeSheetId]);
   
   // Add material dialog state
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -284,6 +291,21 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return () => { supabase.removeChannel(packagesChannel); };
   }, [job.id]);
 
+  // Real-time: reload workbook silently when any material_item or material_sheet changes for this
+  // job — ensures crew orders (and status updates made in OfficeCrewOrders) are always reflected.
+  useEffect(() => {
+    const ch = supabase
+      .channel(`mgmt_items_${job.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'material_items' },
+        () => { loadWorkbook(true); }
+      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'material_sheets' },
+        () => { loadWorkbook(true); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [job.id]);
+
   // When proposal/materials are restored from snapshot (JobFinancials), refetch workbook for this quote
   useEffect(() => {
     const handler = (e: CustomEvent<{ quoteId: string }>) => {
@@ -319,6 +341,127 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
+  /**
+   * For items that have a SKU but are missing cost_per_unit or price_per_unit,
+   * fetch materials_catalog and merge cost/price into the items in memory.
+   * Used so the first paint shows cost/price without waiting for DB backfill.
+   */
+  async function enrichItemsWithCatalogPrices(items: any[]): Promise<any[]> {
+    const needsPrice = items.filter(
+      (i: any) => i.sku && (i.cost_per_unit == null || i.price_per_unit == null)
+    );
+    if (needsPrice.length === 0) return items;
+
+    const skus = [...new Set(needsPrice.map((i: any) => i.sku as string))];
+    const { data: catalogRows } = await supabase
+      .from('materials_catalog')
+      .select('sku, purchase_cost, unit_price')
+      .in('sku', skus);
+
+    if (!catalogRows || catalogRows.length === 0) return items;
+
+    const catalogMap = new Map(catalogRows.map((r: any) => [r.sku, r]));
+
+    return items.map((item: any) => {
+      if (!item.sku) return item;
+      const cat = catalogMap.get(item.sku);
+      if (!cat) return item;
+
+      const cost = Number(cat.purchase_cost) || 0;
+      const price = Number(cat.unit_price) || 0;
+      if (cost === 0 && price === 0) return item;
+
+      const safeCost = cost > 0 ? Math.round(cost * 10000) / 10000 : null;
+      const safePrice = price > 0 ? Math.round(price * 10000) / 10000 : null;
+      const safeMarkup =
+        safeCost && safePrice && safeCost > 0
+          ? Math.round(((safePrice - safeCost) / safeCost) * 100 * 10000) / 10000
+          : null;
+      const qty = Number(item.quantity) || 1;
+
+      return {
+        ...item,
+        cost_per_unit: item.cost_per_unit == null ? safeCost : item.cost_per_unit,
+        price_per_unit: item.price_per_unit == null ? safePrice : item.price_per_unit,
+        markup_percent: item.markup_percent == null ? safeMarkup : item.markup_percent,
+        extended_cost:
+          item.extended_cost == null && safeCost
+            ? Math.round(safeCost * qty * 10000) / 10000
+            : item.extended_cost,
+        extended_price:
+          item.extended_price == null && safePrice
+            ? Math.round(safePrice * qty * 10000) / 10000
+            : item.extended_price,
+      };
+    });
+  }
+
+  /**
+   * For any material_items that have a SKU but are missing cost_per_unit or price_per_unit,
+   * look up the catalog and patch the DB values in the background.
+   * Does NOT block the render; triggers a silent reload if any rows were updated.
+   */
+  async function backfillMissingPricesFromCatalog(items: any[]) {
+    try {
+      const needsPrice = items.filter(
+        (i: any) => i.sku && (i.cost_per_unit == null || i.price_per_unit == null)
+      );
+      if (needsPrice.length === 0) return;
+
+      const skus = [...new Set(needsPrice.map((i: any) => i.sku as string))];
+      const { data: catalogRows } = await supabase
+        .from('materials_catalog')
+        .select('sku, purchase_cost, unit_price')
+        .in('sku', skus);
+
+      if (!catalogRows || catalogRows.length === 0) return;
+
+      const catalogMap = new Map(catalogRows.map((r: any) => [r.sku, r]));
+
+      let patched = 0;
+      for (const item of needsPrice) {
+        const cat = catalogMap.get(item.sku);
+        if (!cat) continue;
+
+        const cost  = Number(cat.purchase_cost) || 0;
+        const price = Number(cat.unit_price)    || 0;
+        if (cost === 0 && price === 0) continue;
+
+        const safeCost  = cost  > 0 ? Math.round(cost  * 10000) / 10000 : null;
+        const safePrice = price > 0 ? Math.round(price * 10000) / 10000 : null;
+        const safeMarkup = safeCost && safePrice && safeCost > 0
+          ? Math.round(((safePrice - safeCost) / safeCost) * 100 * 10000) / 10000
+          : null;
+        const qty = Number(item.quantity) || 1;
+
+        await supabase
+          .from('material_items')
+          .update({
+            cost_per_unit:  item.cost_per_unit  == null ? safeCost  : undefined,
+            price_per_unit: item.price_per_unit == null ? safePrice : undefined,
+            markup_percent: item.markup_percent == null ? safeMarkup : undefined,
+            extended_cost:  (item.extended_cost  == null && safeCost)  ? Math.round(safeCost  * qty * 10000) / 10000 : undefined,
+            extended_price: (item.extended_price == null && safePrice) ? Math.round(safePrice * qty * 10000) / 10000 : undefined,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', item.id);
+
+        patched++;
+      }
+
+      if (patched > 0) {
+        // Invalidate cache so the reload gets fresh data from DB with persisted cost/price
+        for (const key of workbookCache.keys()) {
+          if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+        }
+        loadWorkbook(true);
+      }
+    } catch (err) {
+      // Non-critical — log but don't surface to the user
+      console.warn('backfillMissingPricesFromCatalog error:', err);
+    }
+  }
+
   async function loadWorkbook(silent = false) {
     try {
       const quoteIdForLoad = effectiveQuoteId ?? null;
@@ -329,8 +472,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
         setWorkbook(cached.workbook);
         setAllCategories(cached.categories);
-        if (cached.workbook?.sheets?.length > 0 && !activeSheetId) {
-          setActiveSheetId(cached.workbook.sheets[0].id);
+        const sheets = cached.workbook?.sheets ?? [];
+        const current = activeSheetIdRef.current;
+        if (sheets.length > 0 && (!current || !sheets.some((s: any) => s.id === current))) {
+          setActiveSheetId(sheets[0].id);
         }
         // Refresh in background without showing the loading spinner
         silent = true;
@@ -397,6 +542,74 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         return;
       }
 
+      // Ensure the canonical "Crew Orders" sheet (the one with items) is visible.
+      // The primary workbook may contain an empty crew-orders sheet while items are in
+      // a sheet belonging to a different working workbook — always prefer the one with items.
+      {
+        const existingSheetIds = new Set(sheetsData.map((s: any) => s.id));
+
+        // All working workbooks for this job
+        const { data: allWorkingWbs } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('status', 'working');
+        const workingWbIds = (allWorkingWbs || []).map((w: any) => w.id);
+
+        if (workingWbIds.length > 0) {
+          // Fetch ALL crew-orders sheets across all working workbooks (oldest first)
+          const { data: allCrewSheets } = await supabase
+            .from('material_sheets')
+            .select('*')
+            .in('workbook_id', workingWbIds)
+            .in('sheet_name', ['Crew Orders', 'Field Requests'])
+            .order('created_at', { ascending: true });
+
+          if ((allCrewSheets || []).length > 0) {
+            // Load items for every crew-orders sheet so we can find the one with data
+            const allCrewItems: Record<string, any[]> = {};
+            for (const cs of allCrewSheets!) {
+              const { data: csItems } = await supabase
+                .from('material_items')
+                .select('*')
+                .eq('sheet_id', cs.id)
+                .order('order_index');
+              allCrewItems[cs.id] = csItems || [];
+            }
+
+            // Pick the sheet that has the most items (canonical source of truth)
+            const canonical = [...allCrewSheets!].sort(
+              (a, b) => (allCrewItems[b.id]?.length ?? 0) - (allCrewItems[a.id]?.length ?? 0)
+            )[0];
+
+            if (existingSheetIds.has(canonical.id)) {
+              // The canonical sheet is already in this workbook – nothing to do
+            } else {
+              // The canonical sheet belongs to another workbook.
+              // Remove any empty crew-orders placeholder already in sheetsData (don't show two).
+              const emptyCrewIdx = sheetsData.findIndex(
+                (s: any) =>
+                  (s.sheet_name === 'Crew Orders' || s.sheet_name === 'Field Requests') &&
+                  (allCrewItems[s.id]?.length ?? itemsData.filter((i: any) => i.sheet_id === s.id).length) === 0
+              );
+              if (emptyCrewIdx !== -1) {
+                const removedId = sheetsData[emptyCrewIdx].id;
+                sheetsData.splice(emptyCrewIdx, 1);
+                // drop items that belonged to the removed sheet
+                itemsData = itemsData.filter((i: any) => i.sheet_id !== removedId);
+              }
+
+              sheetsData.push(canonical);
+              itemsData.push(...allCrewItems[canonical.id]);
+            }
+          }
+        }
+      }
+
+      // Enrich items that have a SKU but missing cost/price with values from materials_catalog
+      // so the sheet shows cost and price on first paint when the catalog has them.
+      itemsData = await enrichItemsWithCatalogPrices(itemsData);
+
       const sheets: MaterialSheet[] = sheetsData.map((sheet: any) => ({
         ...sheet,
         items: itemsData.filter((item: any) => item.sheet_id === sheet.id),
@@ -413,7 +626,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       // Write to cache so the next visit is instant
       workbookCache.set(cacheKey, { workbook: fullWorkbook, categories, cachedAt: Date.now() });
 
-      if (sheets.length > 0 && !activeSheetId) {
+      // Background: backfill cost/price from catalog for any item that has a SKU but no price.
+      // Runs silently; if it patches any rows it triggers a silent reload so the user sees prices.
+      backfillMissingPricesFromCatalog(itemsData);
+
+      // Only set active sheet to first when current selection is empty or not in the new list.
+      // Use ref so realtime/subscription callbacks (stale closure) don't overwrite user's choice.
+      const current = activeSheetIdRef.current;
+      if (sheets.length > 0 && (!current || !sheets.some((s: any) => s.id === current))) {
         setActiveSheetId(sheets[0].id);
       }
     } catch (error: any) {
@@ -696,6 +916,36 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         items: items.sort((a, b) => a.order_index - b.order_index),
       }))
       .sort((a, b) => a.category.localeCompare(b.category));
+  }
+
+  /** Group by package name (priority) or sheet name for unbundled. Package takes priority; no package = group under sheet name. */
+  function groupByPackageOrSheet(items: MaterialItem[], sheetName: string): CategoryGroup[] {
+    const groupMap = new Map<string, MaterialItem[]>();
+    const fallbackGroup = sheetName || 'Sheet';
+
+    items.forEach(item => {
+      const packageNames = getMaterialPackageNames(item.id);
+      const key = packageNames.length > 0 ? packageNames[0]! : fallbackGroup;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, []);
+      }
+      groupMap.get(key)!.push(item);
+    });
+
+    const groups = Array.from(groupMap.entries())
+      .map(([category, items]) => ({
+        category,
+        items: items.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+      }));
+
+    // Package groups first (alphabetically), then the sheet-name group (unbundled) last
+    return groups.sort((a, b) => {
+      const aIsSheet = a.category === fallbackGroup;
+      const bIsSheet = b.category === fallbackGroup;
+      if (aIsSheet && !bIsSheet) return 1;
+      if (!aIsSheet && bIsSheet) return -1;
+      return a.category.localeCompare(b.category);
+    });
   }
 
   function calculateMarkupPercent(cost: number | null, price: number | null): number {
@@ -1452,8 +1702,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (item.category && item.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (item.usage && item.usage.toLowerCase().includes(searchTerm.toLowerCase()))
   ) || [];
-  
-  const categoryGroups = groupByCategory(filteredItems);
+
+  // Package takes priority; materials not in a package are grouped under the current sheet name
+  const categoryGroups = groupByPackageOrSheet(
+    filteredItems,
+    activeSheet?.sheet_name ?? 'Sheet'
+  );
 
   if (loading) {
     return (
@@ -1472,6 +1726,67 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const materialsSlot = useMaterialsToolbarSlot();
   const portalTarget = materialsSlot?.ready && materialsSlot?.ref?.current ? materialsSlot.ref.current : null;
 
+  // Action buttons that appear in the top bar (Move / Package / Documents / Export / Add Material).
+  // Only rendered when the Workbook tab is active and a workbook exists.
+  const workbookActionButtons = activeTab === 'manage' && workbook ? (
+    <div className="flex gap-1 flex-shrink-0 flex-wrap">
+      {packageSelectionMode ? (
+        <>
+          <Button onClick={openAddToPackageDialog} size="sm" disabled={selectedMaterialsForPackageAdd.size === 0}
+            className="h-7 text-xs bg-green-600 hover:bg-green-700 whitespace-nowrap px-2">
+            <Package className="w-3 h-3 mr-0.5" />
+            Add to Pkg ({selectedMaterialsForPackageAdd.size})
+          </Button>
+          <Button onClick={togglePackageSelectionMode} size="sm" variant="outline"
+            className="h-7 text-xs whitespace-nowrap px-2">
+            <X className="w-3 h-3 mr-0.5" />Cancel
+          </Button>
+        </>
+      ) : bulkMoveMode ? (
+        <>
+          <Button onClick={openBulkMoveDialog} size="sm" disabled={selectedMaterialsForMove.size === 0}
+            className="h-7 text-xs bg-orange-600 hover:bg-orange-700 whitespace-nowrap px-2">
+            <MoveHorizontal className="w-3 h-3 mr-0.5" />
+            Move ({selectedMaterialsForMove.size})
+          </Button>
+          <Button onClick={toggleBulkMoveMode} size="sm" variant="outline"
+            className="h-7 text-xs whitespace-nowrap px-2">
+            <X className="w-3 h-3 mr-0.5" />Cancel
+          </Button>
+        </>
+      ) : (
+        <>
+          {workbook.sheets.length > 1 && (
+            <Button onClick={toggleBulkMoveMode} size="sm" variant="outline"
+              className="h-7 text-xs whitespace-nowrap px-2 bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100">
+              <MoveHorizontal className="w-3 h-3 mr-0.5" />Move
+            </Button>
+          )}
+          {packages.length > 0 && (
+            <Button onClick={togglePackageSelectionMode} size="sm" variant="outline"
+              className="h-7 text-xs whitespace-nowrap px-2 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
+              <Package className="w-3 h-3 mr-0.5" />Package
+            </Button>
+          )}
+          <Button onClick={() => setShowDocumentViewer(true)} size="sm" variant="outline"
+            className="h-7 text-xs whitespace-nowrap px-2 bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
+            <FileText className="w-3 h-3 mr-0.5" />Documents
+          </Button>
+          <Button onClick={exportMaterialWorkbookToXLSX} size="sm" variant="outline"
+            disabled={exportingXLSX}
+            className="h-7 text-xs whitespace-nowrap px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+            <Download className="w-3 h-3 mr-0.5" />
+            {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
+          </Button>
+          <Button onClick={() => openAddDialog()} size="sm"
+            className="h-7 text-xs gradient-primary whitespace-nowrap px-2">
+            <Plus className="w-3 h-3 mr-0.5" />Add Material
+          </Button>
+        </>
+      )}
+    </div>
+  ) : null;
+
   const materialsToolbarContent = (
     <div className="flex items-center gap-2 flex-wrap">
       <TabsList className="grid grid-cols-5 h-8 bg-white/95 shadow-sm border border-slate-200/80 rounded-md">
@@ -1487,15 +1802,21 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           <Package className="w-3.5 h-3.5" />
           <span>Packages</span>
         </TabsTrigger>
-        <TabsTrigger value="crew-orders" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
-          <Package className="w-3.5 h-3.5" />
+        <TabsTrigger value="crew-orders" className="flex items-center gap-1 text-xs font-semibold py-1 px-2 relative">
+          <ShoppingCart className="w-3.5 h-3.5" />
           <span>Crew Orders</span>
+          {pendingCrewCount > 0 && (
+            <Badge className="ml-1 bg-orange-500 text-white text-[10px] font-bold px-1 py-0 leading-none animate-pulse">
+              {pendingCrewCount}
+            </Badge>
+          )}
         </TabsTrigger>
         <TabsTrigger value="upload" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
           <Upload className="w-3.5 h-3.5" />
           <span>Upload</span>
         </TabsTrigger>
       </TabsList>
+      {workbookActionButtons}
     </div>
   );
 
@@ -1504,60 +1825,73 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-1 flex flex-col flex-1 min-h-0 min-w-0">
         {portalTarget && createPortal(materialsToolbarContent, portalTarget)}
         {!portalTarget && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-gradient-to-r from-slate-50 to-slate-100 p-2 rounded-lg border border-slate-200">
-            <div className="relative w-full">
-              {jobQuotes.length > 1 ? (
-                <div className="flex items-center gap-2 mb-2">
-                  <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Proposal</Label>
-                  <Select
-                    value={effectiveQuoteId ?? ''}
-                    onValueChange={(v) => {
-                      const id = v || null;
-                      onQuoteChange?.(id);
-                      setSelectedQuoteId(id);
-                    }}
-                  >
-                    <SelectTrigger className="w-[160px] h-8 bg-white border text-xs">
-                      <SelectValue placeholder="Select proposal" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {jobQuotes.map((q) => (
-                        <SelectItem key={q.id} value={q.id}>
-                          {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (jobQuotes.length === 1 || proposalNumber) ? (
-                <div className="absolute -top-1 right-2 z-20">
-                  <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
-                    Proposal #{proposalLabel}
-                  </Badge>
-                </div>
-              ) : null}
-              <TabsList className="grid w-full grid-cols-5 h-9 bg-white shadow-sm">
-                <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Workbook</span>
-                </TabsTrigger>
-                <TabsTrigger value="breakdown" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
-                  <DollarSign className="w-3.5 h-3.5" />
-                  <span>Breakdown</span>
-                </TabsTrigger>
-                <TabsTrigger value="packages" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Packages</span>
-                </TabsTrigger>
-                <TabsTrigger value="crew-orders" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Crew Orders</span>
-                </TabsTrigger>
-                <TabsTrigger value="upload" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Upload</span>
-                </TabsTrigger>
-              </TabsList>
+          <div className="bg-gradient-to-r from-slate-50 to-slate-100 p-2 rounded-lg border border-slate-200">
+            {jobQuotes.length > 1 ? (
+              /* Multi-proposal: proposal selector + action buttons on the SAME row */
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Proposal</Label>
+                <Select
+                  value={effectiveQuoteId ?? ''}
+                  onValueChange={(v) => {
+                    const id = v || null;
+                    onQuoteChange?.(id);
+                    setSelectedQuoteId(id);
+                  }}
+                >
+                  <SelectTrigger className="w-[160px] h-8 bg-white border text-xs">
+                    <SelectValue placeholder="Select proposal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jobQuotes.map((q) => (
+                      <SelectItem key={q.id} value={q.id}>
+                        {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex-1" />
+                {workbookActionButtons}
+              </div>
+            ) : null}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative flex-1 min-w-0">
+                {(jobQuotes.length === 1 || proposalNumber) && jobQuotes.length <= 1 && (
+                  <div className="absolute -top-1 right-2 z-20">
+                    <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
+                      Proposal #{proposalLabel}
+                    </Badge>
+                  </div>
+                )}
+                <TabsList className="grid w-full grid-cols-5 h-9 bg-white shadow-sm">
+                  <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Workbook</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="breakdown" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                    <DollarSign className="w-3.5 h-3.5" />
+                    <span>Breakdown</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="packages" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                    <Package className="w-3.5 h-3.5" />
+                    <span>Packages</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="crew-orders" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1 relative">
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    <span>Crew Orders</span>
+                    {pendingCrewCount > 0 && (
+                      <Badge className="ml-1 bg-orange-500 text-white text-[10px] font-bold px-1 py-0 leading-none animate-pulse">
+                        {pendingCrewCount}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Single/no proposal: buttons sit beside the tab strip */}
+              {jobQuotes.length <= 1 && workbookActionButtons}
             </div>
           </div>
         )}
@@ -1614,150 +1948,51 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
                 <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
                   <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b">
-                    <div className="flex items-center justify-between gap-1 px-1.5 py-0.5">
-                      <div className="flex items-center gap-1 overflow-x-auto flex-1">
-                        {workbook.sheets.map((sheet) => (
-                          <div key={sheet.id} className="relative group">
-                            <Button
-                              variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
-                              size="sm"
-                              onClick={() => handleSheetChange(sheet.id)}
-                              className={`flex items-center gap-1 min-w-[100px] justify-start font-semibold pr-6 text-xs h-7 ${activeSheetId === sheet.id ? 'bg-white shadow border border-primary' : 'hover:bg-white/50'}`}
-                            >
-                              <FileSpreadsheet className="w-3 h-3" />
-                              {sheet.sheet_name}
-                              <Badge variant="secondary" className="ml-auto text-[10px] px-1">
-                                {sheet.items.length}
-                              </Badge>
-                            </Button>
-                            {/* Delete Sheet Button - only show when workbook is working status */}
-                            {workbook.status === 'working' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteSheet(sheet);
-                                }}
-                                className="absolute right-0 top-0 h-full w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 hover:bg-red-600 text-white rounded-l-none"
-                                title="Delete this sheet"
-                              >
-                                <X className="w-4 h-4" />
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                        
-                        {/* Add Sheet Button */}
-                        {workbook.status === 'working' && (
+                    <div className="flex items-center gap-1 px-1.5 py-0.5 overflow-x-auto">
+                      {workbook.sheets.map((sheet) => (
+                        <div key={sheet.id} className="relative group flex-shrink-0">
                           <Button
-                            variant="outline"
+                            variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
                             size="sm"
-                            onClick={() => setShowAddSheetDialog(true)}
-                            className="border border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold min-w-[90px] h-7 text-xs"
+                            onClick={() => handleSheetChange(sheet.id)}
+                            className={`flex items-center gap-1 min-w-[100px] justify-start font-semibold pr-6 text-xs h-7 ${activeSheetId === sheet.id ? 'bg-white shadow border border-primary' : 'hover:bg-white/50'}`}
                           >
-                            <Plus className="w-3 h-3 mr-0.5" />
-                            Add Sheet
+                            <FileSpreadsheet className="w-3 h-3" />
+                            {sheet.sheet_name}
+                            <Badge variant="secondary" className="ml-auto text-[10px] px-1">
+                              {sheet.items.length}
+                            </Badge>
                           </Button>
-                        )}
-                      </div>
-                      <div className="flex gap-1 flex-wrap">
-                        {packageSelectionMode ? (
-                          <>
+                          {/* Delete Sheet Button - only show when workbook is working status */}
+                          {workbook.status === 'working' && (
                             <Button
-                              onClick={openAddToPackageDialog}
+                              variant="ghost"
                               size="sm"
-                              disabled={selectedMaterialsForPackageAdd.size === 0}
-                              className="h-6 text-xs bg-green-600 hover:bg-green-700 whitespace-nowrap px-2"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteSheet(sheet);
+                              }}
+                              className="absolute right-0 top-0 h-full w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 hover:bg-red-600 text-white rounded-l-none"
+                              title="Delete this sheet"
                             >
-                              <Package className="w-3 h-3 mr-0.5" />
-                              Add to Pkg ({selectedMaterialsForPackageAdd.size})
+                              <X className="w-4 h-4" />
                             </Button>
-                            <Button
-                              onClick={togglePackageSelectionMode}
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-xs whitespace-nowrap px-2"
-                            >
-                              <X className="w-3 h-3 mr-0.5" />
-                              Cancel
-                            </Button>
-                          </>
-                        ) : bulkMoveMode ? (
-                          <>
-                            <Button
-                              onClick={openBulkMoveDialog}
-                              size="sm"
-                              disabled={selectedMaterialsForMove.size === 0}
-                              className="h-6 text-xs bg-orange-600 hover:bg-orange-700 whitespace-nowrap px-2"
-                            >
-                              <MoveHorizontal className="w-3 h-3 mr-0.5" />
-                              Move ({selectedMaterialsForMove.size})
-                            </Button>
-                            <Button
-                              onClick={toggleBulkMoveMode}
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-xs whitespace-nowrap px-2"
-                            >
-                              <X className="w-3 h-3 mr-0.5" />
-                              Cancel
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            {workbook.sheets.length > 1 && (
-                              <Button
-                                onClick={toggleBulkMoveMode}
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-xs whitespace-nowrap px-2 bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100"
-                              >
-                                <MoveHorizontal className="w-3 h-3 mr-0.5" />
-                                Move
-                              </Button>
-                            )}
-                            {packages.length > 0 && (
-                              <Button
-                                onClick={togglePackageSelectionMode}
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-xs whitespace-nowrap px-2 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
-                              >
-                                <Package className="w-3 h-3 mr-0.5" />
-                                Package
-                              </Button>
-                            )}
-                            <Button
-                              onClick={() => setShowDocumentViewer(true)}
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-xs whitespace-nowrap px-2 bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
-                            >
-                              <FileText className="w-3 h-3 mr-0.5" />
-                              Documents
-                            </Button>
-                            <Button
-                              onClick={exportMaterialWorkbookToXLSX}
-                              size="sm"
-                              variant="outline"
-                              disabled={exportingXLSX}
-                              className="h-6 text-xs whitespace-nowrap px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
-                            >
-                              <Download className="w-3 h-3 mr-0.5" />
-                              {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
-                            </Button>
-                            <Button
-                              onClick={() => openAddDialog()}
-                              size="sm"
-                              className="h-6 text-xs gradient-primary whitespace-nowrap px-2"
-                            >
-                              <Plus className="w-3 h-3 mr-0.5" />
-                              Add Material
-                            </Button>
-                          </>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add Sheet Button */}
+                      {workbook.status === 'working' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowAddSheetDialog(true)}
+                          className="flex-shrink-0 border border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold min-w-[90px] h-7 text-xs"
+                        >
+                          <Plus className="w-3 h-3 mr-0.5" />
+                          Add Sheet
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -2416,7 +2651,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         </TabsContent>
 
         <TabsContent value="crew-orders" className="space-y-2">
-          <CrewMaterialProcessing jobId={job.id} />
+          <OfficeCrewOrders jobId={job.id} onCountChange={setPendingCrewCount} />
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-2">

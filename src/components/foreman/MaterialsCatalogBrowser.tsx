@@ -87,6 +87,54 @@ function getStatusLabel(status: string) {
   return STATUS_OPTIONS.find(s => s.value === status)?.label || status;
 }
 
+/** Sanitize numeric values for material_items to avoid DB overflow. */
+function toSafeNum(value: unknown, decimals = 2, maxAbs = 999999.99): number {
+  const n = Number(value);
+  if (value === undefined || value === null || Number.isNaN(n) || !Number.isFinite(n)) return 0;
+  const rounded = Math.round(n * Math.pow(10, decimals)) / Math.pow(10, decimals);
+  if (Math.abs(rounded) > maxAbs) return rounded < 0 ? -maxAbs : maxAbs;
+  return rounded;
+}
+
+/** Return a string safe for Postgres numeric columns (avoids JS number serialization overflow). */
+function toSafeNumStr(value: unknown, decimals = 2, maxAbs = 999999.99): string {
+  return String(toSafeNum(value, decimals, maxAbs));
+}
+
+function toSafeQuantity(value: unknown): number {
+  const n = toSafeNum(value, 4, 999999.9999);
+  return n < 0 ? 0 : n;
+}
+
+function toSafeQuantityStr(value: unknown): string {
+  return String(toSafeQuantity(value));
+}
+
+/** Build the cost/price/markup fields for a material_items insert from a catalog row. */
+function catalogPricing(mat: CatalogMaterial | null, qty: number) {
+  const cost  = toSafeNum(mat?.purchase_cost, 4, 9999999);
+  const price = toSafeNum(mat?.unit_price,    4, 9999999);
+  const markup = cost > 0 && price > 0
+    ? toSafeNum((price - cost) / cost * 100, 4, 99999)
+    : 0;
+  return {
+    cost_per_unit:   cost  > 0 ? cost  : null,
+    price_per_unit:  price > 0 ? price : null,
+    markup_percent:  markup > 0 ? markup : null,
+    extended_cost:   cost  > 0 ? toSafeNum(cost  * qty, 4, 9999999) : null,
+    extended_price:  price > 0 ? toSafeNum(price * qty, 4, 9999999) : null,
+  };
+}
+
+/** Safe integer for order_index / version_number. */
+function toSafeInt(value: unknown, max = 2147483647): number {
+  const n = Number(value);
+  if (value === undefined || value === null || Number.isNaN(n) || !Number.isFinite(n)) return 0;
+  const i = Math.floor(n);
+  if (i < 0) return 0;
+  return i > max ? max : i;
+}
+
 export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: MaterialsCatalogBrowserProps) {
   const [catalogMaterials, setCatalogMaterials] = useState<CatalogMaterial[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -194,30 +242,29 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       if (oldError) throw oldError;
 
       // Load from new material_items table (workbook system)
-      // Get workbook for this job
-      const { data: workbookData } = await supabase
+      // Get ALL working workbooks for this job, then find all "Crew Orders" sheets
+      const { data: workingWbsData } = await supabase
         .from('material_workbooks')
         .select('id')
         .eq('job_id', job.id)
-        .eq('status', 'working')
-        .maybeSingle();
+        .eq('status', 'working');
 
       let newMaterials: any[] = [];
-      if (workbookData) {
-        // Get "Field Requests" sheet
-        const { data: sheetData } = await supabase
+      const workingWbIds = (workingWbsData || []).map((w: any) => w.id);
+      if (workingWbIds.length > 0) {
+        // Collect items from ALL "Crew Orders" / "Field Requests" sheets across all working workbooks
+        const { data: crewSheets } = await supabase
           .from('material_sheets')
-          .select('id, sheet_name')
-          .eq('workbook_id', workbookData.id)
-          .eq('sheet_name', 'Field Requests')
-          .maybeSingle();
+          .select('id')
+          .in('workbook_id', workingWbIds)
+          .in('sheet_name', ['Crew Orders', 'Field Requests']);
 
-        if (sheetData) {
-          // Get material items from this sheet
+        const crewSheetIds = (crewSheets || []).map((s: any) => s.id);
+        if (crewSheetIds.length > 0) {
           const { data: itemsData } = await supabase
             .from('material_items')
             .select('*')
-            .eq('sheet_id', sheetData.id)
+            .in('sheet_id', crewSheetIds)
             .order('created_at', { ascending: false });
 
           newMaterials = (itemsData || []).map((item: any) => ({
@@ -227,10 +274,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             length: item.length,
             status: item.status,
             notes: item.notes,
-            ordered_by: null, // Not tracked in new system
+            ordered_by: null,
             order_requested_at: item.created_at,
             use_case: item.usage,
-            materials_categories: { name: item.category || 'Field Requests' },
+            materials_categories: { name: item.category || 'Crew Orders' },
           }));
         }
       }
@@ -488,6 +535,82 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     return total;
   }
 
+  /**
+   * Returns the single canonical "Crew Orders" sheet ID for this job.
+   * Searches across ALL working workbooks so we never create duplicates.
+   * Creates a new workbook + sheet only when truly nothing exists.
+   */
+  async function getOrCreateCrewOrdersSheetId(createdBy: string | null): Promise<string> {
+    // Step 1 – find any existing working workbooks
+    const { data: workingWbs } = await supabase
+      .from('material_workbooks')
+      .select('id')
+      .eq('job_id', job.id)
+      .eq('status', 'working')
+      .order('created_at', { ascending: true });
+
+    const workingWbIds = (workingWbs || []).map((w: any) => w.id);
+
+    // Step 2 – look for a "Crew Orders" (or legacy "Field Requests") sheet in ANY of them
+    if (workingWbIds.length > 0) {
+      const { data: crewSheet } = await supabase
+        .from('material_sheets')
+        .select('id')
+        .in('workbook_id', workingWbIds)
+        .in('sheet_name', ['Crew Orders', 'Field Requests'])
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (crewSheet) return crewSheet.id;
+    }
+
+    // Step 3 – no existing sheet found; resolve which workbook to use
+    let workbookId: string;
+    if (workingWbIds.length > 0) {
+      workbookId = workingWbIds[0]; // use oldest working workbook
+    } else {
+      const { data: maxWb } = await supabase
+        .from('material_workbooks')
+        .select('version_number')
+        .eq('job_id', job.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextVersion = toSafeInt(Number(maxWb?.version_number ?? 0) + 1);
+      const { data: newWorkbook, error: workbookError } = await supabase
+        .from('material_workbooks')
+        .insert({ job_id: job.id, version_number: nextVersion, status: 'working', created_by: createdBy })
+        .select()
+        .single();
+      if (workbookError) throw workbookError;
+      workbookId = newWorkbook.id;
+    }
+
+    // Step 4 – create the sheet in that workbook
+    const { data: sheetRows } = await supabase
+      .from('material_sheets')
+      .select('order_index')
+      .eq('workbook_id', workbookId)
+      .order('order_index', { ascending: false })
+      .limit(1);
+    const nextOrderIndex = toSafeInt(
+      (sheetRows && sheetRows.length > 0) ? (Number(sheetRows[0].order_index) + 1) : 0
+    );
+    const { data: newSheet, error: sheetError } = await supabase
+      .from('material_sheets')
+      .insert({
+        workbook_id: workbookId,
+        sheet_name: 'Crew Orders',
+        description: 'Materials requested by crew from the field',
+        order_index: nextOrderIndex,
+      })
+      .select()
+      .single();
+    if (sheetError) throw sheetError;
+    return newSheet.id;
+  }
+
   async function addMaterialToJob() {
     if (!selectedCatalogMaterial) return;
 
@@ -504,99 +627,36 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setAddingMaterial(true);
 
     try {
-      // NEW APPROACH: Use material_workbooks system instead of old materials table
-      // 1. Get or create a working workbook for this job
-      let workbookId: string;
-      let sheetId: string;
-      
-      const { data: existingWorkbook } = await supabase
-        .from('material_workbooks')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('status', 'working')
-        .maybeSingle();
-
-      if (existingWorkbook) {
-        workbookId = existingWorkbook.id;
-      } else {
-        // Create new workbook if none exists
-        const { data: newWorkbook, error: workbookError } = await supabase
-          .from('material_workbooks')
-          .insert({
-            job_id: job.id,
-            version_number: 1,
-            status: 'working',
-            created_by: userId,
-          })
-          .select()
-          .single();
-
-        if (workbookError) throw workbookError;
-        workbookId = newWorkbook.id;
+      const effectiveUserId = userId && String(userId).trim() ? userId : null;
+      if (!effectiveUserId) {
+        toast.error('Sign in to request material so it appears in Orders and the office can process it.');
+        setAddingMaterial(false);
+        return;
       }
+      const requestFields = { requested_by: effectiveUserId, order_requested_at: new Date().toISOString() };
 
-      // 2. Get or create a "Field Requests" sheet in this workbook
-      const { data: existingSheet } = await supabase
-        .from('material_sheets')
-        .select('id')
-        .eq('workbook_id', workbookId)
-        .eq('sheet_name', 'Field Requests')
-        .maybeSingle();
-
-      if (existingSheet) {
-        sheetId = existingSheet.id;
-      } else {
-        // Get max order_index for sheets in this workbook
-        const { data: sheets } = await supabase
-          .from('material_sheets')
-          .select('order_index')
-          .eq('workbook_id', workbookId)
-          .order('order_index', { ascending: false })
-          .limit(1);
-
-        const nextOrderIndex = (sheets && sheets.length > 0) ? sheets[0].order_index + 1 : 0;
-
-        const { data: newSheet, error: sheetError } = await supabase
-          .from('material_sheets')
-          .insert({
-            workbook_id: workbookId,
-            sheet_name: 'Field Requests',
-            description: 'Materials requested from the field by crew members',
-            order_index: nextOrderIndex,
-          })
-          .select()
-          .single();
-
-        if (sheetError) throw sheetError;
-        sheetId = newSheet.id;
-      }
+      // Get the single canonical "Crew Orders" sheet for this job
+      const sheetId = await getOrCreateCrewOrdersSheetId(userId || null);
 
       if (showCustomLength) {
-        // For custom lengths, still use ALL catalog material info but with user-specified length
-        const catalogCostPerUnit = selectedCatalogMaterial.purchase_cost || 0;
-        const catalogUnitPrice = selectedCatalogMaterial.unit_price || 0;
-        const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Field Requests';
-        
-        const materialsToInsert = materialPieces.map(piece => ({
-          sheet_id: sheetId,
-          category: catalogCategory,
-          sku: selectedCatalogMaterial.sku,
-          material_name: selectedCatalogMaterial.material_name,
-          quantity: piece.quantity,
-          length: piece.displayLength, // User-specified length for custom pieces
-          cost_per_unit: catalogCostPerUnit,
-          price_per_unit: catalogUnitPrice || catalogCostPerUnit,
-          extended_cost: catalogCostPerUnit * piece.quantity,
-          extended_price: (catalogUnitPrice || catalogCostPerUnit) * piece.quantity,
-          markup_percent: catalogUnitPrice > 0 && catalogCostPerUnit > 0 
-            ? ((catalogUnitPrice - catalogCostPerUnit) / catalogCostPerUnit * 100) 
-            : 0,
-          taxable: true,
-          status: 'not_ordered' as const,
-          notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
-          color: addMaterialColor.trim() || null,
-          order_index: 0,
-        }));
+        const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Crew Orders';
+        const materialsToInsert = materialPieces.map(piece => {
+          const qty = Math.max(1, Math.round(Number(piece.quantity) * 10000) / 10000);
+          return {
+            sheet_id: sheetId,
+            category: catalogCategory,
+            sku: selectedCatalogMaterial.sku,
+            material_name: selectedCatalogMaterial.material_name,
+            quantity: qty,
+            length: piece.displayLength,
+            status: 'not_ordered' as const,
+            notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
+            color: addMaterialColor.trim() || null,
+            order_index: 0,
+            ...catalogPricing(selectedCatalogMaterial, qty),
+            ...requestFields,
+          };
+        });
 
         const { error: materialError } = await supabase
           .from('material_items')
@@ -632,31 +692,23 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           const catalogMaterial = catalogMaterials.find(m => m.sku === sku);
           if (!catalogMaterial) continue;
           
-          // Use ALL information from the catalog material attached to this SKU
-          const catalogCostPerUnit = catalogMaterial.purchase_cost || 0;
-          const catalogUnitPrice = catalogMaterial.unit_price || 0;
-          const catalogCategory = cleanCatalogCategory(catalogMaterial.category) || 'Field Requests';
-          const catalogLength = catalogMaterial.part_length; // Length attached to SKU in catalog
-          
+          const catalogCategory = cleanCatalogCategory(catalogMaterial.category) || 'Crew Orders';
+          const catalogLength = catalogMaterial.part_length;
+          const qty = Math.max(1, Math.round(Number(quantity) * 10000) / 10000);
+
           materialsToInsert.push({
             sheet_id: sheetId,
             category: catalogCategory,
             sku: catalogMaterial.sku,
             material_name: catalogMaterial.material_name,
-            quantity,
-            length: catalogLength, // Use length from catalog attached to this SKU
-            cost_per_unit: catalogCostPerUnit,
-            price_per_unit: catalogUnitPrice || catalogCostPerUnit,
-            extended_cost: catalogCostPerUnit * quantity,
-            extended_price: (catalogUnitPrice || catalogCostPerUnit) * quantity,
-            markup_percent: catalogUnitPrice > 0 && catalogCostPerUnit > 0 
-              ? ((catalogUnitPrice - catalogCostPerUnit) / catalogCostPerUnit * 100) 
-              : 0,
-            taxable: true,
+            quantity: qty,
+            length: catalogLength,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${catalogMaterial.sku})`,
             color: addMaterialColor.trim() || null,
             order_index: 0,
+            ...catalogPricing(catalogMaterial, qty),
+            ...requestFields,
           });
           
           variantDetails.push(`${quantity}x ${catalogLength || 'No length'}`);
@@ -689,12 +741,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
         toast.success(`Added ${getTotalVariantsCount()} pieces in ${selectedVariants.size} different lengths`);
       } else {
-        // Simple quantity entry - use ALL catalog info attached to the SKU
-        const qty = typeof addMaterialQuantity === 'number' ? addMaterialQuantity : 1;
-        const catalogCostPerUnit = selectedCatalogMaterial.purchase_cost || 0;
-        const catalogUnitPrice = selectedCatalogMaterial.unit_price || 0;
-        const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Field Requests';
-        const catalogLength = selectedCatalogMaterial.part_length; // Length from catalog
+        const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Crew Orders';
+        const catalogLength = selectedCatalogMaterial.part_length;
+        const qty = Math.max(1, Math.round(Number(typeof addMaterialQuantity === 'number' ? addMaterialQuantity : 1) * 10000) / 10000);
 
         const { error: materialError } = await supabase
           .from('material_items')
@@ -704,19 +753,13 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             sku: selectedCatalogMaterial.sku,
             material_name: selectedCatalogMaterial.material_name,
             quantity: qty,
-            length: catalogLength, // Use length attached to SKU in catalog
-            cost_per_unit: catalogCostPerUnit,
-            price_per_unit: catalogUnitPrice || catalogCostPerUnit,
-            extended_cost: catalogCostPerUnit * qty,
-            extended_price: (catalogUnitPrice || catalogCostPerUnit) * qty,
-            markup_percent: catalogUnitPrice > 0 && catalogCostPerUnit > 0 
-              ? ((catalogUnitPrice - catalogCostPerUnit) / catalogCostPerUnit * 100) 
-              : 0,
-            taxable: true,
+            length: catalogLength,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
             color: addMaterialColor.trim() || null,
             order_index: 0,
+            ...catalogPricing(selectedCatalogMaterial, qty),
+            ...requestFields,
           });
 
         if (materialError) throw materialError;
@@ -747,7 +790,18 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       }
     } catch (error: any) {
       console.error('Error adding material:', error);
-      toast.error('Failed to add material');
+      const details = error?.details || error?.hint || '';
+      const msg = error?.message || error?.error_description || 'Unknown error';
+      // Detect the narrow numeric(5,4) column issue and give a clear actionable message
+      if (msg?.includes('numeric field overflow') || msg?.includes('precision')) {
+        toast.error(
+          'Database column too narrow for this quantity/price. Run scripts/fix-material-items-quantity-precision.sql in Supabase SQL Editor to fix.',
+          { duration: 10000 }
+        );
+      } else {
+        const full = details ? `${msg} (${details})` : msg;
+        toast.error(`Failed to add material: ${full}`);
+      }
     } finally {
       setAddingMaterial(false);
     }
@@ -840,93 +894,31 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setAddingCustomMaterial(true);
 
     try {
-      // NEW APPROACH: Use material_workbooks system instead of old materials table
-      // 1. Get or create a working workbook for this job
-      let workbookId: string;
-      let sheetId: string;
-      
-      const { data: existingWorkbook } = await supabase
-        .from('material_workbooks')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('status', 'working')
-        .maybeSingle();
-
-      if (existingWorkbook) {
-        workbookId = existingWorkbook.id;
-      } else {
-        // Create new workbook if none exists
-        const { data: newWorkbook, error: workbookError } = await supabase
-          .from('material_workbooks')
-          .insert({
-            job_id: job.id,
-            version_number: 1,
-            status: 'working',
-            created_by: userId,
-          })
-          .select()
-          .single();
-
-        if (workbookError) throw workbookError;
-        workbookId = newWorkbook.id;
+      const effectiveUserId = userId && String(userId).trim() ? userId : null;
+      if (!effectiveUserId) {
+        toast.error('Sign in to request material so it appears in Orders and the office can process it.');
+        setAddingCustomMaterial(false);
+        return;
       }
+      const requestFields = { requested_by: effectiveUserId, order_requested_at: new Date().toISOString() };
 
-      // 2. Get or create a "Field Requests" sheet in this workbook
-      const { data: existingSheet } = await supabase
-        .from('material_sheets')
-        .select('id')
-        .eq('workbook_id', workbookId)
-        .eq('sheet_name', 'Field Requests')
-        .maybeSingle();
+      // Get the single canonical "Crew Orders" sheet for this job
+      const sheetId = await getOrCreateCrewOrdersSheetId(userId || null);
 
-      if (existingSheet) {
-        sheetId = existingSheet.id;
-      } else {
-        // Get max order_index for sheets in this workbook
-        const { data: sheets } = await supabase
-          .from('material_sheets')
-          .select('order_index')
-          .eq('workbook_id', workbookId)
-          .order('order_index', { ascending: false })
-          .limit(1);
-
-        const nextOrderIndex = (sheets && sheets.length > 0) ? sheets[0].order_index + 1 : 0;
-
-        const { data: newSheet, error: sheetError } = await supabase
-          .from('material_sheets')
-          .insert({
-            workbook_id: workbookId,
-            sheet_name: 'Field Requests',
-            description: 'Materials requested from the field by crew members',
-            order_index: nextOrderIndex,
-          })
-          .select()
-          .single();
-
-        if (sheetError) throw sheetError;
-        sheetId = newSheet.id;
-      }
-
-      const qty = typeof customMaterialQuantity === 'number' ? customMaterialQuantity : 1;
-
+      const qty = Math.max(1, Math.round(Number(typeof customMaterialQuantity === 'number' ? customMaterialQuantity : 1) * 10000) / 10000);
       const { data: materialData, error: materialError } = await supabase
         .from('material_items')
         .insert({
           sheet_id: sheetId,
           category: 'Custom',
           sku: null,
-          material_name: customMaterialName,
+          material_name: customMaterialName.trim(),
           quantity: qty,
-          length: customMaterialLength || null,
-          cost_per_unit: 0,
-          price_per_unit: 0,
-          extended_cost: 0,
-          extended_price: 0,
-          markup_percent: 0,
-          taxable: true,
+          length: customMaterialLength?.trim() || null,
           status: 'not_ordered',
-          notes: customMaterialNotes || 'Custom material added from field',
+          notes: customMaterialNotes?.trim() || 'Custom material requested from field',
           order_index: 0,
+          ...requestFields,
         })
         .select()
         .single();
@@ -995,7 +987,17 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       }
     } catch (error: any) {
       console.error('Error adding custom material:', error);
-      toast.error('Failed to add custom material');
+      const details = error?.details || error?.hint || '';
+      const msg = error?.message || error?.error_description || 'Unknown error';
+      if (msg?.includes('numeric field overflow') || msg?.includes('precision')) {
+        toast.error(
+          'Database column too narrow for this quantity. Run scripts/fix-material-items-quantity-precision.sql in Supabase SQL Editor to fix.',
+          { duration: 10000 }
+        );
+      } else {
+        const full = details ? `${msg} (${details})` : msg;
+        toast.error(`Failed to add custom material: ${full}`);
+      }
     } finally {
       setAddingCustomMaterial(false);
     }
@@ -1324,7 +1326,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                                 {material.category_name}
                               </Badge>
                               <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-                                🔧 Field Request
+                                🛒 Crew Order
                               </Badge>
                             </div>
                             {material.use_case && (

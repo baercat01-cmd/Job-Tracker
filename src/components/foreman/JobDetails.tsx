@@ -14,6 +14,7 @@ import { JobMaterialsByStatus } from './JobMaterialsByStatus';
 import { AllMaterialsBySheet } from './AllMaterialsBySheet';
 import { MaterialsByBundle } from './MaterialsByBundle';
 import { CrewOrderedMaterials } from './CrewOrderedMaterials';
+import { MaterialsCatalogBrowser } from './MaterialsCatalogBrowser';
 import type { Job, DocumentFolder } from '@/types';
 
 const MATERIAL_TAB_VALUES = ['pull_from_shop', 'ready_for_job', 'all_materials', 'bundles', 'crew_orders'] as const;
@@ -250,7 +251,14 @@ export function JobDetails({ job, onBack, defaultTab = 'documents', showDocument
           <MaterialsByBundle job={job} />
         </TabsContent>
 
-        <TabsContent value="crew_orders">
+        <TabsContent value="crew_orders" className="space-y-4">
+          <MaterialsCatalogBrowser
+            job={job}
+            userId={profile?.id || ''}
+            onMaterialAdded={() => {
+              loadCrewOrdersCount();
+            }}
+          />
           <CrewOrderedMaterials job={job} />
         </TabsContent>
       </Tabs>

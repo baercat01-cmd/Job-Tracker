@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
+import { Package, ArrowRight, ChevronDown, ChevronRight, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Select,
@@ -86,8 +86,9 @@ function getStatusColor(status: string): string {
 
 export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterialsDialogProps) {
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
+  const [sheetGroups, setSheetGroups] = useState<MaterialBundle[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Empty set = all collapsed by default
+  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (open) {
@@ -164,6 +165,65 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
       
       console.log(`Found ${packagesWithShopMaterials.length} packages with shop materials`);
       setPackages(packagesWithShopMaterials);
+
+      // Unbundled materials (pull_from_shop / ready_for_job) — drive by materials so all such items appear regardless of workbook status
+      const { data: bundledIds } = await supabase.from('material_bundle_items').select('material_item_id');
+      const bundledSet = new Set((bundledIds || []).map((r: any) => r.material_item_id));
+
+      const { data: unbundledRows } = await supabase
+        .from('material_items')
+        .select('id, sheet_id, category, material_name, quantity, length, usage, status, cost_per_unit')
+        .in('status', ['pull_from_shop', 'ready_for_job']);
+      const unbundled = (unbundledRows || []).filter((r: any) => !bundledSet.has(r.id));
+      if (unbundled.length === 0) {
+        setSheetGroups([]);
+        return;
+      }
+
+      const sheetIdsFromItems = [...new Set(unbundled.map((i: any) => i.sheet_id))];
+      const { data: sheetsData } = await supabase.from('material_sheets').select('id, sheet_name, workbook_id').in('id', sheetIdsFromItems);
+      const sheetMap = new Map((sheetsData || []).map((s: any) => [s.id, s]));
+
+      const wbIdsFromSheets = [...new Set((sheetsData || []).map((s: any) => s.workbook_id))];
+      const { data: wbJobs } = await supabase.from('material_workbooks').select('id, job_id').in('id', wbIdsFromSheets);
+      const wbToJob = new Map((wbJobs || []).map((w: any) => [w.id, w.job_id]));
+      const { data: jobsData } = await supabase.from('jobs').select('id, name, client_name').in('id', [...new Set(unbundled.map((i: any) => {
+        const s = sheetMap.get(i.sheet_id);
+        return s ? wbToJob.get(s.workbook_id) : null;
+      }).filter(Boolean))]);
+      const jobMap = new Map((jobsData || []).map((j: any) => [j.id, j]));
+
+      const byKey = new Map<string, any[]>();
+      for (const item of unbundled) {
+        const sheet = sheetMap.get(item.sheet_id);
+        const jobId = sheet ? wbToJob.get(sheet.workbook_id) : null;
+        if (!jobId || !sheet) continue;
+        const key = `${jobId}|${item.sheet_id}`;
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key)!.push({ ...item, sheets: { sheet_name: sheet.sheet_name } });
+      }
+
+      const built: MaterialBundle[] = [];
+      for (const [key, items] of byKey) {
+        const [jobId, sheetId] = key.split('|');
+        const job = jobMap.get(jobId) || { id: jobId, name: 'Unknown', client_name: '' };
+        const sheet = sheetMap.get(sheetId);
+        built.push({
+          id: `unbundled-${jobId}-${sheetId}`,
+          job_id: jobId,
+          name: sheet?.sheet_name || 'Unknown Sheet',
+          description: null,
+          status: 'pull_from_shop',
+          jobs: job,
+          bundle_items: items.map((m: any) => ({
+            id: m.id,
+            bundle_id: `unbundled-${jobId}-${sheetId}`,
+            material_item_id: m.id,
+            material_items: m,
+          })),
+        });
+      }
+      setSheetGroups(built);
     } catch (error: any) {
       console.error('Error loading materials:', error);
       toast.error(`Failed to load materials: ${error.message || 'Unknown error'}`);
@@ -202,26 +262,19 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
     setExpandedPackages(newSet);
   }
 
-  // Separate packages by status
-  const pullFromShopPackages = packages.filter(pkg => 
-    pkg.bundle_items.some(item => 
-      item.material_items.status === 'pull_from_shop'
-    )
-  );
-  
-  const readyForJobPackages = packages.filter(pkg => 
-    pkg.bundle_items.some(item =>
-      item.material_items.status === 'ready_for_job'
-    )
-  );
+  const hasPull = (pkg: MaterialBundle) => pkg.bundle_items.some(item => item.material_items.status === 'pull_from_shop');
+  const hasReady = (pkg: MaterialBundle) => pkg.bundle_items.some(item => item.material_items.status === 'ready_for_job');
+  const pullFromShopPackages = [...packages.filter(hasPull), ...sheetGroups.filter(hasPull)];
+  const readyForJobPackages = [...packages.filter(hasReady), ...sheetGroups.filter(hasReady)];
 
-  const totalReadyToPull = pullFromShopPackages.reduce((sum, pkg) => 
+  const totalReadyToPull = pullFromShopPackages.reduce((sum, pkg) =>
     sum + pkg.bundle_items.filter(item => item.material_items.status === 'pull_from_shop').length, 0
   );
-  
-  const totalAtShop = readyForJobPackages.reduce((sum, pkg) => 
+  const totalAtShop = readyForJobPackages.reduce((sum, pkg) =>
     sum + pkg.bundle_items.filter(item => item.material_items.status === 'ready_for_job').length, 0
   );
+
+  const isSheetGroup = (pkg: MaterialBundle) => pkg.id.startsWith('unbundled-');
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -279,12 +332,18 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                                   )}
                                   <div>
                                     <p className="font-bold text-base text-white flex items-center gap-2">
-                                      <Package className="w-4 h-4" />
-                                      {pkg.name}
+                                      {isSheetGroup(pkg) ? (
+                                        <><FileSpreadsheet className="w-4 h-4" />Sheet: {pkg.name}</>
+                                      ) : (
+                                        <><Package className="w-4 h-4" />{pkg.name}</>
+                                      )}
                                     </p>
                                     <p className="text-xs text-purple-100">{pkg.jobs.name} - {pkg.jobs.client_name}</p>
-                                    {pkg.description && (
+                                    {!isSheetGroup(pkg) && pkg.description && (
                                       <p className="text-xs text-purple-200 mt-1">{pkg.description}</p>
+                                    )}
+                                    {isSheetGroup(pkg) && (
+                                      <p className="text-xs text-purple-200 mt-1">Individual materials</p>
                                     )}
                                   </div>
                                 </div>
@@ -296,7 +355,6 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                           </CollapsibleTrigger>
                         </div>
                         
-                        {/* Materials in this package */}
                         <CollapsibleContent>
                           <div className="space-y-2 mt-2 pl-2">
                             {pullItems.map((item) => (
@@ -392,12 +450,18 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                                   )}
                                   <div>
                                     <p className="font-bold text-base text-white flex items-center gap-2">
-                                      <Package className="w-4 h-4" />
-                                      {pkg.name}
+                                      {isSheetGroup(pkg) ? (
+                                        <><FileSpreadsheet className="w-4 h-4" />Sheet: {pkg.name}</>
+                                      ) : (
+                                        <><Package className="w-4 h-4" />{pkg.name}</>
+                                      )}
                                     </p>
                                     <p className="text-xs text-blue-100">{pkg.jobs.name} - {pkg.jobs.client_name}</p>
-                                    {pkg.description && (
+                                    {!isSheetGroup(pkg) && pkg.description && (
                                       <p className="text-xs text-blue-200 mt-1">{pkg.description}</p>
+                                    )}
+                                    {isSheetGroup(pkg) && (
+                                      <p className="text-xs text-blue-200 mt-1">Individual materials</p>
                                     )}
                                   </div>
                                 </div>
@@ -409,7 +473,6 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                           </CollapsibleTrigger>
                         </div>
                         
-                        {/* Materials in this package */}
                         <CollapsibleContent>
                           <div className="space-y-2 mt-2 pl-2">
                             {readyItems.map((item) => (

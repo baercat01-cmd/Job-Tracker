@@ -74,7 +74,8 @@ CREATE TABLE IF NOT EXISTS public.material_items (
   ordered_at timestamptz,
   ordered_by uuid,
   date_needed_by date,
-  requested_by uuid
+  requested_by uuid,
+  order_requested_at timestamptz
 );
 
 CREATE INDEX IF NOT EXISTS idx_material_items_sheet_id ON public.material_items (sheet_id);

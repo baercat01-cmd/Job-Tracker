@@ -421,11 +421,11 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         });
       }
 
-      // Add virtual "Field Requests" category if there are any field requests
+      // Add virtual "Crew Orders" category if there are any crew-requested materials
       if (fieldRequestMaterials.length > 0) {
         categoriesWithMaterials.unshift({
           id: 'field-requests-virtual',
-          name: '🔧 Field Requests',
+          name: '🛒 Crew Orders',
           order_index: -1,
           materials: fieldRequestMaterials,
         });

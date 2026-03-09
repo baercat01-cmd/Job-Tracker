@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck, Building2 } from 'lucide-react';
+import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck, Building2, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface MaterialItem {
@@ -93,6 +93,8 @@ interface JobGroup {
   jobName: string;
   clientName: string;
   packages: MaterialBundle[];
+  /** Unbundled materials with pull_from_shop/ready_for_job, grouped by sheet (same flow as packages) */
+  sheetGroups: MaterialBundle[];
 }
 
 interface ShopMaterialsViewProps {
@@ -101,6 +103,8 @@ interface ShopMaterialsViewProps {
 
 export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
+  /** Unbundled materials (pull_from_shop / ready_for_job) grouped by job + sheet, same shape as packages */
+  const [sheetGroups, setSheetGroups] = useState<MaterialBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterJob, setFilterJob] = useState('all');
@@ -207,6 +211,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       if (!allBundles || allBundles.length === 0) {
         console.log('❌ SHOP VIEW: No bundles found in database');
         setPackages([]);
+        setSheetGroups([]);
         setLoading(false);
         return;
       }
@@ -299,8 +304,97 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       }
       
       setPackages(packagesWithShopMaterials);
+
+      // Load unbundled material_items (pull_from_shop / ready_for_job) — drive by materials so we include all such items regardless of workbook status
+      const { data: bundledItemIds } = await supabase
+        .from('material_bundle_items')
+        .select('material_item_id');
+      const bundledSet = new Set((bundledItemIds || []).map((r: any) => r.material_item_id));
+
+      const { data: unbundledRows } = await supabase
+        .from('material_items')
+        .select(`
+          id,
+          sheet_id,
+          category,
+          material_name,
+          quantity,
+          length,
+          color,
+          usage,
+          status,
+          cost_per_unit
+        `)
+        .in('status', ['pull_from_shop', 'ready_for_job']);
+
+      const unbundledItems = (unbundledRows || []).filter((r: any) => !bundledSet.has(r.id));
+      if (unbundledItems.length === 0) {
+        setSheetGroups([]);
+        setExpandedPackages(new Set());
+        setLoading(false);
+        return;
+      }
+
+      const sheetIdsFromItems = [...new Set(unbundledItems.map((i: any) => i.sheet_id))];
+      const { data: sheetsData } = await supabase
+        .from('material_sheets')
+        .select('id, sheet_name, workbook_id')
+        .in('id', sheetIdsFromItems);
+      const sheetMap = new Map((sheetsData || []).map((s: any) => [s.id, s]));
+
+      const workbookIdsFromSheets = [...new Set((sheetsData || []).map((s: any) => s.workbook_id))];
+      const { data: workbookJobs } = await supabase
+        .from('material_workbooks')
+        .select('id, job_id')
+        .in('id', workbookIdsFromSheets);
+      const wbToJob = new Map((workbookJobs || []).map((w: any) => [w.id, w.job_id]));
+
+      const { data: jobsData } = await supabase
+        .from('jobs')
+        .select('id, name, client_name')
+        .in('id', [...new Set(unbundledItems.map((i: any) => {
+          const sh = sheetMap.get(i.sheet_id);
+          return sh ? wbToJob.get(sh.workbook_id) : null;
+        }).filter(Boolean))]);
+      const jobMap = new Map((jobsData || []).map((j: any) => [j.id, j]));
+
+      const byJobSheet = new Map<string, any[]>();
+      for (const item of unbundledItems) {
+        const sheet = sheetMap.get(item.sheet_id);
+        const jobId = sheet ? wbToJob.get(sheet.workbook_id) : null;
+        if (!jobId || !sheet) continue;
+        const key = `${jobId}|${item.sheet_id}`;
+        if (!byJobSheet.has(key)) byJobSheet.set(key, []);
+        byJobSheet.get(key)!.push({
+          ...item,
+          sheets: { sheet_name: sheet.sheet_name },
+        });
+      }
+
+      const builtSheetGroups: MaterialBundle[] = [];
+      for (const [key, items] of byJobSheet) {
+        const [jobId, sheetId] = key.split('|');
+        const job = jobMap.get(jobId) || { name: 'Unknown', client_name: '' };
+        const sheet = sheetMap.get(sheetId);
+        const sheetName = sheet?.sheet_name || 'Unknown Sheet';
+        const bundleItems = items.map((m: any) => ({
+          id: m.id,
+          bundle_id: `unbundled-${jobId}-${sheetId}`,
+          material_item_id: m.id,
+          material_items: m,
+        }));
+        builtSheetGroups.push({
+          id: `unbundled-${jobId}-${sheetId}`,
+          job_id: jobId,
+          name: sheetName,
+          description: null,
+          status: 'pull_from_shop',
+          jobs: job,
+          bundle_items: bundleItems,
+        });
+      }
+      setSheetGroups(builtSheetGroups);
       
-      // Keep all packages collapsed by default
       setExpandedPackages(new Set());
     } catch (error: any) {
       console.error('❌ Error loading packages:', error);
@@ -422,25 +516,23 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     }
   }
 
-  const filteredPackages = packages.filter(pkg => {
-    const matchesSearch = searchTerm === '' || 
+  const filterOne = (pkg: MaterialBundle) => {
+    const matchesSearch = searchTerm === '' ||
       pkg.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       pkg.jobs.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       pkg.jobs.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pkg.bundle_items.some(item => 
+      pkg.bundle_items.some(item =>
         item.material_items.material_name.toLowerCase().includes(searchTerm.toLowerCase())
       );
-    
     const matchesJob = filterJob === 'all' || pkg.job_id === filterJob;
-    
     return matchesSearch && matchesJob;
-  });
+  };
 
-  // All packages should have pull_from_shop materials since that's all we load
-  const pullFromShopPackages = filteredPackages;
+  const filteredPackages = packages.filter(filterOne);
+  const filteredSheetGroups = sheetGroups.filter(filterOne);
 
-  // Group packages by job
-  const packagesByJob = pullFromShopPackages.reduce((acc, pkg) => {
+  // Group by job: both packages and sheet groups (unbundled by sheet)
+  const packagesByJob = [...filteredPackages, ...filteredSheetGroups].reduce((acc, pkg) => {
     const jobId = pkg.job_id;
     if (!acc[jobId]) {
       acc[jobId] = {
@@ -448,9 +540,14 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         jobName: pkg.jobs.name,
         clientName: pkg.jobs.client_name,
         packages: [],
+        sheetGroups: [],
       };
     }
-    acc[jobId].packages.push(pkg);
+    if (pkg.id.startsWith('unbundled-')) {
+      acc[jobId].sheetGroups.push(pkg);
+    } else {
+      acc[jobId].packages.push(pkg);
+    }
     return acc;
   }, {} as Record<string, JobGroup>);
 
@@ -473,12 +570,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         <div className="space-y-4">
           {jobGroups.map(jobGroup => {
             const isJobExpanded = expandedPackages.has(`job-${jobGroup.jobId}`);
-            const totalMaterialsInJob = jobGroup.packages.reduce(
+            const countFrom = (list: MaterialBundle[]) => list.reduce(
               (sum, pkg) => sum + pkg.bundle_items.filter(
                 item => item.material_items.status === 'pull_from_shop'
               ).length,
               0
             );
+            const totalMaterialsInJob = countFrom(jobGroup.packages) + countFrom(jobGroup.sheetGroups);
             
             return (
               <Card key={jobGroup.jobId} className="border-2 border-blue-200">
@@ -507,7 +605,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <Badge variant="outline" className="font-semibold bg-white">
-                            {jobGroup.packages.length} {jobGroup.packages.length === 1 ? 'package' : 'packages'}
+                            {jobGroup.packages.length + jobGroup.sheetGroups.length} group{jobGroup.packages.length + jobGroup.sheetGroups.length !== 1 ? 's' : ''}
+                            {jobGroup.packages.length > 0 && ` (${jobGroup.packages.length} pkg)`}
+                            {jobGroup.sheetGroups.length > 0 && ` (${jobGroup.sheetGroups.length} sheet)`}
                           </Badge>
                           <Badge className="bg-purple-100 text-purple-800 border-purple-300">
                             {totalMaterialsInJob} materials to pull
@@ -622,6 +722,118 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                   e.preventDefault();
                                                   e.stopPropagation();
                                                   updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'at_job');
+                                                }}
+                                                disabled={processingMaterials.has(item.material_items.id)}
+                                                className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0"
+                                                title="Mark as At Job"
+                                              >
+                                                {processingMaterials.has(item.material_items.id) ? (
+                                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                  <Truck className="w-5 h-5" />
+                                                )}
+                                              </Button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </CardContent>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          </Card>
+                        );
+                      })}
+                      {/* Unbundled materials by sheet — same flow as packages */}
+                      {jobGroup.sheetGroups.map(sg => {
+                        const isSheetExpanded = expandedPackages.has(sg.id);
+                        const pullFromShopItems = sg.bundle_items.filter(
+                          item => item.material_items.status === 'pull_from_shop'
+                        );
+                        return (
+                          <Card key={sg.id} className="border border-indigo-200">
+                            <Collapsible open={isSheetExpanded} onOpenChange={() => togglePackageExpanded(sg.id)}>
+                              <CollapsibleTrigger asChild>
+                                <CardHeader className="cursor-pointer bg-gradient-to-r from-indigo-50 to-indigo-100/50 hover:from-indigo-100 hover:to-indigo-200/50 transition-colors py-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      {isSheetExpanded ? (
+                                        <ChevronDown className="w-5 h-5 text-indigo-600" />
+                                      ) : (
+                                        <ChevronRight className="w-5 h-5 text-indigo-600" />
+                                      )}
+                                      <div>
+                                        <CardTitle className="text-base flex items-center gap-2">
+                                          <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
+                                          Sheet: {sg.name}
+                                        </CardTitle>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          Individual materials (not in a package)
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <Badge variant="outline" className="font-semibold bg-white text-xs">
+                                      {pullFromShopItems.length} to pull
+                                    </Badge>
+                                  </div>
+                                </CardHeader>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <CardContent className="p-2 sm:p-3">
+                                  <div className="space-y-2">
+                                    {pullFromShopItems.map((item) => (
+                                      <div
+                                        key={item.id}
+                                        className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex-1 min-w-0">
+                                            <h4 className="font-semibold text-sm leading-tight mb-2">
+                                              {item.material_items.material_name}
+                                            </h4>
+                                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                              <div>
+                                                <span className="text-muted-foreground">Qty:</span>
+                                                <p className="font-semibold text-base">{item.material_items.quantity}</p>
+                                              </div>
+                                              <div>
+                                                <span className="text-muted-foreground">Color:</span>
+                                                <p className="font-medium">{item.material_items.color || '-'}</p>
+                                              </div>
+                                              <div>
+                                                <span className="text-muted-foreground">Length:</span>
+                                                <p className="font-medium">{item.material_items.length || '-'}</p>
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <div className="flex gap-2 flex-shrink-0">
+                                            {item.material_items.status === 'pull_from_shop' && (
+                                              <Button
+                                                size="sm"
+                                                onClick={(e) => {
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  updateMaterialStatus(item.material_items.id, sg.id, item.material_items.status, 'ready_for_job');
+                                                }}
+                                                disabled={processingMaterials.has(item.material_items.id)}
+                                                className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
+                                                title="Mark as Ready for Job"
+                                              >
+                                                {processingMaterials.has(item.material_items.id) ? (
+                                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                  <CheckCircle2 className="w-5 h-5" />
+                                                )}
+                                              </Button>
+                                            )}
+                                            {item.material_items.status === 'ready_for_job' && (
+                                              <Button
+                                                size="sm"
+                                                onClick={(e) => {
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  updateMaterialStatus(item.material_items.id, sg.id, item.material_items.status, 'at_job');
                                                 }}
                                                 disabled={processingMaterials.has(item.material_items.id)}
                                                 className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0"

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid, ShoppingCart } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -18,6 +18,7 @@ import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { JobCommunications } from './JobCommunications';
 import { JobZohoOrders } from './JobZohoOrders';
+import { OfficeCrewOrders } from './OfficeCrewOrders';
 
 import { toast } from 'sonner';
 import { FunctionsHttpError } from '@supabase/supabase-js';
@@ -572,14 +573,31 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         .eq('job_id', job.id);
       setMaterialCount(materialsData?.length || 0);
 
-      // Load crew orders count (pending field requests)
-      const { data: crewOrdersData } = await supabase
-        .from('materials')
-        .select('id')
-        .eq('job_id', job.id)
-        .in('import_source', ['field_catalog', 'field_custom'])
-        .eq('status', 'not_ordered');
-      setCrewOrdersCount(crewOrdersData?.length || 0);
+      // Load crew orders count — pending field requests from material_items (new system)
+      {
+        const { data: wbs } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('status', 'working');
+        const wbIds = (wbs || []).map((w: any) => w.id);
+        if (wbIds.length) {
+          const { data: shts } = await supabase
+            .from('material_sheets')
+            .select('id')
+            .in('workbook_id', wbIds);
+          const sheetIds = (shts || []).map((s: any) => s.id);
+          if (sheetIds.length) {
+            const { data: pending } = await supabase
+              .from('material_items')
+              .select('id')
+              .in('sheet_id', sheetIds)
+              .not('requested_by', 'is', null)
+              .eq('status', 'not_ordered');
+            setCrewOrdersCount(pending?.length || 0);
+          }
+        }
+      }
 
       // Load issues from daily logs
       const { data: logsData } = await supabase
@@ -1241,7 +1259,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
             <h1 className="text-lg font-bold text-yellow-500 truncate shrink-0 max-w-[180px] sm:max-w-[240px]">
               {job.name}
             </h1>
-            <TabsList className="flex-1 min-w-0 grid grid-cols-10 h-11 rounded-none bg-transparent p-0 gap-0 border-0">
+            <TabsList className="flex-1 min-w-0 grid grid-cols-11 h-11 rounded-none bg-transparent p-0 gap-0 border-0">
             <TabsTrigger 
               value="overview" 
               className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
@@ -1288,6 +1306,18 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
             >
               <FileSpreadsheet className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Orders</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="crew-orders" 
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2 relative"
+            >
+              <ShoppingCart className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Crew Orders</span>
+              {crewOrdersCount > 0 && (
+                <Badge variant="destructive" className="ml-1 bg-orange-500 text-white font-bold animate-pulse text-xs">
+                  {crewOrdersCount}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger 
               value="photos" 
@@ -1756,6 +1786,15 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         <TabsContent value="orders" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
             <JobZohoOrders jobId={job.id} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="crew-orders" className="w-full">
+          <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <OfficeCrewOrders
+              jobId={job.id}
+              onCountChange={setCrewOrdersCount}
+            />
           </div>
         </TabsContent>
 

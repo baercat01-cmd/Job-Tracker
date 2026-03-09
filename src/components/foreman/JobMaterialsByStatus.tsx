@@ -9,7 +9,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger, // This was the missing comma
 } from '@/components/ui/collapsible';
-import { ChevronDown, ChevronRight, Package, CheckCircle2, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, CheckCircle2, Check, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
 
@@ -192,11 +192,47 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
         })
         .filter(Boolean) as MaterialBundle[];
 
-      console.log(`✅ Found ${packagesWithStatusMaterials.length} packages with ${status} materials`);
+      // Unbundled materials for this job with same status — group by sheet (same flow as packages)
+      const bundleIdsForJob = (bundlesData || []).map((b: any) => b.id);
+      let bundledItemIds = new Set<string>();
+      if (bundleIdsForJob.length > 0) {
+        const { data: bundleItemRows } = await supabase
+          .from('material_bundle_items')
+          .select('material_item_id')
+          .in('bundle_id', bundleIdsForJob);
+        bundledItemIds = new Set((bundleItemRows || []).map((r: any) => r.material_item_id));
+      }
 
-      setPackages(packagesWithStatusMaterials);
+      const { data: unbundledRows } = await supabase
+        .from('material_items')
+        .select('id, sheet_id, material_name, quantity, length, color, usage, status')
+        .in('sheet_id', sheetIds)
+        .eq('status', status);
 
-      // Start with all packages collapsed
+      const unbundled = (unbundledRows || []).filter((r: any) => !bundledItemIds.has(r.id));
+      const bySheet = new Map<string, MaterialItem[]>();
+      for (const item of unbundled) {
+        const sheetName = sheetMap.get(item.sheet_id) || 'Unknown Sheet';
+        const key = item.sheet_id;
+        if (!bySheet.has(key)) bySheet.set(key, []);
+        bySheet.get(key)!.push({ ...item, _sheet_name: sheetName });
+      }
+
+      const sheetGroups: MaterialBundle[] = [];
+      for (const [sheetId, items] of bySheet) {
+        const sheetName = sheetMap.get(sheetId) || 'Unknown Sheet';
+        sheetGroups.push({
+          id: `unbundled-${sheetId}`,
+          name: sheetName,
+          description: null,
+          items,
+        });
+      }
+
+      console.log(`✅ Found ${packagesWithStatusMaterials.length} packages and ${sheetGroups.length} sheet groups with ${status} materials`);
+
+      setPackages([...packagesWithStatusMaterials, ...sheetGroups]);
+
       setExpandedPackages(new Set());
     } catch (error: any) {
       console.error('❌ Error loading materials:', error);
@@ -324,27 +360,58 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
     );
   }
 
+  const isPullTab = status === 'pull_from_shop';
+  const isSheetGroup = (pkg: MaterialBundle) => pkg.id.startsWith('unbundled-');
+
   return (
     <div className="space-y-4">
       {packages.map(pkg => {
         const isExpanded = expandedPackages.has(pkg.id);
 
         return (
-          <Card key={pkg.id} className="border border-purple-200">
+          <Card
+            key={pkg.id}
+            className={isPullTab ? 'border border-purple-200' : 'border border-blue-200'}
+          >
             <Collapsible open={isExpanded} onOpenChange={() => togglePackage(pkg.id)}>
               <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer bg-gradient-to-r from-purple-50 to-purple-100/50 hover:from-purple-100 hover:to-purple-200/50 transition-colors py-3">
+                <CardHeader
+                  className={
+                    isPullTab
+                      ? 'cursor-pointer bg-gradient-to-r from-purple-50 to-purple-100/50 hover:from-purple-100 hover:to-purple-200/50 transition-colors py-3'
+                      : 'cursor-pointer bg-gradient-to-r from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50 transition-colors py-3'
+                  }
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {isExpanded ? (
-                        <ChevronDown className="w-5 h-5 text-purple-600" />
+                        <ChevronDown
+                          className={isPullTab ? 'w-5 h-5 text-purple-600' : 'w-5 h-5 text-blue-600'}
+                        />
                       ) : (
-                        <ChevronRight className="w-5 h-5 text-purple-600" />
+                        <ChevronRight
+                          className={isPullTab ? 'w-5 h-5 text-purple-600' : 'w-5 h-5 text-blue-600'}
+                        />
                       )}
                       <div>
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <Package className="w-4 h-4 text-purple-600" />
-                          {pkg.name}
+                        <CardTitle
+                          className={
+                            isPullTab
+                              ? 'text-base flex items-center gap-2 text-purple-600'
+                              : 'text-base flex items-center gap-2 text-blue-600'
+                          }
+                        >
+                          {isSheetGroup(pkg) ? (
+                            <>
+                              <FileSpreadsheet className={isPullTab ? 'w-4 h-4 text-purple-600' : 'w-4 h-4 text-blue-600'} />
+                              Sheet: {pkg.name}
+                            </>
+                          ) : (
+                            <>
+                              <Package className={isPullTab ? 'w-4 h-4 text-purple-600' : 'w-4 h-4 text-blue-600'} />
+                              {pkg.name}
+                            </>
+                          )}
                         </CardTitle>
                       </div>
                     </div>
