@@ -257,6 +257,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return () => { mounted = false; };
   }, [job.id, isControlled]);
 
+  // When job or quote changes, reset active sheet so the first sheet in the workbook is shown
+  useEffect(() => {
+    setActiveSheetId('');
+  }, [job.id, effectiveQuoteId ?? null]);
+
   // Load workbook once we know which quote to use.
   // In uncontrolled mode, wait until jobQuotes has loaded so we use the real quote ID
   // rather than firing a wasted load with null then reloading again immediately after.

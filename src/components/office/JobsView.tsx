@@ -96,10 +96,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
       const job = jobs.find(j => j.id === selectedJobId);
       if (job) {
         setSelectedJob(job);
-        // Auto-open materials tab if requested (from notification)
-        if (openMaterialsTab) {
-          setSelectedTab('proposal-materials');
-        }
+        // Default to proposal-materials so most recent proposal and first sheet are visible
+        setSelectedTab('proposal-materials');
         // Scroll to job card if it exists in the DOM
         setTimeout(() => {
           const element = document.getElementById(`job-${selectedJobId}`);
@@ -393,7 +391,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
           {/* Gold accent border on the right */}
           <div className="absolute top-0 right-0 w-1 h-full bg-gradient-to-b from-yellow-500 via-yellow-600 to-yellow-700 opacity-80 rounded-full"></div>
           <TodayTasksSidebar 
-            onJobSelect={(jobId) => setSelectedJob(jobs.find(j => j.id === jobId) || null)}
+            onJobSelect={(jobId) => {
+              const j = jobs.find(j => j.id === jobId) || null;
+              setSelectedJob(j);
+              if (j) setSelectedTab('proposal-materials');
+            }}
             onAddTask={onAddTask}
           />
         </div>
@@ -493,7 +495,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
-                      <div className="flex-1 cursor-pointer" onClick={() => setSelectedJob(job)}>
+                      <div className="flex-1 cursor-pointer" onClick={() => {
+                        setSelectedJob(job);
+                        setSelectedTab('proposal-materials');
+                      }}>
                         <CardTitle className="text-lg">{job.name}</CardTitle>
                         <p className="text-sm font-medium text-muted-foreground mt-1">
                           {job.client_name}
@@ -732,7 +737,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                       >
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
+                                setSelectedJob(job);
+                                setSelectedTab('proposal-materials');
+                              }}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {/* Show quote number for quoting status, job number for active/prepping */}
@@ -1008,7 +1016,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                       >
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
+                                setSelectedJob(job);
+                                setSelectedTab('proposal-materials');
+                              }}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {/* Show quote number for quoting status, job number for active/prepping */}
@@ -1235,7 +1246,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                       >
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
+                                setSelectedJob(job);
+                                setSelectedTab('proposal-materials');
+                              }}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {/* Show quote number for quoting status, job number for active/prepping */}
@@ -1454,7 +1468,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                       >
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
+                                setSelectedJob(job);
+                                setSelectedTab('proposal-materials');
+                              }}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {/* Show quote number for quoting status, job number for active/prepping */}

@@ -2163,10 +2163,32 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       // Quote already matches — just mark as synced so we don't re-fire
       lastSyncedControlledIdRef.current = controlledQuoteId;
     } else if (allJobQuotes.length === 0) {
-      // Quotes not loaded yet — store for loadQuoteData to pick up
+      // Quotes not loaded yet — store for loadQuoteData to pick up; mark synced so we don't double-load when list populates
       userSelectedQuoteIdRef.current = controlledQuoteId;
+      lastSyncedControlledIdRef.current = controlledQuoteId;
+    } else {
+      // controlledQuoteId set (e.g. 3rd proposal) but not in allJobQuotes — fetch by id and load so proposal data is always shown
+      lastSyncedControlledIdRef.current = controlledQuoteId;
+      userSelectedQuoteIdRef.current = controlledQuoteId;
+      let cancelled = false;
+      supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', controlledQuoteId)
+        .eq('job_id', job.id)
+        .single()
+        .then(({ data: fetched, error }) => {
+          if (cancelled || error || !fetched) return;
+          setAllJobQuotes((prev: any[]) => {
+            if (prev.some((q: any) => q.id === fetched.id)) return prev;
+            return [fetched, ...prev];
+          });
+          setQuote(fetched);
+          loadData(false, fetched);
+        });
+      return () => { cancelled = true; };
     }
-  }, [controlledQuoteId, allJobQuotes.length, quote?.id]);
+  }, [controlledQuoteId, allJobQuotes.length, quote?.id, job.id]);
 
   // When the materials workbook saves a change, refresh materials (and thus proposal totals) in real time
   useEffect(() => {
@@ -2860,9 +2882,17 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         }
       }
 
+      // Sort so highest proposal number is first (e.g. 26012-3 before 26012-2 before 26012-1) so job open shows latest proposal data
+      quotesList.sort((a: any, b: any) => {
+        const na = (a.proposal_number || a.quote_number || '').toString();
+        const nb = (b.proposal_number || b.quote_number || '').toString();
+        if (na === nb) return 0;
+        return nb.localeCompare(na, undefined, { numeric: true });
+      });
+
       setAllJobQuotes(quotesList);
 
-      // When job already has quotes, use that list (no second query). Prefer entry from quotesList so tax_exempt is from DB/RPC.
+      // When job already has quotes, use that list. Prefer user-selected; else default to first (highest proposal number).
       if (quotesList.length > 0) {
         if (userSelectedQuoteIdRef.current) {
           const selectedQuote = quotesList.find((q: any) => q.id === userSelectedQuoteIdRef.current);
