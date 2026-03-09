@@ -2776,7 +2776,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         userSelectedQuoteIdRef.current = switchTo.id;
         await loadQuoteData();
         await loadData(false, switchTo);
-        if (onProposalChange) onProposalChange(switchTo.id);
+        onQuoteChange?.(switchTo?.id ?? null);
         toast.success('Proposal deleted.');
         return;
       }
@@ -2836,7 +2836,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       userSelectedQuoteIdRef.current = switchTo.id;
       await loadQuoteData();
       await loadData(false, switchTo);
-      if (onProposalChange) onProposalChange(switchTo.id);
+      onQuoteChange?.(switchTo?.id ?? null);
       toast.success('Proposal deleted.');
     } catch (e: any) {
       console.error('Delete proposal failed:', e);
