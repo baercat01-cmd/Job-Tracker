@@ -42,6 +42,9 @@ import {
   Truck,
   ChevronDown,
   ChevronRight,
+  ShoppingCart,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -59,7 +62,12 @@ import {
   Legend,
   ResponsiveContainer,
   Cell,
+  ReferenceLine,
 } from 'recharts';
+import {
+  LumberPurchaseOrderDialog,
+  type LumberPORecord,
+} from './LumberPurchaseOrderDialog';
 
 const CHART_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
@@ -69,6 +77,7 @@ interface Material {
   category: string;
   unit: string;
   standard_length: number;
+  sku: string | null;
   active: boolean;
   order_index: number;
   created_at: string;
@@ -169,6 +178,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     name: '',
     unit: 'board foot',
     standard_length: 16,
+    sku: '',
   });
 
   // Vendor form
@@ -180,6 +190,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     email: '',
     logo_url: '',
   });
+
+  // Purchase orders
+  const [purchaseOrders, setPurchaseOrders] = useState<LumberPORecord[]>([]);
+  const [showPODialog, setShowPODialog] = useState(false);
+  const [poMaterial, setPoMaterial] = useState<Material | null>(null);
+  const [poVendor, setPoVendor] = useState<Vendor | null>(null);
+  const [poDefaultPrice, setPoDefaultPrice] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -236,6 +253,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         loadMaterials(),
         loadVendors(),
         loadPrices(),
+        loadPurchaseOrders(),
       ]);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -282,6 +300,24 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     setPrices(data || []);
   }
 
+  async function loadPurchaseOrders() {
+    const { data, error } = await supabase
+      .from('lumber_purchase_orders')
+      .select(`
+        *,
+        vendor:lumber_rebar_vendors(*),
+        material:lumber_rebar_materials(*)
+      `)
+      .order('order_date', { ascending: false });
+
+    if (error) {
+      // Table may not exist yet — ignore error gracefully
+      console.warn('lumber_purchase_orders not found (run migration):', error.message);
+      return;
+    }
+    setPurchaseOrders((data as LumberPORecord[]) || []);
+  }
+
   function openVendorPricing(vendor: Vendor) {
     setSelectedVendor(vendor);
     setBulkPrices({});
@@ -297,6 +333,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   function openVendorHistory(vendor: Vendor) {
     setHistoryVendor(vendor);
     setShowVendorHistoryDialog(true);
+  }
+
+  function openCreatePO(material: Material, vendor: Vendor, price: number) {
+    setPoMaterial(material);
+    setPoVendor(vendor);
+    setPoDefaultPrice(price);
+    setShowPODialog(true);
   }
 
   // Get vendor submission history grouped by actual submission batches
@@ -437,6 +480,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         name: material.name,
         unit: material.unit,
         standard_length: material.standard_length,
+        sku: material.sku ?? '',
       });
     } else {
       setEditingMaterial(null);
@@ -444,6 +488,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         name: '',
         unit: 'board foot',
         standard_length: 16,
+        sku: '',
       });
     }
   }
@@ -460,6 +505,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         category,
         unit: materialForm.unit,
         standard_length: materialForm.standard_length,
+        sku: materialForm.sku.trim() || null,
         active: true,
         order_index: materials.length,
       };
@@ -482,7 +528,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       }
 
       setEditingMaterial(null);
-      setMaterialForm({ name: '', unit: 'board foot', standard_length: 16 });
+      setMaterialForm({ name: '', unit: 'board foot', standard_length: 16, sku: '' });
       await loadMaterials();
     } catch (error: any) {
       console.error('Error saving material:', error);
@@ -1048,6 +1094,25 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                               <div className="text-muted-foreground">No pricing</div>
                             )}
 
+                            {/* Create PO Button */}
+                            {info.bestPrice && !info.bestPrice.stale && (() => {
+                              const bestVendor = vendors.find(v => v.name === info.bestPrice!.vendor);
+                              return bestVendor ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="ml-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                                  title="Create Purchase Order"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openCreatePO(info.material, bestVendor, info.bestPrice!.price);
+                                  }}
+                                >
+                                  <ShoppingCart className="w-4 h-4" />
+                                </Button>
+                              ) : null;
+                            })()}
+
                             {/* Expand Button */}
                             <Button
                               variant="ghost"
@@ -1082,18 +1147,31 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                   const allPrices = chartData.flatMap(d =>
                                     uniqueVendors.map(v => d[v]).filter((v): v is number => typeof v === 'number')
                                   );
-                                  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
-                                  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 10;
+
+                                  // Include PO prices in Y-axis range
+                                  const materialPOs = purchaseOrders.filter(po => po.material_id === info.material.id);
+                                  const poPrices = materialPOs.map(po => po.price_per_unit);
+
+                                  const allPricesWithPOs = [...allPrices, ...poPrices];
+                                  const minPrice = allPricesWithPOs.length > 0 ? Math.min(...allPricesWithPOs) : 0;
+                                  const maxPrice = allPricesWithPOs.length > 0 ? Math.max(...allPricesWithPOs) : 10;
                                   const yMin = Math.max(0, Math.floor(minPrice) - 1);
                                   const yMax = Math.ceil(maxPrice) + 1;
-                                  // Pick a sensible dollar-increment so we never show more than ~10 ticks
                                   const range = yMax - yMin;
                                   const tickStep = range > 50 ? 10 : range > 20 ? 5 : range > 10 ? 2 : 1;
                                   const yTicks: number[] = [];
                                   for (let t = yMin; t <= yMax; t += tickStep) yTicks.push(t);
 
+                                  // Build PO reference lines — one per distinct PO price
+                                  const poReferenceLines = materialPOs.map(po => ({
+                                    y: po.price_per_unit,
+                                    label: `PO${po.zoho_po_number ? ' #' + po.zoho_po_number : ''} $${po.price_per_unit.toFixed(2)}`,
+                                    date: po.order_date,
+                                    status: po.status,
+                                  }));
+
                                   return (
-                                    <ResponsiveContainer width="100%" height={200}>
+                                    <ResponsiveContainer width="100%" height={220}>
                                       <LineChart data={chartData}>
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis dataKey="date" tick={{ fontSize: 12 }} />
@@ -1103,7 +1181,9 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                           ticks={yTicks}
                                           tickFormatter={(v: number) => `$${v}`}
                                         />
-                                        <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, '']} />
+                                        <Tooltip
+                                          formatter={(v: number, name: string) => [`$${v.toFixed(2)}`, name]}
+                                        />
                                         <Legend />
                                         {uniqueVendors.map((vendorName, i) => (
                                           <Line
@@ -1113,6 +1193,22 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                             stroke={CHART_COLORS[i % CHART_COLORS.length]}
                                             strokeWidth={2}
                                             dot={{ r: 4 }}
+                                          />
+                                        ))}
+                                        {/* PO price markers — horizontal dashed lines */}
+                                        {poReferenceLines.map((ref, i) => (
+                                          <ReferenceLine
+                                            key={i}
+                                            y={ref.y}
+                                            stroke="#f97316"
+                                            strokeDasharray="5 3"
+                                            strokeWidth={1.5}
+                                            label={{
+                                              value: ref.label,
+                                              position: 'insideTopRight',
+                                              fontSize: 10,
+                                              fill: '#ea580c',
+                                            }}
                                           />
                                         ))}
                                       </LineChart>
@@ -1220,6 +1316,98 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                       </div>
                                     );
                                   })}
+                                </div>
+                              );
+                            })()}
+
+                            {/* ── Purchase Order History ── */}
+                            {(() => {
+                              const materialPOs = purchaseOrders.filter(po => po.material_id === info.material.id);
+                              if (materialPOs.length === 0) return null;
+                              return (
+                                <div>
+                                  <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                                    <ShoppingCart className="w-4 h-4 text-orange-600" />
+                                    Purchase Orders ({materialPOs.length})
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {materialPOs.map(po => (
+                                      <div
+                                        key={po.id}
+                                        className="flex items-center justify-between px-3 py-2 rounded-lg bg-orange-50 border border-orange-200"
+                                      >
+                                        <div>
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            {po.zoho_po_number && (
+                                              <Badge className="bg-orange-600 text-white text-xs">
+                                                PO #{po.zoho_po_number}
+                                              </Badge>
+                                            )}
+                                            <Badge
+                                              variant="outline"
+                                              className={
+                                                po.status === 'received'
+                                                  ? 'border-green-400 text-green-700'
+                                                  : po.status === 'cancelled'
+                                                  ? 'border-red-400 text-red-700'
+                                                  : 'border-orange-400 text-orange-700'
+                                              }
+                                            >
+                                              {po.status}
+                                            </Badge>
+                                            <span className="text-sm font-medium">
+                                              {po.vendor?.name || 'Unknown vendor'}
+                                            </span>
+                                          </div>
+                                          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                                            <Clock className="w-3 h-3" />
+                                            {new Date(po.order_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            {po.notes && <span className="ml-2">· {po.notes}</span>}
+                                          </div>
+                                        </div>
+                                        <div className="text-right ml-4">
+                                          <div className="font-bold text-orange-700">
+                                            ${po.price_per_unit.toFixed(2)}/{po.unit || info.material.unit}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">
+                                            qty {po.quantity}
+                                          </div>
+                                          {po.zoho_po_url && (
+                                            <button
+                                              className="text-xs text-blue-600 hover:underline flex items-center gap-0.5 mt-0.5"
+                                              onClick={() => window.open(po.zoho_po_url!, '_blank')}
+                                            >
+                                              <ExternalLink className="w-3 h-3" />
+                                              Zoho Books
+                                            </button>
+                                          )}
+                                        </div>
+                                        {/* Mark as received */}
+                                        {po.status === 'ordered' && (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="ml-3 border-green-400 text-green-700 hover:bg-green-50 text-xs h-7"
+                                            onClick={async () => {
+                                              const { error } = await supabase
+                                                .from('lumber_purchase_orders')
+                                                .update({ status: 'received' })
+                                                .eq('id', po.id);
+                                              if (error) {
+                                                toast.error('Failed to update PO status');
+                                              } else {
+                                                toast.success('PO marked as received');
+                                                await loadPurchaseOrders();
+                                              }
+                                            }}
+                                          >
+                                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                            Received
+                                          </Button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -1583,6 +1771,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       onChange={(e) => setMaterialForm({ ...materialForm, standard_length: parseInt(e.target.value) || 16 })}
                     />
                   </div>
+                  <div>
+                    <Label>SKU (Zoho Books item code)</Label>
+                    <Input
+                      value={materialForm.sku}
+                      onChange={(e) => setMaterialForm({ ...materialForm, sku: e.target.value })}
+                      placeholder="e.g. LBR-2x4-16"
+                    />
+                  </div>
                   <div className="flex items-end">
                     <Button onClick={saveMaterial} className="w-full">
                       {editingMaterial ? 'Update' : 'Add'} Material
@@ -1599,6 +1795,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                         <div className="font-medium">{material.name}</div>
                         <div className="text-xs text-muted-foreground">
                           {material.unit} • {material.standard_length}ft
+                          {material.sku && <span className="ml-2 text-blue-600">SKU: {material.sku}</span>}
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -1715,6 +1912,20 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
           </Tabs>
         </DialogContent>
       </Dialog>
+
+      {/* Purchase Order Dialog */}
+      {poMaterial && poVendor && (
+        <LumberPurchaseOrderDialog
+          open={showPODialog}
+          onOpenChange={setShowPODialog}
+          material={poMaterial}
+          vendor={poVendor}
+          defaultPrice={poDefaultPrice}
+          onCreated={(po) => {
+            setPurchaseOrders(prev => [po, ...prev]);
+          }}
+        />
+      )}
     </div>
   );
 }
