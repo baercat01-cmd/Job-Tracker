@@ -940,10 +940,6 @@ export function generateProposalHTML(data: {
             </div>
           </div>
         `}
-        <!-- Footer at end of document so it appears in saved PDF (proposal number only) -->
-        <div class="doc-footer">
-          <span>Proposal #${proposalNumber}</span>
-        </div>
       </body>
     </html>
   `;
