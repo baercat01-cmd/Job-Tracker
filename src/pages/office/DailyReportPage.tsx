@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Calendar, Clock, Users, CheckSquare, Camera, FileText, Briefcase, Package } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Users, CheckSquare, Camera, Briefcase, Package } from 'lucide-react';
 import { format } from 'date-fns';
 
 function getDayBounds(dateStr: string) {
@@ -23,7 +23,6 @@ export function DailyReportPage() {
   const [completedJobTasks, setCompletedJobTasks] = useState<any[]>([]);
   const [completedShopTasks, setCompletedShopTasks] = useState<any[]>([]);
   const [photos, setPhotos] = useState<any[]>([]);
-  const [dailyLogs, setDailyLogs] = useState<any[]>([]);
 
   const { start: dayStart, end: dayEnd } = getDayBounds(selectedDate);
 
@@ -34,7 +33,7 @@ export function DailyReportPage() {
   async function loadReport() {
     setLoading(true);
     try {
-      const [timeRes, jobTasksRes, shopTasksRes, photosRes, logsRes] = await Promise.all([
+      const [timeRes, jobTasksRes, shopTasksRes, photosRes] = await Promise.all([
         supabase
           .from('time_entries')
           .select(`
@@ -78,22 +77,12 @@ export function DailyReportPage() {
           `)
           .eq('photo_date', selectedDate)
           .order('timestamp', { ascending: false }),
-        supabase
-          .from('daily_logs')
-          .select(`
-            *,
-            jobs(id, name, client_name),
-            user_profiles(username, email)
-          `)
-          .eq('log_date', selectedDate)
-          .order('created_at', { ascending: false }),
       ]);
 
       setTimeEntries(timeRes.data || []);
       setCompletedJobTasks(jobTasksRes.data || []);
       setCompletedShopTasks(shopTasksRes.data || []);
       setPhotos(photosRes.data || []);
-      setDailyLogs(logsRes.data || []);
     } catch (e) {
       console.error('Error loading daily report:', e);
     } finally {
@@ -385,33 +374,6 @@ export function DailyReportPage() {
                           {photo.user_profiles?.username ? ` · ${photo.user_profiles.username}` : ''}
                         </p>
                       </a>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Daily logs */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <FileText className="w-5 h-5" />
-                  Daily Logs
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {dailyLogs.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No daily logs for this day.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {dailyLogs.map((log) => (
-                      <div key={log.id} className="py-3 border-b border-slate-100 last:border-0">
-                        <p className="font-medium">{log.jobs?.name || log.jobs?.client_name || '—'}</p>
-                        <p className="text-sm text-muted-foreground mt-1">{log.notes || 'No notes'}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {log.user_profiles?.username || log.user_profiles?.email || 'Unknown'}
-                        </p>
-                      </div>
                     ))}
                   </div>
                 )}
