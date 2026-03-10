@@ -5626,7 +5626,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
   async function setQuoteTaxExempt(value: boolean) {
     if (!quote?.id || !job?.id || isReadOnly) return;
-    // Optimistic UI update
+
+    // Optimistic UI update — always apply immediately so the checkbox responds
     setTaxExemptChecked(value);
     setQuote((prev) => (prev ? { ...prev, tax_exempt: value } : prev));
     setAllJobQuotes(value
@@ -5634,7 +5635,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q)),
     );
 
-    // 1) Try RPC (handles any job-link column name via dynamic SQL in DB)
+    // 1) Try RPC — uses EXECUTE format() internally so it works even when PostgREST
+    //    schema cache doesn't expose the tax_exempt column.
     const { error: rpcError } = await supabase.rpc('set_quote_tax_exempt', {
       p_job_id: job.id,
       p_quote_id: quote.id,
@@ -5646,10 +5648,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       return;
     }
 
-    // 2) Fallback: direct PostgREST update (works when tax_exempt column is visible in schema cache)
-    const fallbackError = value
-      ? (await supabase.from('quotes').update({ tax_exempt: true  }).eq('job_id', job.id)).error
-      : (await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id)).error;
+    // 2) Fallback: direct PostgREST update (works when schema cache exposes tax_exempt)
+    const { error: fallbackError } = value
+      ? await supabase.from('quotes').update({ tax_exempt: true  }).eq('job_id', job.id)
+      : await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id);
 
     if (!fallbackError) {
       toast.success(value ? 'Job marked tax exempt.' : 'Tax applied to this proposal.');
@@ -5657,16 +5659,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       return;
     }
 
-    // Both paths failed — revert optimistic UI
-    setTaxExemptChecked(!value);
-    setQuote((prev) => (prev ? { ...prev, tax_exempt: !value } : prev));
-    setAllJobQuotes(!value
-      ? allJobQuotes.map((q: any) => ({ ...q, tax_exempt: true }))
-      : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: !value } : q)),
-    );
+    // Both paths failed — UI stays checked (optimistic) but warn the user.
+    // The fix is to run the one-time migration SQL in the Supabase SQL editor.
     console.warn('Tax exempt save failed. RPC:', rpcError?.message, '| Direct:', fallbackError?.message);
-    toast.error(
-      'Could not save tax exempt. Run the migration supabase/migrations/20250313000000_fix_set_quote_tax_exempt_rpc.sql in your Supabase SQL editor, then refresh.'
+    toast.warning(
+      'Tax exempt checkbox is checked but could NOT be saved to the database. ' +
+      'To fix permanently: open your Supabase project → SQL Editor → paste and run the contents of ' +
+      'supabase/migrations/20250313000000_fix_set_quote_tax_exempt_rpc.sql, then refresh this page.',
+      { duration: 12000 }
     );
   }
 
