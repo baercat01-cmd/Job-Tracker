@@ -5702,14 +5702,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       return;
     }
 
-    // Both paths failed — UI stays checked (optimistic) but warn the user.
-    // The fix is to run the one-time migration SQL in the Supabase SQL editor.
+    // Both paths failed — UI stays checked (optimistic) but show the actual errors.
     console.warn('Tax exempt save failed. RPC:', rpcError?.message, '| Direct:', fallbackError?.message);
-    toast.warning(
-      'Tax exempt checkbox is checked but could NOT be saved to the database. ' +
-      'To fix permanently: open your Supabase project → SQL Editor → paste and run the contents of ' +
-      'supabase/migrations/20250313000000_fix_set_quote_tax_exempt_rpc.sql, then refresh this page.',
-      { duration: 12000 }
+    const rpcMsg   = rpcError?.message   ?? 'unknown';
+    const directMsg = fallbackError?.message ?? 'unknown';
+    toast.error(
+      `Tax exempt could not be saved.\n\nRPC error: ${rpcMsg}\n\nDirect update error: ${directMsg}`,
+      { duration: 20000 }
     );
   }
 
