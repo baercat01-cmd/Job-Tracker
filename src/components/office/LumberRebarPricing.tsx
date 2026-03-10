@@ -314,7 +314,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     if (error) {
       if (error.message?.includes('relationship') || error.message?.includes('schema cache')) {
         // FK not in schema cache yet — reload schema and retry without joins
-        await supabase.rpc('notify_pgrst_reload' as any).catch(() => null);
+        try { await supabase.rpc('notify_pgrst_reload' as any); } catch { /* ignore */ }
         const { data: plain, error: plainError } = await supabase
           .from('lumber_purchase_orders')
           .select('*')
