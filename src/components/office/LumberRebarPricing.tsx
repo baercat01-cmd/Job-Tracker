@@ -600,24 +600,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
 
   const filteredMaterials = materials.filter(m => m.category === category);
 
-  // Get average price based on LATEST price from each vendor
-  function getAveragePrice(materialId: string): number | null {
-    const latestByVendor = new Map<string, PriceEntry>();
-
-    prices
-      .filter(p => p.material_id === materialId)
-      .forEach(price => {
-        const existing = latestByVendor.get(price.vendor_id);
-        if (!existing || new Date(price.effective_date) > new Date(existing.effective_date)) {
-          latestByVendor.set(price.vendor_id, price);
-        }
-      });
-
-    const latestPrices = Array.from(latestByVendor.values());
-    if (latestPrices.length === 0) return null;
-
-    return latestPrices.reduce((sum, p) => sum + p.price_per_unit, 0) / latestPrices.length;
-  }
+  // Average price removed — replaced by selling price (cost + 15%)
 
   // Calculate price trend comparing current vs historical prices
   function getPriceTrend(materialId: string): 'up' | 'down' | 'stable' {
@@ -657,21 +640,45 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     return uniqueVendors.size;
   }
 
-  // Get best price from LATEST prices only
-  function getBestPrice(materialId: string): { vendor: string; price: number } | null {
+  /**
+   * Returns the lowest price entered THIS WEEK (within the last 7 days).
+   * If prices exist but are all older than 7 days, returns them flagged as stale
+   * so the UI can prompt the user to update.
+   * stale = true  → price is outdated; do NOT use for selling-price calculation
+   * stale = false → price is current; selling price = price × 1.15
+   */
+  function getBestPrice(materialId: string): { vendor: string; price: number; stale: boolean; effectiveDate: string } | null {
+    const allForMaterial = prices.filter(p => p.material_id === materialId);
+    if (allForMaterial.length === 0) return null;
+
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    oneWeekAgo.setHours(0, 0, 0, 0);
+
+    // Latest entry per vendor (across all time)
     const latestByVendor = new Map<string, PriceEntry>();
+    allForMaterial.forEach(price => {
+      const existing = latestByVendor.get(price.vendor_id);
+      if (!existing || new Date(price.effective_date) > new Date(existing.effective_date)) {
+        latestByVendor.set(price.vendor_id, price);
+      }
+    });
 
-    prices
-      .filter(p => p.material_id === materialId)
-      .forEach(price => {
-        const existing = latestByVendor.get(price.vendor_id);
-        if (!existing || new Date(price.effective_date) > new Date(existing.effective_date)) {
-          latestByVendor.set(price.vendor_id, price);
-        }
-      });
+    // Vendors whose latest price is from this week
+    const currentWeek = Array.from(latestByVendor.values())
+      .filter(p => new Date(p.effective_date) >= oneWeekAgo);
 
+    if (currentWeek.length > 0) {
+      // Pick the lowest price from this week's entries only
+      const best = currentWeek.sort((a, b) => a.price_per_unit - b.price_per_unit)[0];
+      return { vendor: best.vendor?.name || 'Unknown', price: best.price_per_unit, stale: false, effectiveDate: best.effective_date };
+    }
+
+    // All prices are older than 7 days — show the historic best but flag as stale
     const best = Array.from(latestByVendor.values()).sort((a, b) => a.price_per_unit - b.price_per_unit)[0];
-    return best ? { vendor: best.vendor?.name || 'Unknown', price: best.price_per_unit } : null;
+    return best
+      ? { vendor: best.vendor?.name || 'Unknown', price: best.price_per_unit, stale: true, effectiveDate: best.effective_date }
+      : null;
   }
 
   function getPriceHistoryChartData(materialId: string) {
@@ -795,7 +802,8 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   // Get best price info for display - REMOVED useMemo to fix infinite loop
   const materialPriceInfo = filteredMaterials.map(material => {
     const bestPrice = getBestPrice(material.id);
-    const avgPrice = getAveragePrice(material.id);
+    // Selling price = cost + 15% markup. Only calculated when price is current (not stale).
+    const sellingPrice = bestPrice && !bestPrice.stale ? bestPrice.price * 1.15 : null;
     const trend = getPriceTrend(material.id);
     const vendorCount = getVendorCount(material.id);
     const history = getMaterialPriceHistory(material.id).slice(0, 5);
@@ -803,7 +811,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     return {
       material,
       bestPrice,
-      avgPrice,
+      sellingPrice,
       trend,
       vendorCount,
       recentHistory: history,
@@ -996,32 +1004,35 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                               </div>
                             </div>
 
-                            {/* Best Price */}
-                            <div className="text-right">
-                              {info.bestPrice ? (
-                                <>
-                                  <div className="text-3xl font-bold text-green-700">
+                            {/* Cost (best/lowest this week) + Sell Price */}
+                            {info.bestPrice ? (
+                              <>
+                                <div className="text-right">
+                                  <div className={`text-3xl font-bold ${info.bestPrice.stale ? 'text-slate-400' : 'text-green-700'}`}>
                                     ${info.bestPrice.price.toFixed(2)}
                                   </div>
                                   <div className="text-sm text-muted-foreground">
                                     {info.bestPrice.vendor}
                                   </div>
-                                </>
-                              ) : (
-                                <div className="text-muted-foreground">No pricing</div>
-                              )}
-                            </div>
-
-                            {/* Average Price */}
-                            {info.avgPrice && (
-                              <div className="text-right border-l pl-4">
-                                <div className="text-lg font-semibold text-slate-700">
-                                  ${info.avgPrice.toFixed(2)}
+                                  {info.bestPrice.stale && (
+                                    <div className="text-xs text-amber-600 font-semibold mt-0.5">
+                                      ⚠ Outdated — update pricing
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="text-xs text-muted-foreground">
-                                  Average
-                                </div>
-                              </div>
+                                {info.sellingPrice && (
+                                  <div className="text-right border-l pl-4">
+                                    <div className="text-xl font-bold text-blue-700">
+                                      ${info.sellingPrice.toFixed(2)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      Sell (cost +15%)
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-muted-foreground">No pricing</div>
                             )}
 
                             {/* Expand Button */}
