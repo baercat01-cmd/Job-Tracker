@@ -40,6 +40,8 @@ import {
   Edit,
   X,
   Truck,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -116,6 +118,17 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
 
   // Expanded material for history
   const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
+  // Which vendor price-history dropdowns are open: key = "materialId::vendorName"
+  const [openVendorPanels, setOpenVendorPanels] = useState<Set<string>>(new Set());
+
+  function toggleVendorPanel(materialId: string, vendorName: string) {
+    const key = `${materialId}::${vendorName}`;
+    setOpenVendorPanels(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   // Dialogs
   const [showVendorPricingDialog, setShowVendorPricingDialog] = useState(false);
@@ -1050,103 +1063,17 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                           </div>
                         </div>
 
-                        {/* Expanded: Price History by Vendor */}
+                        {/* Expanded: chart first, then per-vendor collapsible dropdowns */}
                         {isExpanded && (
-                          <div className="border-t bg-slate-50 p-4">
-                            <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                              <Calendar className="w-4 h-4" />
-                              Price History by Vendor
-                            </h4>
-                            {info.recentHistory.length === 0 ? (
-                              <p className="text-sm text-muted-foreground text-center py-4">
-                                No price history available
-                              </p>
-                            ) : (
-                              <div className="space-y-4">
-                                {/* Group by vendor */}
-                                {(() => {
-                                  const vendorGroups = info.recentHistory.reduce((acc, entry) => {
-                                    const vendorName = entry.vendor?.name || 'Unknown';
-                                    if (!acc[vendorName]) acc[vendorName] = [];
-                                    acc[vendorName].push(entry);
-                                    return acc;
-                                  }, {} as Record<string, PriceEntry[]>);
+                          <div className="border-t bg-slate-50 p-4 space-y-4">
 
-                                  return Object.entries(vendorGroups).map(([vendorName, entries]) => {
-                                    const boardFeet = info.material.unit === 'board foot'
-                                      ? calculateBoardFeet(info.material.name, info.material.standard_length)
-                                      : null;
-
-                                    return (
-                                      <div key={vendorName} className="space-y-2">
-                                        <div className="font-semibold text-base flex items-center gap-2 text-blue-700">
-                                          <Users className="w-4 h-4" />
-                                          {vendorName}
-                                          <Badge variant="secondary" className="text-xs">
-                                            {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-                                          </Badge>
-                                        </div>
-                                        <div className="space-y-2 pl-6">
-                                          {entries.map(entry => (
-                                            <div
-                                              key={entry.id}
-                                              className="flex items-center justify-between p-3 bg-white rounded-lg border hover:border-blue-300 transition-colors"
-                                            >
-                                              <div className="flex items-center gap-4">
-                                                <div>
-                                                  <div className="text-sm font-medium">
-                                                    {new Date(entry.effective_date).toLocaleDateString('en-US', {
-                                                      month: 'short',
-                                                      day: 'numeric',
-                                                      year: 'numeric',
-                                                    })}
-                                                  </div>
-                                                  {entry.notes && (
-                                                    <div className="text-xs text-muted-foreground mt-1">
-                                                      {entry.notes}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                                {entry.mbf_price && boardFeet && (
-                                                  <Badge variant="outline" className="bg-blue-50 text-xs">
-                                                    ${entry.mbf_price.toFixed(2)}/MBF
-                                                  </Badge>
-                                                )}
-                                                {entry.truckload_quantity && (
-                                                  <Badge variant="outline" className="text-xs">
-                                                    {entry.truckload_quantity} units
-                                                  </Badge>
-                                                )}
-                                              </div>
-                                              <div className="flex items-center gap-3">
-                                                <div className="text-right">
-                                                  <div className="text-xl font-bold text-blue-700">
-                                                    ${entry.price_per_unit.toFixed(2)}
-                                                  </div>
-                                                  <div className="text-xs text-muted-foreground">per piece</div>
-                                                </div>
-                                                <Button
-                                                  size="sm"
-                                                  variant="ghost"
-                                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                  onClick={() => deletePriceEntry(entry.id, info.material.name, vendorName)}
-                                                >
-                                                  <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    );
-                                  });
-                                })()}
-                              </div>
-                            )}
-
-                            {/* Price Chart */}
-                            {info.recentHistory.length > 1 && (
-                              <div className="mt-4">
+                            {/* ── Price Chart (top) ── */}
+                            {info.recentHistory.length > 1 ? (
+                              <div>
+                                <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                                  <LineChartIcon className="w-4 h-4" />
+                                  Price Trend
+                                </h4>
                                 <ResponsiveContainer width="100%" height={200}>
                                   <LineChart data={getPriceHistoryChartData(info.material.id).slice(-10)}>
                                     <CartesianGrid strokeDasharray="3 3" />
@@ -1170,7 +1097,109 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                   </LineChart>
                                 </ResponsiveContainer>
                               </div>
-                            )}
+                            ) : info.recentHistory.length === 0 ? (
+                              <p className="text-sm text-muted-foreground text-center py-4">
+                                No price history available
+                              </p>
+                            ) : null}
+
+                            {/* ── Per-vendor collapsible dropdowns (below chart) ── */}
+                            {info.recentHistory.length > 0 && (() => {
+                              const vendorGroups = info.recentHistory.reduce((acc, entry) => {
+                                const vendorName = entry.vendor?.name || 'Unknown';
+                                if (!acc[vendorName]) acc[vendorName] = [];
+                                acc[vendorName].push(entry);
+                                return acc;
+                              }, {} as Record<string, PriceEntry[]>);
+
+                              return (
+                                <div className="space-y-2">
+                                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                                    <Calendar className="w-4 h-4" />
+                                    Price History by Vendor
+                                  </h4>
+                                  {Object.entries(vendorGroups).map(([vendorName, entries]) => {
+                                    const panelKey = `${info.material.id}::${vendorName}`;
+                                    const isOpen = openVendorPanels.has(panelKey);
+                                    const boardFeet = info.material.unit === 'board foot'
+                                      ? calculateBoardFeet(info.material.name, info.material.standard_length)
+                                      : null;
+
+                                    return (
+                                      <div key={vendorName} className="border rounded-lg bg-white overflow-hidden">
+                                        {/* Dropdown header — click to toggle */}
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleVendorPanel(info.material.id, vendorName)}
+                                          className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 transition-colors text-left"
+                                        >
+                                          <div className="flex items-center gap-2 text-blue-700 font-semibold text-sm">
+                                            <Users className="w-4 h-4" />
+                                            {vendorName}
+                                            <Badge variant="secondary" className="text-xs">
+                                              {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                                            </Badge>
+                                          </div>
+                                          {isOpen
+                                            ? <ChevronDown className="w-4 h-4 text-slate-500" />
+                                            : <ChevronRight className="w-4 h-4 text-slate-500" />
+                                          }
+                                        </button>
+
+                                        {/* Collapsible price list */}
+                                        {isOpen && (
+                                          <div className="divide-y border-t">
+                                            {entries.map(entry => (
+                                              <div
+                                                key={entry.id}
+                                                className="flex items-center justify-between px-4 py-2.5 hover:bg-blue-50 transition-colors"
+                                              >
+                                                <div className="flex items-center gap-3">
+                                                  <div className="text-sm font-medium">
+                                                    {new Date(entry.effective_date).toLocaleDateString('en-US', {
+                                                      month: 'short', day: 'numeric', year: 'numeric',
+                                                    })}
+                                                  </div>
+                                                  {entry.mbf_price && boardFeet && (
+                                                    <Badge variant="outline" className="bg-blue-50 text-xs">
+                                                      ${entry.mbf_price.toFixed(2)}/MBF
+                                                    </Badge>
+                                                  )}
+                                                  {entry.truckload_quantity && (
+                                                    <Badge variant="outline" className="text-xs">
+                                                      {entry.truckload_quantity} units
+                                                    </Badge>
+                                                  )}
+                                                  {entry.notes && (
+                                                    <span className="text-xs text-muted-foreground">{entry.notes}</span>
+                                                  )}
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                  <div className="text-right">
+                                                    <div className="text-base font-bold text-blue-700">
+                                                      ${entry.price_per_unit.toFixed(2)}
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground">per piece</div>
+                                                  </div>
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="text-red-500 hover:text-red-700 hover:bg-red-50 h-7 w-7 p-0"
+                                                    onClick={() => deletePriceEntry(entry.id, info.material.name, vendorName)}
+                                                  >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                  </Button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
