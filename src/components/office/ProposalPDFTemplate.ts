@@ -254,6 +254,9 @@ export function generateProposalHTML(data: {
             display: flex;
             justify-content: space-between;
             align-items: baseline;
+            /* Pin title to its description — never orphan the heading at page bottom */
+            page-break-after: avoid;
+            break-after: avoid;
           }
           
           .section-wrapper:first-child .section-title {
@@ -266,13 +269,17 @@ export function generateProposalHTML(data: {
             white-space: pre-wrap;
             line-height: 1.5;
             color: #333;
+            /* Allow long descriptions to continue on the next page */
+            page-break-before: avoid;
+            break-before: avoid;
           }
           
           .section-wrapper {
-            page-break-inside: avoid;
             margin-bottom: 4px;
             min-height: ${sectionMinHeight}px;
             padding-bottom: ${sectionPaddingBottom}px;
+            /* Do NOT set page-break-inside: avoid here — if a section description
+               is longer than one page it must be allowed to flow to the next page. */
           }
           
           .section-price {
@@ -517,10 +524,8 @@ export function generateProposalHTML(data: {
         <div class="header-row">
           <div class="logo-section">
             <img src="${companyLogoUrl}" alt="${companyName}" class="company-logo" />
-            <div class="company-address">${companyAddress1}</div>
-            <div class="company-address">${companyAddress2}</div>
+            <div class="company-address">${companyAddress1}, ${companyAddress2}</div>
             <div class="company-contact">Phone: ${companyPhone}</div>
-            <div class="company-contact">Fax: ${companyFax}</div>
             <div class="company-contact">Email: ${companyEmail}</div>
           </div>
           
@@ -574,7 +579,7 @@ export function generateProposalHTML(data: {
         
         <div class="intro-box" style="margin-top: 10px;">
           <div class="box-header">Work to be Completed</div>
-          <div style="padding: 15px 10px 10px 10px;">
+          <div style="padding: 6px 10px 10px 10px;">
             ${sections.filter((s: any) => !s.optional).map((section: any, sectionIndex: number) => {
               const isFirstSection = sectionIndex === 0;
               const sectionTitleMargin = isFirstSection ? '0' : '8px';
