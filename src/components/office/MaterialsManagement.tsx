@@ -951,22 +951,28 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   function groupByCategory(items: MaterialItem[]): CategoryGroup[] {
-    const categoryMap = new Map<string, MaterialItem[]>();
-    
+    // Map: category name → { items, minOrderIndex }
+    const categoryMap = new Map<string, { items: MaterialItem[]; minOrderIndex: number }>();
+
     items.forEach(item => {
       const category = item.category || 'Uncategorized';
       if (!categoryMap.has(category)) {
-        categoryMap.set(category, []);
+        categoryMap.set(category, { items: [], minOrderIndex: item.order_index ?? Infinity });
       }
-      categoryMap.get(category)!.push(item);
+      const entry = categoryMap.get(category)!;
+      entry.items.push(item);
+      // Track the earliest order_index so we can sort categories in workbook order
+      entry.minOrderIndex = Math.min(entry.minOrderIndex, item.order_index ?? Infinity);
     });
 
     return Array.from(categoryMap.entries())
-      .map(([category, items]) => ({
+      .map(([category, { items, minOrderIndex }]) => ({
         category,
-        items: items.sort((a, b) => a.order_index - b.order_index),
+        items: items.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+        minOrderIndex,
       }))
-      .sort((a, b) => a.category.localeCompare(b.category));
+      // Sort categories by the position they first appear in the workbook
+      .sort((a, b) => (a as any).minOrderIndex - (b as any).minOrderIndex);
   }
 
   /** Group by package name (priority) or sheet name for unbundled. Package takes priority; no package = group under sheet name. */
@@ -1754,11 +1760,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (item.usage && item.usage.toLowerCase().includes(searchTerm.toLowerCase()))
   ) || [];
 
-  // Package takes priority; materials not in a package are grouped under the current sheet name
-  const categoryGroups = groupByPackageOrSheet(
-    filteredItems,
-    activeSheet?.sheet_name ?? 'Sheet'
-  );
+  // Group by workbook category, preserving the order categories appear in the workbook
+  const categoryGroups = groupByCategory(filteredItems);
 
   if (loading) {
     return (
