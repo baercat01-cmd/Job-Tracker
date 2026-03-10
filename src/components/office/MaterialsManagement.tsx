@@ -2477,7 +2477,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
                                     <td className="p-1 text-right border-r">
                                       <div className="font-bold text-xs text-green-700">
-                                        {item.extended_price ? `$${item.extended_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                                        {item.extended_price ? `$${item.extended_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                                       </div>
                                     </td>
 
@@ -2661,19 +2661,19 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                   <div className="flex justify-between items-center py-1">
                                     <span className="text-muted-foreground">Cost:</span>
                                     <span className="font-bold text-red-600">
-                                      ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
                                   </div>
                                   <div className="flex justify-between items-center py-1">
                                     <span className="text-muted-foreground">Price:</span>
                                     <span className="font-bold text-green-600">
-                                      ${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      ${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
                                   </div>
                                   <div className="flex justify-between items-center py-1">
                                     <span className="text-muted-foreground">Profit:</span>
                                     <span className="font-bold text-blue-600">
-                                      ${catProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      ${catProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
                                   </div>
                                   <div className="flex justify-between items-center py-1 pt-2 border-t-2">

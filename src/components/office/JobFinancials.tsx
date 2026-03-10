@@ -426,11 +426,11 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                 <p className="text-xs text-amber-700 font-medium mb-0.5">Not in total</p>
               )}
               <p className="text-sm text-slate-500">Materials</p>
-              <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               {totalLaborCost > 0 && (
                 <>
                   <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </>
               )}
             </div>
@@ -457,7 +457,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                           <div className="flex items-center gap-3 text-xs">
                             <div className="text-right">
                               <p className="text-slate-500">Cost</p>
-                              <p className="font-semibold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              <p className="font-semibold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="text-slate-500">+</span>
@@ -532,7 +532,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             </div>
                             <div className="text-right">
                               <p className="text-slate-500">Price</p>
-                              <p className="font-bold text-blue-700">${categoryPriceWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              <p className="font-bold text-blue-700">${categoryPriceWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
                           </div>
                         </div>
@@ -561,8 +561,8 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             <p className="text-xs font-semibold text-slate-900">{row.description}</p>
                             <p className="text-xs text-slate-600">
                               {isLabor 
-                                ? `${row.quantity}h × $${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}/hr`
-                                : `${row.quantity} × $${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                                ? `${row.quantity}h × $${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hr`
+                                : `${row.quantity} × $${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                               }
                             </p>
                             {row.notes && (
@@ -620,7 +620,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                               </div>
                             )}
                             <p className="text-xs font-bold text-blue-700">
-                              ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                             <Button
                               size="sm"
@@ -670,8 +670,8 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                               <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
                               <p className="text-xs text-slate-600">
                                 {isLabor
-                                  ? `${lineItem.quantity}h × $${(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}/hr`
-                                  : `${lineItem.quantity} × $${(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                                  ? `${lineItem.quantity}h × $${(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hr`
+                                  : `${lineItem.quantity} × $${(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </p>
                               {lineItem.notes && (
                                 <p className="text-xs text-slate-500 mt-0.5">{lineItem.notes}</p>
@@ -726,7 +726,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                 <span className="text-xs text-slate-500">%</span>
                               </div>
                               <p className="text-xs font-bold text-blue-700">
-                                ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
                               <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, lineItem, isLabor ? 'labor' : 'material')}>
                                 <Edit className="w-3 h-3" />
@@ -755,7 +755,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-bold text-slate-900">
-                        ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                       <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
                         <Edit className="w-3 h-3" />
@@ -795,8 +795,8 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                           <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                           <div className="flex items-center gap-2">
                             <div className="flex items-center gap-1 text-xs">
-                              {materialTotal > 0 && <span className="text-slate-600">Material: ${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
-                              {laborTotal > 0 && <span className="text-amber-700">Labor: ${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                              {materialTotal > 0 && <span className="text-slate-600">Material: ${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
+                              {laborTotal > 0 && <span className="text-amber-700">Labor: ${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
                               {materialTotal === 0 && laborTotal === 0 && <span className="text-slate-500">$0.00</span>}
                               <span className="text-slate-500">+</span>
                               <Input
@@ -814,7 +814,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                               <span className="text-slate-500">%</span>
                             </div>
                             <p className="text-xs font-bold text-slate-900">
-                              ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                             {sub.pdf_url && (
                               <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
@@ -907,7 +907,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                       <span className="text-xs text-slate-500">%</span>
                                     </div>
                                     <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                      ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </p>
                                     {!isReadOnly && (
                                       <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700" onClick={() => openEditSubcontractorLineItemDialog(lineItem)} title="Edit line item">
@@ -1043,10 +1043,10 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                               return (
                                 <tr key={catName} className="border-b border-slate-100">
                                   <td className="py-1.5 pr-3 text-slate-600">{catName}</td>
-                                  <td className="text-right py-1.5 px-2 text-slate-800">{baseCatPrice > 0 ? '$' + baseCatPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
-                                  <td className="text-right py-1.5 px-2 text-amber-800">{optCatPrice > 0 ? '$' + optCatPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
+                                  <td className="text-right py-1.5 px-2 text-slate-800">{baseCatPrice > 0 ? '$' + baseCatPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                                  <td className="text-right py-1.5 px-2 text-amber-800">{optCatPrice > 0 ? '$' + optCatPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
                                   <td className={`text-right py-1.5 pl-2 font-medium ${diff > 0 ? 'text-red-600' : diff < 0 ? 'text-green-600' : 'text-slate-400'}`}>
-                                    {diff !== 0 ? (diff > 0 ? '+' : '') + '$' + diff.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                                    {diff !== 0 ? (diff > 0 ? '+' : '') + '$' + diff.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                                   </td>
                                 </tr>
                               );
@@ -1055,28 +1055,28 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                           {/* Materials subtotal */}
                           <tr className="border-b border-slate-200 bg-slate-50">
                             <td className="py-1.5 pr-3 font-medium text-slate-700">Materials Total</td>
-                            <td className="text-right py-1.5 px-2 font-semibold text-blue-700">${baseFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                            <td className="text-right py-1.5 px-2 font-semibold text-amber-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right py-1.5 px-2 font-semibold text-blue-700">${baseFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="text-right py-1.5 px-2 font-semibold text-amber-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td className={`text-right py-1.5 pl-2 font-semibold ${sheetFinalPrice - baseFinalPrice > 0 ? 'text-red-600' : sheetFinalPrice - baseFinalPrice < 0 ? 'text-green-600' : 'text-slate-400'}`}>
-                              {sheetFinalPrice !== baseFinalPrice ? (sheetFinalPrice - baseFinalPrice > 0 ? '+' : '') + '$' + (sheetFinalPrice - baseFinalPrice).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                              {sheetFinalPrice !== baseFinalPrice ? (sheetFinalPrice - baseFinalPrice > 0 ? '+' : '') + '$' + (sheetFinalPrice - baseFinalPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                             </td>
                           </tr>
                           {/* Labor row (only if either has labor) */}
                           {(baseLaborCost > 0 || totalLaborCost > 0) && (
                             <tr className="border-b border-slate-100">
                               <td className="py-1.5 pr-3 text-slate-600">Labor</td>
-                              <td className="text-right py-1.5 px-2 text-slate-800">{baseLaborCost > 0 ? '$' + baseLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
-                              <td className="text-right py-1.5 px-2 text-amber-800">{totalLaborCost > 0 ? '$' + totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</td>
+                              <td className="text-right py-1.5 px-2 text-slate-800">{baseLaborCost > 0 ? '$' + baseLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                              <td className="text-right py-1.5 px-2 text-amber-800">{totalLaborCost > 0 ? '$' + totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
                               <td className={`text-right py-1.5 pl-2 font-medium ${totalLaborCost - baseLaborCost > 0 ? 'text-red-600' : totalLaborCost - baseLaborCost < 0 ? 'text-green-600' : 'text-slate-400'}`}>
-                                {totalLaborCost !== baseLaborCost ? (totalLaborCost - baseLaborCost > 0 ? '+' : '') + '$' + (totalLaborCost - baseLaborCost).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                                {totalLaborCost !== baseLaborCost ? (totalLaborCost - baseLaborCost > 0 ? '+' : '') + '$' + (totalLaborCost - baseLaborCost).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                               </td>
                             </tr>
                           )}
                           {/* Grand total row */}
                           <tr className="bg-blue-50">
                             <td className="py-2 pr-3 font-bold text-slate-800">Section Total</td>
-                            <td className="text-right py-2 px-2 font-bold text-blue-800 text-base">${baseTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                            <td className="text-right py-2 px-2 font-bold text-amber-800 text-base">${optionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right py-2 px-2 font-bold text-blue-800 text-base">${baseTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="text-right py-2 px-2 font-bold text-amber-800 text-base">${optionTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td className={`text-right py-2 pl-2 font-bold text-base ${priceDiff > 0 ? 'text-red-600' : priceDiff < 0 ? 'text-green-600' : 'text-slate-400'}`}>
                               {priceDiff > 0 ? '+' : ''}{priceDiff.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                             </td>
@@ -1331,11 +1331,11 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                 </div>
               )}
               <p className="text-sm text-slate-500">Materials</p>
-              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               {totalLaborCost > 0 && (
                 <>
                   <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </>
               )}
             </div>
@@ -1363,7 +1363,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             <div className="flex-1">
                               <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
                               <p className="text-xs text-slate-600">
-                                {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
                               {lineItem.notes && (
                                 <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
@@ -1418,7 +1418,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                 <span className="text-xs text-slate-500">%</span>
                               </div>
                               <p className="text-xs font-bold text-blue-700">
-                                ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
                               <Button
                                 size="sm"
@@ -1471,8 +1471,8 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                             <div className="flex items-center gap-2">
                               <div className="flex items-center gap-1 text-xs">
-                                {materialTotal > 0 && <span className="text-slate-600">Material: ${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
-                                {laborTotal > 0 && <span className="text-amber-700">Labor: ${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                                {materialTotal > 0 && <span className="text-slate-600">Material: ${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
+                                {laborTotal > 0 && <span className="text-amber-700">Labor: ${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
                                 {materialTotal === 0 && laborTotal === 0 && <span className="text-slate-500">$0.00</span>}
                                 <span className="text-slate-500">+</span>
                                 <Input
@@ -1489,7 +1489,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                 <span className="text-slate-500">%</span>
                               </div>
                               <p className="text-xs font-bold text-slate-900">
-                                ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
                               {sub.pdf_url && (
                                 <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
@@ -1582,7 +1582,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                                         <span className="text-xs text-slate-500">%</span>
                                       </div>
                                       <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                        ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </p>
                                       {!isReadOnly && (
                                         <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700" onClick={() => openEditSubcontractorLineItemDialog(lineItem)} title="Edit line item">
@@ -1754,17 +1754,17 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
               {materialIncludedTotal > 0 && (
                 <div className="text-xs mb-0.5">
                   <span className="text-slate-500">Material: </span>
-                  <span className="font-medium">${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-medium">${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
               {laborIncludedTotal > 0 && (
                 <div className="text-xs mb-0.5">
                   <span className="text-slate-500">Labor: </span>
-                  <span className="font-medium text-amber-700">${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-medium text-amber-700">${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
               <p className="text-sm text-slate-500 mt-1">Total</p>
-              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
           </div>
 
@@ -1842,7 +1842,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             <span className="text-xs text-slate-500">%</span>
                           </div>
                           <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                            ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                           {!isReadOnly && (
                             <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700" onClick={() => openEditSubcontractorLineItemDialog(lineItem)} title="Edit line item">
@@ -6570,16 +6570,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           <span className="font-semibold text-slate-800">Proposal #{quote.proposal_number || quote.quote_number}</span>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Materials:</span>
-          <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           <span className="text-slate-600">Labor:</span>
-          <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Subtotal:</span>
-          <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           {taxExemptChecked ? (
             <span className="text-amber-700 font-medium">Tax exempt</span>
           ) : (
-            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></span>
+            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
           )}
           {!isReadOnly && (
             <label className="flex items-center gap-1.5 cursor-pointer text-slate-600">
@@ -6588,7 +6588,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             </label>
           )}
           <span className="text-slate-300">|</span>
-          <span className="text-base font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="text-base font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       )}
 
@@ -6730,23 +6730,23 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         {!setProposalToolbar && (
         <div className="flex flex-wrap items-center gap-4 py-2 px-3 mb-3 rounded-lg bg-gradient-to-r from-slate-100 to-slate-50 border border-slate-200 text-sm">
           <span className="font-semibold text-slate-700">Materials:</span>
-          <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           {proposalLaborPrice > 0 && (
             <>
               <span className="font-semibold text-slate-700">Labor:</span>
-              <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </>
           )}
           <span className="text-slate-400">|</span>
           <span className="text-slate-600">Subtotal:</span>
-          <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           {taxExemptChecked ? (
             <span className="text-amber-700 font-medium">Tax exempt</span>
           ) : (
-            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></span>
+            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
           )}
           <span className="text-slate-400">|</span>
-          <span className="text-lg font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="text-lg font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
         )}
 
@@ -7284,7 +7284,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                     <div className="flex justify-between items-center">
                       <span className="text-slate-600 font-medium">Base Cost:</span>
                       <span className="font-bold text-blue-700">
-                        ${((parseFloat(quantity) || 0) * (parseFloat(unitCost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${((parseFloat(quantity) || 0) * (parseFloat(unitCost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 mt-2">
@@ -7444,19 +7444,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                     <div className="flex justify-between mb-1">
                       <span className="text-slate-600">Cost:</span>
                       <span className="font-semibold">
-                        ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div className="flex justify-between mb-1">
                       <span className="text-slate-600">Markup:</span>
                       <span className="font-semibold">
-                        ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div className="flex justify-between pt-2 border-t border-blue-300">
                       <span className="font-bold text-blue-900">Material Price:</span>
                       <span className="font-bold text-blue-700">
-                        ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -7522,19 +7522,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                     <div className="flex justify-between mb-1">
                       <span className="text-slate-600">Cost:</span>
                       <span className="font-semibold">
-                        ${((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div className="flex justify-between mb-1">
                       <span className="text-slate-600">Markup:</span>
                       <span className="font-semibold">
-                        ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div className="flex justify-between pt-2 border-t border-amber-300">
                       <span className="font-bold text-amber-900">Labor Price:</span>
                       <span className="font-bold text-amber-700">
-                        ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -7592,19 +7592,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                   <div className="flex justify-between mb-1 text-sm">
                     <span className="text-slate-600">Cost:</span>
                     <span className="font-semibold">
-                      ${((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ${((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="flex justify-between mb-1 text-sm">
                     <span className="text-slate-600">Markup:</span>
                     <span className="font-semibold">
-                      ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-amber-300">
                     <span className="font-bold text-amber-900">Total Labor Price:</span>
                     <span className="font-bold text-amber-700 text-lg">
-                      ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>
@@ -7661,19 +7661,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                   <div className="flex justify-between mb-1 text-sm">
                     <span className="text-slate-600">Cost:</span>
                     <span className="font-semibold">
-                      ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="flex justify-between mb-1 text-sm">
                     <span className="text-slate-600">Markup:</span>
                     <span className="font-semibold">
-                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-blue-300">
                     <span className="font-bold text-blue-900">Total Material Price:</span>
                     <span className="font-bold text-blue-700 text-lg">
-                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>
@@ -7705,7 +7705,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                     ${(
                       (((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)) +
                       (((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100))
-                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    ).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
@@ -7912,7 +7912,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                     <SelectContent>
                       {subcontractorEstimates.filter(s => !s.sheet_id && !s.row_id).map(sub => (
                         <SelectItem key={sub.id} value={sub.id}>
-                          {sub.company_name} - ${(sub.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          {sub.company_name} - ${(sub.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -8162,7 +8162,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                       <div>
                         <Label className="text-xs text-muted-foreground">Estimated Price</Label>
                         <p className="font-medium text-green-700">
-                          {version.estimated_price ? `$${version.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'N/A'}
+                          {version.estimated_price ? `$${version.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
                         </p>
                       </div>
                     </div>
