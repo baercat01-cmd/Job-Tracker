@@ -89,6 +89,7 @@ export function generateProposalHTML(data: {
             margin: 0 auto; 
             padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px; 
             font-size: ${bodyFontSize}pt;
+            position: relative;
           }
           ${isPremium ? `
           /* Premium theme: dark green + gold */
@@ -343,11 +344,11 @@ export function generateProposalHTML(data: {
             margin-top: 30px; 
           }
           
-          /* Terms and Conditions Page — named page so @page can suppress the running header */
+          /* Terms and Conditions Page */
           .terms-page {
             page-break-before: always;
-            page: terms-page;
             padding-top: 40px;
+            position: relative;
           }
           
           .terms-header {
@@ -426,37 +427,22 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
 
-          /* ── Paged Media: running proposal number ──
-             @top-right shows on every page by default.
-             For page 1 and the terms page we make the text transparent + invisible.
-             Chrome ignores content:none in @page :first overrides but does apply
-             colour and visibility properties. */
           @page {
             margin: ${pageMarginTop}in ${pageMarginRight}in ${pageMarginBottom}in ${pageMarginLeft}in;
             size: letter;
-            @top-right {
-              content: "Proposal #${proposalNumber}";
-              font-family: Arial, sans-serif;
-              font-size: 9pt;
-              color: #555;
-              font-weight: 600;
-            }
           }
 
-          /* Page 1 already has the proposal # in the header table — hide the running copy */
-          @page :first {
-            @top-right {
-              color: transparent;
-              visibility: hidden;
-            }
+          /* Running proposal number — hidden on screen, shown only during print.
+             position:fixed repeats on every page; positioned 8px inside the right content border.
+             White masks on page 1 (body > .page1-mask) and each .terms-page cover it there. */
+          .running-header {
+            display: none;
           }
 
-          /* Terms (last) page already has the proposal # in its own header — hide the running copy */
-          @page terms-page {
-            @top-right {
-              color: transparent;
-              visibility: hidden;
-            }
+          /* White masks hidden on screen, shown during print */
+          .page1-mask,
+          .terms-mask {
+            display: none;
           }
           
           /* Keep hereby text + subtotal + tax + grand total on same page; if no room, move block to next page */
@@ -474,11 +460,42 @@ export function generateProposalHTML(data: {
             .premium-footer, .premium-footer-twist { display: block !important; position: fixed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .premium-footer-twist { bottom: 0 !important; }
             .premium-footer { bottom: 12px !important; }
+
+            /* Running proposal number: repeats on every page inside the right border */
+            .running-header {
+              display: block;
+              position: fixed;
+              top: ${pageMarginTop}in;
+              right: calc(${pageMarginRight}in + 8px);
+              font-size: 9pt;
+              color: #555;
+              font-weight: 600;
+              font-family: Arial, sans-serif;
+              z-index: 100;
+            }
+
+            /* White boxes that cover the running header on page 1 and the terms page */
+            .page1-mask,
+            .terms-mask {
+              display: block;
+              position: absolute;
+              top: 0;
+              right: 0;
+              width: 240px;
+              height: 28px;
+              background: white;
+              z-index: 9999;
+            }
           }
           
         </style>
       </head>
       <body class="${isPremium ? 'theme-premium' : ''}">
+        <!-- Proposal number repeats on every page (position:fixed), inside the right content border.
+             page1-mask hides it on page 1; terms-mask hides it on the terms page. -->
+        <div class="running-header">Proposal #${proposalNumber}</div>
+        <div class="page1-mask"></div>
+
         ${isPremium ? `
         <!-- Premium theme: header with triangular twist (green, gold, cream) and clear structure -->
         <div class="premium-header-wrapper">
@@ -775,6 +792,7 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
+            <div class="terms-mask"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
@@ -867,6 +885,7 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
+            <div class="terms-mask"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
