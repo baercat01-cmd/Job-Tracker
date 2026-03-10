@@ -1074,28 +1074,51 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                   <LineChartIcon className="w-4 h-4" />
                                   Price Trend
                                 </h4>
-                                <ResponsiveContainer width="100%" height={200}>
-                                  <LineChart data={getPriceHistoryChartData(info.material.id).slice(-10)}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                                    <YAxis tick={{ fontSize: 12 }} />
-                                    <Tooltip />
-                                    <Legend />
-                                    {(() => {
-                                      const uniqueVendors = [...new Set(info.recentHistory.map(h => h.vendor?.name || 'Unknown'))];
-                                      return uniqueVendors.map((vendorName, i) => (
-                                        <Line
-                                          key={vendorName}
-                                          type="monotone"
-                                          dataKey={vendorName}
-                                          stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                                          strokeWidth={2}
-                                          dot={{ r: 4 }}
+                                {(() => {
+                                  const chartData = getPriceHistoryChartData(info.material.id).slice(-10);
+                                  const uniqueVendors = [...new Set(info.recentHistory.map(h => h.vendor?.name || 'Unknown'))];
+
+                                  // Compute tight Y-axis range from actual prices
+                                  const allPrices = chartData.flatMap(d =>
+                                    uniqueVendors.map(v => d[v]).filter((v): v is number => typeof v === 'number')
+                                  );
+                                  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
+                                  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 10;
+                                  const yMin = Math.max(0, Math.floor(minPrice) - 1);
+                                  const yMax = Math.ceil(maxPrice) + 1;
+                                  // Pick a sensible dollar-increment so we never show more than ~10 ticks
+                                  const range = yMax - yMin;
+                                  const tickStep = range > 50 ? 10 : range > 20 ? 5 : range > 10 ? 2 : 1;
+                                  const yTicks: number[] = [];
+                                  for (let t = yMin; t <= yMax; t += tickStep) yTicks.push(t);
+
+                                  return (
+                                    <ResponsiveContainer width="100%" height={200}>
+                                      <LineChart data={chartData}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                                        <YAxis
+                                          tick={{ fontSize: 12 }}
+                                          domain={[yMin, yMax]}
+                                          ticks={yTicks}
+                                          tickFormatter={(v: number) => `$${v}`}
                                         />
-                                      ));
-                                    })()}
-                                  </LineChart>
-                                </ResponsiveContainer>
+                                        <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, '']} />
+                                        <Legend />
+                                        {uniqueVendors.map((vendorName, i) => (
+                                          <Line
+                                            key={vendorName}
+                                            type="monotone"
+                                            dataKey={vendorName}
+                                            stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                                            strokeWidth={2}
+                                            dot={{ r: 4 }}
+                                          />
+                                        ))}
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                  );
+                                })()}
                               </div>
                             ) : info.recentHistory.length === 0 ? (
                               <p className="text-sm text-muted-foreground text-center py-4">
