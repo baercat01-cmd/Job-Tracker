@@ -184,10 +184,6 @@ export function generateProposalHTML(data: {
             justify-content: space-between; 
             align-items: flex-start; 
             margin-bottom: 15px;
-            /* @page :first sets margin-top: 0 to collapse the @top-right running header.
-               This padding compensates so the logo sits at the same visual height as on
-               other pages (0 page-margin + padding = same as 0.75in page-margin + no padding). */
-            padding-top: ${pageMarginTop}in;
           }
           
           .logo-section { flex: 1; }
@@ -351,10 +347,7 @@ export function generateProposalHTML(data: {
           .terms-page {
             page-break-before: always;
             page: terms-page;
-            /* @page terms-page sets margin-top: 0 to collapse the @top-right running header.
-               This padding restores the visual top margin so the terms content sits at the
-               same height as body content on other pages. */
-            padding-top: calc(${pageMarginTop}in + 40px);
+            padding-top: 40px;
           }
           
           .terms-header {
@@ -433,15 +426,11 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
 
-          /* ── Paged Media: running proposal number in the top-right margin ──
-             @top-right renders on every page by default.
-             
-             Chrome does NOT support @page :first { @top-right { content: none } } — it only
-             honours the base @page rule for margin box content.
-             
-             Workaround: collapse the top margin to 0 on page 1 and the terms page.
-             With margin-top: 0 the @top-right box has zero height → nothing renders.
-             The visual top margin is restored by padding on .header-row and .terms-page. */
+          /* ── Paged Media: running proposal number ──
+             @top-right shows on every page by default.
+             For page 1 and the terms page we make the text transparent + invisible.
+             Chrome ignores content:none in @page :first overrides but does apply
+             colour and visibility properties. */
           @page {
             margin: ${pageMarginTop}in ${pageMarginRight}in ${pageMarginBottom}in ${pageMarginLeft}in;
             size: letter;
@@ -454,15 +443,20 @@ export function generateProposalHTML(data: {
             }
           }
 
-          /* Page 1 — collapse top margin so @top-right has no space to render.
-             .header-row compensates with matching padding-top. */
+          /* Page 1 already has the proposal # in the header table — hide the running copy */
           @page :first {
-            margin-top: 0;
+            @top-right {
+              color: transparent;
+              visibility: hidden;
+            }
           }
 
-          /* Terms (last) page — same technique. .terms-page compensates with padding-top. */
+          /* Terms (last) page already has the proposal # in its own header — hide the running copy */
           @page terms-page {
-            margin-top: 0;
+            @top-right {
+              color: transparent;
+              visibility: hidden;
+            }
           }
           
           /* Keep hereby text + subtotal + tax + grand total on same page; if no room, move block to next page */
