@@ -89,7 +89,6 @@ export function generateProposalHTML(data: {
             margin: 0 auto; 
             padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px; 
             font-size: ${bodyFontSize}pt;
-            position: relative; /* anchor for .page-mask absolute positioning */
           }
           ${isPremium ? `
           /* Premium theme: dark green + gold */
@@ -175,7 +174,6 @@ export function generateProposalHTML(data: {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
-          .theme-premium .print-header { /* no border */ }
           .theme-premium .header-row .logo-section { display: none; }
           .theme-premium .header-row { margin-bottom: 10px; }
           .theme-premium .proposal-header { margin-left: 0; }
@@ -276,11 +274,13 @@ export function generateProposalHTML(data: {
             margin-bottom: 4px;
             min-height: ${sectionMinHeight}px;
             padding-bottom: ${sectionPaddingBottom}px;
-            /* Keep the title + description together on the same page.
-               If a section is too tall to fit, the browser pushes the entire
-               section to the next page rather than splitting mid-section. */
-            page-break-inside: avoid;
-            break-inside: avoid;
+            /* Push the whole section to the next page rather than splitting it.
+               display:table is a widely-supported trick to make break-inside: avoid
+               reliable in Chrome even inside flex/block containers. */
+            display: table;
+            width: 100%;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           
           .section-price {
@@ -343,11 +343,11 @@ export function generateProposalHTML(data: {
             margin-top: 30px; 
           }
           
-          /* Terms and Conditions Page */
+          /* Terms and Conditions Page — named page so @page can suppress the running header */
           .terms-page {
             page-break-before: always;
+            page: terms-page;
             padding-top: 40px;
-            position: relative; /* anchor for .page-mask on the terms page */
           }
           
           .terms-header {
@@ -425,51 +425,32 @@ export function generateProposalHTML(data: {
           }
           
           table { width: 100%; }
-          
+
+          /* ── Paged Media: running proposal number in the top-right margin ──
+             @top-right shows on all pages by default.
+             @page :first suppresses it on page 1 (already has the Proposal # table).
+             @page terms-page suppresses it on the Terms page (already has it in the header). */
           @page {
             margin: ${pageMarginTop}in ${pageMarginRight}in ${pageMarginBottom}in ${pageMarginLeft}in;
             size: letter;
-          }
-          
-          /* Fixed header: proposal number at the top-right of middle pages only.
-             Positioned at the body's top edge (not in the @page margin) so the
-             white page-mask can reliably cover it on page 1 and the terms page. */
-          .print-header {
-            position: fixed;
-            top: ${pageMarginTop}in;
-            left: 0;
-            right: 0;
-            height: 26px;
-            display: none;
-            flex-direction: row;
-            justify-content: flex-end;
-            align-items: center;
-            padding: 4px ${pageMarginRight}in 4px ${pageMarginLeft}in;
-            font-size: 9pt;
-            color: #555;
-            font-weight: 600;
-            z-index: 9000;
-            background: #fff;
-            /* No border-bottom — clean look */
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+            @top-right {
+              content: "Proposal #${proposalNumber}";
+              font-family: Arial, sans-serif;
+              font-size: 9pt;
+              color: #555;
+              font-weight: 600;
+              padding-bottom: 4px;
+            }
           }
 
-          /* White overlay — covers the fixed .print-header on page 1 and the terms page.
-             Uses top: 0 (body padding-box top) which is the SAME y-coordinate as the
-             print-header (top: ${pageMarginTop}in from page top = body's top edge).
-             Being within the body's bounds means Chromium won't clip it. */
-          .page-mask {
-            display: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 26px;
-            background: #fff;
-            z-index: 9999;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+          /* Page 1 already shows the number in the Proposal header table */
+          @page :first {
+            @top-right { content: none; }
+          }
+
+          /* Terms page already shows the number in its own section heading */
+          @page terms-page {
+            @top-right { content: none; }
           }
           
           /* Keep hereby text + subtotal + tax + grand total on same page; if no room, move block to next page */
@@ -483,16 +464,6 @@ export function generateProposalHTML(data: {
             body { 
               -webkit-print-color-adjust: exact; 
               print-color-adjust: exact;
-              /* No extra padding-bottom needed — proposal number is now a top header, not a bottom footer */
-            }
-            .print-header {
-              display: flex !important;
-              position: fixed !important;
-              top: ${pageMarginTop}in !important;
-              background: #fff !important;
-            }
-            .page-mask {
-              display: block !important;
             }
             .premium-footer, .premium-footer-twist { display: block !important; position: fixed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .premium-footer-twist { bottom: 0 !important; }
@@ -520,15 +491,7 @@ export function generateProposalHTML(data: {
           <div class="premium-header-accent" aria-hidden="true"></div>
         </div>
         ` : ''}
-        <!-- Fixed header: shows proposal # at the top of middle pages only.
-             Masked on page 1 (has it in the Proposal table) and on the Terms page (has it in the terms header). -->
-        <div class="print-header" aria-hidden="true">
-          <span>Proposal #${proposalNumber}</span>
-        </div>
         ${isPremium ? '<div class="premium-footer" aria-hidden="true"></div><div class="premium-footer-twist" aria-hidden="true"></div>' : ''}
-        
-        <!-- White mask: covers the fixed print-header on page 1 only (page 1 has proposal # in its own header table) -->
-        <div class="page-mask" aria-hidden="true"></div>
 
         <!-- Main Content -->
         <div class="header-row">
@@ -806,8 +769,6 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
-            <!-- White mask: covers the fixed print-header on the terms page (already has proposal # in its own header) -->
-            <div class="page-mask" aria-hidden="true"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
@@ -900,8 +861,6 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
-            <!-- White mask: covers the fixed print-header on the terms page (already has proposal # in its own header) -->
-            <div class="page-mask" aria-hidden="true"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
