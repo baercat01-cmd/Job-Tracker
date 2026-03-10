@@ -1968,6 +1968,10 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
 
   // Tax exempt: local state so the total updates immediately; optional DB persist when column exists
   const [taxExemptChecked, setTaxExemptChecked] = useState(false);
+  // true = the current checked value is confirmed saved in the DB (visible to all users on reload)
+  const [taxExemptSaved, setTaxExemptSaved] = useState(false);
+  // Supabase Realtime broadcast channel for instant cross-user sync
+  const taxExemptChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Subcontractor dialog state
   const [showSubcontractorDialog, setShowSubcontractorDialog] = useState(false);
@@ -2124,11 +2128,38 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   useEffect(() => {
     if (quote == null) {
       setTaxExemptChecked(false);
+      setTaxExemptSaved(false);
       return;
     }
     const taxExempt = (quote as any).tax_exempt;
     setTaxExemptChecked(taxExempt === true);
+    // Value was loaded from DB → it is saved
+    setTaxExemptSaved(taxExempt === true);
   }, [quote?.id, (quote as any)?.tax_exempt]);
+
+  // Real-time broadcast: sync tax exempt across all users who have this job open
+  useEffect(() => {
+    if (!job?.id) return;
+    const channel = supabase
+      .channel(`job-tax-exempt-${job.id}`)
+      .on('broadcast', { event: 'tax_exempt' }, ({ payload }) => {
+        const val: boolean = !!payload.value;
+        setTaxExemptChecked(val);
+        setTaxExemptSaved(true);
+        setQuote((prev) => prev ? { ...prev, tax_exempt: val } : prev);
+        setAllJobQuotes((prev) =>
+          val
+            ? prev.map((q: any) => ({ ...q, tax_exempt: true }))
+            : prev.map((q: any) => q.id === payload.quote_id ? { ...q, tax_exempt: false } : q),
+        );
+      })
+      .subscribe();
+    taxExemptChannelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      taxExemptChannelRef.current = null;
+    };
+  }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Notify parent when proposal changes (for combined Proposal+Materials view).
   // Track last notified ID so we don't send a redundant update that re-triggers sync.
@@ -5629,11 +5660,21 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
     // Optimistic UI update — always apply immediately so the checkbox responds
     setTaxExemptChecked(value);
+    setTaxExemptSaved(false); // mark as pending until DB confirms
     setQuote((prev) => (prev ? { ...prev, tax_exempt: value } : prev));
     setAllJobQuotes(value
       ? allJobQuotes.map((q: any) => ({ ...q, tax_exempt: true }))
       : allJobQuotes.map((q) => (q.id === quote.id ? { ...q, tax_exempt: value } : q)),
     );
+
+    const broadcastSuccess = () => {
+      setTaxExemptSaved(true);
+      taxExemptChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'tax_exempt',
+        payload: { value, quote_id: quote.id, job_id: job.id },
+      });
+    };
 
     // 1) Try RPC — uses EXECUTE format() internally so it works even when PostgREST
     //    schema cache doesn't expose the tax_exempt column.
@@ -5643,7 +5684,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       p_value: value,
     });
     if (!rpcError) {
-      toast.success(value ? 'Job marked tax exempt.' : 'Tax applied to this proposal.');
+      toast.success(value ? 'Job marked tax exempt for all users.' : 'Tax applied to this proposal.');
+      broadcastSuccess();
       await loadQuoteData();
       return;
     }
@@ -5654,7 +5696,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       : await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id);
 
     if (!fallbackError) {
-      toast.success(value ? 'Job marked tax exempt.' : 'Tax applied to this proposal.');
+      toast.success(value ? 'Job marked tax exempt for all users.' : 'Tax applied to this proposal.');
+      broadcastSuccess();
       await loadQuoteData();
       return;
     }
@@ -6582,9 +6625,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
           )}
           {!isReadOnly && (
-            <label className="flex items-center gap-1.5 cursor-pointer text-slate-600">
+            <label className="flex items-center gap-1.5 cursor-pointer text-slate-600" title={taxExemptChecked && taxExemptSaved ? 'Saved — all users will see this job as tax exempt' : taxExemptChecked ? 'Not yet saved to database' : 'Mark this job as tax exempt'}>
               <Checkbox checked={taxExemptChecked} onCheckedChange={(c) => setQuoteTaxExempt(!!c)} />
               <span className="text-xs">Tax exempt</span>
+              {taxExemptChecked && taxExemptSaved && (
+                <CheckCircle className="w-3 h-3 text-green-600" />
+              )}
             </label>
           )}
           <span className="text-slate-300">|</span>
