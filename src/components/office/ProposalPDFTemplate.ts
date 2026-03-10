@@ -81,15 +81,14 @@ export function generateProposalHTML(data: {
         <title>Proposal-${proposalNumber}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: Arial, sans-serif; 
-            line-height: ${bodyLineHeight}; 
-            color: #000; 
-            max-width: 940px; 
-            margin: 0 auto; 
-            padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px; 
+          body {
+            font-family: Arial, sans-serif;
+            line-height: ${bodyLineHeight};
+            color: #000;
+            max-width: 940px;
+            margin: 0 auto;
+            padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px;
             font-size: ${bodyFontSize}pt;
-            position: relative;
           }
           ${isPremium ? `
           /* Premium theme: dark green + gold */
@@ -338,17 +337,24 @@ export function generateProposalHTML(data: {
           
           .footer { margin-top: 30px; font-size: 9pt; }
           .signature-section { margin-top: 20px; }
+          .proposal-number-signing-page {
+            margin-top: 32px;
+            text-align: right;
+            font-size: 9pt;
+            color: #555;
+            font-weight: 600;
+            font-family: Arial, sans-serif;
+          }
           .signature-line { 
             border-top: 1px solid #000; 
             width: 250px; 
             margin-top: 30px; 
           }
           
-          /* Terms and Conditions Page */
+          /* Terms and Conditions Page — named page so @page can suppress the running header */
           .terms-page {
             page-break-before: always;
             padding-top: 40px;
-            position: relative;
           }
           
           .terms-header {
@@ -432,18 +438,6 @@ export function generateProposalHTML(data: {
             size: letter;
           }
 
-          /* Running proposal number — hidden on screen, activated only during print/PDF.
-             position:fixed repeats at the bottom-right of every page, inside the content border.
-             White masks (page1-mask inside body, terms-mask inside .terms-page) cover it on
-             those two pages using mathematically-exact top offsets:
-               contentHeight = 11in - pageMarginTop - pageMarginBottom
-               mask top = contentHeight - maskHeight  →  last N px of that page */
-          .running-header,
-          .page1-mask,
-          .terms-mask {
-            display: none;
-          }
-          
           /* Keep hereby text + subtotal + tax + grand total on same page; if no room, move block to next page */
           .financial-summary-block {
             page-break-inside: avoid;
@@ -452,51 +446,18 @@ export function generateProposalHTML(data: {
           }
           
           @media print {
-            body { 
-              -webkit-print-color-adjust: exact; 
+            body {
+              -webkit-print-color-adjust: exact;
               print-color-adjust: exact;
             }
             .premium-footer, .premium-footer-twist { display: block !important; position: fixed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .premium-footer-twist { bottom: 0 !important; }
             .premium-footer { bottom: 12px !important; }
-
-            /* Proposal number repeats at bottom-right of every page, 8px inside the right border */
-            .running-header {
-              display: block;
-              position: fixed;
-              bottom: calc(${pageMarginBottom}in + 4px);
-              right: calc(${pageMarginRight}in + 8px);
-              font-size: 9pt;
-              color: #555;
-              font-weight: 600;
-              font-family: Arial, sans-serif;
-              z-index: 100;
-            }
-
-            /* Masks cover the running header on page 1 and the terms page.
-               Letter paper = 11in tall. Content height = 11 - top-margin - bottom-margin.
-               top = contentHeight - maskHeight places the mask flush with the page bottom
-               within the respective positioned ancestor (body for page 1, .terms-page for last page). */
-            .page1-mask,
-            .terms-mask {
-              display: block;
-              position: absolute;
-              top: calc(${11 - pageMarginTop - pageMarginBottom}in - 32px);
-              right: 0;
-              width: 250px;
-              height: 32px;
-              background: white;
-              z-index: 9999;
-            }
           }
           
         </style>
       </head>
       <body class="${isPremium ? 'theme-premium' : ''}">
-        <!-- Repeating proposal number (print/PDF only). White masks hide it on page 1 and terms page. -->
-        <div class="running-header">Proposal #${proposalNumber}</div>
-        <div class="page1-mask"></div>
-
         ${isPremium ? `
         <!-- Premium theme: header with triangular twist (green, gold, cream) and clear structure -->
         <div class="premium-header-wrapper">
@@ -793,7 +754,6 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
-            <div class="terms-mask"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
@@ -882,11 +842,11 @@ export function generateProposalHTML(data: {
                   <div class="signature-line"></div>
                 </div>
               </div>
+              <div class="proposal-number-signing-page">Proposal #${proposalNumber}</div>
             </div>
           </div>
           
           <div class="terms-page">
-            <div class="terms-mask"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
