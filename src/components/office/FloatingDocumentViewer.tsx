@@ -34,6 +34,10 @@ import {
   FolderPlus,
   Folder,
   ExternalLink,
+  FileSpreadsheet,
+  Presentation,
+  FileImage,
+  FileCode,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -306,7 +310,95 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
 
   function selectDocument(docId: string) {
     setSelectedDocId(docId);
+    // Switch to viewer split if currently in grid so the right pane is visible
+    if (viewMode === 'grid') setViewMode('viewer');
   }
+
+  // ─── file-type helpers ───────────────────────────────────────────────────
+  function getFileExt(url: string): string {
+    try {
+      // Strip query params before extracting extension
+      const path = new URL(url).pathname;
+      return path.split('.').pop()?.toLowerCase() ?? '';
+    } catch {
+      return url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+    }
+  }
+
+  type DocFileType = 'image' | 'pdf' | 'office-word' | 'office-excel' | 'office-ppt' | 'other';
+
+  function getDocFileType(url: string): DocFileType {
+    const ext = getFileExt(url);
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
+    if (ext === 'pdf') return 'pdf';
+    if (['doc', 'docx', 'rtf'].includes(ext)) return 'office-word';
+    if (['xls', 'xlsx', 'csv'].includes(ext)) return 'office-excel';
+    if (['ppt', 'pptx'].includes(ext)) return 'office-ppt';
+    return 'other';
+  }
+
+  /** Thumbnail shown inside the document card — never triggers a file download */
+  function DocThumbnail({ url, name }: { url: string | undefined; name: string }) {
+    if (!url) {
+      return (
+        <div className="flex items-center justify-center h-full bg-slate-100">
+          <FileText className="w-12 h-12 text-muted-foreground opacity-30" />
+        </div>
+      );
+    }
+    const type = getDocFileType(url);
+    if (type === 'image') {
+      return <img src={url} alt={name} className="w-full h-full object-cover" />;
+    }
+    const configs: Record<DocFileType, { bg: string; iconColor: string; Icon: React.ElementType }> = {
+      image:        { bg: 'from-slate-50 to-slate-100',  iconColor: 'text-slate-500',  Icon: FileImage },
+      pdf:          { bg: 'from-red-50 to-red-100',      iconColor: 'text-red-600',    Icon: FileText },
+      'office-word':  { bg: 'from-blue-50 to-blue-100',    iconColor: 'text-blue-600',   Icon: FileText },
+      'office-excel': { bg: 'from-green-50 to-green-100',  iconColor: 'text-green-700',  Icon: FileSpreadsheet },
+      'office-ppt':   { bg: 'from-orange-50 to-orange-100',iconColor: 'text-orange-600', Icon: Presentation },
+      other:        { bg: 'from-slate-50 to-slate-100',  iconColor: 'text-slate-500',  Icon: FileCode },
+    };
+    const { bg, iconColor, Icon } = configs[type];
+    return (
+      <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${bg}`}>
+        <Icon className={`w-12 h-12 ${iconColor}`} />
+      </div>
+    );
+  }
+
+  /** Viewer panel content — embeds PDFs, images, Office docs; never triggers a download */
+  function DocViewer({ url, name, className = 'w-full h-full border-0' }: { url: string; name: string; className?: string }) {
+    const type = getDocFileType(url);
+    if (type === 'image') {
+      return (
+        <div className="flex items-center justify-center h-full bg-slate-50 p-4 overflow-auto">
+          <img src={url} alt={name} className="max-w-full h-auto rounded shadow" />
+        </div>
+      );
+    }
+    if (type === 'pdf') {
+      return <iframe src={url} className={className} title={name} />;
+    }
+    if (type === 'office-word' || type === 'office-excel' || type === 'office-ppt') {
+      const embedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+      return <iframe src={embedUrl} className={className} title={name} />;
+    }
+    // Unsupported type — show a helpful prompt rather than triggering a download
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center bg-slate-50">
+        <FileText className="w-16 h-16 text-muted-foreground opacity-40" />
+        <div>
+          <p className="font-medium mb-1">Preview not available for this file type</p>
+          <p className="text-sm text-muted-foreground">Open in a new tab to view or download.</p>
+        </div>
+        <Button variant="outline" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>
+          <ExternalLink className="w-4 h-4 mr-2" />
+          Open file
+        </Button>
+      </div>
+    );
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   const VIEWER_LINKS_STORAGE_KEY = (id: string) => `job_viewer_links_${id}`;
   /** Same bucket as job documents — one JSON file per job so all users see the same links */
@@ -759,20 +851,8 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                             onClick={() => selectDocument(doc.id)}
                           >
                             <div className="flex gap-3">
-                              <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0">
-                                {doc.latest_file_url ? (
-                                  <iframe
-                                    src={doc.latest_file_url}
-                                    className="w-full h-full border-0 pointer-events-none scale-50 origin-top-left"
-                                    style={{ width: '200%', height: '200%' }}
-                                    title={doc.name}
-                                  />
-                                ) : (
-                                  <div className="flex items-center justify-center h-full">
-                                    <FileText className="w-12 h-12 text-muted-foreground opacity-30" />
-                                  </div>
-                                )}
-                                <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/10" />
+                              <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0 overflow-hidden">
+                                <DocThumbnail url={doc.latest_file_url} name={doc.name} />
                               </div>
                               <div className="flex-1 py-3 pr-3 min-w-0">
                                 <p className="font-semibold text-sm truncate mb-1">{doc.name}</p>
@@ -806,14 +886,10 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                   </div>
                 ) : (
                   <div className="h-full flex flex-col min-h-[300px]">
-                    <iframe
-                      src={selectedDoc.latest_file_url}
-                      className="w-full flex-1 min-h-[280px] border-0"
-                      title={selectedDoc.name}
-                    />
+                    <DocViewer url={selectedDoc.latest_file_url} name={selectedDoc.name} className="w-full flex-1 min-h-[280px] border-0" />
                     <div className="px-3 py-2 bg-slate-100 border-t flex items-center justify-between gap-2 flex-wrap">
                       <p className="text-xs text-muted-foreground">
-                        Document not displaying? Open it in a new tab to view or download.
+                        Document not displaying? Open it in a new tab.
                       </p>
                       <Button
                         variant="outline"
@@ -1077,17 +1153,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                           onClick={() => selectDocument(doc.id)}
                         >
                           <div className="aspect-[3/4] bg-slate-100 relative overflow-hidden">
-                            {doc.latest_file_url ? (
-                              <iframe
-                                src={doc.latest_file_url}
-                                className="w-full h-full border-0 pointer-events-none"
-                                title={doc.name}
-                              />
-                            ) : (
-                              <div className="flex items-center justify-center h-full">
-                                <FileText className="w-16 h-16 text-muted-foreground opacity-30" />
-                              </div>
-                            )}
+                            <DocThumbnail url={doc.latest_file_url} name={doc.name} />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end">
                               <div className="p-3 w-full">
                                 <p className="text-white font-semibold text-sm truncate">{doc.name}</p>
@@ -1118,11 +1184,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                       <p className="text-muted-foreground">No file available</p>
                     </div>
                   ) : (
-                    <iframe
-                      src={selectedDoc.latest_file_url}
-                      className="w-full h-full border-0"
-                      title={selectedDoc.name}
-                    />
+                    <DocViewer url={selectedDoc.latest_file_url} name={selectedDoc.name} className="w-full h-full border-0" />
                   )}
                 </div>
               )}
@@ -1353,20 +1415,8 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                       onClick={() => selectDocument(doc.id)}
                     >
                       <div className="flex gap-3">
-                        <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0">
-                          {doc.latest_file_url ? (
-                            <iframe
-                              src={doc.latest_file_url}
-                              className="w-full h-full border-0 pointer-events-none scale-50 origin-top-left"
-                              style={{ width: '200%', height: '200%' }}
-                              title={doc.name}
-                            />
-                          ) : (
-                            <div className="flex items-center justify-center h-full">
-                              <FileText className="w-12 h-12 text-muted-foreground opacity-30" />
-                            </div>
-                          )}
-                          <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/10" />
+                        <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0 overflow-hidden">
+                          <DocThumbnail url={doc.latest_file_url} name={doc.name} />
                         </div>
                         <div className="flex-1 py-3 pr-3 min-w-0">
                           <p className="font-semibold text-sm truncate mb-1">{doc.name}</p>
@@ -1397,11 +1447,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                   <p className="text-muted-foreground">No file available</p>
                 </div>
               ) : (
-                <iframe
-                  src={selectedDoc.latest_file_url}
-                  className="w-full h-full border-0"
-                  title={selectedDoc.name}
-                />
+                <DocViewer url={selectedDoc.latest_file_url} name={selectedDoc.name} className="w-full h-full border-0" />
               )}
             </div>
           )}
