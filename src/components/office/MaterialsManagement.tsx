@@ -65,6 +65,7 @@ import {
   ArrowUp,
   ArrowDown,
   ListOrdered,
+  GripVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -235,6 +236,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [showSortCategoriesDialog, setShowSortCategoriesDialog] = useState(false);
   const [sortCategoriesOrder, setSortCategoriesOrder] = useState<string[]>([]);
   const [savingSortOrder, setSavingSortOrder] = useState(false);
+  const [draggedCatIndex, setDraggedCatIndex] = useState<number | null>(null);
+  const [dragOverCatIndex, setDragOverCatIndex] = useState<number | null>(null);
 
   // Zoho sync state
   const [syncingZoho, setSyncingZoho] = useState(false);
@@ -1621,31 +1624,74 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     setShowSortCategoriesDialog(true);
   }
 
-  /** Persist the new category order to the database */
+  /** Persist the new category order to the database.
+   *  Tries the category_order column first (requires migration).
+   *  Falls back to re-encoding the order into items' order_index values — works without any migration.
+   */
   async function saveSortOrder() {
     if (!activeSheet) return;
     setSavingSortOrder(true);
+
+    const invalidateCache = () => {
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+    };
+
     try {
-      const { error } = await supabase
+      // Attempt 1: save to category_order column (only works if migration has been run)
+      const { error: colError } = await supabase
         .from('material_sheets')
         .update({ category_order: sortCategoriesOrder })
         .eq('id', activeSheet.id);
-      if (error) throw error;
 
-      // Update local state immediately (no full reload needed)
-      setWorkbook(prev => {
-        if (!prev) return prev;
-        return {
+      if (!colError) {
+        setWorkbook(prev => prev ? {
           ...prev,
           sheets: prev.sheets.map(s =>
             s.id === activeSheet.id ? { ...s, category_order: sortCategoriesOrder } : s
           ),
-        };
-      });
-      // Invalidate cache so next load gets the saved order
-      for (const key of workbookCache.keys()) {
-        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+        } : prev);
+        invalidateCache();
+        toast.success('Category order saved');
+        setShowSortCategoriesDialog(false);
+        return;
       }
+
+      // Attempt 2 (fallback): re-encode the desired order into items' order_index values.
+      // Each category gets a block of 10 000 indices; items within a category
+      // keep their relative position within that block.
+      const updates: { id: string; order_index: number }[] = [];
+      sortCategoriesOrder.forEach((catName, catIdx) => {
+        const base = catIdx * 10000;
+        const catItems = activeSheet.items
+          .filter(i => (i.category || 'Uncategorized') === catName)
+          .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        catItems.forEach((item, itemIdx) => {
+          updates.push({ id: item.id, order_index: base + itemIdx });
+        });
+      });
+
+      // Run updates in parallel
+      const results = await Promise.all(
+        updates.map(upd =>
+          supabase.from('material_items').update({ order_index: upd.order_index }).eq('id', upd.id)
+        )
+      );
+      const firstErr = results.find(r => r.error);
+      if (firstErr?.error) throw firstErr.error;
+
+      // Patch local state so the UI reorders immediately
+      const orderMap = new Map(updates.map(u => [u.id, u.order_index]));
+      setWorkbook(prev => prev ? {
+        ...prev,
+        sheets: prev.sheets.map(s =>
+          s.id === activeSheet.id
+            ? { ...s, items: s.items.map(i => ({ ...i, order_index: orderMap.get(i.id) ?? i.order_index })) }
+            : s
+        ),
+      } : prev);
+      invalidateCache();
       toast.success('Category order saved');
       setShowSortCategoriesDialog(false);
     } catch (err: any) {
@@ -3746,7 +3792,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       </Dialog>
 
       {/* Sort Categories Dialog */}
-      <Dialog open={showSortCategoriesDialog} onOpenChange={setShowSortCategoriesDialog}>
+      <Dialog open={showSortCategoriesDialog} onOpenChange={(open) => {
+        if (!open) { setDraggedCatIndex(null); setDragOverCatIndex(null); }
+        setShowSortCategoriesDialog(open);
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -3755,37 +3804,69 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             </DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground mb-3">
-            Drag or use the arrows to set the display order of categories for this sheet.
-            The order is saved per sheet and applies to all users.
+            Drag rows to reorder categories for this sheet. Order is saved per sheet and applies to all users.
           </p>
-          <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
+          <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1 pb-1">
             {sortCategoriesOrder.map((cat, idx) => (
               <div
                 key={cat}
-                className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm"
+                draggable
+                onDragStart={(e) => {
+                  setDraggedCatIndex(idx);
+                  e.dataTransfer.effectAllowed = 'move';
+                  // Required for Firefox
+                  e.dataTransfer.setData('text/plain', String(idx));
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (draggedCatIndex !== null && draggedCatIndex !== idx) {
+                    setDragOverCatIndex(idx);
+                  }
+                }}
+                onDragLeave={() => setDragOverCatIndex(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedCatIndex === null || draggedCatIndex === idx) return;
+                  const next = [...sortCategoriesOrder];
+                  const [removed] = next.splice(draggedCatIndex, 1);
+                  next.splice(idx, 0, removed);
+                  setSortCategoriesOrder(next);
+                  setDraggedCatIndex(null);
+                  setDragOverCatIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedCatIndex(null);
+                  setDragOverCatIndex(null);
+                }}
+                className={[
+                  'flex items-center gap-2 rounded-lg px-3 py-2.5 border select-none transition-all duration-100',
+                  draggedCatIndex === idx
+                    ? 'opacity-40 bg-slate-100 border-slate-300 shadow-none'
+                    : dragOverCatIndex === idx
+                      ? 'border-violet-500 bg-violet-50 shadow-lg ring-1 ring-violet-400'
+                      : 'bg-white border-slate-200 shadow-sm hover:border-slate-300 hover:shadow',
+                ].join(' ')}
               >
-                <span className="w-5 text-center text-xs font-bold text-slate-400 select-none">
+                <GripVertical className="w-4 h-4 text-slate-400 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+                <span className="w-5 text-center text-xs font-bold text-slate-400">
                   {idx + 1}
                 </span>
                 <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
                 <span className="flex-1 text-sm font-medium text-slate-800 truncate">{cat}</span>
                 <div className="flex gap-0.5 flex-shrink-0">
                   <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={idx === 0}
+                    variant="ghost" size="sm" disabled={idx === 0}
                     onClick={() => moveSortCategory(idx, 'up')}
-                    className="h-6 w-6 p-0 text-slate-500 hover:text-slate-900 disabled:opacity-25"
+                    className="h-6 w-6 p-0 text-slate-400 hover:text-slate-900 disabled:opacity-20"
                     title="Move up"
                   >
                     <ArrowUp className="w-3.5 h-3.5" />
                   </Button>
                   <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={idx === sortCategoriesOrder.length - 1}
+                    variant="ghost" size="sm" disabled={idx === sortCategoriesOrder.length - 1}
                     onClick={() => moveSortCategory(idx, 'down')}
-                    className="h-6 w-6 p-0 text-slate-500 hover:text-slate-900 disabled:opacity-25"
+                    className="h-6 w-6 p-0 text-slate-400 hover:text-slate-900 disabled:opacity-20"
                     title="Move down"
                   >
                     <ArrowDown className="w-3.5 h-3.5" />
@@ -3796,11 +3877,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           </div>
           <div className="flex justify-between items-center mt-4 pt-3 border-t gap-2">
             <Button
-              variant="outline"
-              size="sm"
-              className="text-xs"
+              variant="outline" size="sm" className="text-xs"
               onClick={() => {
-                // Reset to workbook's natural order (clear saved override)
                 if (!activeSheet) return;
                 const natural = groupByCategory(activeSheet.items);
                 setSortCategoriesOrder(natural.map(g => g.category));
