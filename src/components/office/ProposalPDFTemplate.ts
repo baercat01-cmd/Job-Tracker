@@ -175,7 +175,7 @@ export function generateProposalHTML(data: {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
-          .theme-premium .print-header { border-bottom: 1px solid #2d5a45; }
+          .theme-premium .print-header { /* no border */ }
           .theme-premium .header-row .logo-section { display: none; }
           .theme-premium .header-row { margin-bottom: 10px; }
           .theme-premium .proposal-header { margin-left: 0; }
@@ -276,8 +276,11 @@ export function generateProposalHTML(data: {
             margin-bottom: 4px;
             min-height: ${sectionMinHeight}px;
             padding-bottom: ${sectionPaddingBottom}px;
-            /* Do NOT set page-break-inside: avoid here — if a section description
-               is longer than one page it must be allowed to flow to the next page. */
+            /* Keep the title + description together on the same page.
+               If a section is too tall to fit, the browser pushes the entire
+               section to the next page rather than splitting mid-section. */
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
           
           .section-price {
@@ -428,16 +431,18 @@ export function generateProposalHTML(data: {
             size: letter;
           }
           
-          /* Fixed header: proposal number at the top of every page except page 1 and terms page.
-             Hidden in screen view; shown only when printing. */
+          /* Fixed header: proposal number at the top-right of middle pages only.
+             Positioned at the body's top edge (not in the @page margin) so the
+             white page-mask can reliably cover it on page 1 and the terms page. */
           .print-header {
             position: fixed;
-            top: 0;
+            top: ${pageMarginTop}in;
             left: 0;
             right: 0;
             height: 26px;
             display: none;
             flex-direction: row;
+            justify-content: flex-end;
             align-items: center;
             padding: 4px ${pageMarginRight}in 4px ${pageMarginLeft}in;
             font-size: 9pt;
@@ -445,23 +450,22 @@ export function generateProposalHTML(data: {
             font-weight: 600;
             z-index: 9000;
             background: #fff;
-            border-bottom: 1px solid #e0e0e0;
+            /* No border-bottom — clean look */
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
 
-          /* White overlay to suppress the fixed .print-header on pages that already have
-             the proposal number in their own content header (page 1 and terms page).
-             position:absolute means it lives in the document flow and only covers the
-             margin area on the page where it appears — not on every page like a fixed element. */
+          /* White overlay — covers the fixed .print-header on page 1 and the terms page.
+             Uses top: 0 (body padding-box top) which is the SAME y-coordinate as the
+             print-header (top: ${pageMarginTop}in from page top = body's top edge).
+             Being within the body's bounds means Chromium won't clip it. */
           .page-mask {
             display: none;
             position: absolute;
-            /* Reach into the @page top margin so it covers the fixed header above the content area */
-            top: calc(-${pageMarginTop}in - 6px);
-            left: calc(-${pageMarginLeft}in - 6px);
-            right: calc(-${pageMarginRight}in - 6px);
-            height: 34px;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 26px;
             background: #fff;
             z-index: 9999;
             -webkit-print-color-adjust: exact;
@@ -484,7 +488,7 @@ export function generateProposalHTML(data: {
             .print-header {
               display: flex !important;
               position: fixed !important;
-              top: 0 !important;
+              top: ${pageMarginTop}in !important;
               background: #fff !important;
             }
             .page-mask {
