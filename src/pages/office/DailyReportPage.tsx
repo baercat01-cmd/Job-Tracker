@@ -239,29 +239,52 @@ export function DailyReportPage() {
                 {timeEntries.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No time entries for this day.</p>
                 ) : (
-                  <div className="space-y-3">
-                    {timeEntries.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0"
-                      >
-                        <div>
-                          <p className="font-medium">
-                            {entry.user_profiles?.username || entry.user_profiles?.email || 'Unknown'}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {entry.jobs?.name || entry.jobs?.client_name || '—'} · {entry.components?.name || 'Clock'}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-mono">
-                            {format(new Date(entry.start_time), 'h:mm a')}
-                            {entry.end_time ? ` – ${format(new Date(entry.end_time), 'h:mm a')}` : ''}
-                          </p>
-                          <p className="text-sm font-semibold">{(entry.total_hours || 0).toFixed(1)} hrs</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="space-y-4">
+                    {(() => {
+                      // Group entries by job
+                      const jobMap = new Map<string, { jobLabel: string; entries: typeof timeEntries }>();
+                      timeEntries.forEach((entry) => {
+                        const jobKey = entry.jobs?.id || 'no-job';
+                        const jobLabel = entry.jobs?.name || entry.jobs?.client_name || 'No Job';
+                        if (!jobMap.has(jobKey)) jobMap.set(jobKey, { jobLabel, entries: [] });
+                        jobMap.get(jobKey)!.entries.push(entry);
+                      });
+                      return Array.from(jobMap.entries()).map(([jobKey, group]) => {
+                        const jobTotal = group.entries.reduce((sum, e) => sum + (e.total_hours || 0), 0);
+                        return (
+                          <div key={jobKey} className="rounded-lg border border-slate-200 overflow-hidden">
+                            {/* Job header */}
+                            <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                              <p className="font-semibold text-sm">{group.jobLabel}</p>
+                              <p className="text-sm font-semibold text-slate-600">{jobTotal.toFixed(1)} hrs total</p>
+                            </div>
+                            {/* Worker rows */}
+                            {group.entries.map((entry) => (
+                              <div
+                                key={entry.id}
+                                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 last:border-0"
+                              >
+                                <div>
+                                  <p className="font-medium text-sm">
+                                    {entry.user_profiles?.username || entry.user_profiles?.email || 'Unknown'}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {entry.components?.name || 'Clock'}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm font-mono">
+                                    {format(new Date(entry.start_time), 'h:mm a')}
+                                    {entry.end_time ? ` – ${format(new Date(entry.end_time), 'h:mm a')}` : ''}
+                                  </p>
+                                  <p className="text-sm font-semibold">{(entry.total_hours || 0).toFixed(1)} hrs</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </CardContent>
