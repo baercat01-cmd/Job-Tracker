@@ -62,6 +62,9 @@ import {
   AlertCircle,
   MoreVertical,
   Download,
+  ArrowUp,
+  ArrowDown,
+  ListOrdered,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -107,6 +110,7 @@ interface MaterialSheet {
   workbook_id: string;
   sheet_name: string;
   order_index: number;
+  category_order: string[] | null;
   items: MaterialItem[];
   created_at: string;
 }
@@ -226,6 +230,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
   const [newSheetName, setNewSheetName] = useState('');
   const [addingSheet, setAddingSheet] = useState(false);
+
+  // Sort categories dialog state
+  const [showSortCategoriesDialog, setShowSortCategoriesDialog] = useState(false);
+  const [sortCategoriesOrder, setSortCategoriesOrder] = useState<string[]>([]);
+  const [savingSortOrder, setSavingSortOrder] = useState(false);
 
   // Zoho sync state
   const [syncingZoho, setSyncingZoho] = useState(false);
@@ -950,7 +959,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       .map(pkg => pkg.name);
   }
 
-  function groupByCategory(items: MaterialItem[]): CategoryGroup[] {
+  function groupByCategory(items: MaterialItem[], categoryOrder?: string[] | null): CategoryGroup[] {
     // Map: category name → { items, minOrderIndex }
     const categoryMap = new Map<string, { items: MaterialItem[]; minOrderIndex: number }>();
 
@@ -965,14 +974,27 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       entry.minOrderIndex = Math.min(entry.minOrderIndex, item.order_index ?? Infinity);
     });
 
-    return Array.from(categoryMap.entries())
+    const groups = Array.from(categoryMap.entries())
       .map(([category, { items, minOrderIndex }]) => ({
         category,
         items: items.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
         minOrderIndex,
-      }))
-      // Sort categories by the position they first appear in the workbook
-      .sort((a, b) => (a as any).minOrderIndex - (b as any).minOrderIndex);
+      }));
+
+    if (categoryOrder && categoryOrder.length > 0) {
+      // User-defined order: known categories first (in their saved order), unknowns appended by minOrderIndex
+      const orderMap = new Map(categoryOrder.map((name, idx) => [name, idx]));
+      return groups.sort((a, b) => {
+        const ai = orderMap.has(a.category) ? orderMap.get(a.category)! : Infinity;
+        const bi = orderMap.has(b.category) ? orderMap.get(b.category)! : Infinity;
+        if (ai !== bi) return ai - bi;
+        // Both unknown → fall back to workbook order
+        return (a as any).minOrderIndex - (b as any).minOrderIndex;
+      });
+    }
+
+    // Default: sort categories by the position they first appear in the workbook
+    return groups.sort((a, b) => (a as any).minOrderIndex - (b as any).minOrderIndex);
   }
 
   /** Group by package name (priority) or sheet name for unbundled. Package takes priority; no package = group under sheet name. */
@@ -1589,6 +1611,60 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
+  /** Open the Sort Categories dialog for the currently active sheet */
+  function openSortCategoriesDialog() {
+    if (!activeSheet) return;
+    // Build the full list of unique categories for this sheet, in current display order
+    const currentGroups = groupByCategory(activeSheet.items, activeSheet.category_order);
+    const allCats = currentGroups.map(g => g.category);
+    setSortCategoriesOrder(allCats);
+    setShowSortCategoriesDialog(true);
+  }
+
+  /** Persist the new category order to the database */
+  async function saveSortOrder() {
+    if (!activeSheet) return;
+    setSavingSortOrder(true);
+    try {
+      const { error } = await supabase
+        .from('material_sheets')
+        .update({ category_order: sortCategoriesOrder })
+        .eq('id', activeSheet.id);
+      if (error) throw error;
+
+      // Update local state immediately (no full reload needed)
+      setWorkbook(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sheets: prev.sheets.map(s =>
+            s.id === activeSheet.id ? { ...s, category_order: sortCategoriesOrder } : s
+          ),
+        };
+      });
+      // Invalidate cache so next load gets the saved order
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+      toast.success('Category order saved');
+      setShowSortCategoriesDialog(false);
+    } catch (err: any) {
+      console.error('Failed to save category order:', err);
+      toast.error('Failed to save category order');
+    } finally {
+      setSavingSortOrder(false);
+    }
+  }
+
+  /** Move a category up or down in the sort dialog list */
+  function moveSortCategory(index: number, direction: 'up' | 'down') {
+    const next = [...sortCategoriesOrder];
+    const swap = direction === 'up' ? index - 1 : index + 1;
+    if (swap < 0 || swap >= next.length) return;
+    [next[index], next[swap]] = [next[swap], next[index]];
+    setSortCategoriesOrder(next);
+  }
+
   async function exportMaterialWorkbookToXLSX() {
     if (!workbook || workbook.sheets.length === 0) {
       toast.error('No workbook or sheets to export');
@@ -1760,8 +1836,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (item.usage && item.usage.toLowerCase().includes(searchTerm.toLowerCase()))
   ) || [];
 
-  // Group by workbook category, preserving the order categories appear in the workbook
-  const categoryGroups = groupByCategory(filteredItems);
+  // Group by workbook category, using user-defined order when present
+  const categoryGroups = groupByCategory(filteredItems, activeSheet?.category_order);
 
   if (loading) {
     return (
@@ -1820,6 +1896,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             <Button onClick={togglePackageSelectionMode} size="sm" variant="outline"
               className="h-7 text-xs whitespace-nowrap px-2 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
               <Package className="w-3 h-3 mr-0.5" />Package
+            </Button>
+          )}
+          {activeSheet && activeSheet.items.length > 0 && (
+            <Button onClick={openSortCategoriesDialog} size="sm" variant="outline"
+              className="h-7 text-xs whitespace-nowrap px-2 bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
+              title="Change the display order of categories for this sheet">
+              <ListOrdered className="w-3 h-3 mr-0.5" />Sort Categories
             </Button>
           )}
           <Button onClick={() => setShowDocumentViewer(true)} size="sm" variant="outline"
@@ -3659,6 +3742,86 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Sort Categories Dialog */}
+      <Dialog open={showSortCategoriesDialog} onOpenChange={setShowSortCategoriesDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListOrdered className="w-4 h-4 text-violet-600" />
+              Sort Categories — {activeSheet?.sheet_name}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground mb-3">
+            Drag or use the arrows to set the display order of categories for this sheet.
+            The order is saved per sheet and applies to all users.
+          </p>
+          <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
+            {sortCategoriesOrder.map((cat, idx) => (
+              <div
+                key={cat}
+                className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm"
+              >
+                <span className="w-5 text-center text-xs font-bold text-slate-400 select-none">
+                  {idx + 1}
+                </span>
+                <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                <span className="flex-1 text-sm font-medium text-slate-800 truncate">{cat}</span>
+                <div className="flex gap-0.5 flex-shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={idx === 0}
+                    onClick={() => moveSortCategory(idx, 'up')}
+                    className="h-6 w-6 p-0 text-slate-500 hover:text-slate-900 disabled:opacity-25"
+                    title="Move up"
+                  >
+                    <ArrowUp className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={idx === sortCategoriesOrder.length - 1}
+                    onClick={() => moveSortCategory(idx, 'down')}
+                    className="h-6 w-6 p-0 text-slate-500 hover:text-slate-900 disabled:opacity-25"
+                    title="Move down"
+                  >
+                    <ArrowDown className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between items-center mt-4 pt-3 border-t gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => {
+                // Reset to workbook's natural order (clear saved override)
+                if (!activeSheet) return;
+                const natural = groupByCategory(activeSheet.items);
+                setSortCategoriesOrder(natural.map(g => g.category));
+              }}
+            >
+              Reset to workbook order
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowSortCategoriesDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="text-xs bg-violet-600 hover:bg-violet-700 text-white"
+                disabled={savingSortOrder}
+                onClick={saveSortOrder}
+              >
+                {savingSortOrder ? 'Saving…' : 'Save Order'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
