@@ -6418,13 +6418,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   };
 
   // Create unified list of all proposal items sorted by order_index (only standalone subs)
+  const FIELD_REQUEST_NAMES = ['Field Request', 'Field Requests', 'Crew Orders'];
   const allItemsUnsorted = [
-    ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
-      type: 'material' as const,
-      id: sheet.sheetId,
-      orderIndex: sheet.orderIndex,
-      data: sheet,
-    })),
+    ...materialsBreakdown.sheetBreakdowns
+      .filter(sheet => !FIELD_REQUEST_NAMES.includes(sheet.sheetName))
+      .map(sheet => ({
+        type: 'material' as const,
+        id: sheet.sheetId,
+        orderIndex: sheet.orderIndex,
+        data: sheet,
+      })),
     // Only include custom rows that are NOT linked to sheets
     ...customRows.filter(row => !(row as any).sheet_id).map(row => ({
       type: 'custom' as const,
