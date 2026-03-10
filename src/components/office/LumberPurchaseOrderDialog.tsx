@@ -125,7 +125,7 @@ export function LumberPurchaseOrderDialog({
       }
 
       // --- Always save to lumber_purchase_orders ---
-      const { data: insertedRows, error: dbError } = await supabase
+      const { data: insertedRow, error: dbError } = await supabase
         .from('lumber_purchase_orders')
         .insert({
           material_id: material.id,
@@ -141,17 +141,20 @@ export function LumberPurchaseOrderDialog({
           zoho_po_url,
           created_by: profile?.id ?? null,
         })
-        .select(`
-          *,
-          vendor:lumber_rebar_vendors(*),
-          material:lumber_rebar_materials(*)
-        `)
+        .select('*')
         .single();
 
       if (dbError) throw dbError;
 
+      // Attach vendor/material locally (avoids schema-cache join issues)
+      const fullRecord: LumberPORecord = {
+        ...insertedRow,
+        vendor,
+        material,
+      };
+
       setCreatedPO({ zoho_po_number: zoho_po_number ?? undefined, zoho_po_url: zoho_po_url ?? undefined });
-      onCreated(insertedRows as LumberPORecord);
+      onCreated(fullRecord);
       toast.success(
         zoho_po_number
           ? `PO #${zoho_po_number} created in Zoho Books`

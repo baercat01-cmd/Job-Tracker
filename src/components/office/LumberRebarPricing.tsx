@@ -301,6 +301,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   }
 
   async function loadPurchaseOrders() {
+    // First try with joins; if the schema cache doesn't know the FK yet, fall back to plain select.
     const { data, error } = await supabase
       .from('lumber_purchase_orders')
       .select(`
@@ -311,8 +312,27 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       .order('order_date', { ascending: false });
 
     if (error) {
-      // Table may not exist yet — ignore error gracefully
-      console.warn('lumber_purchase_orders not found (run migration):', error.message);
+      if (error.message?.includes('relationship') || error.message?.includes('schema cache')) {
+        // FK not in schema cache yet — reload schema and retry without joins
+        await supabase.rpc('notify_pgrst_reload' as any).catch(() => null);
+        const { data: plain, error: plainError } = await supabase
+          .from('lumber_purchase_orders')
+          .select('*')
+          .order('order_date', { ascending: false });
+        if (plainError) {
+          console.warn('lumber_purchase_orders not available (run migration):', plainError.message);
+          return;
+        }
+        // Attach vendor/material from already-loaded arrays
+        const enriched = (plain || []).map((po: any) => ({
+          ...po,
+          vendor: vendors.find(v => v.id === po.vendor_id) ?? null,
+          material: materials.find(m => m.id === po.material_id) ?? null,
+        }));
+        setPurchaseOrders(enriched as LumberPORecord[]);
+        return;
+      }
+      console.warn('lumber_purchase_orders error:', error.message);
       return;
     }
     setPurchaseOrders((data as LumberPORecord[]) || []);
