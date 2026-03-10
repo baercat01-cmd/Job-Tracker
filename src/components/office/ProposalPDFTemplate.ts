@@ -89,6 +89,7 @@ export function generateProposalHTML(data: {
             margin: 0 auto; 
             padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px; 
             font-size: ${bodyFontSize}pt;
+            position: relative; /* anchor for .page-mask absolute positioning */
           }
           ${isPremium ? `
           /* Premium theme: dark green + gold */
@@ -112,10 +113,7 @@ export function generateProposalHTML(data: {
           .theme-premium .terms-header { border-bottom-color: #1a3d2e; }
           .theme-premium .terms-title { color: #1a3d2e; }
           .theme-premium .terms-section-title { color: #1a3d2e; }
-          .theme-premium .print-footer-proposal { color: #1a3d2e; }
-          .theme-premium .print-footer-page { color: #2d5a45; }
-          .theme-premium .doc-footer span:first-child { color: #1a3d2e; }
-          .theme-premium .doc-footer span:last-child { color: #2d5a45; }
+          .theme-premium .print-header { color: #1a3d2e; }
           .theme-premium .grand-total-amount { color: #b8860b; font-weight: 700; }
           .theme-premium .summary-table-total { border-top: 2px solid #b8860b; }
           /* Premium: header/footer with triangular twist (3 colors: dark green, gold, cream) */
@@ -177,7 +175,7 @@ export function generateProposalHTML(data: {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
-          .theme-premium .print-footer { bottom: 22px !important; }
+          .theme-premium .print-header { border-bottom: 1px solid #2d5a45; }
           .theme-premium .header-row .logo-section { display: none; }
           .theme-premium .header-row { margin-bottom: 10px; }
           .theme-premium .proposal-header { margin-left: 0; }
@@ -346,6 +344,7 @@ export function generateProposalHTML(data: {
           .terms-page {
             page-break-before: always;
             padding-top: 40px;
+            position: relative; /* anchor for .page-mask on the terms page */
           }
           
           .terms-header {
@@ -429,43 +428,44 @@ export function generateProposalHTML(data: {
             size: letter;
           }
           
-          .print-footer {
+          /* Fixed header: proposal number at the top of every page except page 1 and terms page.
+             Hidden in screen view; shown only when printing. */
+          .print-header {
             position: fixed;
-            bottom: 0;
+            top: 0;
             left: 0;
             right: 0;
-            min-height: 0.45in;
-            display: flex;
+            height: 26px;
+            display: none;
             flex-direction: row;
-            justify-content: space-between;
             align-items: center;
-            padding: 6px ${pageMarginRight}in 6px ${pageMarginLeft}in;
+            padding: 4px ${pageMarginRight}in 4px ${pageMarginLeft}in;
             font-size: 9pt;
-            color: #333;
+            color: #555;
             font-weight: 600;
-            z-index: 9999;
+            z-index: 9000;
             background: #fff;
+            border-bottom: 1px solid #e0e0e0;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
-          
-          .print-footer-proposal {
-            text-align: left;
-          }
-          
-          .print-footer-page {
-            text-align: right;
-          }
-          
-          /* In-document footer at end of body: shows on last page when Save as PDF clips fixed footer */
-          .doc-footer {
-            margin-top: 40px;
-            padding-top: 10px;
-            font-size: 9pt;
-            color: #333;
-            font-weight: 600;
-            display: flex;
-            justify-content: space-between;
+
+          /* White overlay to suppress the fixed .print-header on pages that already have
+             the proposal number in their own content header (page 1 and terms page).
+             position:absolute means it lives in the document flow and only covers the
+             margin area on the page where it appears — not on every page like a fixed element. */
+          .page-mask {
+            display: none;
+            position: absolute;
+            /* Reach into the @page top margin so it covers the fixed header above the content area */
+            top: calc(-${pageMarginTop}in - 6px);
+            left: calc(-${pageMarginLeft}in - 6px);
+            right: calc(-${pageMarginRight}in - 6px);
+            height: 34px;
+            background: #fff;
+            z-index: 9999;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
           
           /* Keep hereby text + subtotal + tax + grand total on same page; if no room, move block to next page */
@@ -479,15 +479,17 @@ export function generateProposalHTML(data: {
             body { 
               -webkit-print-color-adjust: exact; 
               print-color-adjust: exact;
-              padding-bottom: 0.75in;
+              /* No extra padding-bottom needed — proposal number is now a top header, not a bottom footer */
             }
-            .print-footer {
+            .print-header {
               display: flex !important;
               position: fixed !important;
-              bottom: 0 !important;
+              top: 0 !important;
               background: #fff !important;
             }
-            .theme-premium .print-footer { bottom: 24px !important; }
+            .page-mask {
+              display: block !important;
+            }
             .premium-footer, .premium-footer-twist { display: block !important; position: fixed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .premium-footer-twist { bottom: 0 !important; }
             .premium-footer { bottom: 12px !important; }
@@ -514,12 +516,16 @@ export function generateProposalHTML(data: {
           <div class="premium-header-accent" aria-hidden="true"></div>
         </div>
         ` : ''}
-        <!-- Print Footer - proposal number only (repeats on each page when printing/saving as PDF) -->
-        <div class="print-footer">
-          <span class="print-footer-proposal">Proposal #${proposalNumber}</span>
+        <!-- Fixed header: shows proposal # at the top of middle pages only.
+             Masked on page 1 (has it in the Proposal table) and on the Terms page (has it in the terms header). -->
+        <div class="print-header" aria-hidden="true">
+          <span>Proposal #${proposalNumber}</span>
         </div>
         ${isPremium ? '<div class="premium-footer" aria-hidden="true"></div><div class="premium-footer-twist" aria-hidden="true"></div>' : ''}
         
+        <!-- White mask: covers the fixed print-header on page 1 only (page 1 has proposal # in its own header table) -->
+        <div class="page-mask" aria-hidden="true"></div>
+
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
@@ -796,6 +802,8 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
+            <!-- White mask: covers the fixed print-header on the terms page (already has proposal # in its own header) -->
+            <div class="page-mask" aria-hidden="true"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
@@ -888,6 +896,8 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
+            <!-- White mask: covers the fixed print-header on the terms page (already has proposal # in its own header) -->
+            <div class="page-mask" aria-hidden="true"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
