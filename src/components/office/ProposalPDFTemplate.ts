@@ -89,6 +89,7 @@ export function generateProposalHTML(data: {
             margin: 0 auto; 
             padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px; 
             font-size: ${bodyFontSize}pt;
+            position: relative;
           }
           ${isPremium ? `
           /* Premium theme: dark green + gold */
@@ -343,11 +344,11 @@ export function generateProposalHTML(data: {
             margin-top: 30px; 
           }
           
-          /* Terms and Conditions Page — named page so @page can suppress the running header */
+          /* Terms and Conditions Page */
           .terms-page {
             page-break-before: always;
-            page: terms-page;
             padding-top: 40px;
+            position: relative;
           }
           
           .terms-header {
@@ -426,36 +427,21 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
 
-          /* ── Paged Media: running proposal number at the bottom-right of each page ──
-             @bottom-right renders in the bottom margin on every page by default.
-             Page 1 and the terms page already show the proposal # elsewhere, so we
-             hide it there using color:transparent / visibility:hidden. */
           @page {
             margin: ${pageMarginTop}in ${pageMarginRight}in ${pageMarginBottom}in ${pageMarginLeft}in;
             size: letter;
-            @bottom-right {
-              content: "Proposal #${proposalNumber}";
-              font-family: Arial, sans-serif;
-              font-size: 9pt;
-              color: #555;
-              font-weight: 600;
-            }
           }
 
-          /* Page 1 — hide the bottom-right running copy */
-          @page :first {
-            @bottom-right {
-              color: transparent;
-              visibility: hidden;
-            }
-          }
-
-          /* Terms (last) page — hide the bottom-right running copy */
-          @page terms-page {
-            @bottom-right {
-              color: transparent;
-              visibility: hidden;
-            }
+          /* Running proposal number — hidden on screen, activated only during print/PDF.
+             position:fixed repeats at the bottom-right of every page, inside the content border.
+             White masks (page1-mask inside body, terms-mask inside .terms-page) cover it on
+             those two pages using mathematically-exact top offsets:
+               contentHeight = 11in - pageMarginTop - pageMarginBottom
+               mask top = contentHeight - maskHeight  →  last N px of that page */
+          .running-header,
+          .page1-mask,
+          .terms-mask {
+            display: none;
           }
           
           /* Keep hereby text + subtotal + tax + grand total on same page; if no room, move block to next page */
@@ -473,11 +459,44 @@ export function generateProposalHTML(data: {
             .premium-footer, .premium-footer-twist { display: block !important; position: fixed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .premium-footer-twist { bottom: 0 !important; }
             .premium-footer { bottom: 12px !important; }
+
+            /* Proposal number repeats at bottom-right of every page, 8px inside the right border */
+            .running-header {
+              display: block;
+              position: fixed;
+              bottom: calc(${pageMarginBottom}in + 4px);
+              right: calc(${pageMarginRight}in + 8px);
+              font-size: 9pt;
+              color: #555;
+              font-weight: 600;
+              font-family: Arial, sans-serif;
+              z-index: 100;
+            }
+
+            /* Masks cover the running header on page 1 and the terms page.
+               Letter paper = 11in tall. Content height = 11 - top-margin - bottom-margin.
+               top = contentHeight - maskHeight places the mask flush with the page bottom
+               within the respective positioned ancestor (body for page 1, .terms-page for last page). */
+            .page1-mask,
+            .terms-mask {
+              display: block;
+              position: absolute;
+              top: calc(${11 - pageMarginTop - pageMarginBottom}in - 32px);
+              right: 0;
+              width: 250px;
+              height: 32px;
+              background: white;
+              z-index: 9999;
+            }
           }
           
         </style>
       </head>
       <body class="${isPremium ? 'theme-premium' : ''}">
+        <!-- Repeating proposal number (print/PDF only). White masks hide it on page 1 and terms page. -->
+        <div class="running-header">Proposal #${proposalNumber}</div>
+        <div class="page1-mask"></div>
+
         ${isPremium ? `
         <!-- Premium theme: header with triangular twist (green, gold, cream) and clear structure -->
         <div class="premium-header-wrapper">
@@ -774,6 +793,7 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
+            <div class="terms-mask"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
@@ -866,6 +886,7 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="terms-page">
+            <div class="terms-mask"></div>
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
