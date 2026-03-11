@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -122,6 +123,7 @@ export function MaterialInventory() {
   const [syncingZoho, setSyncingZoho] = useState(false);
   const [showSyncResults, setShowSyncResults] = useState(false);
   const [syncResults, setSyncResults] = useState<any>(null);
+  const [syncChangeDetailsView, setSyncChangeDetailsView] = useState<'inserted' | 'updated' | 'vendors' | null>(null);
 
   useEffect(() => {
     loadMaterials();
@@ -157,7 +159,18 @@ export function MaterialInventory() {
         body: { action: 'sync_materials' },
       });
 
-      if (error) throw error;
+      if (error) {
+        let message = error.message;
+        if (error instanceof FunctionsHttpError && error.context) {
+          try {
+            const body = await error.context.json();
+            if (body?.error) message = body.details ? `${body.error}: ${body.details}` : body.error;
+          } catch {
+            try { message = await error.context.text() || message; } catch { /* keep message */ }
+          }
+        }
+        throw new Error(message);
+      }
 
       console.log('✅ Sync completed:', data);
       
@@ -170,7 +183,7 @@ export function MaterialInventory() {
       toast.success(`✅ Synced ${data.itemsSynced || 0} materials from Zoho Books`);
     } catch (error: any) {
       console.error('❌ Sync error:', error);
-      toast.error(`Failed to sync materials: ${error.message || 'Unknown error'}`);
+      toast.error(`Failed to sync materials: ${error?.message || 'Unknown error'}`);
     } finally {
       setSyncingZoho(false);
     }
@@ -368,11 +381,15 @@ export function MaterialInventory() {
     }
   }
 
+  // Package/usage units that must never be shown as length (only actual length values)
+  const LENGTH_UNIT_LIKE = /^(pcs|pc|bag|bags|lf|ft|piece|pieces|ea|each|units?|linear\s*ft)$/i;
+  const isPackageUnit = (v: string | null) => v != null && LENGTH_UNIT_LIKE.test(String(v).trim());
+
   // Flatten materials - no grouping
   const flatMaterials = useMemo(() => {
     return materials.map(material => ({
       ...material,
-      displayName: material.part_length 
+      displayName: material.part_length && !isPackageUnit(material.part_length)
         ? `${material.material_name} : ${material.part_length}`
         : material.material_name
     }));
@@ -409,10 +426,11 @@ export function MaterialInventory() {
       .trim() || null;
   };
 
-  // Format length with feet and inches notation
+  // Format length with feet and inches notation (package units like pcs/Bag are already filtered above via isPackageUnit)
   const formatLength = (length: string | null, category: string | null): string => {
     if (!length) return '';
-    
+    if (isPackageUnit(length)) return '';
+
     // Handle already formatted lengths (e.g., "12' 6\"")
     if (length.includes("'") || length.includes('"')) {
       return length;
@@ -1563,32 +1581,115 @@ export function MaterialInventory() {
               {/* What Changed */}
               <div className="border-2 rounded-lg p-4">
                 <h4 className="font-semibold text-slate-900 mb-3">What Changed?</h4>
+                <p className="text-xs text-muted-foreground mb-2">Click a line to see what was changed.</p>
                 <div className="space-y-2 text-sm">
                   {syncResults.itemsInserted > 0 && (
-                    <div className="flex items-center gap-2 text-green-700">
-                      <CheckCircle className="w-4 h-4" />
+                    <button
+                      type="button"
+                      onClick={() => setSyncChangeDetailsView('inserted')}
+                      className="w-full flex items-center gap-2 text-green-700 hover:bg-green-50 rounded p-2 -m-2 text-left transition-colors cursor-pointer"
+                    >
+                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
                       <span><strong>{syncResults.itemsInserted}</strong> new material{syncResults.itemsInserted !== 1 ? 's' : ''} added to catalog</span>
-                    </div>
+                      <span className="text-green-500 ml-1">View details →</span>
+                    </button>
                   )}
                   {syncResults.itemsUpdated > 0 && (
-                    <div className="flex items-start gap-2 text-orange-700">
+                    <button
+                      type="button"
+                      onClick={() => setSyncChangeDetailsView('updated')}
+                      className="w-full flex items-start gap-2 text-orange-700 hover:bg-orange-50 rounded p-2 -m-2 text-left transition-colors cursor-pointer"
+                    >
                       <RefreshCw className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                      <div>
+                      <div className="flex-1">
                         <div><strong>{syncResults.itemsUpdated}</strong> material{syncResults.itemsUpdated !== 1 ? 's' : ''} updated with latest Zoho Books data</div>
                         <div className="text-xs text-orange-600 mt-1">
                           ℹ️ Updated fields: Name, Category, Prices (unit_price, purchase_cost), Length/Unit, and Metadata
                         </div>
+                        <span className="text-orange-500 text-xs mt-1 inline-block">View list →</span>
                       </div>
-                    </div>
+                    </button>
                   )}
                   {syncResults.vendorsSynced > 0 && (
-                    <div className="flex items-center gap-2 text-blue-700">
-                      <CheckCircle className="w-4 h-4" />
+                    <button
+                      type="button"
+                      onClick={() => setSyncChangeDetailsView('vendors')}
+                      className="w-full flex items-center gap-2 text-blue-700 hover:bg-blue-50 rounded p-2 -m-2 text-left transition-colors cursor-pointer"
+                    >
+                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
                       <span><strong>{syncResults.vendorsSynced}</strong> vendor{syncResults.vendorsSynced !== 1 ? 's' : ''} synced</span>
-                    </div>
+                      <span className="text-blue-500 ml-1">View details →</span>
+                    </button>
                   )}
                 </div>
               </div>
+
+              {/* What Changed — details dialog */}
+              <Dialog open={syncChangeDetailsView !== null} onOpenChange={(open) => !open && setSyncChangeDetailsView(null)}>
+                <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {syncChangeDetailsView === 'inserted' && 'New materials added to catalog'}
+                      {syncChangeDetailsView === 'updated' && 'Materials updated from Zoho Books'}
+                      {syncChangeDetailsView === 'vendors' && 'Vendors synced'}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-2">
+                    {syncChangeDetailsView === 'inserted' && (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          These materials were added to your catalog from Zoho Books. Fields set: Name, Category, Prices, Length/Unit, Metadata.
+                        </p>
+                        <ul className="space-y-1.5 text-sm">
+                          {(syncResults.insertedItems || []).map((row: { sku: string; name: string }, idx: number) => (
+                            <li key={idx} className="flex items-center gap-2 py-1 border-b border-slate-100">
+                              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <span className="font-medium text-slate-900">{row.name}</span>
+                              <span className="text-muted-foreground">({row.sku})</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {syncResults.itemsInserted > (syncResults.insertedItems?.length || 0) && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            … and {syncResults.itemsInserted - (syncResults.insertedItems?.length || 0)} more (list capped at 500).
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {syncChangeDetailsView === 'updated' && (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          These materials were updated from Zoho Books. Updated fields: Name, Category, unit_price, purchase_cost, Length/Unit, Metadata.
+                        </p>
+                        <ul className="space-y-1.5 text-sm">
+                          {(syncResults.updatedItems || []).map((row: { sku: string; name: string }, idx: number) => (
+                            <li key={idx} className="flex items-center gap-2 py-1 border-b border-slate-100">
+                              <RefreshCw className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                              <span className="font-medium text-slate-900">{row.name}</span>
+                              <span className="text-muted-foreground">({row.sku})</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {syncResults.itemsUpdated > (syncResults.updatedItems?.length || 0) && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            … and {syncResults.itemsUpdated - (syncResults.updatedItems?.length || 0)} more (list capped at 500).
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {syncChangeDetailsView === 'vendors' && (
+                      <p className="text-sm text-slate-700">
+                        Vendor names and contact information (contact person, phone, email) were synced from Zoho Books. 
+                        A total of <strong>{syncResults.vendorsSynced}</strong> vendor{syncResults.vendorsSynced !== 1 ? 's' : ''} were updated in your database.
+                        The sync does not return a per-vendor list; you can review vendors in your Vendors or Zoho settings.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex justify-end pt-3 border-t">
+                    <Button onClick={() => setSyncChangeDetailsView(null)}>Close</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
               {/* Info Box */}
               <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">

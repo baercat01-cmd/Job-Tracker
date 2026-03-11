@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useMaterialsToolbarSlot } from '@/contexts/JobDetailMaterialsToolbarContext';
 
 // Module-level cache: survives component unmount/remount (e.g. tab switches).
@@ -246,6 +247,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Export XLSX state
   const [exportingXLSX, setExportingXLSX] = useState(false);
   const [syncResults, setSyncResults] = useState<any>(null);
+  const [syncChangeDetailsView, setSyncChangeDetailsView] = useState<'inserted' | 'updated' | 'vendors' | null>(null);
+  const [refreshingWorkbookPrices, setRefreshingWorkbookPrices] = useState(false);
 
   // Load job quotes (proposals) so we can scope materials per proposal
   useEffect(() => {
@@ -382,20 +385,24 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   /**
-   * For items that have a SKU but are missing cost_per_unit or price_per_unit,
-   * fetch materials_catalog and merge cost/price into the items in memory.
-   * Used so the first paint shows cost/price without waiting for DB backfill.
+   * For items that have a SKU but are missing cost_per_unit, price_per_unit, or length,
+   * fetch materials_catalog and merge cost/price/length (part_length from books) into the items in memory.
+   * Used so the first paint shows cost/price/length without waiting for DB backfill.
    */
   async function enrichItemsWithCatalogPrices(items: any[]): Promise<any[]> {
-    const needsPrice = items.filter(
-      (i: any) => i.sku && (i.cost_per_unit == null || i.price_per_unit == null)
+    const needsEnrich = items.filter(
+      (i: any) => i.sku && (
+        i.cost_per_unit == null ||
+        i.price_per_unit == null ||
+        (i.length == null || i.length === '')
+      )
     );
-    if (needsPrice.length === 0) return items;
+    if (needsEnrich.length === 0) return items;
 
-    const skus = [...new Set(needsPrice.map((i: any) => i.sku as string))];
+    const skus = [...new Set(needsEnrich.map((i: any) => i.sku as string))];
     const { data: catalogRows } = await supabase
       .from('materials_catalog')
-      .select('sku, purchase_cost, unit_price')
+      .select('sku, purchase_cost, unit_price, part_length')
       .in('sku', skus);
 
     if (!catalogRows || catalogRows.length === 0) return items;
@@ -409,7 +416,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
       const cost = Number(cat.purchase_cost) || 0;
       const price = Number(cat.unit_price) || 0;
-      if (cost === 0 && price === 0) return item;
+      const rawPartLength = cat.part_length != null && String(cat.part_length).trim() !== '' ? String(cat.part_length).trim() : null;
+      const unitOnly = /^(pcs|pc|bag|bags|lf|ft|piece|pieces|ea|each|units?|linear\s*ft)$/i;
+      const catalogLength = rawPartLength && !unitOnly.test(rawPartLength) ? rawPartLength : null;
+      if (cost === 0 && price === 0 && !catalogLength) return item;
 
       const safeCost = cost > 0 ? Math.round(cost * 10000) / 10000 : null;
       const safePrice = price > 0 ? Math.round(price * 10000) / 10000 : null;
@@ -418,9 +428,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           ? Math.round(((safePrice - safeCost) / safeCost) * 100 * 10000) / 10000
           : null;
       const qty = Number(item.quantity) || 1;
+      const rawItemLength = (item.length != null && item.length !== '') ? String(item.length).trim() : null;
+      const itemLengthIsUnit = rawItemLength && unitOnly.test(rawItemLength);
+      const mergedLength = !itemLengthIsUnit && rawItemLength ? rawItemLength : catalogLength;
 
       return {
         ...item,
+        length: mergedLength ?? null,
         cost_per_unit: item.cost_per_unit == null ? safeCost : item.cost_per_unit,
         price_per_unit: item.price_per_unit == null ? safePrice : item.price_per_unit,
         markup_percent: item.markup_percent == null ? safeMarkup : item.markup_percent,
@@ -499,6 +513,71 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     } catch (err) {
       // Non-critical — log but don't surface to the user
       console.warn('backfillMissingPricesFromCatalog error:', err);
+    }
+  }
+
+  /** Refresh cost/price/length for all material_items in the current workbook from materials_catalog (Zoho Books source). */
+  async function refreshWorkbookPricesFromCatalog() {
+    if (!workbook?.sheets?.length) return;
+    setRefreshingWorkbookPrices(true);
+    try {
+      const allItems: any[] = workbook.sheets.flatMap((s: any) => (s.items || []).filter((i: any) => i.sku));
+      if (allItems.length === 0) {
+        toast.info('No materials with SKUs in this workbook to refresh.');
+        return;
+      }
+      const skus = [...new Set(allItems.map((i: any) => i.sku as string))];
+      const { data: catalogRows } = await supabase
+        .from('materials_catalog')
+        .select('sku, purchase_cost, unit_price, part_length')
+        .in('sku', skus);
+      if (!catalogRows?.length) {
+        toast.warning('No catalog data found for these SKUs. Sync from Zoho Books first.');
+        return;
+      }
+      const unitOnly = /^(pcs|pc|bag|bags|lf|ft|piece|pieces|ea|each|units?|linear\s*ft)$/i;
+      const catalogMap = new Map(catalogRows.map((r: any) => [
+        r.sku,
+        {
+          cost: Number(r.purchase_cost) || 0,
+          price: Number(r.unit_price) || 0,
+          length: r.part_length != null && String(r.part_length).trim() !== '' && !unitOnly.test(String(r.part_length).trim())
+            ? String(r.part_length).trim()
+            : null,
+        },
+      ]));
+      let updated = 0;
+      for (const item of allItems) {
+        const cat = catalogMap.get(item.sku);
+        if (!cat || (cat.cost === 0 && cat.price === 0)) continue;
+        const qty = Number(item.quantity) || 1;
+        const safeCost = cat.cost > 0 ? Math.round(cat.cost * 10000) / 10000 : null;
+        const safePrice = cat.price > 0 ? Math.round(cat.price * 10000) / 10000 : null;
+        const safeMarkup = safeCost && safePrice && safeCost > 0
+          ? Math.round(((safePrice - safeCost) / safeCost) * 100 * 10000) / 10000
+          : null;
+        const updatePayload: Record<string, unknown> = {
+          cost_per_unit: safeCost,
+          price_per_unit: safePrice,
+          markup_percent: safeMarkup,
+          extended_cost: safeCost != null ? Math.round(safeCost * qty * 10000) / 10000 : null,
+          extended_price: safePrice != null ? Math.round(safePrice * qty * 10000) / 10000 : null,
+          updated_at: new Date().toISOString(),
+        };
+        if (cat.length != null) updatePayload.length = cat.length;
+        const { error } = await supabase.from('material_items').update(updatePayload).eq('id', item.id);
+        if (!error) updated++;
+      }
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+      await loadWorkbook(true);
+      toast.success(`Refreshed prices from catalog for ${updated} material(s) in this workbook.`);
+    } catch (err: any) {
+      console.error('refreshWorkbookPricesFromCatalog error:', err);
+      toast.error(err?.message || 'Failed to refresh prices from catalog.');
+    } finally {
+      setRefreshingWorkbookPrices(false);
     }
   }
 
@@ -1049,6 +1128,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
       if (['quantity', 'cost_per_unit', 'price_per_unit'].includes(field)) {
         value = parseFloat(cellValue) || null;
+      } else if (field === 'usage' || field === 'length' || field === 'color') {
+        value = (typeof cellValue === 'string' ? cellValue.trim() : cellValue) || null;
       } else if (field === 'markup_percent') {
         const percentValue = parseFloat(cellValue);
         if (isNaN(percentValue)) {
@@ -1546,7 +1627,18 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         body: { action: 'sync_materials' },
       });
 
-      if (error) throw error;
+      if (error) {
+        let message = error.message;
+        if (error instanceof FunctionsHttpError && error.context) {
+          try {
+            const body = await error.context.json();
+            if (body?.error) message = body.details ? `${body.error}: ${body.details}` : body.error;
+          } catch {
+            try { message = await error.context.text() || message; } catch { /* keep message */ }
+          }
+        }
+        throw new Error(message);
+      }
 
       console.log('✅ Sync completed:', data);
       
@@ -1559,7 +1651,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       toast.success(`✅ Synced ${data.itemsSynced || 0} materials from Zoho Books`);
     } catch (error: any) {
       console.error('❌ Sync error:', error);
-      toast.error(`Failed to sync materials: ${error.message || 'Unknown error'}`);
+      toast.error(`Failed to sync materials: ${error?.message || 'Unknown error'}`);
     } finally {
       setSyncingZoho(false);
     }
@@ -1961,6 +2053,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             <Download className="w-3 h-3 mr-0.5" />
             {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
           </Button>
+          <Button onClick={refreshWorkbookPricesFromCatalog} size="sm" variant="outline"
+            disabled={refreshingWorkbookPrices}
+            className="h-7 text-xs whitespace-nowrap px-2 bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+            title="Update cost and price for all materials in this workbook from the catalog (Zoho Books).">
+            {refreshingWorkbookPrices ? (
+              <><div className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mr-0.5" />Refreshing…</>
+            ) : (
+              <><RefreshCw className="w-3 h-3 mr-0.5" />Refresh prices</>
+            )}
+          </Button>
           <Button onClick={() => openAddDialog()} size="sm"
             className="h-7 text-xs gradient-primary whitespace-nowrap px-2">
             <Plus className="w-3 h-3 mr-0.5" />Add Material
@@ -2224,9 +2326,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-16 max-w-[4rem]">Pkg</th>
                             <th className="text-left p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap">SKU</th>
                             <th className="text-left p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
-                            <th className="text-left p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
-                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-10">Qty</th>
+                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-12">Usage</th>
                             <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-12">Length</th>
+                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-10">Qty</th>
                             <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-14">Color</th>
                             <th className="text-right p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-14">Cost/Unit</th>
                             <th className="text-center p-0.5 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-12">Markup %</th>
@@ -2240,7 +2342,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                           {categoryGroups.map((catGroup, catIndex) => (
                             <>
                               <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y border-indigo-300">
-                                <td colSpan={packageSelectionMode ? 13 : 12} className="p-1">
+                                <td colSpan={packageSelectionMode ? 14 : 13} className="p-1">
                                   <div className="flex items-center justify-between flex-wrap gap-1">
                                     <div className="flex items-center gap-1">
                                       <FileSpreadsheet className="w-3 h-3 text-indigo-700" />
@@ -2422,14 +2524,43 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-6 text-xs"
+                                          className="h-6 text-xs text-center"
+                                          placeholder="pcs, Bag, etc."
                                         />
                                       ) : (
                                         <div
-                                          onClick={() => startCellEdit(item.id, 'usage', item.usage)}
-                                          className="text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
+                                          onClick={() => startCellEdit(item.id, 'usage', item.usage ?? '')}
+                                          className="text-center text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
-                                          {item.usage || '-'}
+                                          {item.usage || '–'}
+                                        </div>
+                                      )}
+                                    </td>
+
+                                    <td className="p-1 border-r whitespace-nowrap">
+                                      {isEditingThisCell('length') ? (
+                                        <Input
+                                          value={cellValue}
+                                          onChange={(e) => setCellValue(e.target.value)}
+                                          onBlur={() => saveCellEdit(item)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') saveCellEdit(item);
+                                            if (e.key === 'Escape') cancelCellEdit();
+                                          }}
+                                          autoFocus
+                                          className="h-6 text-xs text-center"
+                                        />
+                                      ) : (
+                                        <div
+                                          onClick={() => startCellEdit(item.id, 'length', item.length)}
+                                          className="text-center text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
+                                        >
+                                          {(() => {
+                                            const raw = item.length != null && item.length !== '' ? String(item.length).trim() : '';
+                                            const unitLike = /^(pcs|pc|bag|bags|lf|ft|piece|pieces|ea|each|units?|linear\s*ft)$/i;
+                                            const isLength = raw && !unitLike.test(raw);
+                                            return isLength ? raw : '-';
+                                          })()}
                                         </div>
                                       )}
                                     </td>
@@ -2455,29 +2586,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                           className="text-center font-semibold text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
                                           {item.quantity}
-                                        </div>
-                                      )}
-                                    </td>
-
-                                    <td className="p-1 border-r whitespace-nowrap">
-                                      {isEditingThisCell('length') ? (
-                                        <Input
-                                          value={cellValue}
-                                          onChange={(e) => setCellValue(e.target.value)}
-                                          onBlur={() => saveCellEdit(item)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') saveCellEdit(item);
-                                            if (e.key === 'Escape') cancelCellEdit();
-                                          }}
-                                          autoFocus
-                                          className="h-6 text-xs text-center"
-                                        />
-                                      ) : (
-                                        <div
-                                          onClick={() => startCellEdit(item.id, 'length', item.length)}
-                                          className="text-center text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
-                                        >
-                                          {item.length || '-'}
                                         </div>
                                       )}
                                     </td>
@@ -3740,32 +3848,115 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               {/* What Changed */}
               <div className="border-2 rounded-lg p-4">
                 <h4 className="font-semibold text-slate-900 mb-3">What Changed?</h4>
+                <p className="text-xs text-muted-foreground mb-2">Click a line to see what was changed.</p>
                 <div className="space-y-2 text-sm">
                   {syncResults.itemsInserted > 0 && (
-                    <div className="flex items-center gap-2 text-green-700">
-                      <CheckCircle className="w-4 h-4" />
+                    <button
+                      type="button"
+                      onClick={() => setSyncChangeDetailsView('inserted')}
+                      className="w-full flex items-center gap-2 text-green-700 hover:bg-green-50 rounded p-2 -m-2 text-left transition-colors cursor-pointer"
+                    >
+                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
                       <span><strong>{syncResults.itemsInserted}</strong> new material{syncResults.itemsInserted !== 1 ? 's' : ''} added to catalog</span>
-                    </div>
+                      <span className="text-green-500 ml-1">View details →</span>
+                    </button>
                   )}
                   {syncResults.itemsUpdated > 0 && (
-                    <div className="flex items-start gap-2 text-orange-700">
+                    <button
+                      type="button"
+                      onClick={() => setSyncChangeDetailsView('updated')}
+                      className="w-full flex items-start gap-2 text-orange-700 hover:bg-orange-50 rounded p-2 -m-2 text-left transition-colors cursor-pointer"
+                    >
                       <RefreshCw className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                      <div>
+                      <div className="flex-1">
                         <div><strong>{syncResults.itemsUpdated}</strong> material{syncResults.itemsUpdated !== 1 ? 's' : ''} updated with latest Zoho Books data</div>
                         <div className="text-xs text-orange-600 mt-1">
                           ℹ️ Updated fields: Name, Category, Prices (unit_price, purchase_cost), Length/Unit, and Metadata
                         </div>
+                        <span className="text-orange-500 text-xs mt-1 inline-block">View list →</span>
                       </div>
-                    </div>
+                    </button>
                   )}
                   {syncResults.vendorsSynced > 0 && (
-                    <div className="flex items-center gap-2 text-blue-700">
-                      <CheckCircle className="w-4 h-4" />
+                    <button
+                      type="button"
+                      onClick={() => setSyncChangeDetailsView('vendors')}
+                      className="w-full flex items-center gap-2 text-blue-700 hover:bg-blue-50 rounded p-2 -m-2 text-left transition-colors cursor-pointer"
+                    >
+                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
                       <span><strong>{syncResults.vendorsSynced}</strong> vendor{syncResults.vendorsSynced !== 1 ? 's' : ''} synced</span>
-                    </div>
+                      <span className="text-blue-500 ml-1">View details →</span>
+                    </button>
                   )}
                 </div>
               </div>
+
+              {/* What Changed — details dialog */}
+              <Dialog open={syncChangeDetailsView !== null} onOpenChange={(open) => !open && setSyncChangeDetailsView(null)}>
+                <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {syncChangeDetailsView === 'inserted' && 'New materials added to catalog'}
+                      {syncChangeDetailsView === 'updated' && 'Materials updated from Zoho Books'}
+                      {syncChangeDetailsView === 'vendors' && 'Vendors synced'}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-2">
+                    {syncChangeDetailsView === 'inserted' && (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          These materials were added to your catalog from Zoho Books. Fields set: Name, Category, Prices, Length/Unit, Metadata.
+                        </p>
+                        <ul className="space-y-1.5 text-sm">
+                          {(syncResults.insertedItems || []).map((row: { sku: string; name: string }, idx: number) => (
+                            <li key={idx} className="flex items-center gap-2 py-1 border-b border-slate-100">
+                              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <span className="font-medium text-slate-900">{row.name}</span>
+                              <span className="text-muted-foreground">({row.sku})</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {syncResults.itemsInserted > (syncResults.insertedItems?.length || 0) && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            … and {syncResults.itemsInserted - (syncResults.insertedItems?.length || 0)} more (list capped at 500).
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {syncChangeDetailsView === 'updated' && (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          These materials were updated from Zoho Books. Updated fields: Name, Category, unit_price, purchase_cost, Length/Unit, Metadata.
+                        </p>
+                        <ul className="space-y-1.5 text-sm">
+                          {(syncResults.updatedItems || []).map((row: { sku: string; name: string }, idx: number) => (
+                            <li key={idx} className="flex items-center gap-2 py-1 border-b border-slate-100">
+                              <RefreshCw className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                              <span className="font-medium text-slate-900">{row.name}</span>
+                              <span className="text-muted-foreground">({row.sku})</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {syncResults.itemsUpdated > (syncResults.updatedItems?.length || 0) && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            … and {syncResults.itemsUpdated - (syncResults.updatedItems?.length || 0)} more (list capped at 500).
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {syncChangeDetailsView === 'vendors' && (
+                      <p className="text-sm text-slate-700">
+                        Vendor names and contact information (contact person, phone, email) were synced from Zoho Books. 
+                        A total of <strong>{syncResults.vendorsSynced}</strong> vendor{syncResults.vendorsSynced !== 1 ? 's' : ''} were updated in your database.
+                        The sync does not return a per-vendor list; you can review vendors in your Vendors or Zoho settings.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex justify-end pt-3 border-t">
+                    <Button onClick={() => setSyncChangeDetailsView(null)}>Close</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
               {/* Info Box */}
               <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">

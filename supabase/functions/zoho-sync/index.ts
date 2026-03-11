@@ -139,6 +139,10 @@ serve(async (req) => {
         const items = await fetchZohoItems(accessToken, settings.countywide_org_id);
         console.log(`✅ Fetched ${items.length} items from Zoho`);
 
+        // Fetch chart of accounts so we can resolve account_id -> account_name for category
+        const accountIdToName = await fetchChartOfAccounts(accessToken, settings.countywide_org_id);
+        console.log(`✅ Loaded ${accountIdToName.size} accounts for category lookup`);
+
         // Sync vendors to database
         let vendorsSynced = 0;
         for (const vendor of vendors) {
@@ -161,7 +165,11 @@ serve(async (req) => {
         let itemsInserted = 0;
         let itemsSkipped = 0;
         const skippedItems: string[] = [];
-        
+        const insertedItems: { sku: string; name: string }[] = [];
+        const updatedItems: { sku: string; name: string }[] = [];
+        const MAX_CHANGE_LIST = 500;
+        const needPartLength: { sku: string; item_id: string }[] = [];
+
         for (const item of items) {
           // Extract SKU first
           const sku = 
@@ -216,14 +224,20 @@ serve(async (req) => {
           if (unitPrice === 0 && purchaseCost === 0) {
             console.warn(`⚠️ WARNING: Both prices are $0.00 for ${sku} - check Zoho field names!`);
           }
-          
+
+          // Part length must come from the material (e.g. custom field "Part Length"), NOT from usage unit (pcs, Bag, etc.)
+          let partLength = getPartLengthFromZohoItem(item);
+          if (!partLength && (item.item_id || item.id)) {
+            needPartLength.push({ sku: String(sku), item_id: String(item.item_id || item.id) });
+          }
+
           const materialData = {
             sku: sku,
             material_name: item.name || 'Unknown Material',
-            category: item.category || item.item_type || 'General',
+            category: getCategoryFromZohoItem(item, accountIdToName),
             unit_price: unitPrice,
             purchase_cost: purchaseCost,
-            part_length: item.unit || null,
+            part_length: partLength,
             raw_metadata: item, // Store full Zoho data
             updated_at: new Date().toISOString(),
           };
@@ -260,6 +274,7 @@ serve(async (req) => {
 
             if (!updateError) {
               itemsUpdated++;
+              if (updatedItems.length < MAX_CHANGE_LIST) updatedItems.push({ sku, name: materialData.material_name });
               const priceChanged = existing.unit_price !== materialData.unit_price || existing.purchase_cost !== materialData.purchase_cost;
               console.log(`✅ Updated ${sku} ${priceChanged ? '(PRICES CHANGED)' : '(no price change)'} - Name: ${materialData.material_name}, Price: $${materialData.unit_price}, Cost: $${materialData.purchase_cost}`);
             } else {
@@ -278,11 +293,38 @@ serve(async (req) => {
             if (!insertError) {
               itemsInserted++;
               itemsSynced++;
+              if (insertedItems.length < MAX_CHANGE_LIST) insertedItems.push({ sku, name: materialData.material_name });
               console.log(`✅ Inserted new material ${sku}`);
             } else {
               console.error(`❌ Failed to insert material ${sku}:`, insertError);
             }
           }
+        }
+
+        // For items missing Part Length from list response, fetch full item details (includes custom_fields)
+        const MAX_FETCH_PART_LENGTH = 250;
+        let partLengthFetched = 0;
+        for (const { sku: fetchSku, item_id: itemId } of needPartLength.slice(0, MAX_FETCH_PART_LENGTH)) {
+          try {
+            const fullItem = await fetchZohoItemDetails(accessToken, settings.countywide_org_id, itemId);
+            if (!fullItem) continue;
+            const pl = getPartLengthFromZohoItem(fullItem);
+            const categoryFromFull = getCategoryFromZohoItem(fullItem, accountIdToName);
+            const updates: { part_length?: string; category?: string; updated_at: string } = { updated_at: new Date().toISOString() };
+            if (pl) updates.part_length = pl;
+            if (categoryFromFull && categoryFromFull !== 'General') updates.category = categoryFromFull;
+            if (!updates.part_length && !updates.category) continue;
+            const { error: upErr } = await supabase
+              .from('materials_catalog')
+              .update(updates)
+              .eq('sku', fetchSku);
+            if (!upErr) partLengthFetched++;
+          } catch (e) {
+            console.warn(`Part length fetch for ${fetchSku}:`, (e as Error).message);
+          }
+        }
+        if (partLengthFetched > 0) {
+          console.log(`📐 Fetched Part Length for ${partLengthFetched} materials via Get Item API`);
         }
 
         console.log(`📊 Sync Summary:`);
@@ -315,6 +357,8 @@ serve(async (req) => {
             itemsUpdated,
             itemsSkipped,
             skippedItems,
+            insertedItems,
+            updatedItems,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -707,10 +751,15 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('❌ Zoho sync error:', error);
+    const details = error?.message || String(error);
+    const isAuthError = /token|refresh|unauthorized|invalid_grant|expired|credentials/i.test(details);
+    const errorMessage = isAuthError
+      ? 'Zoho authentication failed. Check your Zoho Books credentials and re-authorize in Settings.'
+      : 'Zoho sync failed';
     return new Response(
-      JSON.stringify({ 
-        error: 'Zoho sync failed', 
-        details: error.message 
+      JSON.stringify({
+        error: errorMessage,
+        details: details,
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -801,6 +850,103 @@ async function fetchZohoVendors(accessToken: string, orgId: string): Promise<any
 
   const data = await response.json();
   return data.contacts || [];
+}
+
+/** Fetch chart of accounts and return map of account_id -> account_name for category lookup. */
+async function fetchChartOfAccounts(accessToken: string, orgId: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  let page = 1;
+  let hasMore = true;
+  while (hasMore) {
+    const url = `https://www.zohoapis.com/books/v3/chartofaccounts?organization_id=${orgId}&page=${page}&per_page=200`;
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}` },
+    });
+    if (!res.ok) {
+      console.warn('⚠️ Chart of accounts fetch failed:', res.status);
+      break;
+    }
+    const data = await res.json();
+    const accounts = data.chartofaccounts || data.accounts || [];
+    for (const acc of accounts) {
+      const id = acc.account_id;
+      const name = acc.account_name;
+      if (id && name) map.set(String(id), String(name));
+    }
+    hasMore = data.page_context?.has_more_page === true;
+    page++;
+    if (page > 50) break;
+  }
+  return map;
+}
+
+/** Category from Zoho item: use account info (e.g. "Lumber Sales") and normalize to drop " Sales". Resolve account_id via chart of accounts when provided. */
+function getCategoryFromZohoItem(item: any, accountIdToName?: Map<string, string>): string {
+  let raw = item.account_name || item.account || item.sales_account_name || '';
+  if (!raw && item.account_id && accountIdToName) {
+    raw = accountIdToName.get(String(item.account_id)) || '';
+  }
+  raw = raw || item.category || item.item_type || '';
+  let category = String(raw).trim();
+  if (!category) return 'General';
+  // Prefer account-based over generic item_type; normalize "Lumber Sales" -> "Lumber"
+  category = category.replace(/\s*Sales\s*$/i, '').trim();
+  if (!category || /^(sales|purchases|sales_and_purchases|inventory)$/i.test(category)) {
+    category = item.category || item.item_type || 'General';
+    category = String(category).replace(/\s*Sales\s*$/i, '').trim() || category;
+  }
+  return category || 'General';
+}
+
+/** Extract part length from a Zoho Books item. Must NOT use usage unit (pcs, Bag, etc.) — only actual length from custom fields or item fields. */
+function getPartLengthFromZohoItem(item: any): string | null {
+  const unitLike = /^(pcs|pc|bag|bags|lf|ft|piece|pieces|ea|each|units?|linear\s*ft)$/i;
+  const looksLikeLength = (v: string) => v && String(v).trim() !== '' && /[\d'"\sft\.\-]/.test(String(v)) && !unitLike.test(String(v).trim());
+
+  const accept = (v: unknown): string | null => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    return s !== '' && !unitLike.test(s) ? s : null;
+  };
+
+  // Top-level fields (some APIs expose custom fields as item["Part Length"])
+  if (accept(item.part_length)) return accept(item.part_length);
+  if (accept(item.length)) return accept(item.length);
+  const partLengthKey = Object.keys(item || {}).find((k) => /part\s*length/i.test(k));
+  if (partLengthKey && accept(item[partLengthKey])) return accept(item[partLengthKey]);
+  if (item['Part Length'] != null && accept(item['Part Length'])) return accept(item['Part Length']);
+
+  // custom_fields array (may have label, name, or only value)
+  const customFields = item.custom_fields || [];
+  for (const cf of customFields) {
+    const label = String(cf.label || cf.name || '').trim().toLowerCase();
+    const value = cf.value != null ? String(cf.value).trim() : '';
+    if (!value) continue;
+    if (label === 'part length' || label === 'partlength') return unitLike.test(value) ? null : value;
+    if (looksLikeLength(value)) return value;
+  }
+  // If only one custom field and it looks like a length, use it (API often omits label in list)
+  if (customFields.length === 1 && customFields[0].value != null) {
+    const v = String(customFields[0].value).trim();
+    if (looksLikeLength(v)) return v;
+  }
+  // Any custom field value that is a plain number (e.g. "14") — treat as part length
+  for (const cf of customFields) {
+    const value = cf.value != null ? String(cf.value).trim() : '';
+    if (value && /^\d+(\.\d+)?$/.test(value) && !unitLike.test(value)) return value;
+  }
+  return null;
+}
+
+/** Fetch full item details from Zoho (includes custom_fields). Use when list response omits them. */
+async function fetchZohoItemDetails(accessToken: string, orgId: string, itemId: string): Promise<any> {
+  const url = `https://www.zohoapis.com/books/v3/items/${itemId}?organization_id=${orgId}`;
+  const res = await fetch(url, {
+    headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}` },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.item || null;
 }
 
 async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]> {

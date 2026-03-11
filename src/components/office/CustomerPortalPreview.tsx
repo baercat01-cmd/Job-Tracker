@@ -6,6 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   Building2, 
   MapPin, 
@@ -165,11 +172,16 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
 // Job Detail Preview Component - Shows individual job with all tabs
 function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
   const [activeTab, setActiveTab] = useState('overview');
-  const { payments, documents, photos, scheduleEvents, proposalData, quote, viewerLinks = [] } = jobData;
+  const jobQuotes = jobData.jobQuotes || (jobData.quote ? [jobData.quote] : []);
+  const proposalDataByQuoteId = jobData.proposalDataByQuoteId || {};
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(jobData.quote?.id ?? jobQuotes[0]?.id ?? null);
+  const selectedQuote = jobQuotes.find((q: any) => q.id === selectedQuoteId) ?? jobData.quote ?? jobQuotes[0];
+  const proposalData = (selectedQuoteId && proposalDataByQuoteId[selectedQuoteId]) ? proposalDataByQuoteId[selectedQuoteId] : jobData.proposalData;
+  const { payments, documents, photos, scheduleEvents, viewerLinks = [] } = jobData;
   const totalPaid = payments?.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0) || 0;
   const balance = (proposalData?.totals?.grandTotal || 0) - totalPaid;
-  const isSignedContract = quote?.status === 'accepted' || quote?.status === 'signed';
-  const proposalNumber = quote?.proposal_number || quote?.quote_number || 'N/A';
+  const isSignedContract = selectedQuote?.status === 'accepted' || selectedQuote?.status === 'signed';
+  const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
 
   // Filter tabs: no separate Proposal tab – proposal is on Overview
   const visibleTabs = [
@@ -193,9 +205,24 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
               <div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-3xl font-bold text-amber-400">{jobData.name}</h1>
-                  <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-500/50">
-                    #{proposalNumber}
-                  </Badge>
+                  {jobQuotes.length > 1 ? (
+                    <Select value={selectedQuoteId ?? ''} onValueChange={(v) => setSelectedQuoteId(v || null)}>
+                      <SelectTrigger className="w-[180px] bg-amber-500/10 border-amber-500/50 text-amber-200">
+                        <SelectValue placeholder="Select proposal" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {jobQuotes.map((q: any) => (
+                          <SelectItem key={q.id} value={q.id}>
+                            Proposal #{q.proposal_number || q.quote_number || q.id.slice(0, 8)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-500/50">
+                      #{proposalNumber}
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-emerald-100/90 mt-1">{jobData.client_name}</p>
                 {jobData.address && (

@@ -438,21 +438,70 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
 
           <CollapsibleContent>
             <div className="mt-2 ml-2 space-y-3">
-              {/* Material Items by Category */}
-              {sheet.categories && sheet.categories.length > 0 && (
+              {/* Material Items by Category (only required; optional categories appear in Options section below) */}
+              {(() => {
+                const requiredCategories = (sheet.categories || []).filter(
+                  (cat: any) => !(cat.items?.every((i: any) => i.isOptional) ?? false)
+                );
+                return requiredCategories.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Material Items</p>
-                  {sheet.categories.map((category: any, catIdx: number) => {
+                  {requiredCategories.map((category: any, catIdx: number) => {
                     const categoryKey = `${sheet.sheetId}_${category.name}`;
                     const categoryMarkup = categoryMarkups[categoryKey] ?? (sheet.markup_percent || 10);
                     const categoryPriceWithMarkup = category.totalCost * (1 + categoryMarkup / 100);
                     
+                    const categoryIsOptional = category.items?.every((i: any) => i.isOptional) ?? false;
                     return (
-                      <div key={catIdx} className="bg-slate-50 border border-slate-200 rounded p-2">
+                      <div key={catIdx} className={`bg-slate-50 border rounded p-2 ${categoryIsOptional ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200'}`}>
                         <div className="flex items-center justify-between">
-                          <div className="flex-1">
+                          <div className="flex-1 flex items-center gap-2 flex-wrap">
                             <p className="text-xs font-semibold text-slate-900">{category.name}</p>
                             <p className="text-xs text-slate-600">{category.itemCount} items</p>
+                            {categoryIsOptional && (
+                              <Badge variant="outline" className="text-amber-700 border-amber-400 bg-amber-50">Option</Badge>
+                            )}
+                            {!isReadOnly && (() => {
+                              const handleOptionToggle = async (value: boolean) => {
+                                const key = `${sheet.sheetId}_${category.name}`;
+                                setOptionalCategoryOverlay(prev => ({ ...prev, [key]: value }));
+                                await loadMaterialsData(quote?.id ?? null, !!isReadOnly, { [key]: value });
+                                try {
+                                  const { error } = await supabase
+                                    .from('material_category_options')
+                                    .upsert(
+                                      { sheet_id: sheet.sheetId, category_name: category.name, is_optional: value },
+                                      { onConflict: 'sheet_id,category_name' }
+                                    );
+                                  if (error) throw error;
+                                  toast.success(value ? 'Section marked as option' : 'Section included in contract');
+                                } catch {
+                                  toast.info('Option saved locally');
+                                }
+                              };
+                              return (
+                                <div
+                                  role="button"
+                                  tabIndex={0}
+                                  className="flex items-center gap-1.5 cursor-pointer text-slate-600 ml-auto sm:ml-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if ((e.target as HTMLElement).closest?.('button[role="checkbox"]')) return;
+                                    handleOptionToggle(!categoryIsOptional);
+                                  }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOptionToggle(!categoryIsOptional); } }}
+                                >
+                                  <span className="pointer-events-none">
+                                    <Checkbox
+                                      checked={categoryIsOptional}
+                                      onCheckedChange={(checked) => handleOptionToggle(!!checked)}
+                                      className="pointer-events-auto"
+                                    />
+                                  </span>
+                                  <span className="text-xs">Option</span>
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div className="flex items-center gap-3 text-xs">
                             <div className="text-right">
@@ -540,7 +589,8 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                     );
                   })}
                 </div>
-              )}
+              );
+              })()}
 
               {linkedRows.length > 0 && (
                 <div className="space-y-1">
@@ -2031,6 +2081,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
   const [showProposalComparison, setShowProposalComparison] = useState(false);
+  // Local overlay for optional categories when DB save fails (key = sheetId_categoryName)
+  const [optionalCategoryOverlay, setOptionalCategoryOverlay] = useState<Record<string, boolean>>({});
   const [templateQuoteIdForNewProposal, setTemplateQuoteIdForNewProposal] = useState<string | null>(null);
   const [recoveringProposal, setRecoveringProposal] = useState(false);
   const [showMarkAsSentManualDialog, setShowMarkAsSentManualDialog] = useState(false);
@@ -3888,7 +3940,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     return created;
   }
 
-  async function loadMaterialsData(targetQuoteId: string | null = null, isHistorical: boolean = false) {
+  async function loadMaterialsData(targetQuoteId: string | null = null, isHistorical: boolean = false, overlayOverride?: Record<string, boolean>) {
     try {
       // Historical path: serve data from the frozen snapshot only
       if (isHistorical && targetQuoteId) {
@@ -3963,17 +4015,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             categoryMap.get(category)!.push(item);
           });
           
-          // Calculate totals per category
+          // Calculate totals per category (exclude optional line items from totals)
           const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
-            const totalCost = items.reduce((sum, item) => {
-              const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
-              return sum + cost;
-            }, 0);
-            
-            const totalPrice = items.reduce((sum, item) => {
-              const price = (item.price_per_unit || 0) * (item.quantity || 0);
-              return sum + price;
-            }, 0);
+            const totalCost = items
+              .filter((item: any) => !(item.is_optional === true))
+              .reduce((sum, item) => sum + (item.cost_per_unit || 0) * (item.quantity || 0), 0);
+            const totalPrice = items
+              .filter((item: any) => !(item.is_optional === true))
+              .reduce((sum, item) => sum + (item.price_per_unit || 0) * (item.quantity || 0), 0);
             
             const profit = totalPrice - totalCost;
             const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
@@ -3982,6 +4031,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
               name: categoryName,
               itemCount: items.length,
               items: items.map((item: any) => ({
+                id: item.id,
+                isOptional: item.is_optional ?? false,
                 material_name: item.material_name,
                 sku: item.sku,
                 quantity: item.quantity || 0,
@@ -4176,7 +4227,27 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
       // itemsData is still needed for breakdown calculation below — collect from nested sheets
       const itemsData: any[] = sheetsData.flatMap((sheet: any) => sheet.material_items || []);
-      
+
+      // Optional-by-category: from DB and/or local overlay (works even if DB table missing or request fails)
+      const sheetIds = (sheetsData || []).map((s: any) => s.id);
+      let categoryOptionsRows: any[] = [];
+      try {
+        if (sheetIds.length > 0) {
+          const res = await supabase.from('material_category_options').select('sheet_id, category_name, is_optional').in('sheet_id', sheetIds);
+          categoryOptionsRows = res.data || [];
+        }
+      } catch {
+        categoryOptionsRows = [];
+      }
+      const categoryOptionalMap = new Map<string, boolean>();
+      categoryOptionsRows.forEach((r: any) => {
+        categoryOptionalMap.set(`${r.sheet_id}_${r.category_name}`, !!r.is_optional);
+      });
+      const mergedOverlay = { ...optionalCategoryOverlay, ...(overlayOverride || {}) };
+      Object.entries(mergedOverlay).forEach(([key, value]) => {
+        categoryOptionalMap.set(key, value);
+      });
+
       // Calculate breakdown by sheet and category
       const breakdowns = (sheetsData || []).map(sheet => {
         const sheetItems = (itemsData || []).filter(item => item.sheet_id === sheet.id);
@@ -4191,18 +4262,11 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           categoryMap.get(category)!.push(item);
         });
 
-        // Calculate totals per category (cost only, price will use category markups)
+        // Calculate totals per category (exclude optional categories from totals)
         const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
-          const totalCost = items.reduce((sum, item) => {
-            const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
-            return sum + cost;
-          }, 0);
-
-          // Price calculation is now handled in the UI with category-specific markups
-          const totalPrice = items.reduce((sum, item) => {
-            const price = (item.price_per_unit || 0) * (item.quantity || 0);
-            return sum + price;
-          }, 0);
+          const isCategoryOptional = categoryOptionalMap.get(`${sheet.id}_${categoryName}`) === true;
+          const totalCost = isCategoryOptional ? 0 : items.reduce((sum, item) => sum + (item.cost_per_unit || 0) * (item.quantity || 0), 0);
+          const totalPrice = isCategoryOptional ? 0 : items.reduce((sum, item) => sum + (item.price_per_unit || 0) * (item.quantity || 0), 0);
 
           const profit = totalPrice - totalCost;
           const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
@@ -4210,7 +4274,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           return {
             name: categoryName,
             itemCount: items.length,
-            items: items.map(item => ({
+            items: items.map((item: any) => ({
+              id: item.id,
+              isOptional: isCategoryOptional,
               material_name: item.material_name,
               sku: item.sku,
               quantity: item.quantity || 0,
@@ -5676,8 +5742,35 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       });
     };
 
-    // 1) Try RPC — uses EXECUTE format() internally so it works even when PostgREST
-    //    schema cache doesn't expose the tax_exempt column.
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (supabaseUrl) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token ?? '';
+        const res = await fetch(`${supabaseUrl}/functions/v1/set-job-tax-exempt`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ job_id: job.id, quote_id: quote.id, value }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data?.ok) {
+          toast.success(value ? 'Job marked tax exempt for all users.' : 'Tax applied to this proposal.');
+          broadcastSuccess();
+          await loadQuoteData();
+          return;
+        }
+        if (res.status !== 200 || data?.error) {
+          console.warn('Tax exempt Edge Function:', data?.error ?? res.statusText);
+        }
+      } catch (e) {
+        console.warn('Tax exempt Edge Function request failed:', e);
+      }
+    }
+
+    // Fallback 1: RPC (works when PostgREST schema cache has the function)
     const { error: rpcError } = await supabase.rpc('set_quote_tax_exempt', {
       p_job_id: job.id,
       p_quote_id: quote.id,
@@ -5690,7 +5783,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       return;
     }
 
-    // 2) Fallback: direct PostgREST update (works when schema cache exposes tax_exempt)
+    // Fallback 2: direct PostgREST update (works when schema cache exposes tax_exempt)
     const { error: fallbackError } = value
       ? await supabase.from('quotes').update({ tax_exempt: true  }).eq('job_id', job.id)
       : await supabase.from('quotes').update({ tax_exempt: false }).eq('id', quote.id);
@@ -5702,13 +5795,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       return;
     }
 
-    // Both paths failed — UI stays checked (optimistic) but show the actual errors.
+    // All paths failed
     console.warn('Tax exempt save failed. RPC:', rpcError?.message, '| Direct:', fallbackError?.message);
-    const rpcMsg   = rpcError?.message   ?? 'unknown';
+    const rpcMsg = rpcError?.message ?? 'unknown';
     const directMsg = fallbackError?.message ?? 'unknown';
+    const schemaCacheError = /schema cache|Could not find the function|Could not find the.*column/i.test(rpcMsg + directMsg);
     toast.error(
-      `Tax exempt could not be saved.\n\nRPC error: ${rpcMsg}\n\nDirect update error: ${directMsg}`,
-      { duration: 20000 }
+      schemaCacheError
+        ? `Tax exempt could not be saved. Deploy the Edge Function "set-job-tax-exempt" and run scripts/setup-tax-exempt-for-job.sql in Supabase. Optionally add DATABASE_URL secret to the function so it can save when the API schema is stale.`
+        : `Tax exempt could not be saved. RPC: ${rpcMsg}. Direct update: ${directMsg}`,
+      { duration: schemaCacheError ? 12000 : 20000 }
     );
   }
 
@@ -6448,6 +6544,25 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   const allItems = allItemsUnsorted.filter(item => !(item.type === 'material' && (item.data as any).isOptional));
   const optionalItems = allItemsUnsorted.filter(item => item.type === 'material' && (item.data as any).isOptional);
 
+  // Optional categories (section-level options): list for the "Options" block at bottom of proposal
+  const optionalCategoriesList: { sheetName: string; categoryName: string; totalCost: number; priceWithMarkup: number }[] = [];
+  materialsBreakdown.sheetBreakdowns.forEach((sheet: any) => {
+    if (FIELD_REQUEST_NAMES.includes(sheet.sheetName)) return;
+    (sheet.categories || []).forEach((cat: any) => {
+      const isOptional = cat.items?.every((i: any) => i.isOptional) ?? false;
+      if (!isOptional) return;
+      const key = `${sheet.sheetId}_${cat.name}`;
+      const markup = categoryMarkups[key] ?? (sheet.markup_percent ?? 10);
+      const priceWithMarkup = (cat.totalCost || 0) * (1 + markup / 100);
+      optionalCategoriesList.push({
+        sheetName: sheet.sheetName,
+        categoryName: cat.name,
+        totalCost: cat.totalCost || 0,
+        priceWithMarkup,
+      });
+    });
+  });
+
   // Handle drag end
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -6870,7 +6985,32 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                   </SortableContext>
                 </DndContext>
 
-                {/* Optional Items Section */}
+                {/* Optional add-ons (categories marked as option) — at bottom of proposal, excluded from total */}
+                {optionalCategoriesList.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 py-2 px-3 mb-2 rounded-lg bg-amber-50 border border-amber-200">
+                      <span className="text-sm font-semibold text-amber-800 uppercase tracking-wide">Options</span>
+                      <span className="text-xs text-amber-600 font-normal">(not included in contract total)</span>
+                    </div>
+                    <div className="space-y-1">
+                      {optionalCategoriesList.map((opt, idx) => (
+                        <div
+                          key={`${opt.sheetName}-${opt.categoryName}-${idx}`}
+                          className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg border border-amber-200 bg-amber-50/50"
+                        >
+                          <span className="text-sm font-medium text-slate-800">
+                            {opt.sheetName} — {opt.categoryName}
+                          </span>
+                          <span className="text-sm font-semibold text-amber-800">
+                            ${opt.priceWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Optional Items Section (whole sheets marked optional) */}
                 {optionalItems.length > 0 && (
                   <div className="mt-4">
                     <div className="flex items-center gap-2 py-2 px-3 mb-2 rounded-lg bg-amber-50 border border-amber-200">
