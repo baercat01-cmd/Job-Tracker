@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, Settings, Printer, Send, CheckCircle, GitCompare } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, ChevronLeft, ChevronRight, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, Settings, Printer, Send, CheckCircle, GitCompare } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -40,6 +40,7 @@ import { BulkMaterialMover } from './BulkMaterialMover';
 import { ProposalComparisonView } from './ProposalComparisonView';
 import { useProposalToolbar } from '@/contexts/JobDetailProposalToolbarContext';
 import { useProposalSummary } from '@/contexts/ProposalSummaryContext';
+import { useDocumentPanel } from '@/contexts/DocumentPanelContext';
 import type { Job } from '@/types';
 import {
   DndContext,
@@ -807,12 +808,16 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                       <p className="text-xs font-bold text-slate-900">
                         ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
-                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
-                        <Edit className="w-3 h-3" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteSheetLabor(sheetLabor[sheet.sheetId].id)}>
-                        <Trash2 className="w-3 h-3 text-red-600" />
-                      </Button>
+                      {!isReadOnly && (
+                        <>
+                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
+                            <Edit className="w-3 h-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteSheetLabor(sheetLabor[sheet.sheetId].id)}>
+                            <Trash2 className="w-3 h-3 text-red-600" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1933,7 +1938,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
   );
 }
 
-const headerBtn = 'bg-white text-black hover:bg-slate-100 border-slate-400 text-xs h-8';
+const headerBtn = 'bg-white text-black hover:bg-slate-100 border-slate-400 text-xs h-8 px-2';
 
 export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFinancialsProps) {
   const { profile } = useAuth();
@@ -2081,6 +2086,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
   const [showProposalComparison, setShowProposalComparison] = useState(false);
+  const [showDeleteProposalConfirm, setShowDeleteProposalConfirm] = useState(false);
+  const [deleteProposalQuoteId, setDeleteProposalQuoteId] = useState<string | null>(null);
   // Local overlay for optional categories when DB save fails (key = sheetId_categoryName)
   const [optionalCategoryOverlay, setOptionalCategoryOverlay] = useState<Record<string, boolean>>({});
   const [templateQuoteIdForNewProposal, setTemplateQuoteIdForNewProposal] = useState<string | null>(null);
@@ -2116,16 +2123,25 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     if (quote?.id && quote.id !== historicalUnlockedQuoteId) setHistoricalUnlockedQuoteId(null);
   }, [quote?.id]);
 
-  // Default locked: historical (not first) or marked as sent
+  // Default locked: historical (not first), marked as sent, or locked for editing (persisted in DB for all users)
   const isDefaultLocked = !!quote && (
     (allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id) ||
-    !!(quote as any).sent_at
+    !!(quote as any).sent_at ||
+    !!(quote as any).locked_for_editing
   );
-  // Read-only unless user has unlocked this proposal for editing
+  // Read-only when default locked and user hasn't unlocked this historical proposal for editing
   const isReadOnly = isDefaultLocked && quote?.id !== historicalUnlockedQuoteId;
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
+  const documentPanel = useDocumentPanel();
+  const openDocuments = () => {
+    if (documentPanel) {
+      documentPanel.setShowDocumentsInPanel(true);
+    } else {
+      setShowDocumentViewer(true);
+    }
+  };
   const [buildingDescription, setBuildingDescription] = useState((quote as any)?.description ?? '');
   const [editingDescription, setEditingDescription] = useState(false);
   
@@ -2416,80 +2432,88 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }
 
+  /** Set the active (current) proposal as contract. Creates a version first if none exist. */
+  async function setActiveProposalAsContract() {
+    if (!quote || (quote as any).signed_version) return;
+    if (!confirm('Set this proposal as the contract? This will create a signed version that cannot be changed.')) return;
+    try {
+      let versionToSign: any = proposalVersions.find((v: any) => v.version_number === (quote as any).current_version) ?? proposalVersions[0];
+      if (!versionToSign && proposalVersions.length === 0) {
+        const { error } = await supabase.rpc('create_proposal_version', {
+          p_quote_id: quote.id,
+          p_job_id: null,
+          p_user_id: profile?.id || null,
+          p_change_notes: 'Set as contract',
+        });
+        if (error) throw error;
+        const { data: freshVersions } = await supabase.from('proposal_versions').select('*').eq('quote_id', quote.id).order('version_number', { ascending: false });
+        versionToSign = (freshVersions || [])[0];
+      }
+      if (!versionToSign) {
+        toast.error('No version to sign');
+        return;
+      }
+      const { error: signErr } = await supabase
+        .from('proposal_versions')
+        .update({ is_signed: true, signed_at: new Date().toISOString(), signed_by: profile?.id })
+        .eq('id', versionToSign.id);
+      if (signErr) throw signErr;
+      await supabase.from('quotes').update({ signed_version: versionToSign.version_number }).eq('id', quote.id);
+      toast.success('Version signed and locked!');
+      await loadProposalVersions();
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error setting as contract:', error);
+      toast.error(error?.message ?? 'Failed to set as contract');
+    }
+  }
+
   async function markProposalAsSent() {
     if (!quote || !profile) return;
     if ((quote as any).sent_at) {
       toast.info('This proposal is already marked as sent.');
       return;
     }
-    if (!confirm('Mark this proposal as sent? This will lock the proposal and materials and record the date/time. You can still create a new proposal to continue editing.')) return;
+    if (!confirm('Record that this proposal was sent to the customer? The current date and time will be saved so you can see when it was sent and how long it was worked on. The proposal and materials workbook will be locked.')) return;
 
-    const done = async () => {
-      toast.success('Proposal marked as sent. It is now locked with a timestamp.');
+    const onSuccess = async () => {
+      toast.success('Proposal marked as sent. Date and time recorded.');
       await loadQuoteData();
       await loadData(true);
     };
 
     try {
-      // 1) Direct table updates (works when columns exist and API sees them)
       const { error: lockErr } = await supabase
         .from('material_workbooks')
         .update({ status: 'locked', updated_at: new Date().toISOString() })
         .eq('quote_id', quote.id);
-      if (!lockErr) {
-        const { error: updateErr } = await supabase
-          .from('quotes')
-          .update({
-            sent_at: new Date().toISOString(),
-            sent_by: profile.id,
-          })
-          .eq('id', quote.id);
-        if (!updateErr) {
-          await done();
-          return;
-        }
-      }
 
-      // 2) RPC (atomic; works when PostgREST schema cache has the function)
-      const { error: rpcErr } = await supabase.rpc('mark_proposal_as_sent', {
-        p_quote_id: quote.id,
-        p_user_id: profile.id,
-      });
-      if (!rpcErr) {
-        await done();
+      const { error: quoteErr } = await supabase
+        .from('quotes')
+        .update({ sent_at: new Date().toISOString(), sent_by: profile.id })
+        .eq('id', quote.id);
+
+      if (!lockErr && !quoteErr) {
+        await onSuccess();
         return;
       }
 
-      // 3) Edge Function (runs on server with service role; bypasses RLS)
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('mark-proposal-as-sent', {
-        body: { quote_id: quote.id, user_id: profile.id },
-      });
-
-      if (fnData?.ok) {
-        await done();
-        return;
-      }
-
-      // Extract the real error message from the Edge Function response body
-      const fnErrMsg: string =
-        fnData?.error ||
-        fnData?.hint ||
-        fnErr?.message ||
-        rpcErr?.message ||
-        '';
-
-      throw new Error(fnErrMsg || 'Mark as sent failed');
-    } catch (error: any) {
-      console.error('Error marking proposal as sent:', error);
-      const msg = error?.message || '';
-      // Show manual SQL fallback: ensure columns exist, then update (run in Supabase SQL Editor)
       const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
 UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${quote.id}';
 UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote.id}';`;
       setMarkAsSentManualSql(manualSql);
       setShowMarkAsSentManualDialog(true);
-      toast.error(msg || 'Mark as sent failed. Use the dialog below to run the SQL manually.');
+      toast.error('Update failed. Copy the SQL from the dialog and run it in Supabase SQL Editor, then refresh.');
+    } catch (error: any) {
+      console.error('Error marking proposal as sent:', error);
+      const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${quote.id}';
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote.id}';`;
+      setMarkAsSentManualSql(manualSql);
+      setShowMarkAsSentManualDialog(true);
+      toast.error(error?.message || 'Mark as sent failed. Use the dialog to run the SQL manually.');
     }
   }
 
@@ -3632,7 +3656,6 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     setQuote(firstQuote);
     userSelectedQuoteIdRef.current = firstQuote.id;
     await loadData(false, firstQuote);
-    toast.info(`✏️ Viewing first proposal ${firstQuote.proposal_number}`);
   }
 
   async function navigateToPreviousProposal() {
@@ -3645,7 +3668,6 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       userSelectedQuoteIdRef.current = olderQuote.id;
       // Pass olderQuote explicitly — avoids stale closure on quote state
       await loadData(false, olderQuote);
-      toast.info(`📖 Viewing proposal ${olderQuote.proposal_number}`);
     }
   }
 
@@ -3659,13 +3681,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       userSelectedQuoteIdRef.current = newerQuote.id;
       // Pass newerQuote explicitly — avoids stale closure on quote state
       await loadData(false, newerQuote);
-      const isNowCurrent = currentIndex === 1;
-      if (isNowCurrent) {
-        toast.info(`✏️ Viewing current proposal ${newerQuote.proposal_number} - editing enabled`);
-      } else {
-        toast.info(`📖 Viewing proposal ${newerQuote.proposal_number}`);
-      }
     }
+  }
+
+  async function navigateToProposal(selectedQuote: any) {
+    if (!selectedQuote || selectedQuote.id === quote?.id) return;
+    setQuote(selectedQuote);
+    userSelectedQuoteIdRef.current = selectedQuote.id;
+    await loadData(false, selectedQuote);
   }
 
   async function unlockHistoricalForEditing() {
@@ -3680,6 +3703,53 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     setHistoricalUnlockedQuoteId(null);
     setTimeout(() => loadData(false, quote), 0);
     toast.info('Proposal locked. Viewing read-only.');
+  }
+
+  async function lockProposalForEditing() {
+    if (!quote?.id) return;
+    const { error } = await supabase
+      .from('quotes')
+      .update({ locked_for_editing: true })
+      .eq('id', quote.id);
+    if (error) {
+      console.error('Error locking proposal:', error);
+      toast.error('Failed to lock. If the column is missing, run in Supabase SQL Editor: ALTER TABLE quotes ADD COLUMN IF NOT EXISTS locked_for_editing boolean DEFAULT false;');
+      return;
+    }
+    await loadQuoteData();
+    toast.success('Proposal locked for all users. Click Unlock to allow editing again.');
+  }
+
+  async function unlockProposalForEditing() {
+    if (!quote?.id) return;
+    const { error } = await supabase
+      .from('quotes')
+      .update({ locked_for_editing: false })
+      .eq('id', quote.id);
+    if (error) {
+      console.error('Error unlocking proposal:', error);
+      toast.error('Failed to unlock.');
+      return;
+    }
+    await loadQuoteData();
+    toast.success('Proposal unlocked. Edits are allowed for all users.');
+  }
+
+  function handleLockUnlock() {
+    if (!quote) return;
+    if (isReadOnly) {
+      if ((quote as any).sent_at) {
+        toast.info('Cannot unlock a proposal that has been sent to the customer.');
+        return;
+      }
+      if ((quote as any).locked_for_editing) {
+        unlockProposalForEditing();
+        return;
+      }
+      unlockHistoricalForEditing();
+    } else {
+      lockProposalForEditing();
+    }
   }
 
   async function loadData(silent = false, targetQuote?: any, options?: { forceLive?: boolean }) {
@@ -3722,10 +3792,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
   async function loadSubcontractorEstimates(targetQuoteId: string | null = null, isHistorical: boolean = false) {
     try {
-      // Historical path: serve data from the frozen snapshot only
+      // Locked/historical proposals: always load live data so subcontractor rows and pricing always show
       if (isHistorical && targetQuoteId) {
-        console.log('📖 Loading subcontractors from historical snapshot');
-        
+        console.log('📝 Loading live subcontractors for locked/historical proposal');
+        isHistorical = false;
+      }
+      if (false && isHistorical && targetQuoteId) {
         const { data: versionData, error: versionError } = await supabase
           .from('proposal_versions')
           .select('subcontractor_snapshot')
@@ -3740,8 +3812,6 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         }
         
         if (!versionData || !versionData.subcontractor_snapshot) {
-          // No snapshot — fall through to load live data so proposal info is always visible
-          console.log('No subcontractor snapshot; loading live data for read-only display');
           isHistorical = false;
         } else {
         const snapshot = versionData.subcontractor_snapshot;
@@ -3941,11 +4011,15 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   }
 
   async function loadMaterialsData(targetQuoteId: string | null = null, isHistorical: boolean = false, overlayOverride?: Record<string, boolean>) {
+    const wasHistoricalRequest = isHistorical;
     try {
-      // Historical path: serve data from the frozen snapshot only
+      // Historical (locked/older) proposals: always load live data from DB so labor and materials
+      // always show. Snapshots created when cloning can be incomplete and hide labor/subs.
       if (isHistorical && targetQuoteId) {
-        console.log('📖 Loading materials from historical snapshot');
-        
+        console.log('📝 Loading live materials for locked/historical proposal so labor and rows show');
+        isHistorical = false;
+      }
+      if (false && isHistorical && targetQuoteId) {
         const { data: versionData, error: versionError } = await supabase
           .from('proposal_versions')
           .select('workbook_snapshot')
@@ -3960,8 +4034,6 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         }
         
         if (!versionData || !versionData.workbook_snapshot) {
-          // No snapshot — load live data so proposal info is always visible (read-only until Unlock)
-          console.log('No workbook snapshot; loading live materials for read-only display');
           isHistorical = false;
         } else {
         // Parse and use the snapshot data
@@ -4106,26 +4178,39 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             material_category_markups (*)
           )
         `;
-        // Use newest working workbook for this quote (so re-uploaded workbook wins over copied-from-template)
-        let { data, error } = await supabase
-          .from('material_workbooks')
-          .select(wbSelect)
-          .eq('quote_id', targetQuoteId)
-          .eq('status', 'working')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        workbookData = data;
-        workbookError = error;
-        if (!workbookData && !workbookError) {
-          const fallback = await supabase
+        // For historical (locked) proposals when loading live (no snapshot), fetch workbook without status filter so we get the locked workbook and its labor
+        if (wasHistoricalRequest) {
+          const { data, error } = await supabase
             .from('material_workbooks')
             .select(wbSelect)
             .eq('quote_id', targetQuoteId)
             .order('updated_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          workbookData = fallback.data;
+          workbookData = data;
+          workbookError = error;
+        } else {
+          // Use newest working workbook for this quote (so re-uploaded workbook wins over copied-from-template)
+          let { data, error } = await supabase
+            .from('material_workbooks')
+            .select(wbSelect)
+            .eq('quote_id', targetQuoteId)
+            .eq('status', 'working')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          workbookData = data;
+          workbookError = error;
+          if (!workbookData && !workbookError) {
+            const fallback = await supabase
+              .from('material_workbooks')
+              .select(wbSelect)
+              .eq('quote_id', targetQuoteId)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            workbookData = fallback.data;
+          }
         }
         if (!workbookData) {
           const copied = await copyJobWorkbookToQuote(job.id, targetQuoteId);
@@ -4200,6 +4285,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
         });
       });
+      // For locked/sent proposals, nested material_sheet_labor may be missing; supplement from DB so labor always shows
+      const sheetIdsForLabor = sheetsData.map((s: any) => s.id).filter(Boolean);
+      if (sheetIdsForLabor.length > 0 && Object.keys(laborMap).length === 0) {
+        const { data: liveLaborRows } = await supabase
+          .from('material_sheet_labor')
+          .select('*')
+          .in('sheet_id', sheetIdsForLabor);
+        (liveLaborRows || []).forEach((labor: any) => {
+          const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
+          laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
+        });
+      }
       // Merge in any existing sheet labor not in fetch (e.g. just-saved row not yet visible) so it doesn't glitch away
       setSheetLabor(prev => {
         const next = { ...laborMap };
@@ -4388,10 +4485,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   }
 
   async function loadCustomRows(targetQuoteId: string | null = null, isHistorical: boolean = false) {
-    // Check if we're viewing a historical proposal (read-only mode)
+    // Locked/historical proposals: always load live data so labor and custom rows always show
     if (isHistorical && targetQuoteId) {
-      console.log('📖 Loading custom rows from historical snapshot for proposal:', targetQuoteId);
-      
+      console.log('📝 Loading live custom rows for locked/historical proposal');
+      isHistorical = false;
+    }
+    if (false && isHistorical && targetQuoteId) {
       const { data: versionData, error: versionError } = await supabase
         .from('proposal_versions')
         .select('financial_rows_snapshot')
@@ -4406,8 +4505,6 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       }
       
       if (!versionData || !versionData.financial_rows_snapshot) {
-        // No snapshot — show live data so proposal info is always visible (read-only until Unlock)
-        console.log('No custom rows snapshot; loading live data for read-only display');
         isHistorical = false;
       } else {
       const snapshot = versionData.financial_rows_snapshot;
@@ -6617,81 +6714,57 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   // When inside JobDetailView Proposal & Materials tab, register action buttons for the black header bar
   useEffect(() => {
     if (!setProposalToolbar) return;
-    const currentIndex = quote ? allJobQuotes.findIndex((q: any) => q.id === quote.id) : -1;
     setProposalToolbar(
-      <div className="flex flex-wrap items-center gap-1.5">
-        {allJobQuotes.length > 1 && (
+      <div className="flex flex-wrap items-center gap-1">
+        {quote && (
           <>
-            <Button size="sm" variant="outline" onClick={navigateToFirstProposal} disabled={currentIndex <= 0} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40 disabled:opacity-50" title="Go to first proposal">
-              First
+            <Button size="sm" variant="outline" onClick={() => { setDeleteProposalQuoteId(quote.id); setShowDeleteProposalConfirm(true); }} className="h-8 w-8 p-0 bg-white/10 hover:bg-red-500/20 text-red-200 border-red-500/40 hover:border-red-400" title="Delete this proposal">
+              <Trash2 className="w-2.5 h-2.5" />
             </Button>
-            <span className="text-xs text-yellow-100/90 font-medium px-1">
-              {currentIndex >= 0 ? currentIndex + 1 : 0} of {allJobQuotes.length}
-            </span>
-            <Button size="sm" variant="outline" onClick={navigateToPreviousProposal} disabled={currentIndex < 0 || currentIndex >= allJobQuotes.length - 1} className="h-8 w-8 p-0 border-yellow-600/40 hover:bg-white/20 text-yellow-100 disabled:opacity-50" title="Previous (older) proposal">
-              <ChevronDown className="w-4 h-4 rotate-90" />
-            </Button>
-            <Button size="sm" variant="outline" onClick={navigateToNextProposal} disabled={currentIndex <= 0} className="h-8 w-8 p-0 border-yellow-600/40 hover:bg-white/20 text-yellow-100 disabled:opacity-50" title="Next (newer) proposal">
-              <ChevronDown className="w-4 h-4 -rotate-90" />
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setShowProposalComparison(true)} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40" title="Compare any two proposals">
-              <GitCompare className="w-3 h-3 mr-1" />Compare
-            </Button>
-            {quote && (
-              <Button size="sm" variant="outline" onClick={() => deleteProposal(quote.id)} className="h-8 text-xs bg-white/10 hover:bg-red-500/20 text-red-200 border-red-500/40 hover:border-red-400" title="Delete this proposal">
-                <Trash2 className="w-3 h-3 mr-1" />Delete proposal
-              </Button>
-            )}
-            <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
+            <div className="h-5 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
           </>
         )}
-        {quote && isDefaultLocked && (
-          isReadOnly ? (
-            <Button size="sm" variant="outline" onClick={unlockHistoricalForEditing} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40" title="Allow editing this proposal">
-              <LockOpen className="w-3 h-3 mr-1" />Unlock for editing
+        <Button onClick={() => setEditingDescription(true)} variant="outline" size="sm" className={headerBtn}>
+          <Edit className="w-2.5 h-2.5 mr-0.5" />
+          {buildingDescription ? 'Edit Description' : 'Add Description'}
+        </Button>
+        <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Create a new proposal (allowed even when current proposal is locked)">
+          {creatingVersion ? <><span className="animate-spin mr-0.5">⏳</span>Creating...</> : <><Plus className="w-2.5 h-2.5 mr-0.5" />New Proposal</>}
+        </Button>
+        {quote && !(quote as any).signed_version && (
+          <Button size="sm" onClick={setActiveProposalAsContract} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2">
+            <Lock className="w-2.5 h-2.5 mr-0.5" />Set as Contract
+          </Button>
+        )}
+        {quote && (
+          (quote as any).sent_at ? (
+            <Button size="sm" disabled className="bg-emerald-50 text-emerald-800 border border-emerald-300 h-8 text-xs px-2 cursor-default" title="Sent to customer — see proposal header for date/time and time worked">
+              <CheckCircle className="w-2.5 h-2.5 mr-0.5" />Sent
             </Button>
           ) : (
-            <Button size="sm" variant="outline" onClick={lockHistoricalAgain} className="h-8 text-xs bg-white/10 hover:bg-white/20 text-yellow-100 border-yellow-600/40" title="Switch back to read-only">
-              <Lock className="w-3 h-3 mr-1" />Lock (read-only)
+            <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Record when this proposal was sent to the customer (saves date/time and locks workbook)">
+              <Send className="w-2.5 h-2.5 mr-0.5" />Mark as Sent
             </Button>
           )
         )}
-        <Button onClick={() => setEditingDescription(true)} variant="outline" size="sm" className={headerBtn}>
-          <Edit className="w-3 h-3 mr-1" />
-          {buildingDescription ? 'Edit Description' : 'Add Description'}
-        </Button>
-        <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion || isReadOnly} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs">
-          {creatingVersion ? <><span className="animate-spin mr-1">⏳</span>Creating...</> : <><Plus className="w-3 h-3 mr-1" />New Proposal</>}
-        </Button>
-        {quote && proposalVersions.length > 0 && !quote.signed_version && (
-          <Button size="sm" onClick={() => { const v = proposalVersions.find(v => v.version_number === quote.current_version); if (v) signAndLockVersion(v.id); }} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs">
-            <Lock className="w-3 h-3 mr-1" />Set as Contract
-          </Button>
-        )}
-        {quote && !(quote as any).sent_at && (
-          <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs">
-            <Send className="w-3 h-3 mr-1" />Mark as Sent
-          </Button>
-        )}
-        <Button onClick={() => setShowTemplateEditor(true)} variant="outline" size="sm" className={headerBtn}>
-          <Settings className="w-3 h-3 mr-1" />Template
-        </Button>
-        <Button onClick={() => setShowDocumentViewer(true)} variant="outline" size="sm" className={headerBtn}>
-          <FileText className="w-3 h-3 mr-1" />Documents
-        </Button>
-        <Button onClick={() => setShowExportDialog(true)} size="sm" className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs">
-          <Download className="w-3 h-3 mr-1" />Export PDF
+        <Button onClick={() => setShowExportDialog(true)} size="sm" className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2">
+          <Download className="w-2.5 h-2.5 mr-0.5" />Export PDF
         </Button>
         <Button onClick={() => openAddDialog()} variant="outline" size="sm" disabled={isReadOnly} className={headerBtn}>
-          <Plus className="w-3 h-3 mr-1" />Add Row
+          <Plus className="w-2.5 h-2.5 mr-0.5" />Add Row
         </Button>
         <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm" disabled={isReadOnly} className={headerBtn}>
-          <Upload className="w-3 h-3 mr-1" />Upload Sub
+          <Upload className="w-2.5 h-2.5 mr-0.5" />Upload Sub
         </Button>
+        {allJobQuotes.length > 1 && (
+          <Button onClick={() => setShowProposalComparison(true)} variant="outline" size="sm" className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Compare two proposals side by side">
+            <GitCompare className="w-2.5 h-2.5 mr-0.5" />Compare 2
+          </Button>
+        )}
       </div>
     );
     return () => { setProposalToolbar(null); };
-  }, [setProposalToolbar, quote?.id, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version]);
+  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version]);
 
   // Sync proposal summary to green header bar (Proposal #, Materials, Labor, Grand Total)
   useEffect(() => {
@@ -6726,8 +6799,32 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
       {/* Sticky header: project totals stay visible when scrolling (does not move with content) */}
       {quote && setProposalToolbar && (
-        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-4 py-2.5 px-4 mb-0 bg-white border-b border-slate-200 shadow-sm text-sm">
-          <span className="font-semibold text-slate-800">Proposal #{quote.proposal_number || quote.quote_number}</span>
+        <div className="sticky top-0 z-10 relative flex flex-wrap items-center gap-4 py-2.5 pl-4 pr-12 mb-0 bg-white border-b border-slate-200 shadow-sm text-sm">
+          <div className="flex items-center gap-0.5 rounded-md border border-slate-200 bg-slate-50 overflow-hidden">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={navigateToPreviousProposal}
+              disabled={allJobQuotes.length <= 1 || allJobQuotes.findIndex((q: any) => q.id === quote.id) >= allJobQuotes.length - 1}
+              className="h-8 w-8 p-0 rounded-none text-slate-600 hover:bg-slate-200 disabled:opacity-40"
+              title="Previous (older) proposal"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="min-w-[100px] px-2 py-1.5 text-center font-semibold text-slate-800 text-sm">
+              Proposal #{quote.proposal_number || quote.quote_number}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={navigateToNextProposal}
+              disabled={allJobQuotes.length <= 1 || allJobQuotes.findIndex((q: any) => q.id === quote.id) <= 0}
+              className="h-8 w-8 p-0 rounded-none text-slate-600 hover:bg-slate-200 disabled:opacity-40"
+              title="Next (newer) proposal"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Materials:</span>
           <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -6736,9 +6833,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Subtotal:</span>
           <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          {taxExemptChecked ? (
-            <span className="text-amber-700 font-medium">Tax exempt</span>
-          ) : (
+          {taxExemptChecked ? null : (
             <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
           )}
           {!isReadOnly && (
@@ -6752,6 +6847,17 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           )}
           <span className="text-slate-300">|</span>
           <span className="text-base font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          {quote && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLockUnlock}
+              className="absolute right-2 bottom-2 h-8 w-8 p-0 rounded-md border-slate-300 text-slate-600 hover:bg-slate-100"
+              title={isReadOnly ? 'Unlock to edit' : 'Lock proposal (read-only; does not mark as sent)'}
+            >
+              {isReadOnly ? <Lock className="w-4 h-4" /> : <LockOpen className="w-4 h-4" />}
+            </Button>
+          )}
         </div>
       )}
 
@@ -6766,15 +6872,27 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 <span className="text-sm font-semibold text-blue-900">
                   Proposal #{quote.proposal_number || quote.quote_number}
                 </span>
-                {(quote as any).sent_at && (
-                  <Badge className="text-xs bg-emerald-100 border-emerald-300 text-emerald-900" title={`Sent at ${new Date((quote as any).sent_at).toLocaleString()}`}>
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    Sent {new Date((quote as any).sent_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
-                  </Badge>
-                )}
+                {(quote as any).sent_at && (() => {
+                  const sentAt = new Date((quote as any).sent_at);
+                  const createdAt = (quote as any).created_at ? new Date((quote as any).created_at) : null;
+                  const timeSpentMs = createdAt ? sentAt.getTime() - createdAt.getTime() : 0;
+                  const timeSpentStr = timeSpentMs > 0
+                    ? (() => { const h = Math.floor(timeSpentMs / 3600000); const m = Math.round((timeSpentMs % 3600000) / 60000); return h > 0 ? `${h}h ${m}m` : `${m}m`; })()
+                    : '';
+                  const title = timeSpentStr
+                    ? `Sent to customer: ${sentAt.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })} · Time on proposal: ${timeSpentStr}`
+                    : `Sent to customer: ${sentAt.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}`;
+                  return (
+                    <Badge className="text-xs bg-emerald-100 border-emerald-300 text-emerald-900" title={title}>
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Sent {sentAt.toLocaleDateString(undefined, { dateStyle: 'medium' })} at {sentAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                      {timeSpentStr && <span className="ml-1">· {timeSpentStr} on proposal</span>}
+                    </Badge>
+                  );
+                })()}
                 {isReadOnly && !(quote as any).sent_at && (
                   <Badge className="text-xs bg-amber-100 border-amber-300 text-amber-900">
-                    Historical View
+                    {(quote as any).locked_for_editing ? 'Locked (read-only)' : 'Historical View'}
                   </Badge>
                 )}
                 {isDefaultLocked && (
@@ -6836,8 +6954,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 </Button>
               )}
               {quote && allJobQuotes.length > 1 && (
-                <Button size="sm" variant="outline" onClick={() => deleteProposal(quote.id)} className="border-red-300 text-red-700 hover:bg-red-50" title="Delete this proposal">
-                  <Trash2 className="w-3 h-3 mr-1" />Delete proposal
+                <Button size="sm" variant="outline" onClick={() => { setDeleteProposalQuoteId(quote.id); setShowDeleteProposalConfirm(true); }} className="h-8 w-8 p-0 border-red-300 text-red-700 hover:bg-red-50" title="Delete this proposal">
+                  <Trash2 className="w-3 h-3" />
                 </Button>
               )}
             </div>
@@ -6856,24 +6974,30 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 {buildingDescription ? 'Edit Building Description' : 'Add Building Description'}
               </Button>
               <div className="h-6 w-px bg-border" />
-              <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion || isReadOnly} className="bg-blue-600 hover:bg-blue-700">
+              <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion} className="bg-blue-600 hover:bg-blue-700" title="Create a new proposal (allowed even when current proposal is locked)">
                 {creatingVersion ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />Creating...</> : <><Plus className="w-3 h-3 mr-2" />New Proposal</>}
               </Button>
-              {quote && proposalVersions.length > 0 && !quote.signed_version && (
-                <Button size="sm" onClick={() => { const v = proposalVersions.find(v => v.version_number === quote.current_version); if (v) signAndLockVersion(v.id); }} className="bg-emerald-600 hover:bg-emerald-700">
+              {quote && !(quote as any).signed_version && (
+                <Button size="sm" onClick={setActiveProposalAsContract} className="bg-emerald-600 hover:bg-emerald-700">
                   <Lock className="w-3 h-3 mr-2" />Set as Contract
                 </Button>
               )}
-              {quote && !(quote as any).sent_at && (
-                <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} variant="outline" className="border-slate-400">
-                  <Send className="w-3 h-3 mr-2" />Mark as Sent
-                </Button>
+              {quote && (
+                (quote as any).sent_at ? (
+                  <Button size="sm" disabled variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-800 cursor-default">
+                    <CheckCircle className="w-3 h-3 mr-2" />Sent
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} variant="outline" className="border-slate-400">
+                    <Send className="w-3 h-3 mr-2" />Mark as Sent
+                  </Button>
+                )
               )}
               <div className="h-6 w-px bg-border" />
               <Button onClick={() => setShowTemplateEditor(true)} variant="outline" size="sm" className="bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
                 <Settings className="w-4 h-4 mr-2" />Edit Template
               </Button>
-              <Button onClick={() => setShowDocumentViewer(true)} variant="outline" size="sm" className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
+              <Button onClick={openDocuments} variant="outline" size="sm" className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
                 <FileText className="w-4 h-4 mr-2" />View Documents
               </Button>
               <Button onClick={() => setShowExportDialog(true)} variant="default" size="sm">
@@ -6903,9 +7027,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           <span className="text-slate-400">|</span>
           <span className="text-slate-600">Subtotal:</span>
           <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          {taxExemptChecked ? (
-            <span className="text-amber-700 font-medium">Tax exempt</span>
-          ) : (
+          {taxExemptChecked ? null : (
             <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
           )}
           <span className="text-slate-400">|</span>
@@ -8241,6 +8363,39 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         </DialogContent>
       </Dialog>
 
+      {/* Delete proposal — 2-step: trash opens this dialog; user must confirm */}
+      <Dialog open={showDeleteProposalConfirm} onOpenChange={(open) => { if (!open) { setShowDeleteProposalConfirm(false); setDeleteProposalQuoteId(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              Delete proposal?
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete this proposal and its materials workbook. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => { setShowDeleteProposalConfirm(false); setDeleteProposalQuoteId(null); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (deleteProposalQuoteId) {
+                  await deleteProposal(deleteProposalQuoteId);
+                  setShowDeleteProposalConfirm(false);
+                  setDeleteProposalQuoteId(null);
+                }
+              }}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Proposal Version History Dialog */}
       <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -8368,12 +8523,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         </DialogContent>
       </Dialog>
 
-      {/* Floating Document Viewer */}
-      <FloatingDocumentViewer
-        jobId={job.id}
-        open={showDocumentViewer}
-        onClose={() => setShowDocumentViewer(false)}
-      />
+      {/* Floating Document Viewer — only when not using the materials-panel document view */}
+      {!documentPanel && (
+        <FloatingDocumentViewer
+          jobId={job.id}
+          open={showDocumentViewer}
+          onClose={() => setShowDocumentViewer(false)}
+        />
+      )}
 
       {/* Template Editor */}
       <ProposalTemplateEditor

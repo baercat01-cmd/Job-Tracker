@@ -7,6 +7,12 @@ import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { MaterialsManagement } from './MaterialsManagement';
 import { JobComponents } from './JobComponents';
 import { JobSchedule } from './JobSchedule';
@@ -1240,7 +1246,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
-        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-[92px]' : 'pt-14'}`}
+        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-[30px]' : 'pt-14'}`}
       >
         {/* Main Navigation Tabs - Black bar always at top; green bar below when on Proposal & Materials */}
         <div className="fixed top-0 left-0 right-0 z-50 border-b-4 border-yellow-600 shadow-2xl bg-black">
@@ -1352,54 +1358,61 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
           {/* Proposal & Materials: green bar below black bar */}
           {activeTab === 'proposal-materials' && (
-            <div className="border-t border-yellow-600/30 bg-green-900/95">
-              <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-yellow-100/90 mr-2">View:</span>
-                  <Button
-                    variant={proposalViewMode === 'split' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setProposalViewMode('split')}
-                    className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 data-[state=active]:bg-green-600 text-yellow-100 border-yellow-600/40"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    Split
-                  </Button>
-                  <Button
-                    variant={proposalViewMode === 'proposal' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setProposalViewMode('proposal')}
-                    className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 data-[state=active]:bg-green-600 text-yellow-100 border-yellow-600/40"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    Proposal
-                  </Button>
-                  <Button
-                    variant={proposalViewMode === 'materials' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setProposalViewMode('materials')}
-                    className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 data-[state=active]:bg-green-600 text-yellow-100 border-yellow-600/40"
-                  >
-                    <Package className="w-3.5 h-3.5" />
-                    Materials
-                  </Button>
+            <div className="border-t border-yellow-600/30 bg-green-900/95 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
+                <div className="flex items-center gap-1">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 text-yellow-100 border-yellow-600/40 px-2"
+                      >
+                        View
+                        <ChevronDown className="w-3 h-3 opacity-80" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="min-w-[200px] bg-slate-900 border-yellow-600/40">
+                      <DropdownMenuItem
+                        onClick={() => setProposalViewMode('split')}
+                        className="text-yellow-100 focus:bg-green-800 focus:text-yellow-100 gap-2"
+                      >
+                        <LayoutGrid className="w-3 h-3" />
+                        Split Proposal Materials
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setProposalViewMode('proposal')}
+                        className="text-yellow-100 focus:bg-green-800 focus:text-yellow-100 gap-2"
+                      >
+                        <FileText className="w-3 h-3" />
+                        Proposal
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setProposalViewMode('materials')}
+                        className="text-yellow-100 focus:bg-green-800 focus:text-yellow-100 gap-2"
+                      >
+                        <Package className="w-3 h-3" />
+                        Materials
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 {proposalToolbarContent && (
                   <>
                     <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1">
                       {proposalToolbarContent}
                     </div>
-                    <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
-                    <div
-                      ref={(el) => {
-                        (materialsToolbarSlotRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-                        setMaterialsToolbarSlotReady(!!el);
-                      }}
-                      className="flex items-center gap-2 flex-1 min-w-0"
-                    />
                   </>
                 )}
+                {/* Workbook tabs on the right – directly above workbook panel */}
+                <div
+                  ref={(el) => {
+                    (materialsToolbarSlotRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+                    setMaterialsToolbarSlotReady(!!el);
+                  }}
+                  className="flex items-center gap-1 flex-1 min-w-0 justify-end"
+                />
               </div>
             </div>
           )}

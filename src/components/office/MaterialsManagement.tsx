@@ -1997,111 +1997,131 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Action buttons that appear in the top bar (Move / Package / Documents / Export / Add Material).
   // Only rendered when the Workbook tab is active and a workbook exists.
   const workbookActionButtons = activeTab === 'manage' && workbook ? (
-    <div className="flex gap-1 flex-shrink-0 flex-wrap">
+    <div className="flex gap-0.5 flex-shrink-0 flex-wrap">
       {packageSelectionMode ? (
         <>
           <Button onClick={openAddToPackageDialog} size="sm" disabled={selectedMaterialsForPackageAdd.size === 0}
-            className="h-7 text-xs bg-green-600 hover:bg-green-700 whitespace-nowrap px-2">
-            <Package className="w-3 h-3 mr-0.5" />
+            className="h-6 text-[10px] bg-green-600 hover:bg-green-700 whitespace-nowrap px-1.5">
+            <Package className="w-2.5 h-2.5 mr-0.5" />
             Add to Pkg ({selectedMaterialsForPackageAdd.size})
           </Button>
           <Button onClick={togglePackageSelectionMode} size="sm" variant="outline"
-            className="h-7 text-xs whitespace-nowrap px-2">
-            <X className="w-3 h-3 mr-0.5" />Cancel
+            className="h-6 text-[10px] whitespace-nowrap px-1.5">
+            <X className="w-2.5 h-2.5 mr-0.5" />Cancel
           </Button>
         </>
       ) : bulkMoveMode ? (
         <>
           <Button onClick={openBulkMoveDialog} size="sm" disabled={selectedMaterialsForMove.size === 0}
-            className="h-7 text-xs bg-orange-600 hover:bg-orange-700 whitespace-nowrap px-2">
-            <MoveHorizontal className="w-3 h-3 mr-0.5" />
+            className="h-6 text-[10px] bg-orange-600 hover:bg-orange-700 whitespace-nowrap px-1.5">
+            <MoveHorizontal className="w-2.5 h-2.5 mr-0.5" />
             Move ({selectedMaterialsForMove.size})
           </Button>
           <Button onClick={toggleBulkMoveMode} size="sm" variant="outline"
-            className="h-7 text-xs whitespace-nowrap px-2">
-            <X className="w-3 h-3 mr-0.5" />Cancel
+            className="h-6 text-[10px] whitespace-nowrap px-1.5">
+            <X className="w-2.5 h-2.5 mr-0.5" />Cancel
           </Button>
         </>
       ) : (
         <>
           {workbook.sheets.length > 1 && (
             <Button onClick={toggleBulkMoveMode} size="sm" variant="outline"
-              className="h-7 text-xs whitespace-nowrap px-2 bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100">
-              <MoveHorizontal className="w-3 h-3 mr-0.5" />Move
+              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100">
+              <MoveHorizontal className="w-2.5 h-2.5 mr-0.5" />Move
             </Button>
           )}
           {packages.length > 0 && (
             <Button onClick={togglePackageSelectionMode} size="sm" variant="outline"
-              className="h-7 text-xs whitespace-nowrap px-2 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
-              <Package className="w-3 h-3 mr-0.5" />Package
+              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
+              <Package className="w-2.5 h-2.5 mr-0.5" />Package
             </Button>
           )}
           {activeSheet && activeSheet.items.length > 0 && (
             <Button onClick={openSortCategoriesDialog} size="sm" variant="outline"
-              className="h-7 text-xs whitespace-nowrap px-2 bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
+              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
               title="Change the display order of categories for this sheet">
-              <ListOrdered className="w-3 h-3 mr-0.5" />Sort Categories
+              <ListOrdered className="w-2.5 h-2.5 mr-0.5" />Sort Categories
             </Button>
           )}
-          <Button onClick={() => setShowDocumentViewer(true)} size="sm" variant="outline"
-            className="h-7 text-xs whitespace-nowrap px-2 bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
-            <FileText className="w-3 h-3 mr-0.5" />Documents
-          </Button>
-          <Button onClick={exportMaterialWorkbookToXLSX} size="sm" variant="outline"
-            disabled={exportingXLSX}
-            className="h-7 text-xs whitespace-nowrap px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-            <Download className="w-3 h-3 mr-0.5" />
-            {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
-          </Button>
           <Button onClick={refreshWorkbookPricesFromCatalog} size="sm" variant="outline"
             disabled={refreshingWorkbookPrices}
-            className="h-7 text-xs whitespace-nowrap px-2 bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+            className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
             title="Update cost and price for all materials in this workbook from the catalog (Zoho Books).">
             {refreshingWorkbookPrices ? (
-              <><div className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mr-0.5" />Refreshing…</>
+              <><div className="w-2.5 h-2.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mr-0.5" />Refreshing…</>
             ) : (
-              <><RefreshCw className="w-3 h-3 mr-0.5" />Refresh prices</>
+              <><RefreshCw className="w-2.5 h-2.5 mr-0.5" />Refresh prices</>
             )}
           </Button>
           <Button onClick={() => openAddDialog()} size="sm"
-            className="h-7 text-xs gradient-primary whitespace-nowrap px-2">
-            <Plus className="w-3 h-3 mr-0.5" />Add Material
+            className="h-6 text-[10px] gradient-primary whitespace-nowrap px-1.5">
+            <Plus className="w-2.5 h-2.5 mr-0.5" />Add Material
           </Button>
         </>
       )}
     </div>
   ) : null;
 
+  // Documents and Export XLSX — shown on the far right of the workbook toolbar with a gap from other buttons.
+  const workbookActionButtonsRight = activeTab === 'manage' && workbook ? (
+    <div className="flex gap-0.5 flex-shrink-0 flex-wrap">
+      <Button onClick={() => setShowDocumentViewer(true)} size="sm" variant="outline"
+        className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
+        <FileText className="w-2.5 h-2.5 mr-0.5" />Documents
+      </Button>
+      <Button onClick={exportMaterialWorkbookToXLSX} size="sm" variant="outline"
+        disabled={exportingXLSX}
+        className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+        <Download className="w-2.5 h-2.5 mr-0.5" />
+        {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
+      </Button>
+    </div>
+  ) : null;
+
   const materialsToolbarContent = (
-    <div className="flex items-center gap-2 flex-wrap">
-      <TabsList className="grid grid-cols-5 h-8 bg-white/95 shadow-sm border border-slate-200/80 rounded-md">
-        <TabsTrigger value="manage" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
-          <FileSpreadsheet className="w-3.5 h-3.5" />
+    <div className="flex items-center gap-1 flex-wrap text-xs">
+      <TabsList className="flex flex-wrap items-center gap-1 h-8 p-0 bg-transparent border-0">
+        <TabsTrigger
+          value="manage"
+          className="flex items-center gap-1 h-8 text-xs px-2 rounded-md border border-yellow-600/40 bg-white/10 hover:bg-white/20 text-yellow-100 data-[state=active]:bg-white data-[state=active]:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:shadow-sm"
+        >
+          <FileSpreadsheet className="w-3 h-3" />
           <span>Workbook</span>
         </TabsTrigger>
-        <TabsTrigger value="breakdown" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
-          <DollarSign className="w-3.5 h-3.5" />
+        <TabsTrigger
+          value="breakdown"
+          className="flex items-center gap-1 h-8 text-xs px-2 rounded-md border border-yellow-600/40 bg-white/10 hover:bg-white/20 text-yellow-100 data-[state=active]:bg-white data-[state=active]:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:shadow-sm"
+        >
+          <DollarSign className="w-3 h-3" />
           <span>Breakdown</span>
         </TabsTrigger>
-        <TabsTrigger value="packages" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
-          <Package className="w-3.5 h-3.5" />
+        <TabsTrigger
+          value="packages"
+          className="flex items-center gap-1 h-8 text-xs px-2 rounded-md border border-yellow-600/40 bg-white/10 hover:bg-white/20 text-yellow-100 data-[state=active]:bg-white data-[state=active]:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:shadow-sm"
+        >
+          <Package className="w-3 h-3" />
           <span>Packages</span>
         </TabsTrigger>
-        <TabsTrigger value="crew-orders" className="flex items-center gap-1 text-xs font-semibold py-1 px-2 relative">
-          <ShoppingCart className="w-3.5 h-3.5" />
+        <TabsTrigger
+          value="crew-orders"
+          className="flex items-center gap-1 h-8 text-xs px-2 rounded-md border border-yellow-600/40 bg-white/10 hover:bg-white/20 text-yellow-100 data-[state=active]:bg-white data-[state=active]:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:shadow-sm relative"
+        >
+          <ShoppingCart className="w-3 h-3" />
           <span>Crew Orders</span>
           {pendingCrewCount > 0 && (
-            <Badge className="ml-1 bg-orange-500 text-white text-[10px] font-bold px-1 py-0 leading-none animate-pulse">
+            <Badge className="ml-0.5 bg-orange-500 text-white text-[10px] font-bold px-0.5 py-0 leading-none animate-pulse">
               {pendingCrewCount}
             </Badge>
           )}
         </TabsTrigger>
-        <TabsTrigger value="upload" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
-          <Upload className="w-3.5 h-3.5" />
+        <TabsTrigger
+          value="upload"
+          className="flex items-center gap-1 h-8 text-xs px-2 rounded-md border border-yellow-600/40 bg-white/10 hover:bg-white/20 text-yellow-100 data-[state=active]:bg-white data-[state=active]:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:shadow-sm"
+        >
+          <Upload className="w-3 h-3" />
           <span>Upload</span>
         </TabsTrigger>
       </TabsList>
-      {workbookActionButtons}
     </div>
   );
 
@@ -2140,13 +2160,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             ) : null}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 min-w-0">
-                {(jobQuotes.length === 1 || proposalNumber) && jobQuotes.length <= 1 && (
-                  <div className="absolute -top-1 right-2 z-20">
-                    <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
-                      Proposal #{proposalLabel}
-                    </Badge>
-                  </div>
-                )}
                 <TabsList className="grid w-full grid-cols-5 h-9 bg-white shadow-sm">
                   <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
                     <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -2180,30 +2193,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             </div>
           </div>
         )}
-        {jobQuotes.length > 1 && (
-          <div className="flex items-center gap-2 mb-2">
-            <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Proposal</Label>
-            <Select
-              value={effectiveQuoteId ?? ''}
-              onValueChange={(v) => {
-                const id = v || null;
-                onQuoteChange?.(id);
-                setSelectedQuoteId(id);
-              }}
-            >
-              <SelectTrigger className="w-[160px] h-8 bg-white border text-xs">
-                <SelectValue placeholder="Select proposal" />
-              </SelectTrigger>
-              <SelectContent>
-                {jobQuotes.map((q) => (
-                  <SelectItem key={q.id} value={q.id}>
-                    {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
         <TabsContent value="manage" className="space-y-3 flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
           {!workbook ? (
@@ -2234,6 +2223,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
                   <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b">
                     <div className="flex items-center gap-1 px-1.5 py-0.5 overflow-x-auto">
+                      <span className="font-semibold text-slate-700 text-sm flex-shrink-0 whitespace-nowrap">
+                        {proposalLabel}
+                      </span>
                       {workbook.sheets.map((sheet) => (
                         <div key={sheet.id} className="relative group flex-shrink-0">
                           <Button
@@ -2282,8 +2274,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   </div>
 
                   <div className="p-1.5 bg-white border-b">
-                    <div className="flex items-center gap-1">
-                      <div className="relative flex-1">
+                    <div className="flex items-center gap-2 flex-wrap bg-white text-right">
+                      <div className="relative w-48 max-w-[200px] flex-shrink-0">
                         <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                         <Input
                           placeholder="Search materials..."
@@ -2302,6 +2294,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                           </Button>
                         )}
                       </div>
+                      {workbookActionButtons}
+                      <div className="flex-1 min-w-4" />
+                      {workbookActionButtonsRight}
                     </div>
                   </div>
 
@@ -2424,12 +2419,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             }
                                           }}
                                         >
-                                          <SelectTrigger className="h-6 text-[10px] border bg-white w-full max-w-[4rem]">
-                                            <SelectValue placeholder={
-                                              materialPackageNames.length > 0
-                                                ? materialPackageNames.join(', ')
-                                                : '–'
-                                            } />
+                                          <SelectTrigger className="h-6 text-[10px] border bg-white w-full max-w-[4rem] [&>svg]:hidden justify-start">
+                                            <span className="truncate min-w-0 block text-left">
+                                              {materialPackageNames.length > 0 ? materialPackageNames.join(', ') : '–'}
+                                            </span>
                                           </SelectTrigger>
                                           <SelectContent>
                                             {materialPackageNames.length > 0 && (

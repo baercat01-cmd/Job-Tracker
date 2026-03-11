@@ -352,7 +352,13 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
   }, [quoteAId, quoteBId, loadBoth]);
 
   const label = (q: QuoteOption) => `Proposal #${q.proposal_number ?? q.quote_number ?? q.id.slice(0, 8)}`;
+  const quoteA = quotes.find((q) => q.id === quoteAId);
+  const quoteB = quotes.find((q) => q.id === quoteBId);
+  const labelA = quoteA ? label(quoteA) : 'Proposal A';
+  const labelB = quoteB ? label(quoteB) : 'Proposal B';
   const hasComparison = snapshotA && snapshotB;
+  const snapshotLabel = (s: ProposalSnapshot | null) =>
+    s?.quote ? `#${s.quote.proposal_number ?? s.quote.quote_number ?? s.quote.id.slice(0, 8)}` : '—';
 
   return (
     <div className="space-y-4">
@@ -369,7 +375,7 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
         <CardContent className="pt-6">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1">
-              <Label>Proposal A</Label>
+              <Label className="font-medium text-slate-700">{labelA}</Label>
               <Select value={quoteAId ?? ''} onValueChange={(v) => setQuoteAId(v || null)}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Select proposal" />
@@ -385,7 +391,7 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
             </div>
             <ArrowRight className="w-5 h-5 text-slate-400 shrink-0" />
             <div className="space-y-1">
-              <Label>Proposal B</Label>
+              <Label className="font-medium text-slate-700">{labelB}</Label>
               <Select value={quoteBId ?? ''} onValueChange={(v) => setQuoteBId(v || null)}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Select proposal" />
@@ -431,8 +437,8 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[200px]">Line</TableHead>
-                        <TableHead className="text-right">Proposal A</TableHead>
-                        <TableHead className="text-right">Proposal B</TableHead>
+                        <TableHead className="text-right">{hasComparison ? snapshotLabel(snapshotA) : 'Proposal A'}</TableHead>
+                        <TableHead className="text-right">{hasComparison ? snapshotLabel(snapshotB) : 'Proposal B'}</TableHead>
                         <TableHead className="text-right">Difference</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -488,13 +494,13 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs font-medium text-slate-500 mb-1">Proposal A</p>
+                    <p className="text-xs font-medium text-slate-700 mb-1">Proposal {snapshotLabel(snapshotA)}</p>
                     <div className="min-h-[120px] p-3 rounded border bg-slate-50 text-sm whitespace-pre-wrap">
                       {(snapshotA.quote.description || '').trim() || <span className="text-muted-foreground">No description</span>}
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-slate-500 mb-1">Proposal B</p>
+                    <p className="text-xs font-medium text-slate-700 mb-1">Proposal {snapshotLabel(snapshotB)}</p>
                     <div className="min-h-[120px] p-3 rounded border bg-slate-50 text-sm whitespace-pre-wrap">
                       {(snapshotB.quote.description || '').trim() || <span className="text-muted-foreground">No description</span>}
                     </div>

@@ -2,6 +2,8 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import type { Job } from '@/types';
+import { DocumentPanelContext } from '@/contexts/DocumentPanelContext';
+import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 
 export type ViewMode = 'split' | 'proposal' | 'materials';
 
@@ -29,6 +31,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
   const viewMode = viewModeProp ?? internalViewMode;
   const setViewMode = onViewModeChange ?? setInternalViewMode;
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [showDocumentsInPanel, setShowDocumentsInPanel] = useState(false);
 
   // When job changes, set proposal to most recent only if we don't already have a valid selection for this job
   // so that switching proposals and re-opening the tab doesn't reset the user's choice
@@ -76,41 +79,55 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
   const isSplit = viewMode === 'split';
 
   return (
-    <div className="flex flex-col h-full min-h-0 w-full">
-      <div className="flex-1 flex min-h-0 border-t border-slate-200 overflow-hidden">
-        {/* Proposal panel — narrower in split so materials workbook has more room */}
-        <div
-          className={`min-w-0 flex flex-col bg-white overflow-auto transition-all ${
-            isSplit ? 'w-2/5 min-w-[260px] border-r border-slate-200' : 'w-full'
-          } ${showProposal ? '' : 'hidden'}`}
-        >
-          <div className="w-full max-w-full mx-auto space-y-2 pt-0 pb-2 px-3">
-            <Suspense fallback={<PanelFallback />}>
-              <JobFinancials
-                job={job}
-                controlledQuoteId={selectedQuoteId ?? undefined}
-                onQuoteChange={setSelectedQuoteId}
-              />
-            </Suspense>
+    <DocumentPanelContext.Provider value={{ showDocumentsInPanel, setShowDocumentsInPanel }}>
+      <div className="flex flex-col h-full min-h-0 w-full">
+        <div className="flex-1 flex min-h-0 border-t border-slate-200 overflow-hidden">
+          {/* Proposal panel — narrower in split so materials workbook has more room */}
+          <div
+            className={`min-w-0 flex flex-col bg-white overflow-auto transition-all ${
+              isSplit ? 'w-2/5 min-w-[260px] border-r border-slate-200' : 'w-full'
+            } ${showProposal ? '' : 'hidden'}`}
+          >
+            <div className="w-full max-w-full mx-auto space-y-2 pt-0 pb-2 px-3">
+              <Suspense fallback={<PanelFallback />}>
+                <JobFinancials
+                  job={job}
+                  controlledQuoteId={selectedQuoteId ?? undefined}
+                  onQuoteChange={setSelectedQuoteId}
+                />
+              </Suspense>
+            </div>
+          </div>
+
+          {/* Materials panel — shows document viewer in same view when "Documents" is clicked from header */}
+          <div
+            className={`min-w-0 flex flex-col bg-slate-50 overflow-auto flex-1 w-full ${
+              showMaterials ? '' : 'hidden'
+            }`}
+          >
+            {showDocumentsInPanel ? (
+              <div className="flex flex-col h-full min-h-0 w-full p-2">
+                <FloatingDocumentViewer
+                  jobId={job.id}
+                  open={true}
+                  onClose={() => setShowDocumentsInPanel(false)}
+                  embed
+                  backLabel="Back to Workbook"
+                />
+              </div>
+            ) : (
+              <Suspense fallback={<PanelFallback />}>
+                <MaterialsManagement
+                  job={job}
+                  userId={userId}
+                  controlledQuoteId={selectedQuoteId ?? undefined}
+                  onQuoteChange={setSelectedQuoteId}
+                />
+              </Suspense>
+            )}
           </div>
         </div>
-
-        {/* Materials panel — flex-1 so it uses remaining space; scrolls to show all data */}
-        <div
-          className={`min-w-0 flex flex-col bg-slate-50 overflow-auto flex-1 w-full ${
-            showMaterials ? '' : 'hidden'
-          }`}
-        >
-          <Suspense fallback={<PanelFallback />}>
-            <MaterialsManagement
-              job={job}
-              userId={userId}
-              controlledQuoteId={selectedQuoteId ?? undefined}
-              onQuoteChange={setSelectedQuoteId}
-            />
-          </Suspense>
-        </div>
       </div>
-    </div>
+    </DocumentPanelContext.Provider>
   );
 }
