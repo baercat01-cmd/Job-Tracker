@@ -2124,6 +2124,22 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   // When user explicitly unlocks a historical proposal for editing, allow edits until they lock again or switch proposal
   const [historicalUnlockedQuoteId, setHistoricalUnlockedQuoteId] = useState<string | null>(null);
 
+  // Ref always holding the latest values needed by the materials-workbook-updated event handler,
+  // so the handler never has stale closures regardless of when it was registered.
+  const workbookUpdateCtxRef = useRef<{
+    jobId: string;
+    quoteId: string | null;
+    allJobQuotesFirstId: string | undefined;
+    historicalUnlockedQuoteId: string | null;
+    loadMaterialsData: (targetQuoteId: string | null, isHistorical?: boolean) => void;
+  }>({
+    jobId: job.id,
+    quoteId: null,
+    allJobQuotesFirstId: undefined,
+    historicalUnlockedQuoteId: null,
+    loadMaterialsData: () => {},
+  });
+
   // Clear unlock when switching to a different proposal so each historical proposal starts locked
   useEffect(() => {
     if (quote?.id && quote.id !== historicalUnlockedQuoteId) setHistoricalUnlockedQuoteId(null);
@@ -2295,18 +2311,23 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }, [controlledQuoteId, allJobQuotes.length, quote?.id, job.id]);
 
-  // When the materials workbook saves a change, refresh materials (and thus proposal totals) in real time
+  // When the materials workbook saves a change, refresh materials (and thus proposal totals) in real time.
+  // Registered once (dep = job.id only); reads fresh values from workbookUpdateCtxRef to avoid stale closures.
   useEffect(() => {
     const handler = (e: Event) => {
       const { jobId, quoteId } = (e as CustomEvent).detail ?? {};
-      if (jobId !== job.id) return;
-      if (quoteId != null && quote?.id != null && quoteId !== quote.id) return;
-      const isHist = !!quote && allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id && quote.id !== historicalUnlockedQuoteId;
-      loadMaterialsData(quote?.id ?? null, isHist);
+      const ctx = workbookUpdateCtxRef.current;
+      if (jobId !== ctx.jobId) return;
+      if (quoteId != null && ctx.quoteId != null && quoteId !== ctx.quoteId) return;
+      const isHist = !!ctx.quoteId
+        && ctx.allJobQuotesFirstId != null
+        && ctx.quoteId !== ctx.allJobQuotesFirstId
+        && ctx.quoteId !== ctx.historicalUnlockedQuoteId;
+      ctx.loadMaterialsData(ctx.quoteId, isHist);
     };
     window.addEventListener('materials-workbook-updated', handler as EventListener);
     return () => window.removeEventListener('materials-workbook-updated', handler as EventListener);
-  }, [job.id, quote?.id, allJobQuotes.length, historicalUnlockedQuoteId]);
+  }, [job.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-create first proposal (with -1 suffix) for new jobs
   useEffect(() => {
@@ -4015,6 +4036,15 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     if (fetchErr || !created) return null;
     return created;
   }
+
+  // Keep the ref current so the event handler always has fresh values (avoids stale closure bugs)
+  workbookUpdateCtxRef.current = {
+    jobId: job.id,
+    quoteId: quote?.id ?? null,
+    allJobQuotesFirstId: allJobQuotes[0]?.id,
+    historicalUnlockedQuoteId,
+    loadMaterialsData,
+  };
 
   async function loadMaterialsData(targetQuoteId: string | null = null, isHistorical: boolean = false, overlayOverride?: Record<string, boolean>) {
     const wasHistoricalRequest = isHistorical;
