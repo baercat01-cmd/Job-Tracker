@@ -124,7 +124,8 @@ interface JobFinancialsProps {
 }
 
 // Sortable Row Component
-function SortableRow({ item, isReadOnly, quote, ...props }: any) {
+function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () => {}, ...props }: any) {
+  const setOptCatOverlay = setOptionalCategoryOverlay;
   const {
     attributes,
     listeners,
@@ -236,12 +237,13 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
         return sum + (item.total_cost * (1 + itemMarkup / 100));
       }, 0);
       
-      // Calculate total materials with category markups (NO sheet-level markup)
+      // Calculate total materials using actual selling price when available
       const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
+        const sellingPrice = Number(cat.totalPrice);
+        if (sellingPrice > 0) return sum + sellingPrice;
         const categoryKey = `${sheet.sheetId}_${cat.name}`;
         const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
-        const categoryPriceWithMarkup = cat.totalCost * (1 + categoryMarkup / 100);
-        return sum + categoryPriceWithMarkup;
+        return sum + (Number(cat.totalCost) || 0) * (1 + categoryMarkup / 100);
       }, 0) || 0;
       
       // Final price = (materials with category markups) + (linked rows with their own markup) + (linked subs)
@@ -450,7 +452,9 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                   {requiredCategories.map((category: any, catIdx: number) => {
                     const categoryKey = `${sheet.sheetId}_${category.name}`;
                     const categoryMarkup = categoryMarkups[categoryKey] ?? (sheet.markup_percent || 10);
-                    const categoryPriceWithMarkup = category.totalCost * (1 + categoryMarkup / 100);
+                    const categoryPriceWithMarkup = Number(category.totalPrice) > 0
+                      ? Number(category.totalPrice)
+                      : (Number(category.totalCost) || 0) * (1 + categoryMarkup / 100);
                     
                     const categoryIsOptional = category.items?.every((i: any) => i.isOptional) ?? false;
                     return (
@@ -465,7 +469,7 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                             {!isReadOnly && (() => {
                               const handleOptionToggle = async (value: boolean) => {
                                 const key = `${sheet.sheetId}_${category.name}`;
-                                setOptionalCategoryOverlay(prev => ({ ...prev, [key]: value }));
+                                setOptCatOverlay(prev => ({ ...prev, [key]: value }));
                                 await loadMaterialsData(quote?.id ?? null, !!isReadOnly, { [key]: value });
                                 try {
                                   const { error } = await supabase
@@ -1017,9 +1021,11 @@ function SortableRow({ item, isReadOnly, quote, ...props }: any) {
                 return sum + (taxableTotal * (1 + estMarkup / 100));
               }, 0);
               const baseCategoryTotals = (baseSheet.categories || []).reduce((sum: number, cat: any) => {
+                const sellingPrice = Number(cat.totalPrice);
+                if (sellingPrice > 0) return sum + sellingPrice;
                 const categoryKey = `${baseSheet.sheetId}_${cat.name}`;
                 const markup = categoryMarkups[categoryKey] ?? 10;
-                return sum + (cat.totalCost * (1 + markup / 100));
+                return sum + (Number(cat.totalCost) || 0) * (1 + markup / 100);
               }, 0);
               const baseFinalPrice = baseCategoryTotals + baseLinkedRowsTotal + baseLinkedSubsTaxableTotal;
 
@@ -4548,7 +4554,23 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         }
       });
 
-      if (JSON.stringify(dedupedRows) !== JSON.stringify(customRows)) setCustomRows(dedupedRows);
+      const asCustomRows: CustomFinancialRow[] = dedupedRows.map((r: any) => ({
+        id: r.id ?? '',
+        job_id: r.job_id ?? '',
+        category: r.category ?? '',
+        description: r.description ?? '',
+        quantity: r.quantity ?? 0,
+        unit_cost: r.unit_cost ?? 0,
+        total_cost: r.total_cost ?? 0,
+        markup_percent: r.markup_percent ?? 0,
+        selling_price: r.selling_price ?? 0,
+        notes: r.notes ?? null,
+        order_index: r.order_index ?? 0,
+        taxable: r.taxable ?? false,
+        created_at: r.created_at ?? '',
+        updated_at: r.updated_at ?? '',
+      }));
+      if (JSON.stringify(asCustomRows) !== JSON.stringify(customRows)) setCustomRows(asCustomRows);
       setCustomRowLabor(laborMap);
       setCustomRowLineItems(lineItemsMap);
       console.log('✅ Loaded custom rows from snapshot (deduped)');
@@ -4636,7 +4658,23 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     setCustomRowLabor(laborMap);
 
     if (JSON.stringify(dedupedRows) !== JSON.stringify(customRows)) {
-      setCustomRows(dedupedRows);
+      const mapped: CustomFinancialRow[] = dedupedRows.map((r: any) => ({
+        id: r.id ?? '',
+        job_id: r.job_id ?? '',
+        category: r.category ?? '',
+        description: r.description ?? '',
+        quantity: r.quantity ?? 0,
+        unit_cost: r.unit_cost ?? 0,
+        total_cost: r.total_cost ?? 0,
+        markup_percent: r.markup_percent ?? 0,
+        selling_price: r.selling_price ?? 0,
+        notes: r.notes ?? null,
+        order_index: r.order_index ?? 0,
+        taxable: r.taxable ?? false,
+        created_at: r.created_at ?? '',
+        updated_at: r.updated_at ?? '',
+      }));
+      setCustomRows(mapped);
     }
 
     // Collect row-linked line items from the nested response
@@ -6033,8 +6071,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 return s2 + (tt * (1 + (sub.markup_percent || 0) / 100));
               }, 0);
               const baseCatTotals2 = (baseSheetBd.categories || []).reduce((s2: number, cat: any) => {
+                const sellingPrice = Number(cat.totalPrice);
+                if (sellingPrice > 0) return s2 + sellingPrice;
                 const mu = categoryMarkups[`${baseSheetBd.sheetId}_${cat.name}`] ?? 10;
-                return s2 + (cat.totalCost * (1 + mu / 100));
+                return s2 + (Number(cat.totalCost) || 0) * (1 + mu / 100);
               }, 0);
               const baseMaterialsPrice = baseCatTotals2 + baseLinkedRowsTotal2 + baseLinkedSubsTotal2;
               const baseSheetLaborData = sheetLabor[baseSheetBd.sheetId];
@@ -6446,22 +6486,24 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       linkedSubsMaterialsTaxableOnly += materialsTaxableOnly * (1 + estMarkup / 100);
     });
     
-    // Calculate category totals with individual markups (NO sheet-level markup)
+    // Use actual selling price (totalPrice) from workbook so manual price edits in materials table flow to proposal
     const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
+      const sellingPrice = Number(cat.totalPrice);
+      if (sellingPrice > 0) return sum + sellingPrice;
       const categoryKey = `${sheet.sheetId}_${cat.name}`;
       const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
       const cost = Number(cat.totalCost) || 0;
-      const categoryPriceWithMarkup = cost * (1 + categoryMarkup / 100);
-      return sum + categoryPriceWithMarkup;
+      return sum + cost * (1 + categoryMarkup / 100);
     }, 0) || 0;
     
     // For taxable calculation, all category materials are taxable by default
     const categoryTaxableOnly = sheet.categories?.reduce((sum: number, cat: any) => {
+      const sellingPrice = Number(cat.totalPrice);
+      if (sellingPrice > 0) return sum + sellingPrice;
       const categoryKey = `${sheet.sheetId}_${cat.name}`;
       const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
       const cost = Number(cat.totalCost) || 0;
-      const categoryPriceWithMarkup = cost * (1 + categoryMarkup / 100);
-      return sum + categoryPriceWithMarkup;
+      return sum + cost * (1 + categoryMarkup / 100);
     }, 0) || 0;
     
     // Final = (materials with category markups) + (linked rows with their own markup) + (linked subs)
@@ -6650,7 +6692,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       if (!isOptional) return;
       const key = `${sheet.sheetId}_${cat.name}`;
       const markup = categoryMarkups[key] ?? (sheet.markup_percent ?? 10);
-      const priceWithMarkup = (cat.totalCost || 0) * (1 + markup / 100);
+      const priceWithMarkup = Number(cat.totalPrice) > 0
+        ? Number(cat.totalPrice)
+        : (Number(cat.totalCost) || 0) * (1 + markup / 100);
       optionalCategoriesList.push({
         sheetName: sheet.sheetName,
         categoryName: cat.name,
@@ -7102,6 +7146,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                         expandedComparisons={expandedComparisons}
                         setExpandedComparisons={setExpandedComparisons}
                         materialsBreakdown={materialsBreakdown}
+                        setOptionalCategoryOverlay={setOptionalCategoryOverlay}
                       />
                     ))}
                   </SortableContext>
@@ -7201,12 +7246,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                               setComparePickerSheetId={setComparePickerSheetId}
                               setShowComparePickerDialog={setShowComparePickerDialog}
                               expandedComparisons={expandedComparisons}
-                              setExpandedComparisons={setExpandedComparisons}
-                              materialsBreakdown={materialsBreakdown}
-                            />
-                          ))}
-                        </SortableContext>
-                      </DndContext>
+                        setExpandedComparisons={setExpandedComparisons}
+                        materialsBreakdown={materialsBreakdown}
+                        setOptionalCategoryOverlay={setOptionalCategoryOverlay}
+                      />
+                            ))}
+                          </SortableContext>
+                        </DndContext>
                     </div>
                   </div>
                 )}

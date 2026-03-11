@@ -185,9 +185,15 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
       });
       let sheetPrice = 0;
       byCategory.forEach((catItems, catName) => {
-        const cost = catItems.reduce((s, i) => s + (i.extended_cost ?? 0), 0);
-        const markup = categoryMarkups[catName] ?? 10;
-        sheetPrice += cost * (1 + markup / 100);
+        // Use actual selling price (extended_price) if set; fall back to cost × markup
+        const sellingPrice = catItems.reduce((s, i) => s + (i.extended_price ?? 0), 0);
+        if (sellingPrice > 0) {
+          sheetPrice += sellingPrice;
+        } else {
+          const cost = catItems.reduce((s, i) => s + (i.extended_cost ?? 0), 0);
+          const markup = categoryMarkups[catName] ?? 10;
+          sheetPrice += cost * (1 + markup / 100);
+        }
       });
       materialsTotal += sheetPrice;
 
@@ -201,6 +207,24 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
         categoryMarkups,
       });
     }
+  }
+
+  // Fetch sheet-linked labor line items (row_id IS NULL, sheet_id set) — these are "Add Labor"
+  // entries saved directly on a sheet, which is how most proposal labor is stored.
+  let sheetLinkedLaborTotal = 0;
+  const allSheetIds = sheets.map(s => s.id);
+  if (allSheetIds.length > 0) {
+    const { data: sheetLinkedItems } = await supabase
+      .from('custom_financial_row_items')
+      .select('*')
+      .in('sheet_id', allSheetIds)
+      .is('row_id', null);
+    (sheetLinkedItems || []).forEach((item: any) => {
+      if ((item.item_type || 'material') === 'labor') {
+        const itemMarkup = item.markup_percent ?? 0;
+        sheetLinkedLaborTotal += (Number(item.total_cost) || 0) * (1 + itemMarkup / 100);
+      }
+    });
   }
 
   const customRows: CustomRowSnapshot[] = [];
@@ -268,7 +292,7 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
   });
 
   const totalMaterials = materialsTotal + customMaterialsTotal + subMaterialsTotal;
-  let totalLabor = customLaborTotal + subLaborTotal;
+  let totalLabor = customLaborTotal + subLaborTotal + sheetLinkedLaborTotal;
   sheets.forEach((sh) => {
     if (sh.labor) totalLabor += sh.labor.total_labor_cost;
   });
@@ -375,7 +399,7 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
         <CardContent className="pt-6">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1">
-              <Label className="font-medium text-slate-700">{labelA}</Label>
+              <span className="font-medium text-slate-700 block text-sm">{labelA}</span>
               <Select value={quoteAId ?? ''} onValueChange={(v) => setQuoteAId(v || null)}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Select proposal" />
@@ -391,7 +415,7 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
             </div>
             <ArrowRight className="w-5 h-5 text-slate-400 shrink-0" />
             <div className="space-y-1">
-              <Label className="font-medium text-slate-700">{labelB}</Label>
+              <span className="font-medium text-slate-700 block text-sm">{labelB}</span>
               <Select value={quoteBId ?? ''} onValueChange={(v) => setQuoteBId(v || null)}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Select proposal" />
@@ -526,8 +550,12 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
   );
 }
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <label className="text-sm font-medium text-slate-700">{children}</label>;
+interface LabelProps {
+  children: React.ReactNode;
+  className?: string;
+}
+function Label({ children, className }: LabelProps) {
+  return <label className={className ?? 'text-sm font-medium text-slate-700'}>{children}</label>;
 }
 
 function DiffCell({ a, b }: { a: number; b: number }) {
