@@ -67,6 +67,7 @@ import {
   ArrowDown,
   ListOrdered,
   GripVertical,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -130,6 +131,8 @@ interface JobQuote {
   proposal_number: string | null;
   quote_number: string | null;
   created_at: string;
+  sent_at: string | null;
+  locked_for_editing: boolean | null;
 }
 
 interface MaterialsManagementProps {
@@ -256,7 +259,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at')
+        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -286,7 +289,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at')
+        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -1115,6 +1118,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   function startCellEdit(itemId: string, field: string, currentValue: any) {
+    if (isWorkbookReadOnly) return;
     setEditingCell({ itemId, field });
     setCellValue(currentValue?.toString() || '');
   }
@@ -1285,6 +1289,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function deleteItem(itemId: string) {
+    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
     if (!confirm('Delete this material?')) return;
 
     try {
@@ -1428,6 +1433,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function addMaterialsFromCatalogSelection() {
+    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
     if (selectedCatalogMaterials.length === 0) {
       toast.error('Select at least one material');
       return;
@@ -1569,6 +1575,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function addNewSheet() {
+    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
     if (!workbook || workbook.status === 'locked') {
       toast.error('Cannot add sheets to a locked workbook');
       return;
@@ -1658,6 +1665,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function deleteSheet(sheet: MaterialSheet) {
+    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
     if (!workbook || workbook.status === 'locked') {
       toast.error('Cannot delete sheets from a locked workbook');
       return;
@@ -1991,6 +1999,21 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     ? (selectedQuote.proposal_number || selectedQuote.quote_number || `Proposal ${selectedQuote.id.slice(0, 8)}`)
     : (proposalNumber || 'Proposal');
 
+  // Mirror the same locked logic used in JobFinancials so materials stay in sync with proposal state.
+  // Sort quotes by proposal_number/quote_number descending (same order as JobFinancials) to find the latest.
+  const sortedQuotes = [...jobQuotes].sort((a, b) => {
+    const na = (a.proposal_number || a.quote_number || '').toString();
+    const nb = (b.proposal_number || b.quote_number || '').toString();
+    if (na === nb) return 0;
+    return nb.localeCompare(na, undefined, { numeric: true });
+  });
+  const latestQuoteId = sortedQuotes[0]?.id;
+  const isWorkbookReadOnly = !!selectedQuote && (
+    (sortedQuotes.length > 0 && selectedQuote.id !== latestQuoteId) ||
+    !!selectedQuote.sent_at ||
+    !!selectedQuote.locked_for_editing
+  );
+
   const materialsSlot = useMaterialsToolbarSlot();
   const portalTarget = materialsSlot?.ready && materialsSlot?.ref?.current ? materialsSlot.ref.current : null;
 
@@ -2053,10 +2076,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               <><RefreshCw className="w-2.5 h-2.5 mr-0.5" />Refresh prices</>
             )}
           </Button>
-          <Button onClick={() => openAddDialog()} size="sm"
-            className="h-6 text-[10px] gradient-primary whitespace-nowrap px-1.5">
-            <Plus className="w-2.5 h-2.5 mr-0.5" />Add Material
-          </Button>
+          {!isWorkbookReadOnly && (
+            <Button onClick={() => openAddDialog()} size="sm"
+              className="h-6 text-[10px] gradient-primary whitespace-nowrap px-1.5">
+              <Plus className="w-2.5 h-2.5 mr-0.5" />Add Material
+            </Button>
+          )}
         </>
       )}
     </div>
@@ -2219,6 +2244,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             />
           ) : (
             <>
+              {isWorkbookReadOnly && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
+                  <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+                  This proposal is locked. The materials workbook is view-only. Unlock the proposal to make changes.
+                </div>
+              )}
               <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
                 <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
                   <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b">
@@ -2753,13 +2784,15 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             <MoveHorizontal className="w-3.5 h-3.5 mr-2" />
                                             Move
                                           </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={() => deleteItem(item.id)}
-                                            className="text-destructive focus:text-destructive"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5 mr-2" />
-                                            Delete
-                                          </DropdownMenuItem>
+                                          {!isWorkbookReadOnly && (
+                                            <DropdownMenuItem
+                                              onClick={() => deleteItem(item.id)}
+                                              className="text-destructive focus:text-destructive"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                              Delete
+                                            </DropdownMenuItem>
+                                          )}
                                         </DropdownMenuContent>
                                       </DropdownMenu>
                                     </td>
