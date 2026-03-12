@@ -727,8 +727,13 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .from('quotes')
         .select('*')
         .eq('job_id', j.id)
-        .order('created_at', { ascending: true });
-      const jobQuotes = quotesRows || [];
+        .order('created_at', { ascending: false });
+      // Sort by highest proposal number so the newest proposal is always the default
+      const jobQuotes = [...(quotesRows || [])].sort((a: any, b: any) => {
+        const aN = parseInt((a.proposal_number || a.quote_number || '0').split('-').pop() || '0', 10);
+        const bN = parseInt((b.proposal_number || b.quote_number || '0').split('-').pop() || '0', 10);
+        return bN - aN;
+      });
       const quoteData = jobQuotes[0] ?? null;
 
       const { data: paymentsData } = await supabase
@@ -911,7 +916,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     }
   }
 
-  /** Load proposal data for a specific quote (for preview with multiple proposals). */
+  /** Load proposal data for a specific quote — mirrors CustomerPortal.tsx logic exactly. */
   async function loadProposalDataForQuote(jobId: string, quoteId: string | null, taxExempt: boolean): Promise<{
     materialSheets: any[];
     customRows: any[];
@@ -919,124 +924,154 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     totals: { subtotal: number; tax: number; grandTotal: number };
   }> {
     const TAX_RATE = 0.07;
-    const empty = {
-      materialSheets: [],
-      customRows: [],
-      subcontractorEstimates: [],
-      totals: { subtotal: 0, tax: 0, grandTotal: 0 },
-    };
+    const empty = { materialSheets: [], customRows: [], subcontractorEstimates: [], totals: { subtotal: 0, tax: 0, grandTotal: 0 } };
     try {
+      // Workbook: prefer status='working' for this quoteId, then any status, then null-quote, then scan all
       let workbookData: { id: string } | null = null;
       if (quoteId) {
-        const { data: wb } = await supabase
-          .from('material_workbooks')
-          .select('id')
-          .eq('job_id', jobId)
-          .eq('quote_id', quoteId)
-          .eq('status', 'working')
-          .maybeSingle();
+        const { data: wb } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).eq('quote_id', quoteId).eq('status', 'working').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        workbookData = wb ?? null;
+        if (!workbookData) {
+          const { data: wb2 } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).eq('quote_id', quoteId).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+          workbookData = wb2 ?? null;
+        }
+      }
+      if (!workbookData) {
+        const { data: wb } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).is('quote_id', null).eq('status', 'working').order('updated_at', { ascending: false }).limit(1).maybeSingle();
         workbookData = wb ?? null;
       }
       if (!workbookData) {
-        const { data: wb } = await supabase
-          .from('material_workbooks')
-          .select('id')
-          .eq('job_id', jobId)
-          .is('quote_id', null)
-          .eq('status', 'working')
-          .maybeSingle();
-        workbookData = wb ?? null;
+        const { data: allWbs } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).order('status', { ascending: false }).order('updated_at', { ascending: false });
+        workbookData = (allWbs || [])[0] ?? null;
       }
 
       let materialSheets: any[] = [];
       if (workbookData) {
-        const { data: sheetsData } = await supabase
-          .from('material_sheets')
-          .select('*')
-          .eq('workbook_id', workbookData.id)
-          .order('order_index');
-        const sheets = sheetsData || [];
+        const { data: sheetsData } = await supabase.from('material_sheets').select('*').eq('workbook_id', workbookData.id).order('order_index');
+        let sheets = sheetsData || [];
+
+        // Item-count fallback: if workbook has no items, scan all job workbooks for one that does
+        let doFallback = sheets.length === 0;
+        if (!doFallback && sheets.length > 0) {
+          const { count: itemCount } = await supabase.from('material_items').select('id', { count: 'exact', head: true }).in('sheet_id', sheets.map((s: any) => s.id));
+          if ((itemCount ?? 0) === 0) doFallback = true;
+        }
+        if (doFallback) {
+          const { data: allWbs } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).order('status', { ascending: false }).order('updated_at', { ascending: false });
+          for (const wb of allWbs || []) {
+            if (wb.id === workbookData.id) continue;
+            const { data: altSheets } = await supabase.from('material_sheets').select('*').eq('workbook_id', wb.id).order('order_index');
+            if ((altSheets || []).length > 0) {
+              const { count: c } = await supabase.from('material_items').select('id', { count: 'exact', head: true }).in('sheet_id', (altSheets || []).map((s: any) => s.id));
+              if ((c ?? 0) > 0) { sheets = altSheets!; workbookData = wb; break; }
+            }
+          }
+        }
+
         const sheetIds = sheets.map((s: any) => s.id);
         for (const sheet of sheets) {
-          const [{ data: items }, { data: laborRows }] = await Promise.all([
+          const [{ data: items }, { data: laborRows }, { data: catMarkups }] = await Promise.all([
             supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
             supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
+            supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id),
           ]);
           (sheet as any).items = items || [];
-          const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
-          (sheet as any).laborTotal = laborTotal;
+          (sheet as any).laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
+          const catMarkupMap: Record<string, number> = {};
+          (catMarkups || []).forEach((cm: any) => { catMarkupMap[cm.category_name] = cm.markup_percent ?? 10; });
+          (sheet as any).categoryMarkups = catMarkupMap;
         }
         if (sheetIds.length > 0) {
-          const { data: sheetLineItems } = await supabase
-            .from('custom_financial_row_items')
-            .select('*')
-            .in('sheet_id', sheetIds)
-            .is('row_id', null)
-            .order('order_index');
+          const { data: sheetLineItems } = await supabase.from('custom_financial_row_items').select('*').in('sheet_id', sheetIds).is('row_id', null).order('order_index');
           const bySheet: Record<string, any[]> = {};
-          (sheetLineItems || []).forEach((item: any) => {
-            const sid = item.sheet_id;
-            if (sid) {
-              if (!bySheet[sid]) bySheet[sid] = [];
-              bySheet[sid].push(item);
-            }
-          });
-          sheets.forEach((sheet: any) => {
-            const items = bySheet[sheet.id] || [];
-            const lineItemsTotal = items.reduce((s: number, item: any) => s + ((item.total_cost ?? 0) * (1 + ((item.markup_percent ?? 0) / 100))), 0);
-            (sheet as any).sheetLineItemsTotal = lineItemsTotal;
-          });
+          (sheetLineItems || []).forEach((item: any) => { const sid = item.sheet_id; if (sid) { if (!bySheet[sid]) bySheet[sid] = []; bySheet[sid].push(item); } });
+          sheets.forEach((sheet: any) => { (sheet as any).sheetLinkedItems = bySheet[sheet.id] || []; });
         }
         materialSheets = sheets;
       }
 
-      const [quoteRowsRes, jobRowsRes] = await Promise.all([
-        quoteId
-          ? supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).eq('quote_id', quoteId).order('order_index')
-          : { data: [] as any[] },
-        supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
-      ]);
-      const quoteRows = quoteRowsRes.data || [];
-      const jobRows = jobRowsRes.data || [];
-      const customRowsData = [...quoteRows, ...jobRows].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      // Custom rows — deduplicated (quote rows take priority over job-level rows)
+      let customRowsData: any[] = [];
+      if (quoteId) {
+        const [forQuote, forJob] = await Promise.all([
+          supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('quote_id', quoteId).order('order_index'),
+          supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
+        ]);
+        const quoteRowIds = new Set((forQuote.data || []).map((r: any) => r.id));
+        customRowsData = [...(forQuote.data || []), ...(forJob.data || []).filter((r: any) => !quoteRowIds.has(r.id))].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      } else {
+        const { data } = await supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).order('order_index');
+        customRowsData = data || [];
+      }
 
-      const [quoteSubsRes, jobSubsRes] = await Promise.all([
-        quoteId
-          ? supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).eq('quote_id', quoteId).order('order_index')
-          : { data: [] as any[] },
-        supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
-      ]);
-      const quoteSubs = quoteSubsRes.data || [];
-      const jobSubs = jobSubsRes.data || [];
-      const subEstimatesData = [...quoteSubs, ...jobSubs].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      // Subcontractors — deduplicated
+      let subEstimatesData: any[] = [];
+      if (quoteId) {
+        const [forQuote, forJob] = await Promise.all([
+          supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('quote_id', quoteId).order('order_index'),
+          supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
+        ]);
+        const quoteSubIds = new Set((forQuote.data || []).map((r: any) => r.id));
+        subEstimatesData = [...(forQuote.data || []), ...(forJob.data || []).filter((r: any) => !quoteSubIds.has(r.id))].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      } else {
+        const { data } = await supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).order('order_index');
+        subEstimatesData = data || [];
+      }
 
-      const sheetsSubtotal = (materialSheets || []).reduce((sum: number, sheet: any) => {
-        const itemsTotal = (sheet.items || []).reduce((s: number, item: any) => s + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
-        const labor = sheet.laborTotal ?? 0;
-        const sheetLineItemsTotal = sheet.sheetLineItemsTotal ?? 0;
-        return sum + itemsTotal + labor + sheetLineItemsTotal;
-      }, 0);
-      const subsTotal = (subEstimatesData || []).reduce((sum: number, est: any) => {
-        const lineItems = est.subcontractor_estimate_line_items || [];
-        const includedTotal = lineItems
-          .filter((item: any) => !item.excluded)
-          .reduce((s: number, item: any) => s + (item.total_price ?? 0), 0);
-        const markup = est.markup_percent ?? 0;
-        return sum + (includedTotal * (1 + markup / 100));
-      }, 0);
-      const subtotal =
-        sheetsSubtotal +
-        (customRowsData || []).reduce((sum, row) => sum + (row.selling_price ?? 0), 0) +
-        subsTotal;
-      const tax = taxExempt ? 0 : subtotal * TAX_RATE;
-      const grandTotal = taxExempt ? subtotal : subtotal + tax;
+      // Totals — use extended_price + category markups (mirrors JobFinancials exactly)
+      let sheetMaterialsTotal = 0, sheetLaborTotal = 0;
+      (materialSheets || []).forEach((sheet: any) => {
+        const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
+        const byCategory = new Map<string, any[]>();
+        (sheet.items || []).forEach((item: any) => { const cat = item.category || 'Uncategorized'; if (!byCategory.has(cat)) byCategory.set(cat, []); byCategory.get(cat)!.push(item); });
+        let sheetCatPrice = 0;
+        byCategory.forEach((catItems, catName) => {
+          const sp = catItems.reduce((s: number, i: any) => s + (Number(i.extended_price) || 0), 0);
+          if (sp > 0) { sheetCatPrice += sp; }
+          else { const cost = catItems.reduce((s: number, i: any) => { const ec = i.extended_cost != null ? Number(i.extended_cost) : (Number(i.quantity) || 0) * (Number(i.cost_per_unit) || 0); return s + ec; }, 0); sheetCatPrice += cost * (1 + (catMarkups[catName] ?? 10) / 100); }
+        });
+        sheetMaterialsTotal += sheetCatPrice;
+        const directLabor = sheet.laborTotal ?? 0;
+        sheetLaborTotal += directLabor;
+        let linkedLabor = 0;
+        (sheet.sheetLinkedItems || []).forEach((item: any) => { if ((item.item_type || 'material') === 'labor') linkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100)); });
+        sheetLaborTotal += linkedLabor;
+        (sheet as any)._computedTotal = sheetCatPrice + directLabor + linkedLabor;
+      });
 
-      return {
-        materialSheets,
-        customRows: customRowsData,
-        subcontractorEstimates: subEstimatesData,
-        totals: { subtotal, tax, grandTotal },
-      };
+      let customMaterialsTotal = 0, customLaborTotal = 0;
+      (customRowsData || []).forEach((row: any) => {
+        const lineItems: any[] = row.custom_financial_row_items || [];
+        const rowMarkup = 1 + (Number(row.markup_percent) || 0) / 100;
+        let rowTotal = 0;
+        if (lineItems.length > 0) {
+          const matTotal = lineItems.filter((li: any) => (li.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0) * rowMarkup;
+          const labTotal = lineItems.filter((li: any) => (li.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
+          customMaterialsTotal += matTotal; customLaborTotal += labTotal; rowTotal = matTotal + labTotal;
+        } else {
+          rowTotal = (Number(row.total_cost) || 0) * rowMarkup;
+          if (row.category === 'labor') customLaborTotal += rowTotal; else customMaterialsTotal += rowTotal;
+        }
+        (row as any)._computedTotal = rowTotal;
+      });
+
+      let subMaterialsTotal = 0, subLaborTotalVal = 0;
+      (subEstimatesData || []).forEach((est: any) => {
+        const lineItems: any[] = est.subcontractor_estimate_line_items || [];
+        const markup = 1 + (Number(est.markup_percent) || 0) / 100;
+        const matTotal = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
+        const labTotal = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
+        subMaterialsTotal += matTotal; subLaborTotalVal += labTotal;
+        (est as any)._computedTotal = matTotal + labTotal;
+      });
+
+      const totalMaterials = sheetMaterialsTotal + customMaterialsTotal + subMaterialsTotal;
+      const totalLabor = sheetLaborTotal + customLaborTotal + subLaborTotalVal;
+      const subtotal = totalMaterials + totalLabor;
+      const tax = taxExempt ? 0 : totalMaterials * TAX_RATE;
+      const grandTotal = subtotal + tax;
+
+      return { materialSheets, customRows: customRowsData, subcontractorEstimates: subEstimatesData, totals: { subtotal, tax, grandTotal } };
     } catch (error) {
       console.error('Error loading proposal data for quote:', error);
       return empty;

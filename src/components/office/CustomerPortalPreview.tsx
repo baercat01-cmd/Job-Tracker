@@ -297,83 +297,75 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {(proposalData?.materialSheets || []).map((sheet: any) => {
-                    const showSheetPrice = visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices;
-                    const itemsTotal = (sheet.items || []).reduce((sum: number, item: any) => sum + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
-                    const sheetTotal = itemsTotal + (sheet.laborTotal ?? 0) + (sheet.sheetLineItemsTotal ?? 0);
-                    return (
-                      <div key={sheet.id} className="border rounded-lg p-4 flex flex-col gap-2">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
-                            {sheet.description && (
-                              <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
-                            )}
-                          </div>
-                          {showSheetPrice && sheetTotal > 0 && (
-                            <p className="text-xl font-bold text-emerald-700 shrink-0">
-                              ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {(() => {
+                    const showPrice = !!(visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices);
+                    // Combine all sections in order_index order — mirrors JobFinancials allItemsUnsorted
+                    const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
+                      ...(proposalData?.materialSheets || []).map((s: any) => ({ type: 'material' as const, id: s.id, orderIndex: s.order_index ?? 0, data: s })),
+                      ...(proposalData?.customRows || []).filter((r: any) => !r.sheet_id).map((r: any) => ({ type: 'custom' as const, id: r.id, orderIndex: r.order_index ?? 0, data: r })),
+                      ...(proposalData?.subcontractorEstimates || []).filter((e: any) => !e.sheet_id && !e.row_id).map((e: any) => ({ type: 'subcontractor' as const, id: e.id, orderIndex: e.order_index ?? 0, data: e })),
+                    ].sort((a, b) => a.orderIndex - b.orderIndex);
 
-                  {proposalData?.customRows?.map((row: any) => {
-                    const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
-                    const showRowPrice = visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices;
-                    return (
-                      <div key={row.id} className="border rounded-lg p-4 flex flex-col gap-2">
-                        <div className="flex items-start justify-between gap-4">
+                    return allSections.map((section) => {
+                      if (section.type === 'material') {
+                        const sheet = section.data;
+                        const total = sheet._computedTotal ?? 0;
+                        return (
+                          <div key={sheet.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
+                              {sheet.description && <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>}
+                            </div>
+                            {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                          </div>
+                        );
+                      }
+                      if (section.type === 'custom') {
+                        const row = section.data;
+                        const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                        const total = row._computedTotal ?? 0;
+                        return (
+                          <div key={row.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-bold text-lg">{row.description || row.category}</h3>
+                              {items.length > 0 && (
+                                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
+                                  {items.map((item: any) => <li key={item.id}>{item.description}</li>)}
+                                </ul>
+                              )}
+                            </div>
+                            {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                          </div>
+                        );
+                      }
+                      const est = section.data;
+                      const total = est._computedTotal ?? 0;
+                      return (
+                        <div key={est.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
                           <div className="min-w-0 flex-1">
-                            <h3 className="font-bold text-lg">{row.description}</h3>
-                            {items.length > 0 ? (
-                              <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
-                                {items.map((item: any) => (
-                                  <li key={item.id}>{item.description}</li>
-                                ))}
-                              </ul>
-                            ) : null}
-                            {showRowPrice && (row.quantity != null || row.unit_cost != null) && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {row.quantity} × ${(row.unit_cost ?? 0).toFixed(2)}
-                              </p>
-                            )}
+                            <h3 className="font-bold text-lg">{est.company_name}</h3>
+                            {est.scope_of_work && <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>}
                           </div>
-                          {showRowPrice && (
-                            <p className="text-xl font-bold text-emerald-700 shrink-0">
-                              ${(row.selling_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </p>
-                          )}
+                          {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                         </div>
-                      </div>
-                    );
-                  })}
-
-                  {proposalData?.subcontractorEstimates?.map((est: any) => (
-                    <div key={est.id} className="border rounded-lg p-4">
-                      <h3 className="font-bold">{est.company_name}</h3>
-                      {est.scope_of_work && (
-                        <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
-                      )}
-                    </div>
-                  ))}
+                      );
+                    });
+                  })()}
 
                   {visibilitySettings?.show_financial_summary && (
                     <div className="border-t-2 pt-4 space-y-2">
                       <div className="flex justify-between text-lg">
                         <span className="font-medium">Subtotal:</span>
-                        <span>${proposalData?.totals?.subtotal?.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        <span>${(proposalData?.totals?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                       <div className="flex justify-between text-lg">
                         <span className="font-medium">Tax (7%):</span>
-                        <span>${proposalData?.totals?.tax?.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        <span>${(proposalData?.totals?.tax ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                       <div className="flex justify-between text-2xl font-bold pt-2 border-t">
                         <span>Grand Total:</span>
                         <span className="text-emerald-700">
-                          ${proposalData?.totals?.grandTotal?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          ${(proposalData?.totals?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     </div>
