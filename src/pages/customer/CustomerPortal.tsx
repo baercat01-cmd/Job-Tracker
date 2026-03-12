@@ -373,10 +373,11 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
   async function loadProposalDataForQuote(jobId: string, quoteId: string | null, taxExempt: boolean) {
     try {
-      // Workbook selection — mirrors JobFinancials multi-step fallback:
-      // 1. Prefer workbook tied to this specific quoteId (any status, newest first)
-      // 2. Fall back to null-quote (legacy) workbook
-      // 3. Fall back to ANY job workbook with sheets (scan all, pick newest with items)
+      // Workbook selection — mirrors JobFinancials multi-step fallback exactly:
+      // 1a. Quote-specific workbook, status='working' (primary — matches JobFinancials default)
+      // 1b. Quote-specific workbook, any status (fallback)
+      // 2.  Null-quote legacy workbook, status='working'
+      // 3.  Scan ALL job workbooks, pick 'working' then newest
       let workbookData: { id: string } | null = null;
       if (quoteId) {
         const { data: wb } = await supabase
@@ -384,10 +385,22 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .select('id')
           .eq('job_id', jobId)
           .eq('quote_id', quoteId)
+          .eq('status', 'working')
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         workbookData = wb ?? null;
+        if (!workbookData) {
+          const { data: wb2 } = await supabase
+            .from('material_workbooks')
+            .select('id')
+            .eq('job_id', jobId)
+            .eq('quote_id', quoteId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          workbookData = wb2 ?? null;
+        }
       }
       if (!workbookData) {
         const { data: wb } = await supabase
@@ -395,18 +408,18 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .select('id')
           .eq('job_id', jobId)
           .is('quote_id', null)
+          .eq('status', 'working')
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         workbookData = wb ?? null;
       }
-      // Step 3: if still nothing, scan all workbooks for this job and pick the best one
       if (!workbookData) {
         const { data: allWbs } = await supabase
           .from('material_workbooks')
           .select('id')
           .eq('job_id', jobId)
-          .order('status', { ascending: false }) // 'working' sorts after 'locked' alphabetically
+          .order('status', { ascending: false })
           .order('updated_at', { ascending: false });
         workbookData = (allWbs || [])[0] ?? null;
       }
@@ -420,8 +433,19 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .order('order_index');
         let sheets = sheetsData || [];
 
-        // Step 4: if this workbook has no sheets, scan all job workbooks and use the first one with sheets
-        if (sheets.length === 0) {
+        // Step D (mirrors JobFinancials): if workbook has no sheets OR no items,
+        // scan all job workbooks and use the first one with actual items.
+        const needsFallback = sheets.length === 0 || (() => false)(); // item check below
+        let doFallback = sheets.length === 0;
+        if (!doFallback && sheets.length > 0) {
+          const sheetIdList = sheets.map((s: any) => s.id);
+          const { count: itemCount } = await supabase
+            .from('material_items')
+            .select('id', { count: 'exact', head: true })
+            .in('sheet_id', sheetIdList);
+          if ((itemCount ?? 0) === 0) doFallback = true;
+        }
+        if (doFallback) {
           const { data: allWbs } = await supabase
             .from('material_workbooks')
             .select('id')
@@ -436,12 +460,20 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
               .eq('workbook_id', wb.id)
               .order('order_index');
             if ((altSheets || []).length > 0) {
-              sheets = altSheets!;
-              workbookData = wb;
-              break;
+              const altSheetIds = (altSheets || []).map((s: any) => s.id);
+              const { count: altCount } = await supabase
+                .from('material_items')
+                .select('id', { count: 'exact', head: true })
+                .in('sheet_id', altSheetIds);
+              if ((altCount ?? 0) > 0) {
+                sheets = altSheets!;
+                workbookData = wb;
+                break;
+              }
             }
           }
         }
+        void needsFallback;
 
         const sheetIds = sheets.map((s: any) => s.id);
         for (const sheet of sheets) {
@@ -480,27 +512,36 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         materialSheets = sheets;
       }
 
-      // Custom rows: quote-specific + job-level (quote_id null), merged and sorted
-      const [quoteRowsRes, jobRowsRes] = await Promise.all([
-        quoteId
-          ? supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).eq('quote_id', quoteId).order('order_index')
-          : { data: [] as any[] },
-        supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
-      ]);
-      const quoteRows = quoteRowsRes.data || [];
-      const jobRows = jobRowsRes.data || [];
-      const customRowsData = [...quoteRows, ...jobRows].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      // Custom rows: quote-specific + job-level (quote_id null), deduplicated and sorted.
+      // Matches JobFinancials exactly: quote rows take priority; job-level rows that share an id are dropped.
+      let customRowsData: any[] = [];
+      if (quoteId) {
+        const [forQuote, forJob] = await Promise.all([
+          supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('quote_id', quoteId).order('order_index'),
+          supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
+        ]);
+        const quoteRowIds = new Set((forQuote.data || []).map((r: any) => r.id));
+        const jobOnlyRows = (forJob.data || []).filter((r: any) => !quoteRowIds.has(r.id));
+        customRowsData = [...(forQuote.data || []), ...jobOnlyRows].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      } else {
+        const { data } = await supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).order('order_index');
+        customRowsData = data || [];
+      }
 
-      // Subcontractor estimates: same pattern
-      const [quoteSubsRes, jobSubsRes] = await Promise.all([
-        quoteId
-          ? supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).eq('quote_id', quoteId).order('order_index')
-          : { data: [] as any[] },
-        supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
-      ]);
-      const quoteSubs = quoteSubsRes.data || [];
-      const jobSubs = jobSubsRes.data || [];
-      const subEstimatesData = [...quoteSubs, ...jobSubs].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      // Subcontractor estimates: same deduplicated pattern
+      let subEstimatesData: any[] = [];
+      if (quoteId) {
+        const [forQuote, forJob] = await Promise.all([
+          supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('quote_id', quoteId).order('order_index'),
+          supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
+        ]);
+        const quoteSubIds = new Set((forQuote.data || []).map((r: any) => r.id));
+        const jobOnlySubs = (forJob.data || []).filter((r: any) => !quoteSubIds.has(r.id));
+        subEstimatesData = [...(forQuote.data || []), ...jobOnlySubs].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      } else {
+        const { data } = await supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).order('order_index');
+        subEstimatesData = data || [];
+      }
 
       const TAX_RATE = 0.07;
 
