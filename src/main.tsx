@@ -10,6 +10,9 @@ import { registerSW } from 'virtual:pwa-register';
 import './lib/error-handler';
 import './lib/stress-test';
 
+// Suppress the browser's native PWA install mini-infobar immediately (before React renders)
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); });
+
 const APP_VERSION = '2.0.7';
 console.log(`🚀 FieldTrack Pro v${APP_VERSION} (PWA) - Starting...`);
 console.log('📱 Offline support enabled');

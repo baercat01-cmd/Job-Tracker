@@ -20,7 +20,6 @@ import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
-import { PWAInstallPrompt } from '@/components/ui/pwa-install-prompt';
 
 
 // Error Boundary to catch runtime errors
@@ -233,7 +232,6 @@ export default function App() {
           <Route path="/*" element={
             <AuthProvider>
               <AppContent />
-              <PWAInstallPrompt />
               <Toaster position="top-center" richColors />
             </AuthProvider>
           } />
