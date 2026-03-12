@@ -209,7 +209,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .insert([payload])
         .select(CUSTOMER_PORTAL_ACCESS_SELECT)
         .single();
-      if (error?.code === '42501') {
+      if (error?.code === '42501' || error?.code === 'PGRST116') {
         const rpcResult = await supabase.rpc('create_customer_portal_link', {
           p_job_id: payload.job_id,
           p_customer_identifier: payload.customer_identifier,
@@ -272,7 +272,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .insert([payload])
         .select(CUSTOMER_PORTAL_ACCESS_SELECT)
         .single();
-      if (error?.code === '42501') {
+      if (error?.code === '42501' || error?.code === 'PGRST116') {
         const rpcResult = await supabase.rpc('create_customer_portal_link', {
           p_job_id: payload.job_id,
           p_customer_identifier: payload.customer_identifier,
@@ -449,7 +449,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           .single();
         data = direct.data;
         error = direct.error;
-        if (error?.code === '42501') {
+        if (error?.code === '42501' || error?.code === 'PGRST116') {
           const rpcResult = await supabase.rpc('update_customer_portal_link', {
             p_id: existingLink!.id,
             p_customer_identifier: portalData.customer_identifier,
@@ -482,7 +482,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           .single();
         data = direct.data;
         error = direct.error;
-        if (error?.code === '42501') {
+        if (error?.code === '42501' || error?.code === 'PGRST116') {
           const rpcResult = await supabase.rpc('create_customer_portal_link', {
             p_job_id: portalData.job_id,
             p_customer_identifier: portalData.customer_identifier,
@@ -663,7 +663,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .from('jobs')
         .select('*')
         .eq('id', job.id)
-        .single();
+        .maybeSingle();
 
       if (jobError || !jobRow) {
         console.error('Preview job load failed:', jobError);
