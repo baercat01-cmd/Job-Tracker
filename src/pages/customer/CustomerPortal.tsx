@@ -284,7 +284,27 @@ export default function CustomerPortal() {
 function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: any }) {
   const { job, quote, jobQuotes = [], payments, documents, photos, scheduleEvents, emails, viewerLinks = [], totalPaid } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
-  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(quote?.id ?? null);
+
+  // Default to the most recently sent quote (the "contract"), or the highest-numbered proposal
+  const defaultQuoteId = (() => {
+    if (!jobQuotes.length) return quote?.id ?? null;
+    const sentQuotes = (jobQuotes as any[]).filter((q: any) => q.sent_at);
+    if (sentQuotes.length > 0) {
+      const sorted = [...sentQuotes].sort((a: any, b: any) =>
+        new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+      );
+      return sorted[0].id;
+    }
+    // Fall back to highest proposal number (e.g. "26012-5" → take the suffix integer)
+    const sorted = [...(jobQuotes as any[])].sort((a: any, b: any) => {
+      const aN = parseInt((a.proposal_number || a.quote_number || '0').split('-').pop() || '0', 10);
+      const bN = parseInt((b.proposal_number || b.quote_number || '0').split('-').pop() || '0', 10);
+      return bN - aN;
+    });
+    return sorted[0]?.id ?? quote?.id ?? null;
+  })();
+
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(defaultQuoteId);
   const selectedQuote = jobQuotes.find((q: any) => q.id === selectedQuoteId) ?? jobQuotes[0] ?? quote;
   const [proposalData, setProposalData] = useState<any>(null);
   const [proposalDataLoading, setProposalDataLoading] = useState(false);
