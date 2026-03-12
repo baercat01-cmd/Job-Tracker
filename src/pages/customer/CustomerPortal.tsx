@@ -571,33 +571,31 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
       </div>
 
       {/* Content – all visibility-controlled sections from portal settings */}
-      <div className="flex max-w-[1920px] mx-auto min-h-0">
-        {/* Main content */}
-        <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            {/* View options: horizontal bar when sidebar is hidden (small/medium), so preview + buttons are one page */}
-            <div className="flex md:hidden gap-1 mb-4 overflow-x-auto pb-2 -mx-1">
+            {/* Horizontal tab bar – matches the office preview exactly */}
+            <TabsList
+              className="grid w-full mb-6"
+              style={{ gridTemplateColumns: `repeat(${viewOptions.length}, 1fr)` }}
+            >
               {viewOptions.map((opt) => {
                 const Icon = opt.icon;
+                const unread = opt.value === 'emails'
+                  ? emails.filter((e: any) => !e.is_read && e.direction === 'sent').length
+                  : 0;
                 return (
-                  <Button
-                    key={opt.value}
-                    variant={activeTab === opt.value ? 'secondary' : 'outline'}
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => setActiveTab(opt.value)}
-                  >
-                    <Icon className="w-4 h-4 sm:mr-1.5" />
-                    <span className="inline">{opt.label}</span>
-                    {opt.value === 'emails' && emails.filter((e: any) => !e.is_read && e.direction === 'sent').length > 0 && (
-                      <Badge variant="destructive" className="ml-1 shrink-0">
-                        {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length}
+                  <TabsTrigger key={opt.value} value={opt.value} className="flex items-center gap-1 text-xs sm:text-sm">
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    <span>{opt.label}</span>
+                    {unread > 0 && (
+                      <Badge variant="destructive" className="ml-1 shrink-0 text-[10px] px-1 py-0">
+                        {unread}
                       </Badge>
                     )}
-                  </Button>
+                  </TabsTrigger>
                 );
               })}
-            </div>
+            </TabsList>
 
           {/* Overview Tab – order matches portal settings: custom message, drawings, proposal, project info */}
           <TabsContent value="overview" className="space-y-6">
@@ -1000,31 +998,6 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
             </Card>
           </TabsContent>
         </Tabs>
-        </div>
-
-        {/* Right sidebar – viewing options (hidden on small screens; use horizontal bar above content instead) */}
-        <aside className="hidden md:flex flex-col w-52 shrink-0 border-l border-slate-200 bg-white/90 py-4 sticky top-0 max-h-[calc(100vh-0px)] overflow-y-auto">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 mb-2">View</span>
-          {viewOptions.map((opt) => {
-            const Icon = opt.icon;
-            return (
-              <Button
-                key={opt.value}
-                variant={activeTab === opt.value ? 'secondary' : 'ghost'}
-                className="justify-start rounded-none py-3 px-4 h-auto font-medium"
-                onClick={() => setActiveTab(opt.value)}
-              >
-                <Icon className="w-4 h-4 mr-2 shrink-0" />
-                <span className="truncate">{opt.label}</span>
-                {opt.value === 'emails' && emails.filter((e: any) => !e.is_read && e.direction === 'sent').length > 0 && (
-                  <Badge variant="destructive" className="ml-2 shrink-0">
-                    {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length}
-                  </Badge>
-                )}
-              </Button>
-            );
-          })}
-        </aside>
       </div>
 
       {/* Send Email Dialog */}
