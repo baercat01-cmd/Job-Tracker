@@ -17,72 +17,24 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // PWA install prompt (SW is registered by vite-plugin-pwa with precache for offline)
+        // Suppress the browser's native PWA install mini-infobar immediately.
+        // The React PWAInstallButton component handles the install prompt instead.
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            // Show the install UI
-            const banner = document.getElementById('pwa-install-banner');
-            if (banner) banner.style.display = 'flex';
         });
-
-        window.addEventListener('appinstalled', () => {
-            const banner = document.getElementById('pwa-install-banner');
-            if (banner) banner.style.display = 'none';
-            deferredPrompt = null;
-        });
+        window.addEventListener('appinstalled', () => { deferredPrompt = null; });
+        window.triggerPWAInstall = function() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+            }
+        };
     </script>
 </head>
 <body class="bg-slate-50">
-    <!-- Clean Install Banner -->
-    <div id="pwa-install-banner" style="display:none;" class="fixed top-0 left-0 right-0 bg-[#4179bc] text-white p-4 flex justify-between items-center z-[100] shadow-xl">
-        <div class="flex items-center gap-3">
-            <img src="/martin-logo.png" class="w-10 h-10 rounded-lg border border-white/20" alt="Logo">
-            <div>
-                <p class="font-black text-sm uppercase tracking-tighter leading-none">Martin Builder OS</p>
-                <p class="text-[10px] opacity-80 font-bold">Install for full offline access</p>
-            </div>
-        </div>
-        <button id="pwa-install-action" class="bg-white text-[#4179bc] px-5 py-2 rounded-full text-[11px] font-black uppercase shadow-lg active:scale-95 transition-transform">
-            Install
-        </button>
-    </div>
-
     <div id="root"></div>
-
-    <script>
-        // Handle both banner and any other install buttons
-        function handleInstall() {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                deferredPrompt.userChoice.then((choice) => {
-                    if (choice.outcome === 'accepted') {
-                        const banner = document.getElementById('pwa-install-banner');
-                        if (banner) banner.style.display = 'none';
-                    }
-                    deferredPrompt = null;
-                });
-            } else {
-                // Fallback for iOS or if event hasn't fired
-                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                if (isIOS) {
-                    alert("iOS: Tap 'Share' then 'Add to Home Screen'");
-                } else {
-                    alert("Please use Chrome Menu (⋮) > Install App");
-                }
-            }
-        }
-
-        document.getElementById('pwa-install-action')?.addEventListener('click', handleInstall);
-        
-        // Expose to React components
-        window.triggerPWAInstall = handleInstall;
-        window.isPWAInstallable = () => {
-            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-            return !isStandalone;
-        };
-    </script>
 
     <script type="module" src="/src/main.tsx"></script>
 </body>
