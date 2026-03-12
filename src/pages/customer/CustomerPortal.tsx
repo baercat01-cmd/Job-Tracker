@@ -811,65 +811,98 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                       </div>
                     ) : proposalData ? (
                       <>
-                        {/* Material sheets — title + description; price only if showLineItemPrices */}
-                        {(proposalData.materialSheets || []).map((sheet: any) => (
-                          <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
-                              {sheet.description && (
-                                <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
-                              )}
-                            </div>
-                            {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
-                              <p className="text-base font-bold text-emerald-700 shrink-0">
-                                ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                        {/* All sections combined and sorted by order_index — mirrors JobFinancials allItemsUnsorted */}
+                        {(() => {
+                          const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
+                            ...(proposalData.materialSheets || []).map((sheet: any) => ({
+                              type: 'material' as const,
+                              id: sheet.id,
+                              orderIndex: sheet.order_index ?? 0,
+                              data: sheet,
+                            })),
+                            // Only standalone custom rows (not linked to a sheet)
+                            ...(proposalData.customRows || [])
+                              .filter((row: any) => !row.sheet_id)
+                              .map((row: any) => ({
+                                type: 'custom' as const,
+                                id: row.id,
+                                orderIndex: row.order_index ?? 0,
+                                data: row,
+                              })),
+                            // Only standalone subcontractors (not linked to a sheet or row)
+                            ...(proposalData.subcontractorEstimates || [])
+                              .filter((est: any) => !est.sheet_id && !est.row_id)
+                              .map((est: any) => ({
+                                type: 'subcontractor' as const,
+                                id: est.id,
+                                orderIndex: est.order_index ?? 0,
+                                data: est,
+                              })),
+                          ].sort((a, b) => a.orderIndex - b.orderIndex);
 
-                        {/* Custom rows — description + line items; price only if showLineItemPrices */}
-                        {(proposalData.customRows || []).map((row: any) => {
-                          const lineItems = (row.custom_financial_row_items || [])
-                            .slice()
-                            .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
-                          return (
-                            <div key={row.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
-                              <div className="min-w-0 flex-1">
-                                <h3 className="font-semibold text-base">{row.description || row.category}</h3>
-                                {lineItems.length > 0 && (
-                                  <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
-                                    {lineItems.map((item: any) => (
-                                      <li key={item.id}>{item.description}</li>
-                                    ))}
-                                  </ul>
+                          return allSections.map((section) => {
+                            if (section.type === 'material') {
+                              const sheet = section.data;
+                              return (
+                                <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                                  <div className="min-w-0 flex-1">
+                                    <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                                    {sheet.description && (
+                                      <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                                    )}
+                                  </div>
+                                  {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
+                                    <p className="text-base font-bold text-emerald-700 shrink-0">
+                                      ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            if (section.type === 'custom') {
+                              const row = section.data;
+                              const lineItems = (row.custom_financial_row_items || [])
+                                .slice()
+                                .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                              return (
+                                <div key={row.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                                  <div className="min-w-0 flex-1">
+                                    <h3 className="font-semibold text-base">{row.description || row.category}</h3>
+                                    {lineItems.length > 0 && (
+                                      <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
+                                        {lineItems.map((item: any) => (
+                                          <li key={item.id}>{item.description}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                  {showFinancial && showLineItemPrices && (row._computedTotal ?? 0) > 0 && (
+                                    <p className="text-base font-bold text-emerald-700 shrink-0">
+                                      ${(row._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            // subcontractor
+                            const est = section.data;
+                            return (
+                              <div key={est.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="font-semibold text-base">{est.company_name}</h3>
+                                  {est.scope_of_work && (
+                                    <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
+                                  )}
+                                </div>
+                                {showFinancial && showLineItemPrices && (est._computedTotal ?? 0) > 0 && (
+                                  <p className="text-base font-bold text-emerald-700 shrink-0">
+                                    ${(est._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
                                 )}
                               </div>
-                              {showFinancial && showLineItemPrices && (row._computedTotal ?? 0) > 0 && (
-                                <p className="text-base font-bold text-emerald-700 shrink-0">
-                                  ${(row._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {/* Subcontractors — company name + scope; price only if showLineItemPrices */}
-                        {(proposalData.subcontractorEstimates || []).map((est: any) => (
-                          <div key={est.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-semibold text-base">{est.company_name}</h3>
-                              {est.scope_of_work && (
-                                <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
-                              )}
-                            </div>
-                            {showFinancial && showLineItemPrices && (est._computedTotal ?? 0) > 0 && (
-                              <p className="text-base font-bold text-emerald-700 shrink-0">
-                                ${(est._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                            );
+                          });
+                        })()}
 
                         {/* Totals — only shown when showFinancial is enabled */}
                         {showFinancial && proposalData.totals && (
