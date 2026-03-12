@@ -673,7 +673,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                       Print proposal
                     </Button>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3">
                     {proposalDataLoading && !proposalData ? (
                       <div className="flex items-center justify-center py-8 text-muted-foreground">
                         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
@@ -681,15 +681,59 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                       </div>
                     ) : proposalData ? (
                       <>
-                        {/* Line items (per-sheet and per-row breakdown) are hidden; only scope and totals shown. */}
+                        {/* Material sheets — section name only; prices hidden unless showLineItemPrices */}
+                        {(proposalData.materialSheets || []).map((sheet: any) => {
+                          const itemsTotal = (sheet.items || []).reduce((s: number, item: any) => s + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
+                          const sheetTotal = itemsTotal + (sheet.laborTotal ?? 0) + (sheet.sheetLineItemsTotal ?? 0);
+                          return (
+                            <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+                              <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                              {showFinancial && showLineItemPrices && sheetTotal > 0 && (
+                                <p className="text-base font-bold text-emerald-700 shrink-0">
+                                  ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Custom rows — description/category only; prices hidden unless showLineItemPrices */}
+                        {(proposalData.customRows || []).map((row: any) => {
+                          const lineItems = (row.custom_financial_row_items || [])
+                            .slice()
+                            .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                          return (
+                            <div key={row.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-semibold text-base">{row.description || row.category}</h3>
+                                {lineItems.length > 0 && (
+                                  <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
+                                    {lineItems.map((item: any) => (
+                                      <li key={item.id}>{item.description}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                              {showFinancial && showLineItemPrices && (
+                                <p className="text-base font-bold text-emerald-700 shrink-0">
+                                  ${(row.selling_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Subcontractors — company name + scope */}
                         {(proposalData.subcontractorEstimates || []).map((est: any) => (
-                          <div key={est.id} className="border rounded-lg p-4">
-                            <h3 className="font-bold">{est.company_name}</h3>
+                          <div key={est.id} className="border rounded-lg px-4 py-3">
+                            <h3 className="font-semibold text-base">{est.company_name}</h3>
                             {est.scope_of_work && (
                               <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
                             )}
                           </div>
                         ))}
+
+                        {/* Totals — only shown when showFinancial is enabled */}
                         {showFinancial && proposalData.totals && (
                           <div className="border-t-2 pt-4 space-y-2">
                             <div className="flex justify-between text-lg">
@@ -722,28 +766,17 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
               </>
             )}
 
-            {/* Project Information (description & notes; address is in header) */}
-            {(job.description || job.notes) && (
+            {/* Project notes — only shown when there's no proposal (avoids duplicating description that's already in proposal sections) */}
+            {!showProposal && job.notes && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Building2 className="w-5 h-5" />
-                    Project Information
+                    Project Notes
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {job.description && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Description</p>
-                      <p className="font-medium mt-1">{job.description}</p>
-                    </div>
-                  )}
-                  {job.notes && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Notes</p>
-                      <p className="mt-1">{job.notes}</p>
-                    </div>
-                  )}
+                <CardContent>
+                  <p className="whitespace-pre-wrap">{job.notes}</p>
                 </CardContent>
               </Card>
             )}
