@@ -249,7 +249,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
             ))}
           </TabsList>
 
-          {/* Overview Tab – matches customer portal: custom message, drawings, proposal, project info */}
+          {/* Overview Tab – matches customer portal: custom message, drawings, proposal */}
           <TabsContent value="overview" className="space-y-6">
             {/* Custom welcome message (from Portal settings) */}
             {visibilitySettings?.custom_message && (
@@ -374,31 +374,6 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
               </Card>
             )}
 
-            {/* Project Information (description & notes only; address is in header) */}
-            {(jobData.description || jobData.notes) && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Building2 className="w-5 h-5" />
-                    Project Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {jobData.description && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Description</p>
-                      <p className="font-medium mt-1">{jobData.description}</p>
-                    </div>
-                  )}
-                  {jobData.notes && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Notes</p>
-                      <p className="mt-1">{jobData.notes}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           {/* Payments Tab */}

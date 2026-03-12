@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useSearchParams } from 'react-router-dom';
 import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
@@ -85,6 +86,9 @@ interface TrimType {
 }
 
 export function TrimPricingCalculator() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkToMaterialItemId = searchParams.get('linkToMaterialItem');
+
   // Material type selection
   const [trimTypes, setTrimTypes] = useState<TrimType[]>([]);
   const [selectedTrimTypeId, setSelectedTrimTypeId] = useState<string>('');
@@ -126,6 +130,7 @@ export function TrimPricingCalculator() {
   // Save/Load
   const [configName, setConfigName] = useState('');
   const [selectedJobId, setSelectedJobId] = useState<string>('');
+  const [addToJobWorkbook, setAddToJobWorkbook] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([]);
   const [saving, setSaving] = useState(false);
@@ -1716,11 +1721,81 @@ export function TrimPricingCalculator() {
       
       console.log('✅ Successfully inserted config:', insertedData);
       console.log('📊 Total configs now:', (savedConfigs.length + 1));
+
+      const newConfigId = insertedData?.[0]?.id;
+      if (addToJobWorkbook && selectedJobId && newConfigId) {
+        try {
+          const { data: wb } = await supabase
+            .from('material_workbooks')
+            .select('id')
+            .eq('job_id', selectedJobId)
+            .eq('status', 'working')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (wb) {
+            const { data: sheets } = await supabase
+              .from('material_sheets')
+              .select('id')
+              .eq('workbook_id', wb.id)
+              .order('order_index')
+              .limit(1);
+            const sheetId = sheets?.[0]?.id;
+            if (sheetId) {
+              const insertPayload: Record<string, unknown> = {
+                sheet_id: sheetId,
+                category: 'Trim',
+                material_name: configName.trim() || insertedData[0].name,
+                quantity: 1,
+              };
+              const { data: insertedRows, error: itemErr } = await supabase.from('material_items').insert(insertPayload as any).select('id');
+              if (itemErr) throw itemErr;
+              const newItemId = insertedRows?.[0]?.id;
+              if (newItemId) {
+                const { error: linkErr } = await supabase.rpc('set_material_item_trim_config', {
+                  p_material_item_id: newItemId,
+                  p_trim_saved_config_id: newConfigId,
+                });
+                if (linkErr) console.warn('Trim link after insert:', linkErr);
+              }
+              toast.success('Configuration saved and added to job workbook. Shop will see the drawing in the pull form.');
+            } else {
+              toast.success('Configuration saved. No sheet in workbook — add the trim line from the job materials if needed.');
+            }
+          } else {
+            toast.success('Configuration saved. Job has no working workbook — add the trim line from the job materials if needed.');
+          }
+        } catch (addErr: any) {
+          console.warn('Add to workbook failed:', addErr);
+          toast.warning(`Saved trim config, but adding to workbook failed: ${addErr?.message || 'unknown'}. You can link it later from the job materials.`);
+        }
+      } else {
+        toast.success('Configuration saved successfully');
+      }
+
+      if (linkToMaterialItemId && newConfigId) {
+        try {
+          const { error: linkErr } = await supabase.rpc('set_material_item_trim_config', {
+            p_material_item_id: linkToMaterialItemId,
+            p_trim_saved_config_id: newConfigId,
+          });
+          if (linkErr) throw linkErr;
+          toast.success('Trim saved and linked to the material item. Shop will see the drawing in the pull form.');
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('linkToMaterialItem');
+            return next;
+          }, { replace: true });
+        } catch (linkErr: any) {
+          console.warn('Link to material item failed:', linkErr);
+          toast.warning(`Trim saved, but linking to material item failed: ${linkErr?.message || 'unknown'}. You can link it from the workbook.`);
+        }
+      }
       
-      toast.success('Configuration saved successfully');
       setShowSaveDialog(false);
       setConfigName('');
       setSelectedJobId('');
+      setAddToJobWorkbook(false);
       // Reload configs to show the new one
       setTimeout(() => loadSavedConfigs(), 500);
     } catch (error: any) {
@@ -1942,6 +2017,11 @@ export function TrimPricingCalculator() {
 
   return (
     <>
+    {linkToMaterialItemId && (
+      <div className="mx-auto mb-2 p-2 rounded-lg bg-amber-900/60 border border-amber-500 text-amber-200 text-sm text-center">
+        After you save this trim, it will be linked to the material item you selected. Shop will see the drawing in the pull form.
+      </div>
+    )}
     <div className="grid grid-cols-[1.6fr,1fr] gap-3 max-w-full mx-auto h-[calc(100vh-80px)] overflow-hidden p-2">
       {/* Drawing Tool - Left Side */}
       <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl flex flex-col h-full overflow-hidden">
@@ -2660,17 +2740,33 @@ export function TrimPricingCalculator() {
                   </SelectContent>
                 </Select>
                 {selectedJobId && (
-                  <Button
-                    onClick={() => setSelectedJobId('')}
-                    variant="outline"
-                    size="sm"
-                    className="w-full border-red-500 text-red-400 hover:bg-red-900/20"
-                  >
-                    Clear Job Selection
-                  </Button>
+                  <>
+                    <Button
+                      onClick={() => setSelectedJobId('')}
+                      variant="outline"
+                      size="sm"
+                      className="w-full border-red-500 text-red-400 hover:bg-red-900/20"
+                    >
+                      Clear Job Selection
+                    </Button>
+                    <label className="flex items-center gap-2 text-sm text-white/90 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={addToJobWorkbook}
+                        onChange={(e) => setAddToJobWorkbook(e.target.checked)}
+                        className="rounded border-green-600"
+                      />
+                      Add to job workbook (shop will see drawing in pull form)
+                    </label>
+                  </>
                 )}
               </div>
             </div>
+            {linkToMaterialItemId && (
+              <div className="bg-amber-900/40 border border-amber-600 rounded p-3">
+                <p className="text-amber-300 text-sm">This trim will also be linked to the material item you selected in the workbook. Shop will see the drawing in the pull form.</p>
+              </div>
+            )}
             <div className="bg-black/30 border border-green-800 rounded p-3">
               <p className="text-yellow-400 font-semibold text-sm mb-2">Will save:</p>
               <ul className="text-white/80 text-sm space-y-1">

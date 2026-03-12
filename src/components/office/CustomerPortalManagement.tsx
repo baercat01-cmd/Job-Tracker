@@ -745,7 +745,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const { data: documentsData } = await supabase
         .from('job_documents')
         .select('id, name, category')
-        .eq('job_id', j.id);
+        .eq('job_id', j.id)
+        .eq('visible_to_customer_portal', true);
 
       const { data: photosData } = await supabase
         .from('photos')
@@ -1018,7 +1019,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         subEstimatesData = data || [];
       }
 
-      // Totals — use extended_price + category markups (mirrors JobFinancials exactly)
+      // Totals — extended_price when set, else price_per_unit×qty, else cost×markup (mirrors JobFinancials)
       let sheetMaterialsTotal = 0, sheetLaborTotal = 0;
       (materialSheets || []).forEach((sheet: any) => {
         const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
@@ -1026,9 +1027,17 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         (sheet.items || []).forEach((item: any) => { const cat = item.category || 'Uncategorized'; if (!byCategory.has(cat)) byCategory.set(cat, []); byCategory.get(cat)!.push(item); });
         let sheetCatPrice = 0;
         byCategory.forEach((catItems, catName) => {
-          const sp = catItems.reduce((s: number, i: any) => s + (Number(i.extended_price) || 0), 0);
-          if (sp > 0) { sheetCatPrice += sp; }
-          else { const cost = catItems.reduce((s: number, i: any) => { const ec = i.extended_cost != null ? Number(i.extended_cost) : (Number(i.quantity) || 0) * (Number(i.cost_per_unit) || 0); return s + ec; }, 0); sheetCatPrice += cost * (1 + (catMarkups[catName] ?? 10) / 100); }
+          const markup = catMarkups[catName] ?? 10;
+          const categoryTotal = catItems.reduce((s: number, i: any) => {
+            const ext = i.extended_price != null && i.extended_price !== '' ? Number(i.extended_price) : null;
+            if (ext != null && ext > 0) return s + ext;
+            const qty = Number(i.quantity) || 0;
+            const pricePerUnit = Number(i.price_per_unit) || 0;
+            if (pricePerUnit > 0) return s + qty * pricePerUnit;
+            const cost = i.extended_cost != null ? Number(i.extended_cost) : qty * (Number(i.cost_per_unit) || 0);
+            return s + cost * (1 + markup / 100);
+          }, 0);
+          sheetCatPrice += categoryTotal;
         });
         sheetMaterialsTotal += sheetCatPrice;
         const directLabor = sheet.laborTotal ?? 0;
@@ -1273,6 +1282,14 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               </div>
+              {typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                  This link only works on this device. To open on your phone: deploy the app (e.g. Vercel/Netlify) and share the new link, or on the same Wi‑Fi use <strong>http://YOUR_PC_IP:8080</strong>/customer-portal?token=... (find your PC&apos;s IP in system settings).
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Customer can open the link and tap &quot;Install&quot; to save it like an app (Martin Builder style).
+              </p>
               {currentLink?.customer_email && (
                 <a
                   href={`mailto:${currentLink.customer_email}?subject=Your Project Portal&body=Here is your project portal link: ${portalUrl}`}
@@ -1300,7 +1317,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       </aside>
 
       {/* Customer portal preview – main content */}
-      <main className="flex-1 min-w-0 rounded-lg border bg-background overflow-hidden flex flex-col">
+      <main className="flex-1 min-w-0 min-h-[500px] rounded-lg border bg-background overflow-hidden flex flex-col">
         {!customerName?.trim() ? (
           <div className="flex-1 flex items-center justify-center p-8 text-center">
             <div>
@@ -1321,13 +1338,15 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100">
-            <CustomerPortalPreview
-              customerName={customerName}
-              jobs={previewJobs}
-              visibilitySettings={visibilitySettings}
-              customMessage={customMessage}
-            />
+          <div className="flex-1 min-h-0 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100">
+            <div className="min-h-[480px]">
+              <CustomerPortalPreview
+                customerName={customerName}
+                jobs={previewJobs}
+                visibilitySettings={visibilitySettings}
+                customMessage={customMessage}
+              />
+            </div>
           </div>
         )}
       </main>
@@ -1682,13 +1701,15 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
               })()}
 
               {/* Embedded Interactive Portal */}
-              <div className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100">
-                <CustomerPortalPreview 
-                  customerName={customerName}
-                  jobs={previewJobs}
-                  visibilitySettings={previewSettings}
-                  customMessage={previewSettings?.custom_message}
-                />
+              <div className="flex-1 min-h-0 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100">
+                <div className="min-h-[480px]">
+                  <CustomerPortalPreview 
+                    customerName={customerName}
+                    jobs={previewJobs}
+                    visibilitySettings={previewSettings}
+                    customMessage={previewSettings?.custom_message}
+                  />
+                </div>
               </div>
 
               {/* Preview Footer Actions */}

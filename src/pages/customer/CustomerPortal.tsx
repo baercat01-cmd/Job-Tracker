@@ -19,7 +19,6 @@ import {
   MapPin,
   Phone,
   Mail,
-  Building2,
   FileSpreadsheet,
   ChevronRight,
   Briefcase,
@@ -47,12 +46,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { generateProposalHTML } from '@/components/office/ProposalPDFTemplate';
 
 interface Job {
   id: string;
   name: string;
   client_name: string;
   address: string;
+  customer_phone?: string;
   description: string | null;
   notes: string | null;
   status: string;
@@ -74,6 +75,8 @@ interface JobSummary {
 // Omit show_line_item_prices so portal works when PostgREST schema cache is stale (PGRST204)
 const CUSTOMER_PORTAL_ACCESS_SELECT =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
+
+export const CUSTOMER_PORTAL_TOKEN_KEY = 'customer_portal_token';
 
 export default function CustomerPortal() {
   const [searchParams] = useSearchParams();
@@ -121,6 +124,9 @@ export default function CustomerPortal() {
 
       setValidToken(true);
       setCustomerInfo(accessData);
+      try {
+        localStorage.setItem(CUSTOMER_PORTAL_TOKEN_KEY, token);
+      } catch { /* ignore */ }
 
       // Update last accessed time
       await supabase
@@ -178,7 +184,7 @@ export default function CustomerPortal() {
         .eq('job_id', job.id)
         .order('payment_date', { ascending: false });
 
-      // Load documents
+      // Load documents that are explicitly enabled for the customer portal
       const { data: documentsData } = await supabase
         .from('job_documents')
         .select(`
@@ -186,7 +192,7 @@ export default function CustomerPortal() {
           job_document_revisions(*)
         `)
         .eq('job_id', job.id)
-        .eq('visible_to_crew', true);
+        .eq('visible_to_customer_portal', true);
 
       // Load photos
       const { data: photosData } = await supabase
@@ -285,20 +291,32 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
   const { job, quote, jobQuotes = [], payments, documents, photos, scheduleEvents, emails, viewerLinks = [], totalPaid } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Default to the most recently sent quote (the "contract"), or the highest-numbered proposal
+  // Default: signed/contract proposal first, then most recently sent, then highest proposal number
   const defaultQuoteId = (() => {
     if (!jobQuotes.length) return quote?.id ?? null;
-    const sentQuotes = (jobQuotes as any[]).filter((q: any) => q.sent_at);
+    const list = jobQuotes as any[];
+    const contractQuotes = list.filter((q: any) => q.status === 'signed' || q.status === 'accepted');
+    if (contractQuotes.length > 0) {
+      const bySent = [...contractQuotes].sort((a, b) =>
+        (new Date(b.sent_at || 0).getTime()) - (new Date(a.sent_at || 0).getTime())
+      );
+      const byProposal = [...contractQuotes].sort((a, b) => {
+        const aN = parseInt((a.proposal_number || a.quote_number || '0').toString().split('-').pop() || '0', 10);
+        const bN = parseInt((b.proposal_number || b.quote_number || '0').toString().split('-').pop() || '0', 10);
+        return bN - aN;
+      });
+      return (bySent[0]?.sent_at ? bySent[0] : byProposal[0])?.id ?? contractQuotes[0].id;
+    }
+    const sentQuotes = list.filter((q: any) => q.sent_at);
     if (sentQuotes.length > 0) {
       const sorted = [...sentQuotes].sort((a: any, b: any) =>
         new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
       );
       return sorted[0].id;
     }
-    // Fall back to highest proposal number (e.g. "26012-5" → take the suffix integer)
-    const sorted = [...(jobQuotes as any[])].sort((a: any, b: any) => {
-      const aN = parseInt((a.proposal_number || a.quote_number || '0').split('-').pop() || '0', 10);
-      const bN = parseInt((b.proposal_number || b.quote_number || '0').split('-').pop() || '0', 10);
+    const sorted = [...list].sort((a: any, b: any) => {
+      const aN = parseInt((a.proposal_number || a.quote_number || '0').toString().split('-').pop() || '0', 10);
+      const bN = parseInt((b.proposal_number || b.quote_number || '0').toString().split('-').pop() || '0', 10);
       return bN - aN;
     });
     return sorted[0]?.id ?? quote?.id ?? null;
@@ -433,11 +451,11 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .order('order_index');
         let sheets = sheetsData || [];
 
-        // Step D (mirrors JobFinancials): if workbook has no sheets OR no items,
-        // scan all job workbooks and use the first one with actual items.
-        const needsFallback = sheets.length === 0 || (() => false)(); // item check below
+        // When we have a quote-specific workbook with sheets, always use it so sheet IDs match
+        // custom_financial_row_items (sheet-linked line items) and sheet descriptions. Do not fall
+        // back to another workbook just because material_items count is 0 (sections can be description + line items only).
         let doFallback = sheets.length === 0;
-        if (!doFallback && sheets.length > 0) {
+        if (!doFallback && sheets.length > 0 && !quoteId) {
           const sheetIdList = sheets.map((s: any) => s.id);
           const { count: itemCount } = await supabase
             .from('material_items')
@@ -559,17 +577,17 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         });
         let sheetCatPrice = 0;
         byCategory.forEach((catItems, catName) => {
-          const sellingPrice = catItems.reduce((s: number, i: any) => s + (Number(i.extended_price) || 0), 0);
-          if (sellingPrice > 0) {
-            sheetCatPrice += sellingPrice;
-          } else {
-            const cost = catItems.reduce((s: number, i: any) => {
-              const ec = i.extended_cost != null ? Number(i.extended_cost) : (Number(i.quantity) || 0) * (Number(i.cost_per_unit) || 0);
-              return s + ec;
-            }, 0);
-            const markup = catMarkups[catName] ?? 10;
-            sheetCatPrice += cost * (1 + markup / 100);
-          }
+          const markup = catMarkups[catName] ?? 10;
+          const categoryTotal = catItems.reduce((s: number, i: any) => {
+            const ext = i.extended_price != null && i.extended_price !== '' ? Number(i.extended_price) : null;
+            if (ext != null && ext > 0) return s + ext;
+            const qty = Number(i.quantity) || 0;
+            const pricePerUnit = Number(i.price_per_unit) || 0;
+            if (pricePerUnit > 0) return s + qty * pricePerUnit;
+            const cost = i.extended_cost != null ? Number(i.extended_cost) : qty * (Number(i.cost_per_unit) || 0);
+            return s + cost * (1 + markup / 100);
+          }, 0);
+          sheetCatPrice += categoryTotal;
         });
         sheetMaterialsTotal += sheetCatPrice;
         // Sheet-level labor from material_sheet_labor
@@ -686,6 +704,95 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
     }
   }
 
+  /** Open print dialog with proposal HTML that matches the office Export Customer PDF (Proposal-26012-5 style). */
+  function handlePrintProposal() {
+    if (!proposalData || !job) return;
+    const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
+    const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
+      ...(proposalData.materialSheets || []).map((sheet: any) => ({ type: 'material' as const, id: sheet.id, orderIndex: sheet.order_index ?? 0, data: sheet })),
+      ...(proposalData.customRows || []).filter((row: any) => !row.sheet_id).map((row: any) => ({ type: 'custom' as const, id: row.id, orderIndex: row.order_index ?? 0, data: row })),
+      ...(proposalData.subcontractorEstimates || []).filter((est: any) => !est.sheet_id && !est.row_id).map((est: any) => ({ type: 'subcontractor' as const, id: est.id, orderIndex: est.order_index ?? 0, data: est })),
+    ].sort((a, b) => a.orderIndex - b.orderIndex);
+
+    const sections = allSections.map((section) => {
+      if (section.type === 'material') {
+        const s = section.data;
+        const linkedRows = (proposalData.customRows || []).filter((r: any) => r.sheet_id === s.id);
+        const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === s.id);
+        const sheetLineItems = s.sheetLinkedItems || [];
+        const parts: string[] = [];
+        if (s.description) parts.push(s.description);
+        sheetLineItems.forEach((item: any) => { if (item.description) parts.push(item.description); });
+        linkedRows.forEach((row: any) => {
+          if (row.description) parts.push(row.description);
+          (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)).forEach((i: any) => { if (i.description) parts.push(i.description); });
+        });
+        linkedSubs.forEach((est: any) => { if (est.scope_of_work) parts.push(est.scope_of_work); });
+        if (parts.length === 0 && (s.items || []).length > 0) {
+          (s.items || []).forEach((item: any) => parts.push([item.quantity, item.material_name].filter(Boolean).join(' - ')));
+        }
+        const description = parts.join('\n');
+        return { name: s.sheet_name, description, price: showFinancial && showLineItemPrices ? (s._computedTotal ?? 0) : undefined, optional: false };
+      }
+      if (section.type === 'custom') {
+        const r = section.data;
+        const items = (r.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        const description = items.length > 0 ? items.map((i: any) => i.description).filter(Boolean).join('\n') : '';
+        return { name: r.description || r.category || 'Custom', description, price: showFinancial && showLineItemPrices ? (r._computedTotal ?? 0) : undefined, optional: false };
+      }
+      const e = section.data;
+      return { name: e.company_name, description: e.scope_of_work || '', price: showFinancial && showLineItemPrices ? (e._computedTotal ?? 0) : undefined, optional: false };
+    });
+
+    const totals = proposalData.totals
+      ? {
+          materials: 0,
+          labor: 0,
+          subtotal: proposalData.totals.subtotal,
+          tax: proposalData.totals.tax,
+          grandTotal: proposalData.totals.grandTotal,
+        }
+      : { materials: 0, labor: 0, subtotal: 0, tax: 0, grandTotal: 0 };
+
+    const html = generateProposalHTML({
+      proposalNumber,
+      date: new Date().toLocaleDateString('en-US'),
+      job: {
+        client_name: job.client_name,
+        address: job.address || '',
+        name: job.name,
+        customer_phone: job.customer_phone || undefined,
+        description: job.description || undefined,
+      },
+      sections,
+      totals,
+      showLineItems: false,
+      showSectionPrices: !!(showFinancial && showLineItemPrices),
+      showInternalDetails: false,
+      theme: 'default',
+      taxExempt: !!selectedQuote?.tax_exempt,
+    });
+
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank');
+    if (!win) {
+      URL.revokeObjectURL(blobUrl);
+      toast.error('Allow popups to print.');
+      return;
+    }
+    win.focus();
+    toast.info('Choose your printer or "Save as PDF" in the print dialog.');
+    setTimeout(() => {
+      try {
+        if (!win.closed) win.print();
+      } catch {
+        toast.error('Could not open print dialog');
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+    }, 500);
+  }
+
   const viewOptions = [
     { value: 'overview', label: 'Overview', icon: LayoutDashboard },
     ...(showPayments ? [{ value: 'payments' as const, label: 'Payments', icon: DollarSign }] : []),
@@ -768,7 +875,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
               })}
             </TabsList>
 
-          {/* Overview Tab – order matches portal settings: custom message, drawings, proposal, project info */}
+          {/* Overview Tab – order matches portal settings: custom message, drawings, proposal */}
           <TabsContent value="overview" className="space-y-6">
             {/* Custom welcome message (from Portal settings) */}
             {customerInfo?.custom_message && (
@@ -838,7 +945,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                       variant="outline"
                       size="sm"
                       className="shrink-0 print:hidden"
-                      onClick={() => window.print()}
+                      onClick={handlePrintProposal}
                     >
                       <Printer className="w-4 h-4 mr-2" />
                       Print proposal
@@ -884,12 +991,47 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                           return allSections.map((section) => {
                             if (section.type === 'material') {
                               const sheet = section.data;
+                              const linkedRows = (proposalData.customRows || []).filter((r: any) => r.sheet_id === sheet.id);
+                              const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === sheet.id);
+                              const sheetLineItems = sheet.sheetLinkedItems || [];
                               return (
                                 <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
                                   <div className="min-w-0 flex-1">
                                     <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
                                     {sheet.description && (
                                       <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                                    )}
+                                    {sheetLineItems.length > 0 && (
+                                      <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
+                                        {sheetLineItems.map((item: any) => (
+                                          <li key={item.id}>{item.description}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                    {linkedRows.map((row: any) => {
+                                      const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                                      return (
+                                        <div key={row.id} className="mt-2">
+                                          {row.description && <p className="text-sm font-medium text-slate-700">{row.description}</p>}
+                                          {items.length > 0 && (
+                                            <ul className="text-sm text-muted-foreground mt-0.5 space-y-0.5 list-disc list-inside">
+                                              {items.map((i: any) => <li key={i.id}>{i.description}</li>)}
+                                            </ul>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                    {linkedSubs.map((est: any) => (
+                                      <div key={est.id} className="mt-2">
+                                        {est.scope_of_work && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{est.scope_of_work}</p>}
+                                      </div>
+                                    ))}
+                                    {!sheet.description && sheetLineItems.length === 0 && linkedRows.length === 0 && linkedSubs.length === 0 && (sheet.items || []).length > 0 && (
+                                      <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
+                                        {(sheet.items || []).map((item: any) => (
+                                          <li key={item.id}>{[item.quantity, item.material_name].filter(Boolean).join(' - ')}</li>
+                                        ))}
+                                      </ul>
                                     )}
                                   </div>
                                   {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
@@ -978,20 +1120,6 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
               </>
             )}
 
-            {/* Project notes — only shown when there's no proposal (avoids duplicating description that's already in proposal sections) */}
-            {!showProposal && job.notes && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Building2 className="w-5 h-5" />
-                    Project Notes
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="whitespace-pre-wrap">{job.notes}</p>
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           {/* Payments Tab */}

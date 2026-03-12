@@ -8,7 +8,9 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, ChevronDown, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { TrimDrawingPreview, type LineSegment } from '@/components/office/TrimDrawingPreview';
+import { Package, ArrowRight, ChevronDown, ChevronRight, FileSpreadsheet, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Select,
@@ -33,6 +35,8 @@ interface MaterialItem {
   usage: string | null;
   status: string;
   cost_per_unit: number | null;
+  trim_saved_config_id?: string | null;
+  trim_saved_configs?: { id: string; name: string; drawing_segments: unknown } | null;
   sheets: {
     sheet_name: string;
   };
@@ -65,6 +69,25 @@ interface ShopMaterialsDialogProps {
   onJobSelect?: (jobId: string) => void;
 }
 
+function normalizeDrawingSegments(raw: unknown): LineSegment[] {
+  if (!raw) return [];
+  try {
+    const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!Array.isArray(arr) || arr.length === 0) return [];
+    return arr.map((seg: any, index: number) => ({
+      id: seg.id ?? `seg-${index}`,
+      start: seg.start && typeof seg.start.x === 'number' && typeof seg.start.y === 'number' ? { x: seg.start.x, y: seg.start.y } : { x: 0, y: 0 },
+      end: seg.end && typeof seg.end.x === 'number' && typeof seg.end.y === 'number' ? { x: seg.end.x, y: seg.end.y } : { x: 0, y: 0 },
+      label: seg.label ?? String.fromCharCode(65 + index),
+      hasHem: seg.hasHem === true,
+      hemAtStart: seg.hemAtStart === true,
+      hemSide: seg.hemSide === 'left' || seg.hemSide === 'right' ? seg.hemSide : 'right',
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function getStatusColor(status: string): string {
   switch (status) {
     case 'not_ordered':
@@ -90,6 +113,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
   const [loading, setLoading] = useState(false);
   const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set());
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
+  const [viewingTrimConfig, setViewingTrimConfig] = useState<{ name: string; drawing_segments: unknown } | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -130,6 +154,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
               usage,
               status,
               cost_per_unit,
+              trim_saved_config_id,
               sheets:material_sheets(sheet_name)
             )
           )
@@ -142,18 +167,36 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
       }
 
       console.log(`Found ${data?.length || 0} total packages`);
-      
-      // Transform Supabase response to match our interface
+
+      // Fetch trim configs separately (no join — avoids schema cache relationship error)
+      const bundleTrimIds = [...new Set((data || []).flatMap((pkg: any) =>
+        (pkg.bundle_items || []).map((bi: any) => bi.material_items?.trim_saved_config_id).filter(Boolean)
+      ))];
+      const trimConfigMap = new Map<string, any>();
+      if (bundleTrimIds.length > 0) {
+        const { data: trimConfigs } = await supabase
+          .from('trim_saved_configs')
+          .select('id, name, drawing_segments')
+          .in('id', bundleTrimIds);
+        (trimConfigs || []).forEach((c: any) => trimConfigMap.set(c.id, c));
+      }
+
+      // Transform Supabase response to match our interface; attach trim_saved_configs
       const transformedPackages: MaterialBundle[] = (data || []).map((pkg: any) => ({
         ...pkg,
         jobs: pkg.jobs,
-        bundle_items: pkg.bundle_items.map((item: any) => ({
-          ...item,
-          material_items: {
-            ...item.material_items,
-            sheets: item.material_items.sheets,
-          },
-        })),
+        bundle_items: pkg.bundle_items.map((item: any) => {
+          const mi = item.material_items;
+          const trimConfig = mi?.trim_saved_config_id ? trimConfigMap.get(mi.trim_saved_config_id) : null;
+          return {
+            ...item,
+            material_items: {
+              ...mi,
+              sheets: mi?.sheets,
+              trim_saved_configs: trimConfig || null,
+            },
+          };
+        }),
       }));
       
       // Filter to only include packages that have materials with pull_from_shop or ready_for_job status
@@ -173,7 +216,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
 
       const { data: unbundledRows } = await supabase
         .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length, usage, status, cost_per_unit')
+        .select('id, sheet_id, category, material_name, quantity, length, usage, status, cost_per_unit, trim_saved_config_id')
         .in('status', ['pull_from_shop', 'ready_for_job']);
       const unbundled = (unbundledRows || []).filter((r: any) => !bundledSet.has(r.id));
       if (unbundled.length === 0) {
@@ -194,6 +237,16 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
       }).filter(Boolean))]);
       const jobMap = new Map((jobsData || []).map((j: any) => [j.id, j]));
 
+      const trimConfigIds = [...new Set(unbundled.map((i: any) => i.trim_saved_config_id).filter(Boolean))];
+      const unbundledTrimConfigMap = new Map<string, any>();
+      if (trimConfigIds.length > 0) {
+        const { data: trimConfigs } = await supabase
+          .from('trim_saved_configs')
+          .select('id, name, drawing_segments')
+          .in('id', trimConfigIds);
+        (trimConfigs || []).forEach((c: any) => unbundledTrimConfigMap.set(c.id, c));
+      }
+
       const byKey = new Map<string, any[]>();
       for (const item of unbundled) {
         const sheet = sheetMap.get(item.sheet_id);
@@ -201,7 +254,12 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         if (!jobId || !sheet) continue;
         const key = `${jobId}|${item.sheet_id}`;
         if (!byKey.has(key)) byKey.set(key, []);
-        byKey.get(key)!.push({ ...item, sheets: { sheet_name: sheet.sheet_name } });
+        const trimConfig = item.trim_saved_config_id ? unbundledTrimConfigMap.get(item.trim_saved_config_id) : null;
+        byKey.get(key)!.push({
+          ...item,
+          sheets: { sheet_name: sheet.sheet_name },
+          trim_saved_configs: trimConfig || null,
+        });
       }
 
       const built: MaterialBundle[] = [];
@@ -290,6 +348,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
   const isSheetGroup = (pkg: MaterialBundle) => pkg.id.startsWith('unbundled-');
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -393,6 +452,19 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                                                     {item.material_items.usage && <span>Usage: {item.material_items.usage}</span>}
                                                   </div>
                                                 </div>
+                                                {item.material_items.trim_saved_configs?.drawing_segments && (
+                                                  <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="flex-shrink-0 h-8 gap-1"
+                                                    onClick={() => setViewingTrimConfig({ name: item.material_items.trim_saved_configs!.name, drawing_segments: item.material_items.trim_saved_configs!.drawing_segments })}
+                                                    title="View trim drawing"
+                                                  >
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                    Drawing
+                                                  </Button>
+                                                )}
                                                 <div className="flex-shrink-0 w-36">
                                                   <Select value={item.material_items.status} onValueChange={(v) => updateMaterialStatus(item.material_items.id, v)}>
                                                     <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(item.material_items.status)}`}><SelectValue /></SelectTrigger>
@@ -509,6 +581,19 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                                                     {item.material_items.usage && <span>Usage: {item.material_items.usage}</span>}
                                                   </div>
                                                 </div>
+                                                {item.material_items.trim_saved_configs?.drawing_segments && (
+                                                  <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="flex-shrink-0 h-8 gap-1"
+                                                    onClick={() => setViewingTrimConfig({ name: item.material_items.trim_saved_configs!.name, drawing_segments: item.material_items.trim_saved_configs!.drawing_segments })}
+                                                    title="View trim drawing"
+                                                  >
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                    Drawing
+                                                  </Button>
+                                                )}
                                                 <div className="flex-shrink-0 w-36">
                                                   <Select value={item.material_items.status} onValueChange={(v) => updateMaterialStatus(item.material_items.id, v)}>
                                                     <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(item.material_items.status)}`}><SelectValue /></SelectTrigger>
@@ -555,5 +640,22 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         )}
       </DialogContent>
     </Dialog>
+
+    {/* Trim drawing preview dialog (separate overlay) */}
+    <Dialog open={!!viewingTrimConfig} onOpenChange={() => setViewingTrimConfig(null)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{viewingTrimConfig?.name ?? 'Trim Drawing'}</DialogTitle>
+        </DialogHeader>
+        <div className="flex justify-center py-4">
+          <TrimDrawingPreview
+            segments={viewingTrimConfig ? normalizeDrawingSegments(viewingTrimConfig.drawing_segments) : []}
+            width={320}
+            height={200}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

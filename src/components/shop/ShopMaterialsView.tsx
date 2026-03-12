@@ -17,8 +17,29 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck, Building2, FileSpreadsheet } from 'lucide-react';
+import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck, Building2, FileSpreadsheet, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import { TrimDrawingPreview, type LineSegment } from '@/components/office/TrimDrawingPreview';
+import { TrimDrawingFullScreenView } from '@/components/office/TrimDrawingFullScreenView';
+
+function normalizeDrawingSegments(raw: unknown): LineSegment[] {
+  if (!raw) return [];
+  try {
+    const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!Array.isArray(arr) || arr.length === 0) return [];
+    return arr.map((seg: any, index: number) => ({
+      id: seg.id ?? `seg-${index}`,
+      start: seg.start && typeof seg.start.x === 'number' && typeof seg.start.y === 'number' ? { x: seg.start.x, y: seg.start.y } : { x: 0, y: 0 },
+      end: seg.end && typeof seg.end.x === 'number' && typeof seg.end.y === 'number' ? { x: seg.end.x, y: seg.end.y } : { x: 0, y: 0 },
+      label: seg.label ?? String.fromCharCode(65 + index),
+      hasHem: seg.hasHem === true,
+      hemAtStart: seg.hemAtStart === true,
+      hemSide: seg.hemSide === 'left' || seg.hemSide === 'right' ? seg.hemSide : 'right',
+    }));
+  } catch {
+    return [];
+  }
+}
 
 interface MaterialItem {
   id: string;
@@ -31,6 +52,9 @@ interface MaterialItem {
   usage: string | null;
   status: string;
   cost_per_unit: number | null;
+  quantity_ready_for_job?: number;
+  trim_saved_config_id?: string | null;
+  trim_saved_configs?: { id: string; name: string; drawing_segments: unknown } | null;
   sheets: {
     sheet_name: string;
   };
@@ -111,6 +135,31 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Collapsed by default
   const [processingMaterials, setProcessingMaterials] = useState<Set<string>>(new Set());
+  const [viewingTrimConfig, setViewingTrimConfig] = useState<{ name: string; drawing_segments: unknown } | null>(null);
+  const [loadingTrimId, setLoadingTrimId] = useState<string | null>(null);
+  /** For partial mark-ready: material_item_id -> input value string */
+  const [partialQtyInput, setPartialQtyInput] = useState<Record<string, string>>({});
+
+  async function openTrimDrawing(trimConfigId: string) {
+    if (!trimConfigId || loadingTrimId) return;
+    setLoadingTrimId(trimConfigId);
+    try {
+      const { data, error } = await supabase
+        .from('trim_saved_configs')
+        .select('id, name, drawing_segments')
+        .eq('id', trimConfigId)
+        .single();
+      if (error) throw error;
+      if (data?.drawing_segments != null)
+        setViewingTrimConfig({ name: data.name ?? 'Trim', drawing_segments: data.drawing_segments });
+      else
+        toast.error('No drawing saved for this trim.');
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not load trim drawing.');
+    } finally {
+      setLoadingTrimId(null);
+    }
+  }
 
   useEffect(() => {
     loadPackages();
@@ -163,11 +212,40 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       setLoading(true);
       
       console.log('🔍 SHOP VIEW: Loading packages with materials that need to be pulled from shop...');
-      
-      // Simplified approach: Just load all bundles with their materials and filter in memory
-      const { data: allBundles, error: bundlesError } = await supabase
-        .from('material_bundles')
-        .select(`
+
+      const bundleSelectFull = `
+          id,
+          job_id,
+          name,
+          description,
+          status,
+          jobs!inner (
+            id,
+            name,
+            client_name
+          ),
+          bundle_items:material_bundle_items (
+            id,
+            bundle_id,
+            material_item_id,
+            material_items!inner (
+              id,
+              sheet_id,
+              category,
+              material_name,
+              quantity,
+              length,
+              color,
+              usage,
+              status,
+              cost_per_unit,
+              trim_saved_config_id,
+              quantity_ready_for_job,
+              sheets:material_sheets(sheet_name)
+            )
+          )
+        `;
+      const bundleSelectMinimal = `
           id,
           job_id,
           name,
@@ -196,9 +274,26 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
               sheets:material_sheets(sheet_name)
             )
           )
-        `)
-        .order('name');
-      
+        `;
+
+      let allBundles: any[] | null = null;
+      let bundlesError: any = null;
+
+      const res = await supabase.from('material_bundles').select(bundleSelectFull).order('name');
+      bundlesError = res.error;
+      allBundles = res.data;
+
+      if (bundlesError && /schema cache|could not find|column.*does not exist|quantity_ready_for_job|trim_saved_config_id/i.test(bundlesError.message)) {
+        console.warn('⚠️ Retrying without trim_saved_config_id/quantity_ready_for_job:', bundlesError.message);
+        const fallback = await supabase.from('material_bundles').select(bundleSelectMinimal).order('name');
+        if (!fallback.error) {
+          allBundles = fallback.data;
+          bundlesError = null;
+        } else {
+          bundlesError = fallback.error;
+        }
+      }
+
       if (bundlesError) {
         console.error('❌ Error loading bundles:', bundlesError);
         toast.error('Failed to load packages: ' + bundlesError.message);
@@ -264,10 +359,61 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       });
       
       console.log('🔄 SHOP VIEW: Transformed', transformedPackages.length, 'packages');
-      console.log('🔄 SHOP VIEW: Sample transformed package:', transformedPackages[0]);
+
+      // Enrich with trim_saved_config_id when main query used minimal select (no trim column)
+      const bundleMaterialIds = [...new Set((transformedPackages || []).flatMap((pkg: any) =>
+        (pkg.bundle_items || []).map((bi: any) => bi.material_items?.id).filter(Boolean)
+      ))];
+      let trimIdByMaterialId = new Map<string, string>();
+      if (bundleMaterialIds.length > 0) {
+        const { data: trimLinks, error: trimLinkErr } = await supabase
+          .from('material_items')
+          .select('id, trim_saved_config_id')
+          .in('id', bundleMaterialIds);
+        if (!trimLinkErr && trimLinks?.length) {
+          trimLinks.forEach((r: any) => {
+            if (r.trim_saved_config_id) trimIdByMaterialId.set(r.id, r.trim_saved_config_id);
+          });
+        }
+      }
+      const packagesWithTrimId: MaterialBundle[] = transformedPackages.map((pkg: any) => ({
+        ...pkg,
+        bundle_items: (pkg.bundle_items || []).map((item: any) => {
+          const mi = item.material_items;
+          const trimId = mi?.trim_saved_config_id ?? (mi?.id ? trimIdByMaterialId.get(mi.id) : null);
+          return { ...item, material_items: { ...mi, trim_saved_config_id: trimId ?? mi?.trim_saved_config_id } };
+        }),
+      }));
+
+      // Fetch trim configs for linked trim and attach to material items
+      const bundleTrimIds = [...new Set((packagesWithTrimId || []).flatMap((pkg: any) =>
+        (pkg.bundle_items || []).map((bi: any) => bi.material_items?.trim_saved_config_id).filter(Boolean)
+      ))];
+      const trimConfigMap = new Map<string, { id: string; name: string; drawing_segments: unknown }>();
+      if (bundleTrimIds.length > 0) {
+        const { data: trimConfigs } = await supabase
+          .from('trim_saved_configs')
+          .select('id, name, drawing_segments')
+          .in('id', bundleTrimIds);
+        (trimConfigs || []).forEach((c: any) => trimConfigMap.set(c.id, c));
+      }
+      const packagesWithTrimAttached: MaterialBundle[] = packagesWithTrimId.map((pkg: any) => ({
+        ...pkg,
+        bundle_items: (pkg.bundle_items || []).map((item: any) => {
+          const mi = item.material_items;
+          const trimConfig = mi?.trim_saved_config_id ? trimConfigMap.get(mi.trim_saved_config_id) : null;
+          return {
+            ...item,
+            material_items: {
+              ...mi,
+              trim_saved_configs: trimConfig || null,
+            },
+          };
+        }),
+      }));
       
       // Filter to only include packages that have materials with 'pull_from_shop' status
-      const packagesWithShopMaterials = transformedPackages.filter(pkg => {
+      const packagesWithShopMaterials = packagesWithTrimAttached.filter(pkg => {
         if (!pkg.bundle_items || pkg.bundle_items.length === 0) {
           console.log(`⚠️ SHOP VIEW: Package "${pkg.name}" has NO bundle_items`);
           return false;
@@ -311,28 +457,54 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         .select('material_item_id');
       const bundledSet = new Set((bundledItemIds || []).map((r: any) => r.material_item_id));
 
-      const { data: unbundledRows } = await supabase
+      const unbundledSelectFull = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit, trim_saved_config_id, quantity_ready_for_job`;
+      const unbundledSelectMinimal = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit`;
+      const unbundledRes = await supabase
         .from('material_items')
-        .select(`
-          id,
-          sheet_id,
-          category,
-          material_name,
-          quantity,
-          length,
-          color,
-          usage,
-          status,
-          cost_per_unit
-        `)
+        .select(unbundledSelectFull)
         .in('status', ['pull_from_shop', 'ready_for_job']);
+      let unbundledRows: any[] | null = unbundledRes.data ?? null;
+      if (unbundledRes.error && /schema cache|could not find|column.*does not exist|quantity_ready_for_job|trim_saved_config_id/i.test(unbundledRes.error.message)) {
+        const fallback = await supabase.from('material_items').select(unbundledSelectMinimal).in('status', ['pull_from_shop', 'ready_for_job']);
+        if (!fallback.error) unbundledRows = fallback.data ?? null;
+      }
+      if (unbundledRes.error && unbundledRows === null) {
+        throw new Error(unbundledRes.error.message);
+      }
 
-      const unbundledItems = (unbundledRows || []).filter((r: any) => !bundledSet.has(r.id));
+      let unbundledItems = (unbundledRows || []).filter((r: any) => !bundledSet.has(r.id));
       if (unbundledItems.length === 0) {
         setSheetGroups([]);
         setExpandedPackages(new Set());
         setLoading(false);
         return;
+      }
+
+      // Enrich unbundled with trim_saved_config_id when minimal select was used
+      const unbundledIds = unbundledItems.map((i: any) => i.id);
+      const { data: unbundledTrimLinks, error: unbundledTrimLinkErr } = await supabase
+        .from('material_items')
+        .select('id, trim_saved_config_id')
+        .in('id', unbundledIds);
+      if (!unbundledTrimLinkErr && unbundledTrimLinks?.length) {
+        const trimIdByUnbundledId = new Map<string, string>();
+        unbundledTrimLinks.forEach((r: any) => {
+          if (r.trim_saved_config_id) trimIdByUnbundledId.set(r.id, r.trim_saved_config_id);
+        });
+        unbundledItems = unbundledItems.map((i: any) => ({
+          ...i,
+          trim_saved_config_id: i.trim_saved_config_id ?? trimIdByUnbundledId.get(i.id) ?? null,
+        }));
+      }
+
+      const unbundledTrimIds = [...new Set(unbundledItems.map((i: any) => i.trim_saved_config_id).filter(Boolean))];
+      const unbundledTrimMap = new Map<string, { id: string; name: string; drawing_segments: unknown }>();
+      if (unbundledTrimIds.length > 0) {
+        const { data: trimConfigs } = await supabase
+          .from('trim_saved_configs')
+          .select('id, name, drawing_segments')
+          .in('id', unbundledTrimIds);
+        (trimConfigs || []).forEach((c: any) => unbundledTrimMap.set(c.id, c));
       }
 
       const sheetIdsFromItems = [...new Set(unbundledItems.map((i: any) => i.sheet_id))];
@@ -365,9 +537,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         if (!jobId || !sheet) continue;
         const key = `${jobId}|${item.sheet_id}`;
         if (!byJobSheet.has(key)) byJobSheet.set(key, []);
+        const trimConfig = item.trim_saved_config_id ? unbundledTrimMap.get(item.trim_saved_config_id) : null;
         byJobSheet.get(key)!.push({
           ...item,
           sheets: { sheet_name: sheet.sheet_name },
+          trim_saved_configs: trimConfig || null,
         });
       }
 
@@ -398,7 +572,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       setExpandedPackages(new Set());
     } catch (error: any) {
       console.error('❌ Error loading packages:', error);
-      toast.error('Failed to load packages. Check console for details.');
+      const msg = error?.message || String(error);
+      toast.error(msg ? `Failed to load packages: ${msg}` : 'Failed to load packages. Check console for details.');
     } finally {
       setLoading(false);
     }
@@ -481,6 +656,47 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         newSet.delete(materialId);
         return newSet;
       });
+    }
+  }
+
+  async function updateBundleStatusIfFirstReady(bundleId: string) {
+    if (bundleId.startsWith('unbundled-')) return;
+    try {
+      const { data: bundleItems, error } = await supabase
+        .from('material_bundle_items')
+        .select('material_item_id, material_items!inner(status)')
+        .eq('bundle_id', bundleId);
+      if (error || !bundleItems?.length) return;
+      const readyCount = bundleItems.filter(
+        (item: any) => item.material_items?.status === 'ready_for_job' || item.material_items?.status === 'at_job'
+      ).length;
+      if (readyCount === 1) {
+        await supabase
+          .from('material_bundles')
+          .update({ status: 'delivered', updated_at: new Date().toISOString() })
+          .eq('id', bundleId);
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  async function markPartialReady(materialId: string, bundleId: string, qtyToMark: number, currentReady: number, totalQty: number) {
+    if (processingMaterials.has(materialId) || qtyToMark <= 0 || currentReady >= totalQty) return;
+    const capped = Math.min(qtyToMark, totalQty - currentReady);
+    setProcessingMaterials(prev => new Set(prev).add(materialId));
+    setPartialQtyInput(prev => ({ ...prev, [materialId]: '' }));
+    try {
+      const { error } = await supabase.rpc('mark_material_partial_ready', {
+        p_material_item_id: materialId,
+        p_quantity_to_mark: capped,
+      });
+      if (error) throw error;
+      toast.success(`Marked ${capped} as ready for job${capped >= totalQty - currentReady ? ' (all remaining)' : ''}.`);
+      await updateBundleStatusIfFirstReady(bundleId);
+      loadPackages();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to mark partial ready');
+    } finally {
+      setProcessingMaterials(prev => { const n = new Set(prev); n.delete(materialId); return n; });
     }
   }
 
@@ -671,7 +887,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             <div className="grid grid-cols-3 gap-2 text-xs">
                                               <div>
                                                 <span className="text-muted-foreground">Qty:</span>
-                                                <p className="font-semibold text-base">{item.material_items.quantity}</p>
+                                                <p className="font-semibold text-base">
+                                                  {item.material_items.quantity}
+                                                  {(item.material_items.quantity_ready_for_job ?? 0) > 0 && (
+                                                    <span className="text-muted-foreground font-normal"> ({item.material_items.quantity_ready_for_job} ready)</span>
+                                                  )}
+                                                </p>
                                               </div>
                                               
                                               <div>
@@ -690,27 +911,95 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             </div>
                                           </div>
                                           
-                                          <div className="flex gap-2 flex-shrink-0">
-                                            {/* Mark as Ready for Job */}
+                                          <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
+                                            {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id) && (
+                                              item.material_items.trim_saved_configs?.drawing_segments ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setViewingTrimConfig({
+                                                    name: item.material_items.trim_saved_configs!.name,
+                                                    drawing_segments: item.material_items.trim_saved_configs!.drawing_segments,
+                                                  })}
+                                                  title="View trim drawing (click to enlarge)"
+                                                  className="flex flex-col items-center rounded border border-slate-200 bg-slate-50 p-1 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                >
+                                                  <TrimDrawingPreview
+                                                    segments={normalizeDrawingSegments(item.material_items.trim_saved_configs.drawing_segments)}
+                                                    width={88}
+                                                    height={48}
+                                                  />
+                                                  <span className="text-[10px] text-slate-500 mt-0.5">Trim</span>
+                                                </button>
+                                              ) : (
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  disabled={loadingTrimId === item.material_items.trim_saved_config_id}
+                                                  onClick={() => openTrimDrawing(item.material_items.trim_saved_config_id!)}
+                                                  title="View trim drawing"
+                                                  className="h-9 text-xs whitespace-nowrap"
+                                                >
+                                                  {loadingTrimId === item.material_items.trim_saved_config_id ? (
+                                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                  ) : (
+                                                    'View trim'
+                                                  )}
+                                                </Button>
+                                              )
+                                            )}
                                             {item.material_items.status === 'pull_from_shop' && (
-                                              <Button
-                                                size="sm"
-                                                onClick={(e) => {
-                                                  console.log('🖱️ SHOP Pull from Shop button clicked');
-                                                  e.preventDefault();
-                                                  e.stopPropagation();
-                                                  updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'ready_for_job');
-                                                }}
-                                                disabled={processingMaterials.has(item.material_items.id)}
-                                                className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
-                                                title="Mark as Ready for Job"
-                                              >
-                                                {processingMaterials.has(item.material_items.id) ? (
-                                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                              <>
+                                                {item.material_items.quantity > 1 ? (
+                                                  <div className="flex items-center gap-1">
+                                                    <Input
+                                                      type="number"
+                                                      min={1}
+                                                      max={Math.max(1, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))}
+                                                      className="w-14 h-9 text-sm"
+                                                      value={partialQtyInput[item.material_items.id] ?? String(item.material_items.quantity)}
+                                                      onChange={(e) => setPartialQtyInput(prev => ({ ...prev, [item.material_items.id]: e.target.value }))}
+                                                    />
+                                                    <Button
+                                                      size="sm"
+                                                      disabled={processingMaterials.has(item.material_items.id)}
+                                                      onClick={() => {
+                                                        const ready = item.material_items.quantity_ready_for_job ?? 0;
+                                                        const total = item.material_items.quantity;
+                                                        const remaining = total - ready;
+                                                        const raw = partialQtyInput[item.material_items.id] ?? String(total);
+                                                        const v = Math.min(Math.max(parseInt(raw, 10) || 0, 1), remaining);
+                                                        if (v > 0 && ready < total) markPartialReady(item.material_items.id, pkg.id, v, ready, total);
+                                                      }}
+                                                      className="bg-emerald-600 hover:bg-emerald-700 h-9"
+                                                      title="Mark this many as ready for job"
+                                                    >
+                                                      {processingMaterials.has(item.material_items.id) ? (
+                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                      ) : (
+                                                        'Mark ready'
+                                                      )}
+                                                    </Button>
+                                                  </div>
                                                 ) : (
-                                                  <CheckCircle2 className="w-5 h-5" />
+                                                  <Button
+                                                    size="sm"
+                                                    disabled={processingMaterials.has(item.material_items.id)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
+                                                    title="Mark as Ready for Job"
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'ready_for_job');
+                                                    }}
+                                                  >
+                                                    {processingMaterials.has(item.material_items.id) ? (
+                                                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                    ) : (
+                                                      <CheckCircle2 className="w-5 h-5" />
+                                                    )}
+                                                  </Button>
                                                 )}
-                                              </Button>
+                                              </>
                                             )}
                                             
                                             {/* Mark as At Job */}
@@ -795,7 +1084,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             <div className="grid grid-cols-3 gap-2 text-xs">
                                               <div>
                                                 <span className="text-muted-foreground">Qty:</span>
-                                                <p className="font-semibold text-base">{item.material_items.quantity}</p>
+                                                <p className="font-semibold text-base">
+                                                  {item.material_items.quantity}
+                                                  {(item.material_items.quantity_ready_for_job ?? 0) > 0 && (
+                                                    <span className="text-muted-foreground font-normal"> ({item.material_items.quantity_ready_for_job} ready)</span>
+                                                  )}
+                                                </p>
                                               </div>
                                               <div>
                                                 <span className="text-muted-foreground">Color:</span>
@@ -807,25 +1101,95 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                               </div>
                                             </div>
                                           </div>
-                                          <div className="flex gap-2 flex-shrink-0">
+                                          <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
+                                            {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id) && (
+                                              item.material_items.trim_saved_configs?.drawing_segments ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setViewingTrimConfig({
+                                                    name: item.material_items.trim_saved_configs!.name,
+                                                    drawing_segments: item.material_items.trim_saved_configs!.drawing_segments,
+                                                  })}
+                                                  title="View trim drawing (click to enlarge)"
+                                                  className="flex flex-col items-center rounded border border-slate-200 bg-slate-50 p-1 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                >
+                                                  <TrimDrawingPreview
+                                                    segments={normalizeDrawingSegments(item.material_items.trim_saved_configs.drawing_segments)}
+                                                    width={88}
+                                                    height={48}
+                                                  />
+                                                  <span className="text-[10px] text-slate-500 mt-0.5">Trim</span>
+                                                </button>
+                                              ) : (
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  disabled={loadingTrimId === item.material_items.trim_saved_config_id}
+                                                  onClick={() => openTrimDrawing(item.material_items.trim_saved_config_id!)}
+                                                  title="View trim drawing"
+                                                  className="h-9 text-xs whitespace-nowrap"
+                                                >
+                                                  {loadingTrimId === item.material_items.trim_saved_config_id ? (
+                                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                  ) : (
+                                                    'View trim'
+                                                  )}
+                                                </Button>
+                                              )
+                                            )}
                                             {item.material_items.status === 'pull_from_shop' && (
-                                              <Button
-                                                size="sm"
-                                                onClick={(e) => {
-                                                  e.preventDefault();
-                                                  e.stopPropagation();
-                                                  updateMaterialStatus(item.material_items.id, sg.id, item.material_items.status, 'ready_for_job');
-                                                }}
-                                                disabled={processingMaterials.has(item.material_items.id)}
-                                                className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
-                                                title="Mark as Ready for Job"
-                                              >
-                                                {processingMaterials.has(item.material_items.id) ? (
-                                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                              <>
+                                                {item.material_items.quantity > 1 ? (
+                                                  <div className="flex items-center gap-1">
+                                                    <Input
+                                                      type="number"
+                                                      min={1}
+                                                      max={Math.max(1, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))}
+                                                      className="w-14 h-9 text-sm"
+                                                      value={partialQtyInput[item.material_items.id] ?? String(item.material_items.quantity)}
+                                                      onChange={(e) => setPartialQtyInput(prev => ({ ...prev, [item.material_items.id]: e.target.value }))}
+                                                    />
+                                                    <Button
+                                                      size="sm"
+                                                      disabled={processingMaterials.has(item.material_items.id)}
+                                                      onClick={() => {
+                                                        const ready = item.material_items.quantity_ready_for_job ?? 0;
+                                                        const total = item.material_items.quantity;
+                                                        const remaining = total - ready;
+                                                        const raw = partialQtyInput[item.material_items.id] ?? String(total);
+                                                        const v = Math.min(Math.max(parseInt(raw, 10) || 0, 1), remaining);
+                                                        if (v > 0 && ready < total) markPartialReady(item.material_items.id, sg.id, v, ready, total);
+                                                      }}
+                                                      className="bg-emerald-600 hover:bg-emerald-700 h-9"
+                                                      title="Mark this many as ready for job"
+                                                    >
+                                                      {processingMaterials.has(item.material_items.id) ? (
+                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                      ) : (
+                                                        'Mark ready'
+                                                      )}
+                                                    </Button>
+                                                  </div>
                                                 ) : (
-                                                  <CheckCircle2 className="w-5 h-5" />
+                                                  <Button
+                                                    size="sm"
+                                                    disabled={processingMaterials.has(item.material_items.id)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
+                                                    title="Mark as Ready for Job"
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      updateMaterialStatus(item.material_items.id, sg.id, item.material_items.status, 'ready_for_job');
+                                                    }}
+                                                  >
+                                                    {processingMaterials.has(item.material_items.id) ? (
+                                                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                    ) : (
+                                                      <CheckCircle2 className="w-5 h-5" />
+                                                    )}
+                                                  </Button>
                                                 )}
-                                              </Button>
+                                              </>
                                             )}
                                             {item.material_items.status === 'ready_for_job' && (
                                               <Button
@@ -881,6 +1245,15 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Trim drawing full-screen view */}
+      {viewingTrimConfig && (
+        <TrimDrawingFullScreenView
+          title={viewingTrimConfig.name}
+          segments={normalizeDrawingSegments(viewingTrimConfig.drawing_segments)}
+          onClose={() => setViewingTrimConfig(null)}
+        />
       )}
     </div>
   );

@@ -45,7 +45,8 @@ import {
   Eye,
   EyeOff,
   Edit2,
-  Check
+  Check,
+  Globe
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -60,6 +61,7 @@ interface JobDocument {
   created_at: string;
   updated_at: string;
   visible_to_crew: boolean;
+  visible_to_customer_portal?: boolean;
   latest_file_url?: string;
 }
 
@@ -80,6 +82,7 @@ interface PendingUpload {
   name: string;
   category: string;
   visible_to_crew: boolean;
+  visible_to_customer_portal?: boolean;
 }
 
 interface JobDocumentsProps {
@@ -326,7 +329,8 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       id: Math.random().toString(36).substring(7),
       name: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
       category: DEFAULT_CATEGORIES[0],
-      visible_to_crew: false, // Default to hidden from crew
+      visible_to_crew: false,
+      visible_to_customer_portal: false,
     }));
 
     setPendingUploads(prev => [...prev, ...newUploads]);
@@ -390,17 +394,18 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
           console.log('Public URL:', publicUrl);
 
-          // Create document record
+          // Create document record (omit visible_to_customer_portal if schema cache is stale; column has default false)
+          const insertPayload: Record<string, unknown> = {
+            job_id: job.id,
+            name: upload.name.trim(),
+            category: upload.category,
+            current_version: 1,
+            visible_to_crew: upload.visible_to_crew,
+            created_by: profile?.id,
+          };
           const { data: docData, error: docError } = await supabase
             .from('job_documents')
-            .insert({
-              job_id: job.id,
-              name: upload.name.trim(),
-              category: upload.category,
-              current_version: 1,
-              visible_to_crew: upload.visible_to_crew,
-              created_by: profile?.id,
-            })
+            .insert(insertPayload as any)
             .select()
             .single();
 
@@ -513,6 +518,26 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     }
   }
 
+  async function togglePortalVisibility(docId: string, currentValue: boolean) {
+    try {
+      const { error } = await supabase
+        .from('job_documents')
+        .update({
+          visible_to_customer_portal: !currentValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      toast.success(!currentValue ? 'Document is now visible in customer portal' : 'Document hidden from customer portal');
+      loadDocuments();
+    } catch (error: any) {
+      console.error('Error toggling portal visibility:', error);
+      toast.error('Failed to update visibility');
+    }
+  }
+
   async function uploadNewDocument() {
     if (!isOffice) {
       toast.error('Only office staff can upload documents');
@@ -541,17 +566,18 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
         .from('job-files')
         .getPublicUrl(fileName);
 
-      // Create document record
+      // Create document record (omit visible_to_customer_portal if schema cache is stale; column has default false)
+      const insertPayload: Record<string, unknown> = {
+        job_id: job.id,
+        name: newDocName.trim(),
+        category: newDocCategory,
+        current_version: 1,
+        visible_to_crew: false,
+        created_by: profile?.id,
+      };
       const { data: docData, error: docError } = await supabase
         .from('job_documents')
-        .insert({
-          job_id: job.id,
-          name: newDocName.trim(),
-          category: newDocCategory,
-          current_version: 1,
-          visible_to_crew: false, // Default to hidden
-          created_by: profile?.id,
-        })
+        .insert(insertPayload as any)
         .select()
         .single();
 
@@ -801,6 +827,12 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                         Crew
                       </Badge>
                     )}
+                    {doc.visible_to_customer_portal && (
+                      <Badge className="text-xs bg-amber-500/90 backdrop-blur-sm text-white">
+                        <Globe className="w-3 h-3 mr-1" />
+                        Portal
+                      </Badge>
+                    )}
                   </div>
                 </div>
                 
@@ -903,6 +935,18 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                                 ) : (
                                   <EyeOff className="w-4 h-4" />
                                 )}
+                              </Button>
+                              <Button
+                                variant={doc.visible_to_customer_portal ? "default" : "outline"}
+                                size="sm"
+                                className={doc.visible_to_customer_portal ? "bg-amber-600 hover:bg-amber-700" : ""}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePortalVisibility(doc.id, !!doc.visible_to_customer_portal);
+                                }}
+                                title={doc.visible_to_customer_portal ? "Hide from customer portal" : "Show in customer portal"}
+                              >
+                                <Globe className="w-4 h-4" />
                               </Button>
                               <Button
                                 variant="ghost"

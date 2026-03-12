@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useMaterialsToolbarSlot } from '@/contexts/JobDetailMaterialsToolbarContext';
@@ -68,6 +69,7 @@ import {
   ListOrdered,
   GripVertical,
   Lock,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -98,6 +100,7 @@ interface MaterialItem {
   extended_cost: number | null;
   extended_price: number | null;
   taxable: boolean;
+  trim_saved_config_id?: string | null;
   notes: string | null;
   order_index: number;
   status: string;
@@ -230,6 +233,84 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
+
+  // Link trim drawing to material item
+  const [openLinkTrimForItem, setOpenLinkTrimForItem] = useState<{ id: string; materialName: string; currentTrimConfigId?: string | null } | null>(null);
+  const [savedTrimConfigs, setSavedTrimConfigs] = useState<{ id: string; name: string; drawing_segments?: unknown }[]>([]);
+  const [loadingTrimConfigs, setLoadingTrimConfigs] = useState(false);
+  const [linkingTrimConfigId, setLinkingTrimConfigId] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!openLinkTrimForItem) return;
+    setLoadingTrimConfigs(true);
+    supabase
+      .from('trim_saved_configs')
+      .select('id, name, drawing_segments')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) {
+          toast.error('Failed to load trim configs');
+          setSavedTrimConfigs([]);
+        } else {
+          setSavedTrimConfigs(data || []);
+        }
+        setLoadingTrimConfigs(false);
+      });
+  }, [openLinkTrimForItem]);
+
+  async function setMaterialItemTrimConfig(itemId: string, trimConfigId: string | null) {
+    const { error: rpcError } = await supabase.rpc('set_material_item_trim_config', {
+      p_material_item_id: itemId,
+      p_trim_saved_config_id: trimConfigId,
+    });
+    if (!rpcError) return;
+    const msg = (rpcError?.message || '').toLowerCase();
+    if (msg.includes('schema cache') || msg.includes('could not find the function')) {
+      const { error: updateError } = await supabase
+        .from('material_items')
+        .update({ trim_saved_config_id: trimConfigId })
+        .eq('id', itemId);
+      if (updateError) throw updateError;
+      return;
+    }
+    throw rpcError;
+  }
+
+  async function linkTrimConfigToItem(configId: string) {
+    if (!openLinkTrimForItem) return;
+    setLinkingTrimConfigId(configId);
+    try {
+      await setMaterialItemTrimConfig(openLinkTrimForItem.id, configId);
+      toast.success(`Trim drawing linked to "${openLinkTrimForItem.materialName}". Shop will see it in the pull form.`);
+      setOpenLinkTrimForItem(null);
+      await loadWorkbook(true);
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (msg.includes('set_material_item_trim_config') && msg.toLowerCase().includes('schema cache')) {
+        toast.error('Trim link failed: run the SQL in supabase/migrations/20250319000001_set_material_item_trim_config_rpc.sql in your Supabase SQL Editor, then try again.');
+      } else {
+        toast.error(msg || 'Failed to link trim');
+      }
+    } finally {
+      setLinkingTrimConfigId(null);
+    }
+  }
+
+  async function unlinkTrimFromItem() {
+    if (!openLinkTrimForItem) return;
+    setLinkingTrimConfigId('unlink');
+    try {
+      await setMaterialItemTrimConfig(openLinkTrimForItem.id, null);
+      toast.success('Trim drawing unlinked.');
+      setOpenLinkTrimForItem(null);
+      await loadWorkbook(true);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to unlink');
+    } finally {
+      setLinkingTrimConfigId(null);
+    }
+  }
 
   // Sheet management state
   const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
@@ -2780,6 +2861,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             <ImageIcon className="w-3.5 h-3.5 mr-2" />
                                             Photos
                                           </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => setOpenLinkTrimForItem({ id: item.id, materialName: item.material_name, currentTrimConfigId: item.trim_saved_config_id ?? null })}>
+                                            <Pencil className="w-3.5 h-3.5 mr-2" />
+                                            {item.trim_saved_config_id ? 'View / change trim drawing' : 'Link trim drawing'}
+                                          </DropdownMenuItem>
                                           <DropdownMenuItem onClick={() => openMoveItem(item)}>
                                             <MoveHorizontal className="w-3.5 h-3.5 mr-2" />
                                             Move
@@ -4130,6 +4215,70 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           onOpenChange={(open) => !open && setOpenPhotosForItem(null)}
         />
       )}
+
+      {/* Link trim drawing to this material item */}
+      <Dialog open={!!openLinkTrimForItem} onOpenChange={(open) => !open && setOpenLinkTrimForItem(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="w-5 h-5" />
+              Trim drawing for &quot;{openLinkTrimForItem?.materialName}&quot;
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {openLinkTrimForItem?.currentTrimConfigId && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full border-amber-500 text-amber-700"
+                disabled={linkingTrimConfigId === 'unlink'}
+                onClick={unlinkTrimFromItem}
+              >
+                Unlink current drawing
+              </Button>
+            )}
+            <p className="text-sm text-muted-foreground">Link a saved trim so the shop can see the drawing when pulling this item:</p>
+            {loadingTrimConfigs ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">Loading saved trims…</div>
+            ) : savedTrimConfigs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No saved trim configurations yet. Draw one below, then come back and link it.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-2">
+                {savedTrimConfigs.map((config) => (
+                  <div key={config.id} className="flex items-center justify-between gap-2 rounded border p-2">
+                    <span className="font-medium text-sm truncate">{config.name}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={linkingTrimConfigId === config.id}
+                      onClick={() => linkTrimConfigToItem(config.id)}
+                    >
+                      {linkingTrimConfigId === config.id ? 'Linking…' : 'Link'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="pt-2 border-t">
+              <p className="text-xs text-muted-foreground mb-2">Draw a new trim in the Trim Calculator; it will open in a new tab. After saving, return here and link it above.</p>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  setOpenLinkTrimForItem(null);
+                  navigate(`/office?tab=trim-calculator&linkToMaterialItem=${openLinkTrimForItem?.id ?? ''}`);
+                }}
+              >
+                Open Trim Calculator to draw new trim
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

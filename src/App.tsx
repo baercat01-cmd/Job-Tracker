@@ -1,5 +1,21 @@
 import { Component, ReactNode, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+
+function isPWAStandalone(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+}
+
+function MaybeRedirectToCustomerPortal({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  if (location.pathname !== '/') return <>{children}</>;
+  if (!isPWAStandalone()) return <>{children}</>;
+  try {
+    const token = localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY);
+    if (token) return <Navigate to={`/customer-portal?token=${token}`} replace />;
+  } catch { /* ignore */ }
+  return <>{children}</>;
+}
 import { useAuth, AuthProvider } from '@/hooks/useAuth';
 import { UserSelectPage } from '@/pages/UserSelectPage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -14,7 +30,7 @@ import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
 import ZohoSettingsPage from '@/pages/office/ZohoSettingsPage';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { VendorPricingForm } from '@/pages/VendorPricingForm';
-import CustomerPortal from '@/pages/customer/CustomerPortal';
+import CustomerPortal, { CUSTOMER_PORTAL_TOKEN_KEY } from '@/pages/customer/CustomerPortal';
 import SubcontractorPortal from '@/pages/SubcontractorPortal';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -230,10 +246,12 @@ export default function App() {
           
           {/* All other routes use main app authentication */}
           <Route path="/*" element={
-            <AuthProvider>
-              <AppContent />
-              <Toaster position="top-center" richColors />
-            </AuthProvider>
+            <MaybeRedirectToCustomerPortal>
+              <AuthProvider>
+                <AppContent />
+                <Toaster position="top-center" richColors />
+              </AuthProvider>
+            </MaybeRedirectToCustomerPortal>
           } />
         </Routes>
       </BrowserRouter>

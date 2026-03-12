@@ -3268,47 +3268,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       const oldQuoteId = templateQuoteIdForNewProposal;
       const isCloningCurrent = oldQuoteId === quote?.id;
 
-      // ── Step 0: When cloning current proposal, persist any in-memory labor (and ensure source is saved) so copy uses latest data ──
-      if (isCloningCurrent) {
-        try {
-          // Persist labor currently in the Add/Edit Labor dialog if open for a sheet (so unsaved labor is included in copy)
-          if (editingLaborSheetId && laborForm) {
-            const laborData = {
-              sheet_id: editingLaborSheetId,
-              description: laborForm.description ?? null,
-              estimated_hours: laborForm.estimated_hours ?? 0,
-              hourly_rate: laborForm.hourly_rate ?? 0,
-              notes: laborForm.notes ?? null,
-            };
-            const existing = sheetLabor[editingLaborSheetId];
-            if (existing?.id) {
-              await supabase.from('material_sheet_labor').update(laborData).eq('id', existing.id);
-            } else {
-              await supabase.from('material_sheet_labor').insert([laborData]);
-            }
-          }
-          for (const sheet of materialSheets) {
-            const sheetId = sheet.id ?? sheet.sheetId;
-            if (!sheetId) continue;
-            const labor = sheetLabor[sheetId];
-            if (!labor) continue;
-            const laborData = {
-              sheet_id: sheetId,
-              description: labor.description ?? null,
-              estimated_hours: labor.estimated_hours ?? 0,
-              hourly_rate: labor.hourly_rate ?? 0,
-              notes: labor.notes ?? null,
-            };
-            if (labor.id) {
-              await supabase.from('material_sheet_labor').update(laborData).eq('id', labor.id);
-            } else {
-              await supabase.from('material_sheet_labor').insert([laborData]);
-            }
-          }
-        } catch (e) {
-          console.warn('Persist source labor before copy (non-fatal):', e);
-        }
-      }
+      // Do not modify the template/source proposal: no persisting in-memory labor or other edits
+      // back to the template. The new proposal is built from the last-saved DB state of the template only.
 
       // ── Step 1: Create the new quotes row (from template quote data) ──
       const quotePayload: Record<string, unknown> = {
@@ -4123,14 +4084,15 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             categoryMap.get(category)!.push(item);
           });
           
-          // Calculate totals per category (exclude optional line items from totals)
+          // Calculate totals per category (exclude optional line items from totals); use extended_price when present
+          const snapEffectivePrice = (item: any) => (item.extended_price != null && item.extended_price !== '') ? Number(item.extended_price) : (Number(item.quantity) || 0) * (Number(item.price_per_unit) || 0);
           const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
             const totalCost = items
               .filter((item: any) => !(item.is_optional === true))
               .reduce((sum, item) => sum + (item.cost_per_unit || 0) * (item.quantity || 0), 0);
             const totalPrice = items
               .filter((item: any) => !(item.is_optional === true))
-              .reduce((sum, item) => sum + (item.price_per_unit || 0) * (item.quantity || 0), 0);
+              .reduce((sum, item) => sum + snapEffectivePrice(item), 0);
             
             const profit = totalPrice - totalCost;
             const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
@@ -4147,7 +4109,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 cost_per_unit: item.cost_per_unit || 0,
                 price_per_unit: item.price_per_unit || 0,
                 extended_cost: (item.cost_per_unit || 0) * (item.quantity || 0),
-                extended_price: (item.price_per_unit || 0) * (item.quantity || 0),
+                extended_price: snapEffectivePrice(item),
               })),
               totalCost,
               totalPrice,
@@ -4396,10 +4358,11 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         });
 
         // Calculate totals per category (exclude optional categories from totals)
+        const itemEffectivePrice = (item: any) => (item.extended_price != null && item.extended_price !== '') ? Number(item.extended_price) : (Number(item.quantity) || 0) * (Number(item.price_per_unit) || 0);
         const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
           const isCategoryOptional = categoryOptionalMap.get(`${sheet.id}_${categoryName}`) === true;
           const totalCost = isCategoryOptional ? 0 : items.reduce((sum, item) => sum + (item.cost_per_unit || 0) * (item.quantity || 0), 0);
-          const totalPrice = isCategoryOptional ? 0 : items.reduce((sum, item) => sum + (item.price_per_unit || 0) * (item.quantity || 0), 0);
+          const totalPrice = isCategoryOptional ? 0 : items.reduce((sum, item) => sum + itemEffectivePrice(item), 0);
 
           const profit = totalPrice - totalCost;
           const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
@@ -4416,7 +4379,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
               cost_per_unit: item.cost_per_unit || 0,
               price_per_unit: item.price_per_unit || 0,
               extended_cost: (item.cost_per_unit || 0) * (item.quantity || 0),
-              extended_price: (item.price_per_unit || 0) * (item.quantity || 0),
+              extended_price: itemEffectivePrice(item),
             })),
             totalCost,
             totalPrice,

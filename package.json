@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "open": "start http://localhost:8080",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

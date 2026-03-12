@@ -8,6 +8,7 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
+    strictPort: false, // use next free port if 8080 is taken
     hmr: {
       // For OnSpace preview - detect and use the preview domain
       protocol: 'wss',

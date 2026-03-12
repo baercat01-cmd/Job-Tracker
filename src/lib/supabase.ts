@@ -1,21 +1,34 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+const MISSING_ENV_MSG =
+  'Missing Supabase config. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file and restart the dev server.';
+
+function getClient(): SupabaseClient {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(MISSING_ENV_MSG);
+  }
+  return clientInstance!;
 }
 
-// Configure Supabase client with persistent session storage
-// Sessions are stored in localStorage and automatically restored on app restart
-// Users stay signed in permanently until they manually log out
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true, // Enable persistent sessions (already enabled)
-    autoRefreshToken: true, // Automatically refresh expired tokens
-    detectSessionInUrl: false, // Don't detect sessions from URL for better security
-    storageKey: 'fieldtrack-auth', // Custom storage key for session
-    storage: window.localStorage, // Use localStorage for persistent storage
+let clientInstance: SupabaseClient | null =
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          storageKey: 'fieldtrack-auth',
+          storage: window.localStorage,
+        },
+      })
+    : null;
+
+// Expose client; throw only when first used so the app can mount and show an error UI
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_, prop) {
+    return (getClient() as any)[prop];
   },
 });

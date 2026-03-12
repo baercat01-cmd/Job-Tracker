@@ -69,8 +69,12 @@ export function OfficeDashboard() {
   // Background state sync - never causes page reload
   useEffect(() => {
     localStorage.setItem('office-active-tab', activeTab);
-    // Silent URL update without triggering navigation/reload
-    setSearchParams({ tab: activeTab }, { replace: true });
+    // Silent URL update without triggering navigation/reload (preserve other params e.g. linkToMaterialItem)
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', activeTab);
+      return next;
+    }, { replace: true });
   }, [activeTab, setSearchParams]);
 
   useEffect(() => {
