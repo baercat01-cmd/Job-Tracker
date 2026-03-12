@@ -373,7 +373,10 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
   async function loadProposalDataForQuote(jobId: string, quoteId: string | null, taxExempt: boolean) {
     try {
-      // Workbook: quote-specific first, then legacy (quote_id null)
+      // Workbook selection — mirrors JobFinancials multi-step fallback:
+      // 1. Prefer workbook tied to this specific quoteId (any status, newest first)
+      // 2. Fall back to null-quote (legacy) workbook
+      // 3. Fall back to ANY job workbook with sheets (scan all, pick newest with items)
       let workbookData: { id: string } | null = null;
       if (quoteId) {
         const { data: wb } = await supabase
@@ -381,7 +384,8 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .select('id')
           .eq('job_id', jobId)
           .eq('quote_id', quoteId)
-          .eq('status', 'working')
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         workbookData = wb ?? null;
       }
@@ -391,9 +395,20 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .select('id')
           .eq('job_id', jobId)
           .is('quote_id', null)
-          .eq('status', 'working')
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         workbookData = wb ?? null;
+      }
+      // Step 3: if still nothing, scan all workbooks for this job and pick the best one
+      if (!workbookData) {
+        const { data: allWbs } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', jobId)
+          .order('status', { ascending: false }) // 'working' sorts after 'locked' alphabetically
+          .order('updated_at', { ascending: false });
+        workbookData = (allWbs || [])[0] ?? null;
       }
 
       let materialSheets: any[] = [];
@@ -403,7 +418,31 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           .select('*')
           .eq('workbook_id', workbookData.id)
           .order('order_index');
-        const sheets = sheetsData || [];
+        let sheets = sheetsData || [];
+
+        // Step 4: if this workbook has no sheets, scan all job workbooks and use the first one with sheets
+        if (sheets.length === 0) {
+          const { data: allWbs } = await supabase
+            .from('material_workbooks')
+            .select('id')
+            .eq('job_id', jobId)
+            .order('status', { ascending: false })
+            .order('updated_at', { ascending: false });
+          for (const wb of allWbs || []) {
+            if (wb.id === workbookData.id) continue;
+            const { data: altSheets } = await supabase
+              .from('material_sheets')
+              .select('*')
+              .eq('workbook_id', wb.id)
+              .order('order_index');
+            if ((altSheets || []).length > 0) {
+              sheets = altSheets!;
+              workbookData = wb;
+              break;
+            }
+          }
+        }
+
         const sheetIds = sheets.map((s: any) => s.id);
         for (const sheet of sheets) {
           const [{ data: items }, { data: laborRows }, { data: categoryMarkupRows }] = await Promise.all([
