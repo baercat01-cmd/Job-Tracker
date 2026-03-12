@@ -465,7 +465,8 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
       const TAX_RATE = 0.07;
 
-      // Materials: use extended_price (selling price override) per category; fall back to extended_cost × markup
+      // Materials: use extended_price (selling price override) per category; fall back to extended_cost × markup.
+      // Also store per-sheet _computedTotal so the UI can display it without re-computing.
       let sheetMaterialsTotal = 0;
       let sheetLaborTotal = 0;
       (materialSheets || []).forEach((sheet: any) => {
@@ -476,50 +477,63 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           if (!byCategory.has(cat)) byCategory.set(cat, []);
           byCategory.get(cat)!.push(item);
         });
+        let sheetCatPrice = 0;
         byCategory.forEach((catItems, catName) => {
           const sellingPrice = catItems.reduce((s: number, i: any) => s + (Number(i.extended_price) || 0), 0);
           if (sellingPrice > 0) {
-            sheetMaterialsTotal += sellingPrice;
+            sheetCatPrice += sellingPrice;
           } else {
             const cost = catItems.reduce((s: number, i: any) => {
               const ec = i.extended_cost != null ? Number(i.extended_cost) : (Number(i.quantity) || 0) * (Number(i.cost_per_unit) || 0);
               return s + ec;
             }, 0);
             const markup = catMarkups[catName] ?? 10;
-            sheetMaterialsTotal += cost * (1 + markup / 100);
+            sheetCatPrice += cost * (1 + markup / 100);
           }
         });
+        sheetMaterialsTotal += sheetCatPrice;
         // Sheet-level labor from material_sheet_labor
-        sheetLaborTotal += sheet.laborTotal ?? 0;
+        const sheetDirectLabor = sheet.laborTotal ?? 0;
+        sheetLaborTotal += sheetDirectLabor;
         // Sheet-linked labor from custom_financial_row_items (row_id IS NULL, item_type = 'labor')
+        let sheetLinkedLabor = 0;
         (sheet.sheetLinkedItems || []).forEach((item: any) => {
           if ((item.item_type || 'material') === 'labor') {
-            sheetLaborTotal += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
+            sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
           }
         });
+        sheetLaborTotal += sheetLinkedLabor;
+        // Store for display in UI
+        (sheet as any)._computedTotal = sheetCatPrice + sheetDirectLabor + sheetLinkedLabor;
       });
 
-      // Custom rows
+      // Custom rows — also store per-row _computedTotal
       let customMaterialsTotal = 0;
       let customLaborTotal = 0;
       (customRowsData || []).forEach((row: any) => {
         const lineItems: any[] = row.custom_financial_row_items || [];
         const rowMarkup = 1 + (Number(row.markup_percent) || 0) / 100;
+        let rowTotal = 0;
         if (lineItems.length > 0) {
           const matItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'material');
           const labItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'labor');
-          customMaterialsTotal += matItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0) * rowMarkup;
-          customLaborTotal += labItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
+          const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0) * rowMarkup;
+          const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
+          customMaterialsTotal += matTotal;
+          customLaborTotal += labTotal;
+          rowTotal = matTotal + labTotal;
         } else {
+          rowTotal = (Number(row.total_cost) || 0) * rowMarkup;
           if (row.category === 'labor') {
-            customLaborTotal += (Number(row.total_cost) || 0) * rowMarkup;
+            customLaborTotal += rowTotal;
           } else {
-            customMaterialsTotal += (Number(row.total_cost) || 0) * rowMarkup;
+            customMaterialsTotal += rowTotal;
           }
         }
+        (row as any)._computedTotal = rowTotal;
       });
 
-      // Subcontractors
+      // Subcontractors — also store per-est _computedTotal
       let subMaterialsTotal = 0;
       let subLaborTotalVal = 0;
       (subEstimatesData || []).forEach((est: any) => {
@@ -527,8 +541,11 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         const markup = 1 + (Number(est.markup_percent) || 0) / 100;
         const matItems = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material');
         const labItems = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor');
-        subMaterialsTotal += matItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        subLaborTotalVal += labItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
+        const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
+        const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
+        subMaterialsTotal += matTotal;
+        subLaborTotalVal += labTotal;
+        (est as any)._computedTotal = matTotal + labTotal;
       });
 
       const totalMaterials = sheetMaterialsTotal + customMaterialsTotal + subMaterialsTotal;
@@ -755,23 +772,24 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                       </div>
                     ) : proposalData ? (
                       <>
-                        {/* Material sheets — section name only; prices hidden unless showLineItemPrices */}
-                        {(proposalData.materialSheets || []).map((sheet: any) => {
-                          const itemsTotal = (sheet.items || []).reduce((s: number, item: any) => s + ((item.price_per_unit ?? item.cost_per_unit ?? 0) * (item.quantity ?? 0)), 0);
-                          const sheetTotal = itemsTotal + (sheet.laborTotal ?? 0) + (sheet.sheetLineItemsTotal ?? 0);
-                          return (
-                            <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+                        {/* Material sheets — title + description; price only if showLineItemPrices */}
+                        {(proposalData.materialSheets || []).map((sheet: any) => (
+                          <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
                               <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
-                              {showFinancial && showLineItemPrices && sheetTotal > 0 && (
-                                <p className="text-base font-bold text-emerald-700 shrink-0">
-                                  ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                </p>
+                              {sheet.description && (
+                                <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
                               )}
                             </div>
-                          );
-                        })}
+                            {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
+                              <p className="text-base font-bold text-emerald-700 shrink-0">
+                                ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            )}
+                          </div>
+                        ))}
 
-                        {/* Custom rows — description/category only; prices hidden unless showLineItemPrices */}
+                        {/* Custom rows — description + line items; price only if showLineItemPrices */}
                         {(proposalData.customRows || []).map((row: any) => {
                           const lineItems = (row.custom_financial_row_items || [])
                             .slice()
@@ -788,21 +806,28 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                                   </ul>
                                 )}
                               </div>
-                              {showFinancial && showLineItemPrices && (
+                              {showFinancial && showLineItemPrices && (row._computedTotal ?? 0) > 0 && (
                                 <p className="text-base font-bold text-emerald-700 shrink-0">
-                                  ${(row.selling_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  ${(row._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                               )}
                             </div>
                           );
                         })}
 
-                        {/* Subcontractors — company name + scope */}
+                        {/* Subcontractors — company name + scope; price only if showLineItemPrices */}
                         {(proposalData.subcontractorEstimates || []).map((est: any) => (
-                          <div key={est.id} className="border rounded-lg px-4 py-3">
-                            <h3 className="font-semibold text-base">{est.company_name}</h3>
-                            {est.scope_of_work && (
-                              <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
+                          <div key={est.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-semibold text-base">{est.company_name}</h3>
+                              {est.scope_of_work && (
+                                <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
+                              )}
+                            </div>
+                            {showFinancial && showLineItemPrices && (est._computedTotal ?? 0) > 0 && (
+                              <p className="text-base font-bold text-emerald-700 shrink-0">
+                                ${(est._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
                             )}
                           </div>
                         ))}
@@ -812,7 +837,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                           <div className="border-t-2 pt-4 space-y-2">
                             <div className="flex justify-between text-lg">
                               <span className="font-medium">Subtotal:</span>
-                              <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                             {selectedQuote?.tax_exempt ? (
                               <div className="flex items-center gap-2 text-lg text-amber-700">
@@ -822,13 +847,13 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                             ) : (
                               <div className="flex justify-between text-lg">
                                 <span className="font-medium">Tax (7%):</span>
-                                <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                               </div>
                             )}
                             <div className="flex justify-between items-center text-2xl font-bold pt-2 border-t">
                               <span>Grand Total:</span>
                               <span className="text-emerald-700">
-                                ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
                             </div>
                           </div>
