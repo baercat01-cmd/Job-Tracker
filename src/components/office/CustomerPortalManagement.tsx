@@ -623,6 +623,55 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     }
   }
 
+  /** Auto-save a single visibility toggle the moment it changes (only when a link already exists). */
+  async function autoSaveVisibility(field: string, newValue: boolean) {
+    const link = portalLinks.find((l: any) => l.job_id === job.id);
+    if (!link) return; // No existing link yet — will be saved when "Save & create link" is clicked
+
+    const updated = {
+      show_financial_summary: field === 'show_financial_summary' ? newValue : showFinancialSummary,
+      show_proposal:          field === 'show_proposal'          ? newValue : showProposal,
+      show_payments:          field === 'show_payments'          ? newValue : showPayments,
+      show_schedule:          field === 'show_schedule'          ? newValue : showSchedule,
+      show_documents:         field === 'show_documents'         ? newValue : showDocuments,
+      show_photos:            field === 'show_photos'            ? newValue : showPhotos,
+      show_line_item_prices:  field === 'show_line_item_prices'  ? newValue : showLineItemPrices,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      let result = await supabase
+        .from('customer_portal_access')
+        .update(updated)
+        .eq('id', link.id);
+
+      if (result.error?.code === '42501' || result.error?.code === 'PGRST116') {
+        result = await supabase.rpc('update_customer_portal_link', {
+          p_id: link.id,
+          p_customer_identifier: link.customer_identifier,
+          p_customer_name: link.customer_name,
+          p_customer_email: link.customer_email ?? '',
+          p_customer_phone: link.customer_phone,
+          p_is_active: link.is_active,
+          p_expires_at: link.expires_at,
+          p_show_proposal:          updated.show_proposal,
+          p_show_payments:          updated.show_payments,
+          p_show_schedule:          updated.show_schedule,
+          p_show_documents:         updated.show_documents,
+          p_show_photos:            updated.show_photos,
+          p_show_financial_summary: updated.show_financial_summary,
+          p_custom_message: customMessage || null,
+        });
+      }
+
+      if (result.error) throw result.error;
+      await loadPortalLinks();
+    } catch (err: any) {
+      console.error('Failed to auto-save visibility setting:', err);
+      toast.error('Failed to save setting');
+    }
+  }
+
   function resetForm() {
     // Note: Customer name/email/phone are preserved - they'll be reloaded when dialog opens again
     setExpiresInDays('');
@@ -1118,31 +1167,31 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Show final price</span>
-              <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
+              <Switch checked={showFinancialSummary} onCheckedChange={(v) => { setShowFinancialSummary(v); autoSaveVisibility('show_financial_summary', v); }} />
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Proposal</span>
-              <Switch checked={showProposal} onCheckedChange={setShowProposal} />
+              <Switch checked={showProposal} onCheckedChange={(v) => { setShowProposal(v); autoSaveVisibility('show_proposal', v); }} />
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Payments</span>
-              <Switch checked={showPayments} onCheckedChange={setShowPayments} />
+              <Switch checked={showPayments} onCheckedChange={(v) => { setShowPayments(v); autoSaveVisibility('show_payments', v); }} />
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Schedule</span>
-              <Switch checked={showSchedule} onCheckedChange={setShowSchedule} />
+              <Switch checked={showSchedule} onCheckedChange={(v) => { setShowSchedule(v); autoSaveVisibility('show_schedule', v); }} />
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Documents</span>
-              <Switch checked={showDocuments} onCheckedChange={setShowDocuments} />
+              <Switch checked={showDocuments} onCheckedChange={(v) => { setShowDocuments(v); autoSaveVisibility('show_documents', v); }} />
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Photos</span>
-              <Switch checked={showPhotos} onCheckedChange={setShowPhotos} />
+              <Switch checked={showPhotos} onCheckedChange={(v) => { setShowPhotos(v); autoSaveVisibility('show_photos', v); }} />
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Line item prices</span>
-              <Switch checked={showLineItemPrices} onCheckedChange={setShowLineItemPrices} />
+              <Switch checked={showLineItemPrices} onCheckedChange={(v) => { setShowLineItemPrices(v); autoSaveVisibility('show_line_item_prices', v); }} />
             </div>
           </div>
         </div>
