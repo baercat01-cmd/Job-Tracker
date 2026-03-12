@@ -491,7 +491,6 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
             }
           }
         }
-        void needsFallback;
 
         const sheetIds = sheets.map((s: any) => s.id);
         for (const sheet of sheets) {

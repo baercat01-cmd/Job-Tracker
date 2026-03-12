@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import type { LineSegment, Point } from '@/components/office/TrimDrawingPreview';
 
 function cleanNumber(n: number): string {
@@ -98,13 +98,15 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
 
   const draw = useCallback(() => {
     if (!segments.length || !canvasRef.current || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    if (w < 20 || h < 20) return; // wait for layout
+
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = containerRef.current.getBoundingClientRect();
-    const w = rect.width;
-    const h = rect.height;
     const padding = 24;
     const points: Point[] = [];
     segments.forEach((seg) => {
@@ -114,9 +116,9 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
     const minY = Math.min(...points.map((p) => p.y));
     const maxX = Math.max(...points.map((p) => p.x));
     const maxY = Math.max(...points.map((p) => p.y));
-    const boxW = maxX - minX + 0.5;
-    const boxH = maxY - minY + 0.5;
-    const scale = Math.min((w - 2 * padding) / boxW, (h - 2 * padding) / boxH);
+    const boxW = Math.max(maxX - minX + 0.5, 1);
+    const boxH = Math.max(maxY - minY + 0.5, 1);
+    const scale = Math.min((w - 2 * padding) / boxW, (h - 2 * padding) / boxH, 120);
     const originX = (w - boxW * scale) / 2 + (padding / 2 - minX) * scale;
     const originY = (h - boxH * scale) / 2 + (padding / 2 - minY) * scale;
 
@@ -227,12 +229,26 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
     ctx.restore();
   }, [segments]);
 
+  // Run draw after layout (double rAF so flex layout is complete); retry if container not sized yet
   useEffect(() => {
-    draw();
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      draw();
+      if (containerRef.current) {
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        if (width < 20 || height < 20) requestAnimationFrame(run);
+      }
+    };
+    const id = requestAnimationFrame(() => requestAnimationFrame(run));
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
   }, [draw]);
 
   useEffect(() => {
-    const ro = new ResizeObserver(draw);
+    const ro = new ResizeObserver(() => draw());
     if (containerRef.current) ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [draw]);
@@ -280,19 +296,20 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
   if (!initialSegments.length) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-100">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-100" style={{ height: '100dvh', minHeight: '100%' }}>
+      <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          aria-label="Close"
+          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          aria-label="Back"
         >
-          <X className="h-6 w-6" />
+          <ArrowLeft className="h-5 w-5" />
+          Back
         </button>
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0 relative">
+      <div ref={containerRef} className="relative flex-1 min-h-0 w-full" style={{ minHeight: 200 }}>
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full cursor-pointer"

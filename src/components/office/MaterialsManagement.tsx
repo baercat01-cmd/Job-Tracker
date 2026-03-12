@@ -4262,15 +4262,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               </div>
             )}
             <div className="pt-2 border-t">
-              <p className="text-xs text-muted-foreground mb-2">Draw a new trim in the Trim Calculator; it will open in a new tab. After saving, return here and link it above.</p>
+              <p className="text-xs text-muted-foreground mb-2">Draw a new trim below; when you save, it will be linked to this material so the shop can see the drawing.</p>
               <Button
                 type="button"
                 variant="default"
                 size="sm"
                 className="w-full"
                 onClick={() => {
+                  const materialItemId = openLinkTrimForItem?.id ?? '';
                   setOpenLinkTrimForItem(null);
-                  navigate(`/office?tab=trim-calculator&linkToMaterialItem=${openLinkTrimForItem?.id ?? ''}`);
+                  navigate(`/office?tab=trim-calculator&linkToMaterialItem=${materialItemId}`, { replace: true });
                 }}
               >
                 Open Trim Calculator to draw new trim

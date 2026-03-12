@@ -57,6 +57,11 @@ export function OfficeDashboard() {
     // Always default to 'jobs' tab for office users (ignore localStorage on initial load)
     return tabParam || 'jobs';
   });
+
+  // When URL tab param changes (e.g. link from Materials "Open Trim Calculator"), switch to that tab
+  useEffect(() => {
+    if (tabParam && tabParam !== activeTab) setActiveTab(tabParam);
+  }, [tabParam]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [openMaterialsTab, setOpenMaterialsTab] = useState(false);

@@ -328,14 +328,16 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         const job = pkg.jobs || { name: 'Unknown Job', client_name: '' };
         
         const bundleItems = (pkg.bundle_items || []).map(item => {
-          const materialItem = item.material_items;
+          // Supabase may return nested relation as array (one element) or object; normalize to object
+          const raw = item.material_items;
+          const materialItem = Array.isArray(raw) ? raw[0] : raw;
           
           if (!materialItem) {
             console.warn('⚠️ Bundle item missing material_items:', item);
             return null;
           }
           
-          const sheet = materialItem.sheets || { sheet_name: 'Unknown Sheet' };
+          const sheet = materialItem.sheets || (Array.isArray(materialItem.sheets) ? materialItem.sheets[0] : materialItem.sheets) || { sheet_name: 'Unknown Sheet' };
           
           return {
             ...item,
@@ -400,7 +402,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       const packagesWithTrimAttached: MaterialBundle[] = packagesWithTrimId.map((pkg: any) => ({
         ...pkg,
         bundle_items: (pkg.bundle_items || []).map((item: any) => {
-          const mi = item.material_items;
+          const rawMi = item.material_items;
+          const mi = Array.isArray(rawMi) ? rawMi[0] : rawMi;
           const trimConfig = mi?.trim_saved_config_id ? trimConfigMap.get(mi.trim_saved_config_id) : null;
           return {
             ...item,
@@ -480,22 +483,22 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         return;
       }
 
-      // Enrich unbundled with trim_saved_config_id when minimal select was used
+      // Enrich unbundled with trim_saved_config_id (needed when minimal select was used; otherwise reinforces from DB)
       const unbundledIds = unbundledItems.map((i: any) => i.id);
       const { data: unbundledTrimLinks, error: unbundledTrimLinkErr } = await supabase
         .from('material_items')
         .select('id, trim_saved_config_id')
         .in('id', unbundledIds);
+      const trimIdByUnbundledId = new Map<string, string>();
       if (!unbundledTrimLinkErr && unbundledTrimLinks?.length) {
-        const trimIdByUnbundledId = new Map<string, string>();
         unbundledTrimLinks.forEach((r: any) => {
           if (r.trim_saved_config_id) trimIdByUnbundledId.set(r.id, r.trim_saved_config_id);
         });
-        unbundledItems = unbundledItems.map((i: any) => ({
-          ...i,
-          trim_saved_config_id: i.trim_saved_config_id ?? trimIdByUnbundledId.get(i.id) ?? null,
-        }));
       }
+      unbundledItems = unbundledItems.map((i: any) => ({
+        ...i,
+        trim_saved_config_id: unbundledTrimLinkErr ? (i.trim_saved_config_id ?? null) : (trimIdByUnbundledId.get(i.id) ?? i.trim_saved_config_id ?? null),
+      }));
 
       const unbundledTrimIds = [...new Set(unbundledItems.map((i: any) => i.trim_saved_config_id).filter(Boolean))];
       const unbundledTrimMap = new Map<string, { id: string; name: string; drawing_segments: unknown }>();
@@ -747,7 +750,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const filteredPackages = packages.filter(filterOne);
   const filteredSheetGroups = sheetGroups.filter(filterOne);
 
-  // Group by job: both packages and sheet groups (unbundled by sheet)
+  // Count items with status pull_from_shop (used to hide empty sheets)
+  const pullFromShopCount = (pkg: MaterialBundle) =>
+    pkg.bundle_items.filter((item: any) => item.material_items?.status === 'pull_from_shop').length;
+
+  // Group by job: both packages and sheet groups (unbundled by sheet); exclude sheet groups with 0 to pull
   const packagesByJob = [...filteredPackages, ...filteredSheetGroups].reduce((acc, pkg) => {
     const jobId = pkg.job_id;
     if (!acc[jobId]) {
@@ -760,7 +767,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       };
     }
     if (pkg.id.startsWith('unbundled-')) {
-      acc[jobId].sheetGroups.push(pkg);
+      if (pullFromShopCount(pkg) > 0) acc[jobId].sheetGroups.push(pkg);
     } else {
       acc[jobId].packages.push(pkg);
     }
