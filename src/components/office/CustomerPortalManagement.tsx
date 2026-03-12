@@ -1244,14 +1244,43 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
         <div className="flex flex-col gap-2 pt-2 border-t">
           {portalUrl && (
-            <div className="flex gap-2">
-              <Button size="sm" variant="default" className="flex-1" onClick={() => currentLink ? copyPortalLink(currentLink.access_token) : (navigator.clipboard.writeText(portalUrl), toast.success('Link copied'))}>
-                {currentLink && copied === currentLink.access_token ? <CheckCircle className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                Copy link
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => window.open(portalUrl, '_blank')}>
-                <ExternalLink className="w-4 h-4" />
-              </Button>
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium text-muted-foreground">Customer portal link</p>
+              <div className="flex items-center gap-1 bg-muted/60 border rounded-md px-2 py-1.5 group">
+                <a
+                  href={portalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 text-xs text-primary font-medium truncate hover:underline"
+                  title={portalUrl}
+                >
+                  {portalUrl.replace(/^https?:\/\//, '')}
+                </a>
+                <button
+                  className="flex-shrink-0 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                  title="Copy link"
+                  onClick={() => currentLink ? copyPortalLink(currentLink.access_token) : (navigator.clipboard.writeText(portalUrl), toast.success('Link copied'))}
+                >
+                  {currentLink && copied === currentLink.access_token
+                    ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    : <Copy className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  className="flex-shrink-0 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                  title="Open in new tab"
+                  onClick={() => window.open(portalUrl, '_blank')}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {currentLink?.customer_email && (
+                <a
+                  href={`mailto:${currentLink.customer_email}?subject=Your Project Portal&body=Here is your project portal link: ${portalUrl}`}
+                  className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 underline-offset-2 hover:underline"
+                >
+                  <ExternalLink className="w-3 h-3" /> Send via email
+                </a>
+              )}
             </div>
           )}
           <Button onClick={createPortalLink} className="w-full">
