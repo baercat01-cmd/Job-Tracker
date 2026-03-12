@@ -6260,10 +6260,22 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       });
 
       console.log('Generating PDF with HTML');
-      const filename = `Proposal-${proposalNumber}.pdf`;
-      openPdfViewInApp(html, filename);
-      toast.success('Proposal preview opened. Click "Download PDF" to save as PDF (named by proposal number).');
       setShowExportDialog(false);
+      // Open print dialog directly — user chooses "Save as PDF" to download
+      const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+      const blobUrl = URL.createObjectURL(blob);
+      const win = window.open(blobUrl, '_blank');
+      if (!win) {
+        URL.revokeObjectURL(blobUrl);
+        toast.error('Allow popups to print or save as PDF.');
+        return;
+      }
+      win.focus();
+      toast.info('Choose "Save as PDF" in the print dialog to download.', { duration: 6000 });
+      setTimeout(() => {
+        try { if (!win.closed) win.print(); } catch { toast.error('Could not open print dialog'); }
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+      }, 600);
     } catch (error: any) {
       console.error('Error exporting PDF:', error);
       toast.error(`Failed to export PDF: ${error.message || 'Unknown error'}`);
