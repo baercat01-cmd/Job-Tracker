@@ -1190,7 +1190,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                             </div>
                           );
                         })()}
-                      <>
+                      </>
                     ) : null}
                   </CardContent>
                 </Card>
