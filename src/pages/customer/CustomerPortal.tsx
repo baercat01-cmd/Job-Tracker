@@ -564,9 +564,12 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
       // Materials: use extended_price (selling price override) per category; fall back to extended_cost × markup.
       // Also store per-sheet _computedTotal so the UI can display it without re-computing.
+      // IMPORTANT: Only include proposal sheets (sheet_type != 'change_order') in totals
       let sheetMaterialsTotal = 0;
       let sheetLaborTotal = 0;
       (materialSheets || []).forEach((sheet: any) => {
+        // Skip change order sheets in proposal totals
+        const isChangeOrder = sheet.sheet_type === 'change_order';
         const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
         const byCategory = new Map<string, any[]>();
         (sheet.items || []).forEach((item: any) => {
@@ -588,10 +591,15 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           }, 0);
           sheetCatPrice += categoryTotal;
         });
-        sheetMaterialsTotal += sheetCatPrice;
+        // Only add to proposal totals if this is a proposal sheet
+        if (!isChangeOrder) {
+          sheetMaterialsTotal += sheetCatPrice;
+        }
         // Sheet-level labor from material_sheet_labor
         const sheetDirectLabor = sheet.laborTotal ?? 0;
-        sheetLaborTotal += sheetDirectLabor;
+        if (!isChangeOrder) {
+          sheetLaborTotal += sheetDirectLabor;
+        }
         // Sheet-linked labor from custom_financial_row_items (row_id IS NULL, item_type = 'labor')
         let sheetLinkedLabor = 0;
         (sheet.sheetLinkedItems || []).forEach((item: any) => {
@@ -599,9 +607,12 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
             sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
           }
         });
-        sheetLaborTotal += sheetLinkedLabor;
-        // Store for display in UI
+        if (!isChangeOrder) {
+          sheetLaborTotal += sheetLinkedLabor;
+        }
+        // Store for display in UI (computed for both proposal and change order sheets)
         (sheet as any)._computedTotal = sheetCatPrice + sheetDirectLabor + sheetLinkedLabor;
+        (sheet as any)._isChangeOrder = isChangeOrder;
       });
 
       // Custom rows — also store per-row _computedTotal
@@ -959,9 +970,10 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                     ) : proposalData ? (
                       <>
                         {/* All sections combined and sorted by order_index — mirrors JobFinancials allItemsUnsorted */}
+                        {/* PROPOSAL SECTIONS ONLY (exclude change orders) */}
                         {(() => {
                           const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
-                            ...(proposalData.materialSheets || []).map((sheet: any) => ({
+                            ...(proposalData.materialSheets || []).filter((sheet: any) => sheet.sheet_type !== 'change_order').map((sheet: any) => ({
                               type: 'material' as const,
                               id: sheet.id,
                               orderIndex: sheet.order_index ?? 0,
@@ -1112,7 +1124,73 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                             </div>
                           </div>
                         )}
-                      </>
+                        
+                        {/* CHANGE ORDERS SECTION (separate from proposal total) */}
+                        {(() => {
+                          const changeOrderSheets = (proposalData.materialSheets || []).filter((sheet: any) => sheet.sheet_type === 'change_order');
+                          if (changeOrderSheets.length === 0) return null;
+                          
+                          return (
+                            <div className="border-t-4 border-orange-200 pt-6 mt-8">
+                              <h3 className="text-xl font-bold text-orange-900 mb-4 flex items-center gap-2">
+                                <FileSpreadsheet className="w-5 h-5" />
+                                Change Orders
+                              </h3>
+                              <p className="text-sm text-muted-foreground mb-4">
+                                Additional work not included in the main proposal total above.
+                              </p>
+                              <div className="space-y-3">
+                                {changeOrderSheets.map((sheet: any) => {
+                                  const linkedRows = (proposalData.customRows || []).filter((r: any) => r.sheet_id === sheet.id);
+                                  const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === sheet.id);
+                                  const sheetLineItems = sheet.sheetLinkedItems || [];
+                                  
+                                  return (
+                                    <div key={sheet.id} className="border-2 border-orange-200 bg-orange-50/30 rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                                      <div className="min-w-0 flex-1">
+                                        <h4 className="font-semibold text-base text-orange-900">{sheet.sheet_name}</h4>
+                                        {sheet.description && (
+                                          <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                                        )}
+                                        {sheetLineItems.length > 0 && (
+                                          <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
+                                            {sheetLineItems.map((item: any) => (
+                                              <li key={item.id}>{item.description}</li>
+                                            ))}
+                                          </ul>
+                                        )}
+                                        {linkedRows.map((row: any) => {
+                                          const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                                          return (
+                                            <div key={row.id} className="mt-2">
+                                              {row.description && <p className="text-sm font-medium text-slate-700">{row.description}</p>}
+                                              {items.length > 0 && (
+                                                <ul className="text-sm text-muted-foreground mt-0.5 space-y-0.5 list-disc list-inside">
+                                                  {items.map((i: any) => <li key={i.id}>{i.description}</li>)}
+                                                </ul>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                        {linkedSubs.map((est: any) => (
+                                          <div key={est.id} className="mt-2">
+                                            {est.scope_of_work && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{est.scope_of_work}</p>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                      {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
+                                        <p className="text-base font-bold text-orange-700 shrink-0">
+                                          ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      <>
                     ) : null}
                   </CardContent>
                 </Card>

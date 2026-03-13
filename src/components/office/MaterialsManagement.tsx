@@ -180,6 +180,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     activeSheetIdRef.current = activeSheetId;
   }, [activeSheetId]);
   
+  // Sheet type filter
+  const [sheetTypeFilter, setSheetTypeFilter] = useState<'all' | 'proposal' | 'change_order'>('proposal');
+
   // Add material dialog state
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addToCategory, setAddToCategory] = useState<string>('');
@@ -315,7 +318,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Sheet management state
   const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
   const [newSheetName, setNewSheetName] = useState('');
+  const [newSheetType, setNewSheetType] = useState<'proposal' | 'change_order'>('proposal');
   const [addingSheet, setAddingSheet] = useState(false);
+  
+  // Sheet type filter
+  const [sheetTypeFilter, setSheetTypeFilter] = useState<'all' | 'proposal' | 'change_order'>('proposal');
 
   // Sort categories dialog state
   const [showSortCategoriesDialog, setShowSortCategoriesDialog] = useState(false);
@@ -1679,6 +1686,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         .insert({
           workbook_id: workbook.id,
           sheet_name: newSheetName.trim(),
+          sheet_type: newSheetType,
           order_index: maxOrderIndex + 1,
         })
         .select()
@@ -1689,6 +1697,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       toast.success(`Sheet "${newSheetName}" added successfully`);
       setShowAddSheetDialog(false);
       setNewSheetName('');
+      setNewSheetType('proposal');
       
       // Reload workbook to show new sheet
       await loadWorkbook();
@@ -2338,7 +2347,28 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                       <span className="font-semibold text-slate-700 text-sm flex-shrink-0 whitespace-nowrap">
                         {proposalLabel}
                       </span>
-                      {workbook.sheets.map((sheet) => (
+                      
+                      {/* Sheet type filter */}
+                      <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                        <Button
+                          variant={sheetTypeFilter === 'proposal' ? 'default' : 'ghost'}
+                          size="sm"
+                          onClick={() => setSheetTypeFilter('proposal')}
+                          className={`h-7 text-xs px-2 ${sheetTypeFilter === 'proposal' ? 'bg-blue-600 text-white' : ''}`}
+                        >
+                          Proposal
+                        </Button>
+                        <Button
+                          variant={sheetTypeFilter === 'change_order' ? 'default' : 'ghost'}
+                          size="sm"
+                          onClick={() => setSheetTypeFilter('change_order')}
+                          className={`h-7 text-xs px-2 ${sheetTypeFilter === 'change_order' ? 'bg-orange-600 text-white' : ''}`}
+                        >
+                          Change Orders
+                        </Button>
+                      </div>
+                      
+                      {workbook.sheets.filter(sheet => sheetTypeFilter === 'all' || (sheet as any).sheet_type === sheetTypeFilter || (!((sheet as any).sheet_type) && sheetTypeFilter === 'proposal')).map((sheet) => (
                         <div key={sheet.id} className="relative group flex-shrink-0">
                           <Button
                             variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
@@ -2375,11 +2405,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setShowAddSheetDialog(true)}
+                          onClick={() => {
+                            setNewSheetType(sheetTypeFilter === 'change_order' ? 'change_order' : 'proposal');
+                            setShowAddSheetDialog(true);
+                          }}
                           className="flex-shrink-0 border border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold min-w-[90px] h-7 text-xs"
                         >
                           <Plus className="w-3 h-3 mr-0.5" />
-                          Add Sheet
+                          Add {sheetTypeFilter === 'change_order' ? 'Change Order' : 'Sheet'}
                         </Button>
                       )}
                     </div>
@@ -3678,6 +3711,29 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   }
                 }}
               />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="sheet-type">Sheet Type *</Label>
+              <Select value={newSheetType} onValueChange={(v: 'proposal' | 'change_order') => setNewSheetType(v)}>
+                <SelectTrigger id="sheet-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="proposal">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Proposal Sheet</span>
+                      <span className="text-xs text-muted-foreground">Included in main proposal total</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="change_order">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Change Order</span>
+                      <span className="text-xs text-muted-foreground">Additional work, shown separately</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex gap-3 pt-4 border-t">
