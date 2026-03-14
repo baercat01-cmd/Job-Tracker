@@ -22,15 +22,22 @@ import { toast } from 'sonner';
 import { TrimDrawingPreview, type LineSegment } from '@/components/office/TrimDrawingPreview';
 import { TrimDrawingFullScreenView } from '@/components/office/TrimDrawingFullScreenView';
 
+function toNum(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') return parseFloat(v) || 0;
+  return 0;
+}
+
 function normalizeDrawingSegments(raw: unknown): LineSegment[] {
   if (!raw) return [];
   try {
-    const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    let arr: unknown[] = typeof raw === 'string' ? JSON.parse(raw) : raw as unknown;
+    if (arr && typeof arr === 'object' && !Array.isArray(arr) && 'segments' in arr) arr = (arr as { segments: unknown[] }).segments;
     if (!Array.isArray(arr) || arr.length === 0) return [];
     return arr.map((seg: any, index: number) => ({
       id: seg.id ?? `seg-${index}`,
-      start: seg.start && typeof seg.start.x === 'number' && typeof seg.start.y === 'number' ? { x: seg.start.x, y: seg.start.y } : { x: 0, y: 0 },
-      end: seg.end && typeof seg.end.x === 'number' && typeof seg.end.y === 'number' ? { x: seg.end.x, y: seg.end.y } : { x: 0, y: 0 },
+      start: seg.start ? { x: toNum(seg.start.x), y: toNum(seg.start.y) } : { x: 0, y: 0 },
+      end: seg.end ? { x: toNum(seg.end.x), y: toNum(seg.end.y) } : { x: 0, y: 0 },
       label: seg.label ?? String.fromCharCode(65 + index),
       hasHem: seg.hasHem === true,
       hemAtStart: seg.hemAtStart === true,
@@ -39,6 +46,126 @@ function normalizeDrawingSegments(raw: unknown): LineSegment[] {
   } catch {
     return [];
   }
+}
+
+const TRIM_PREVIEW_SIZE = { width: 88, height: 48 };
+const SHOP_EXPANDED_STORAGE_KEY = 'shop-materials-expanded';
+
+function loadExpandedFromStorage(): Set<string> {
+  try {
+    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SHOP_EXPANDED_STORAGE_KEY) : null;
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr.filter((x): x is string => typeof x === 'string'));
+    }
+  } catch (_) {}
+  return new Set();
+}
+
+function saveExpandedToStorage(set: Set<string>) {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(SHOP_EXPANDED_STORAGE_KEY, JSON.stringify([...set]));
+  } catch (_) {}
+}
+
+/** Small trim preview that fetches config by id then shows TrimDrawingPreview; click opens full screen. */
+function LazyTrimPreview({
+  trimConfigId,
+  onOpenFullScreen,
+}: {
+  trimConfigId: string;
+  onOpenFullScreen: (config: { name: string; drawing_segments: unknown }) => void;
+}) {
+  const [config, setConfig] = useState<{ name: string; drawing_segments: unknown } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('trim_saved_configs')
+      .select('id, name, drawing_segments')
+      .eq('id', trimConfigId)
+      .single()
+      .then(({ data }) => {
+        if (!cancelled && data?.drawing_segments != null) setConfig({ name: data.name ?? 'Trim', drawing_segments: data.drawing_segments });
+      });
+    return () => { cancelled = true; };
+  }, [trimConfigId]);
+  if (!config) {
+    return (
+      <div className="flex items-center justify-center flex-shrink-0" style={{ width: TRIM_PREVIEW_SIZE.width, height: TRIM_PREVIEW_SIZE.height }} title="Loading trim…">
+        <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenFullScreen(config)}
+      title="View trim drawing (click to enlarge)"
+      className="flex-shrink-0 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 rounded"
+    >
+      <TrimDrawingPreview segments={normalizeDrawingSegments(config.drawing_segments)} width={TRIM_PREVIEW_SIZE.width} height={TRIM_PREVIEW_SIZE.height} />
+    </button>
+  );
+}
+
+/** Load trim by material item id (when list didn't include trim_saved_config_id); shows preview if linked. */
+function LazyTrimPreviewByMaterialItemId({
+  materialItemId,
+  onOpenFullScreen,
+}: {
+  materialItemId: string;
+  onOpenFullScreen: (config: { name: string; drawing_segments: unknown }) => void;
+}) {
+  const [config, setConfig] = useState<{ name: string; drawing_segments: unknown } | null>(null);
+  const [noTrim, setNoTrim] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('material_items')
+      .select('trim_saved_config_id')
+      .eq('id', materialItemId)
+      .single()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const configId = data?.trim_saved_config_id;
+        if (!configId) {
+          setNoTrim(true);
+          return;
+        }
+        return supabase
+          .from('trim_saved_configs')
+          .select('id, name, drawing_segments')
+          .eq('id', configId)
+          .single();
+      })
+      .then((res: any) => {
+        if (cancelled) return;
+        if (res?.error || !res?.data?.drawing_segments) {
+          setNoTrim(true);
+          return;
+        }
+        setConfig({ name: res.data.name ?? 'Trim', drawing_segments: res.data.drawing_segments });
+      });
+    return () => { cancelled = true; };
+  }, [materialItemId]);
+  if (noTrim) return null;
+  if (!config) {
+    return (
+      <div className="flex items-center justify-center flex-shrink-0" style={{ width: TRIM_PREVIEW_SIZE.width, height: TRIM_PREVIEW_SIZE.height }} title="Loading trim…">
+        <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenFullScreen(config)}
+      title="View trim drawing (click to enlarge)"
+      className="flex-shrink-0 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 rounded"
+    >
+      <TrimDrawingPreview segments={normalizeDrawingSegments(config.drawing_segments)} width={TRIM_PREVIEW_SIZE.width} height={TRIM_PREVIEW_SIZE.height} />
+    </button>
+  );
 }
 
 interface MaterialItem {
@@ -133,7 +260,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterJob, setFilterJob] = useState('all');
   const [jobs, setJobs] = useState<any[]>([]);
-  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Collapsed by default
+  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(loadExpandedFromStorage);
   const [processingMaterials, setProcessingMaterials] = useState<Set<string>>(new Set());
   const [viewingTrimConfig, setViewingTrimConfig] = useState<{ name: string; drawing_segments: unknown } | null>(null);
   const [loadingTrimId, setLoadingTrimId] = useState<string | null>(null);
@@ -160,6 +287,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       setLoadingTrimId(null);
     }
   }
+
+  // Persist expanded state so refresh / reload keeps last opened sections
+  useEffect(() => {
+    saveExpandedToStorage(expandedPackages);
+  }, [expandedPackages]);
 
   useEffect(() => {
     loadPackages();
@@ -571,8 +703,6 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         });
       }
       setSheetGroups(builtSheetGroups);
-      
-      setExpandedPackages(new Set());
     } catch (error: any) {
       console.error('❌ Error loading packages:', error);
       const msg = error?.message || String(error);
@@ -692,12 +822,43 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         p_material_item_id: materialId,
         p_quantity_to_mark: capped,
       });
-      if (error) throw error;
+      if (error) {
+        if (/schema cache|could not find the function/i.test(error.message)) {
+          const newReady = currentReady + capped;
+          const { error: updateErr } = await supabase
+            .from('material_items')
+            .update({
+              quantity_ready_for_job: newReady,
+              ...(newReady >= totalQty ? { status: 'ready_for_job' } : {}),
+            })
+            .eq('id', materialId);
+          if (updateErr) {
+            if (/quantity_ready_for_job|schema cache|could not find.*column/i.test(updateErr.message)) {
+              toast.error(
+                'Partial "Mark ready" requires a database update. In Supabase Dashboard → SQL Editor, run the script: supabase/migrations/RUN_THIS_FOR_PARTIAL_READY.sql',
+                { duration: 8000 }
+              );
+              return;
+            }
+            throw updateErr;
+          }
+        } else {
+          throw error;
+        }
+      }
       toast.success(`Marked ${capped} as ready for job${capped >= totalQty - currentReady ? ' (all remaining)' : ''}.`);
       await updateBundleStatusIfFirstReady(bundleId);
       loadPackages();
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to mark partial ready');
+      const msg = e?.message || '';
+      if (/quantity_ready_for_job|schema cache|could not find the function/i.test(msg)) {
+        toast.error(
+          'Partial "Mark ready" requires a database update. In Supabase Dashboard → SQL Editor, run: supabase/migrations/RUN_THIS_FOR_PARTIAL_READY.sql',
+          { duration: 8000 }
+        );
+      } else {
+        toast.error(msg || 'Failed to mark partial ready');
+      }
     } finally {
       setProcessingMaterials(prev => { const n = new Set(prev); n.delete(materialId); return n; });
     }
@@ -754,8 +915,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const pullFromShopCount = (pkg: MaterialBundle) =>
     pkg.bundle_items.filter((item: any) => item.material_items?.status === 'pull_from_shop').length;
 
-  // Group by job: both packages and sheet groups (unbundled by sheet); exclude sheet groups with 0 to pull
+  // Group by job: both packages and sheet groups; exclude any row with 0 to pull (all checked off)
   const packagesByJob = [...filteredPackages, ...filteredSheetGroups].reduce((acc, pkg) => {
+    if (pullFromShopCount(pkg) === 0) return acc;
     const jobId = pkg.job_id;
     if (!acc[jobId]) {
       acc[jobId] = {
@@ -767,7 +929,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       };
     }
     if (pkg.id.startsWith('unbundled-')) {
-      if (pullFromShopCount(pkg) > 0) acc[jobId].sheetGroups.push(pkg);
+      acc[jobId].sheetGroups.push(pkg);
     } else {
       acc[jobId].packages.push(pkg);
     }
@@ -895,9 +1057,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                               <div>
                                                 <span className="text-muted-foreground">Qty:</span>
                                                 <p className="font-semibold text-base">
-                                                  {item.material_items.quantity}
+                                                  {Math.max(0, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))} to pull
+                                                  <span className="text-muted-foreground font-normal"> (of {item.material_items.quantity} total)</span>
                                                   {(item.material_items.quantity_ready_for_job ?? 0) > 0 && (
-                                                    <span className="text-muted-foreground font-normal"> ({item.material_items.quantity_ready_for_job} ready)</span>
+                                                    <span className="text-muted-foreground font-normal"> — {item.material_items.quantity_ready_for_job} ready</span>
                                                   )}
                                                 </p>
                                               </div>
@@ -919,7 +1082,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                           </div>
                                           
                                           <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
-                                            {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id) && (
+                                            {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id || item.material_items.category === 'Trim') && (
                                               item.material_items.trim_saved_configs?.drawing_segments ? (
                                                 <button
                                                   type="button"
@@ -928,30 +1091,24 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                     drawing_segments: item.material_items.trim_saved_configs!.drawing_segments,
                                                   })}
                                                   title="View trim drawing (click to enlarge)"
-                                                  className="flex flex-col items-center rounded border border-slate-200 bg-slate-50 p-1 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                  className="flex-shrink-0 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 rounded"
                                                 >
                                                   <TrimDrawingPreview
                                                     segments={normalizeDrawingSegments(item.material_items.trim_saved_configs.drawing_segments)}
-                                                    width={88}
-                                                    height={48}
+                                                    width={TRIM_PREVIEW_SIZE.width}
+                                                    height={TRIM_PREVIEW_SIZE.height}
                                                   />
-                                                  <span className="text-[10px] text-slate-500 mt-0.5">Trim</span>
                                                 </button>
+                                              ) : item.material_items.trim_saved_config_id ? (
+                                                <LazyTrimPreview
+                                                  trimConfigId={item.material_items.trim_saved_config_id}
+                                                  onOpenFullScreen={setViewingTrimConfig}
+                                                />
                                               ) : (
-                                                <Button
-                                                  size="sm"
-                                                  variant="outline"
-                                                  disabled={loadingTrimId === item.material_items.trim_saved_config_id}
-                                                  onClick={() => openTrimDrawing(item.material_items.trim_saved_config_id!)}
-                                                  title="View trim drawing"
-                                                  className="h-9 text-xs whitespace-nowrap"
-                                                >
-                                                  {loadingTrimId === item.material_items.trim_saved_config_id ? (
-                                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                  ) : (
-                                                    'View trim'
-                                                  )}
-                                                </Button>
+                                                <LazyTrimPreviewByMaterialItemId
+                                                  materialItemId={item.material_items.id}
+                                                  onOpenFullScreen={setViewingTrimConfig}
+                                                />
                                               )
                                             )}
                                             {item.material_items.status === 'pull_from_shop' && (
@@ -962,9 +1119,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                       type="number"
                                                       min={1}
                                                       max={Math.max(1, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))}
-                                                      className="w-14 h-9 text-sm"
-                                                      value={partialQtyInput[item.material_items.id] ?? String(item.material_items.quantity)}
+                                                      className="w-14 h-9 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                      value={partialQtyInput[item.material_items.id] ?? String(Math.max(0, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0)))}
                                                       onChange={(e) => setPartialQtyInput(prev => ({ ...prev, [item.material_items.id]: e.target.value }))}
+                                                      onFocus={(e) => e.target.select()}
                                                     />
                                                     <Button
                                                       size="sm"
@@ -973,7 +1131,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                         const ready = item.material_items.quantity_ready_for_job ?? 0;
                                                         const total = item.material_items.quantity;
                                                         const remaining = total - ready;
-                                                        const raw = partialQtyInput[item.material_items.id] ?? String(total);
+                                                        const raw = partialQtyInput[item.material_items.id] ?? String(remaining);
                                                         const v = Math.min(Math.max(parseInt(raw, 10) || 0, 1), remaining);
                                                         if (v > 0 && ready < total) markPartialReady(item.material_items.id, pkg.id, v, ready, total);
                                                       }}
@@ -1092,9 +1250,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                               <div>
                                                 <span className="text-muted-foreground">Qty:</span>
                                                 <p className="font-semibold text-base">
-                                                  {item.material_items.quantity}
+                                                  {Math.max(0, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))} to pull
+                                                  <span className="text-muted-foreground font-normal"> (of {item.material_items.quantity} total)</span>
                                                   {(item.material_items.quantity_ready_for_job ?? 0) > 0 && (
-                                                    <span className="text-muted-foreground font-normal"> ({item.material_items.quantity_ready_for_job} ready)</span>
+                                                    <span className="text-muted-foreground font-normal"> — {item.material_items.quantity_ready_for_job} ready</span>
                                                   )}
                                                 </p>
                                               </div>
@@ -1109,7 +1268,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             </div>
                                           </div>
                                           <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
-                                            {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id) && (
+                                            {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id || item.material_items.category === 'Trim') && (
                                               item.material_items.trim_saved_configs?.drawing_segments ? (
                                                 <button
                                                   type="button"
@@ -1118,30 +1277,24 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                     drawing_segments: item.material_items.trim_saved_configs!.drawing_segments,
                                                   })}
                                                   title="View trim drawing (click to enlarge)"
-                                                  className="flex flex-col items-center rounded border border-slate-200 bg-slate-50 p-1 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                  className="flex-shrink-0 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 rounded"
                                                 >
                                                   <TrimDrawingPreview
                                                     segments={normalizeDrawingSegments(item.material_items.trim_saved_configs.drawing_segments)}
-                                                    width={88}
-                                                    height={48}
+                                                    width={TRIM_PREVIEW_SIZE.width}
+                                                    height={TRIM_PREVIEW_SIZE.height}
                                                   />
-                                                  <span className="text-[10px] text-slate-500 mt-0.5">Trim</span>
                                                 </button>
+                                              ) : item.material_items.trim_saved_config_id ? (
+                                                <LazyTrimPreview
+                                                  trimConfigId={item.material_items.trim_saved_config_id}
+                                                  onOpenFullScreen={setViewingTrimConfig}
+                                                />
                                               ) : (
-                                                <Button
-                                                  size="sm"
-                                                  variant="outline"
-                                                  disabled={loadingTrimId === item.material_items.trim_saved_config_id}
-                                                  onClick={() => openTrimDrawing(item.material_items.trim_saved_config_id!)}
-                                                  title="View trim drawing"
-                                                  className="h-9 text-xs whitespace-nowrap"
-                                                >
-                                                  {loadingTrimId === item.material_items.trim_saved_config_id ? (
-                                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                  ) : (
-                                                    'View trim'
-                                                  )}
-                                                </Button>
+                                                <LazyTrimPreviewByMaterialItemId
+                                                  materialItemId={item.material_items.id}
+                                                  onOpenFullScreen={setViewingTrimConfig}
+                                                />
                                               )
                                             )}
                                             {item.material_items.status === 'pull_from_shop' && (
@@ -1152,9 +1305,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                       type="number"
                                                       min={1}
                                                       max={Math.max(1, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))}
-                                                      className="w-14 h-9 text-sm"
-                                                      value={partialQtyInput[item.material_items.id] ?? String(item.material_items.quantity)}
+                                                      className="w-14 h-9 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                      value={partialQtyInput[item.material_items.id] ?? String(Math.max(0, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0)))}
                                                       onChange={(e) => setPartialQtyInput(prev => ({ ...prev, [item.material_items.id]: e.target.value }))}
+                                                      onFocus={(e) => e.target.select()}
                                                     />
                                                     <Button
                                                       size="sm"
@@ -1163,7 +1317,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                         const ready = item.material_items.quantity_ready_for_job ?? 0;
                                                         const total = item.material_items.quantity;
                                                         const remaining = total - ready;
-                                                        const raw = partialQtyInput[item.material_items.id] ?? String(total);
+                                                        const raw = partialQtyInput[item.material_items.id] ?? String(remaining);
                                                         const v = Math.min(Math.max(parseInt(raw, 10) || 0, 1), remaining);
                                                         if (v > 0 && ready < total) markPartialReady(item.material_items.id, sg.id, v, ready, total);
                                                       }}

@@ -15,15 +15,64 @@ export interface LineSegment {
   hemSide?: 'left' | 'right';
 }
 
+function formatLengthInches(n: number): string {
+  const rounded = Math.round(n * 16) / 16;
+  if (rounded % 1 === 0) return `${rounded}"`;
+  const whole = Math.floor(rounded);
+  const frac = rounded - whole;
+  const num = Math.round(frac * 16);
+  if (num === 0) return whole ? `${whole}"` : '0"';
+  if (num === 16) return `${whole + 1}"`;
+  const g = (a: number, b: number): number => (b ? g(b, a % b) : a);
+  const gcf = g(num, 16);
+  const n2 = num / gcf;
+  const d = 16 / gcf;
+  return whole ? `${whole} ${n2}/${d}"` : `${n2}/${d}"`;
+}
+
+function interiorAngleDeg(seg1: LineSegment, seg2: LineSegment): number {
+  const dx1 = seg1.end.x - seg1.start.x;
+  const dy1 = seg1.end.y - seg1.start.y;
+  const dx2 = seg2.end.x - seg2.start.x;
+  const dy2 = seg2.end.y - seg2.start.y;
+  const a1 = Math.atan2(dy1, dx1) * (180 / Math.PI);
+  const a2 = Math.atan2(dy2, dx2) * (180 / Math.PI);
+  let diff = a2 - a1;
+  while (diff < 0) diff += 360;
+  while (diff > 360) diff -= 360;
+  return 360 - diff;
+}
+
+function centroid(segments: LineSegment[]): Point {
+  if (!segments.length) return { x: 0, y: 0 };
+  let sumX = 0, sumY = 0, count = 0;
+  segments.forEach((seg) => {
+    sumX += seg.start.x + seg.end.x;
+    sumY += seg.start.y + seg.end.y;
+    count += 2;
+  });
+  return { x: sumX / count, y: sumY / count };
+}
+
+export function getInteriorAngleDeg(seg1: LineSegment, seg2: LineSegment): number {
+  return interiorAngleDeg(seg1, seg2);
+}
+
 interface TrimDrawingPreviewProps {
   segments: LineSegment[];
   width?: number;
   height?: number;
   className?: string;
+  /** When true, draw segment lengths (inches) and bend angles (degrees) on the canvas */
+  showMeasurements?: boolean;
+  /** Called with canvas-space (x,y) for each angle label when showMeasurements is true; used for click-to-edit overlay */
+  onAnglePositions?: (positions: { index: number; x: number; y: number }[]) => void;
+  /** When true for bend index i, show (360 - interior angle) instead of interior angle (toggle 90° ↔ 270°) */
+  angleDisplayMode?: Record<number, boolean>;
 }
 
 /** Draw trim profile from segments (no grid). Used in shop pull form and elsewhere. */
-export function TrimDrawingPreview({ segments, width = 280, height = 160, className }: TrimDrawingPreviewProps) {
+export function TrimDrawingPreview({ segments, width = 280, height = 160, className, showMeasurements = false, onAnglePositions, angleDisplayMode }: TrimDrawingPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -61,12 +110,13 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
     const originX = (width - boxW * scale) / 2 + (pad - minX) * scale;
     const originY = (height - boxH * scale) / 2 + (pad - minY) * scale;
 
+    // Plain white background — no grid (match trim calculator export / PDF style)
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
     ctx.save();
     ctx.translate(originX, originY);
 
-    const lineWidth = Math.max(1.5, 2 * (scale / 80));
+    const lineWidth = Math.max(2, 3 * (scale / 80));
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = lineWidth;
 
@@ -106,8 +156,68 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
       }
     });
 
+    const anglePositionsOut: { index: number; x: number; y: number }[] = [];
+
+    if (showMeasurements && segments.length > 0) {
+      const cent = centroid(segments);
+      const fontSize = Math.max(10, 12 * (scale / 80));
+      const fontBold = Math.max(12, 16 * (scale / 80));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Measurements only (no A, B, C labels) — drawn off to the side of each segment
+      segments.forEach((segment, i) => {
+        const dx = segment.end.x - segment.start.x;
+        const dy = segment.end.y - segment.start.y;
+        const lengthInches = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+        const perpX = -dy / lengthInches;
+        const perpY = dx / lengthInches;
+        const midX = (segment.start.x + segment.end.x) / 2;
+        const midY = (segment.start.y + segment.end.y) / 2;
+        const toCentroidX = cent.x - midX;
+        const toCentroidY = cent.y - midY;
+        const direction = perpX * toCentroidX + perpY * toCentroidY > 0 ? -1 : 1;
+        const offsetPx = lengthInches < 1.0 ? 85 : 70;
+        const baseX = midX * scale + perpX * direction * offsetPx;
+        const baseY = midY * scale + perpY * direction * offsetPx;
+        ctx.fillStyle = '#000000';
+        ctx.font = `bold ${fontBold}px sans-serif`;
+        ctx.fillText(formatLengthInches(lengthInches), baseX, baseY);
+      });
+
+      for (let i = 1; i < segments.length; i++) {
+        const prev = segments[i - 1];
+        const curr = segments[i];
+        const interiorAngle = Math.round(interiorAngleDeg(prev, curr));
+        const showComplement = angleDisplayMode?.[i] === true;
+        const angle = showComplement ? 360 - interiorAngle : interiorAngle;
+        const startX = curr.start.x * scale;
+        const startY = curr.start.y * scale;
+        const prevDx = prev.end.x - prev.start.x;
+        const prevDy = prev.end.y - prev.start.y;
+        const currDx = curr.end.x - curr.start.x;
+        const currDy = curr.end.y - curr.start.y;
+        const prevAngle = Math.atan2(prevDy, prevDx);
+        const currAngle = Math.atan2(currDy, currDx);
+        // Interior of bend is between (prevAngle+π) and currAngle; interior bisector points into the bend
+        const interiorBisector = (prevAngle + Math.PI + currAngle) / 2;
+        // Exterior = opposite side of bend: interior bisector + π so label is always outside
+        const exteriorBisector = interiorBisector + Math.PI;
+        const angleDistPx = 58 * (scale / 80);
+        const labelX = startX + Math.cos(exteriorBisector) * angleDistPx;
+        const labelY = startY + Math.sin(exteriorBisector) * angleDistPx;
+        anglePositionsOut.push({ index: i, x: originX + labelX, y: originY + labelY });
+        ctx.fillStyle = '#6b21a8';
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.fillText(`${angle}°`, labelX, labelY);
+      }
+    }
+
     ctx.restore();
-  }, [segments, width, height]);
+    if (showMeasurements && onAnglePositions && anglePositionsOut.length > 0) {
+      onAnglePositions(anglePositionsOut);
+    }
+  }, [segments, width, height, showMeasurements, onAnglePositions, angleDisplayMode]);
 
   if (!segments?.length) return null;
 
@@ -117,7 +227,6 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
       width={width}
       height={height}
       className={className}
-      style={{ border: '1px solid #e2e8f0', borderRadius: 8 }}
     />
   );
 }

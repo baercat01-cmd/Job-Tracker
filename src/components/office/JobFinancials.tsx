@@ -3027,7 +3027,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       const { data: oldSheets } = await supabase.from('material_sheets').select('*').eq('workbook_id', wb.id).order('order_index');
       for (const sheet of oldSheets || []) {
         const { data: newSheet, error: shErr } = await supabase.from('material_sheets').insert({
-          workbook_id: newWb.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index, is_option: sheet.is_option, description: sheet.description,
+          workbook_id: newWb.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index, is_option: sheet.is_option, description: sheet.description, sheet_type: sheet.sheet_type ?? 'proposal',
         }).select('id').single();
         if (shErr || !newSheet) continue;
         sheetIdMap[sheet.id] = newSheet.id;
@@ -3342,7 +3342,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         for (const sheet of oldSheets) {
           const { data: newSheet, error: shErr } = await supabase
             .from('material_sheets')
-            .insert({ workbook_id: newWb.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index, is_option: sheet.is_option, description: sheet.description })
+            .insert({ workbook_id: newWb.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index, is_option: sheet.is_option, description: sheet.description, sheet_type: sheet.sheet_type ?? 'proposal' })
             .select('id').single();
           if (shErr) throw new Error(`Step 2 (insert sheet): ${shErr.message}`);
           sheetIdMap[sheet.id] = newSheet.id;
@@ -3375,7 +3375,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
 
           snapshotSheets.push({
             id: sheet.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index,
-            is_option: sheet.is_option, description: sheet.description,
+            is_option: sheet.is_option, description: sheet.description, sheet_type: sheet.sheet_type ?? 'proposal',
             items,
           });
         }
@@ -4131,6 +4131,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             orderIndex: sheet.order_index,
             isOptional: sheet.is_option ?? false,
             compareToSheetId: sheet.compare_to_sheet_id ?? null,
+            sheetType: sheet.sheet_type ?? 'proposal',
             categories,
             totalCost: sheetTotalCost,
             totalPrice: sheetTotalPrice,
@@ -4139,9 +4140,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           };
         });
         
-        // Calculate grand totals
-        const grandTotalCost = breakdowns.reduce((sum, sheet) => sum + sheet.totalCost, 0);
-        const grandTotalPrice = breakdowns.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
+        // Grand totals: exclude change_order sheets so proposal total stays separate
+        const proposalBreakdownsSnap = breakdowns.filter((b: any) => {
+          const s = sheetsData.find((sd: any) => sd.id === b.sheetId);
+          return s?.sheet_type !== 'change_order';
+        });
+        const grandTotalCost = proposalBreakdownsSnap.reduce((sum, sheet) => sum + sheet.totalCost, 0);
+        const grandTotalPrice = proposalBreakdownsSnap.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
         const grandProfit = grandTotalPrice - grandTotalCost;
         const grandMargin = grandTotalPrice > 0 ? (grandProfit / grandTotalPrice) * 100 : 0;
         
@@ -4401,6 +4406,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           orderIndex: sheet.order_index,
           isOptional: sheet.is_option ?? false,
           compareToSheetId: sheet.compare_to_sheet_id ?? null,
+          sheetType: sheet.sheet_type ?? 'proposal',
           categories,
           totalCost: sheetTotalCost,
           totalPrice: sheetTotalPrice,
@@ -4409,9 +4415,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         };
       });
 
-      // Calculate grand totals
-      const grandTotalCost = breakdowns.reduce((sum, sheet) => sum + sheet.totalCost, 0);
-      const grandTotalPrice = breakdowns.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
+      // Grand totals for proposal: exclude change_order sheets so proposal total stays separate
+      const proposalBreakdowns = breakdowns.filter((b: any) => {
+        const s = sheetsData.find((sd: any) => sd.id === b.sheetId);
+        return s?.sheet_type !== 'change_order';
+      });
+      const grandTotalCost = proposalBreakdowns.reduce((sum, sheet) => sum + sheet.totalCost, 0);
+      const grandTotalPrice = proposalBreakdowns.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
       const grandProfit = grandTotalPrice - grandTotalCost;
       const grandMargin = grandTotalPrice > 0 ? (grandProfit / grandTotalPrice) * 100 : 0;
 
@@ -6428,6 +6438,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   materialsBreakdown.sheetBreakdowns.forEach(sheet => {
     // Skip optional sections — they are shown but not included in totals
     if ((sheet as any).isOptional) return;
+    // Exclude change order sheets from proposal totals (they are shown in a separate section)
+    const ms = materialSheets.find((m: any) => m.id === sheet.sheetId);
+    if (ms?.sheet_type === 'change_order') return;
 
     // Calculate cost from linked custom rows (ALL materials, with their own markup)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
@@ -6548,12 +6561,15 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   });
   
   // Labor: sheet labor + sheet labor line items + custom row labor + custom rows labor + linked rows labor + subcontractor labor items
-  // Use all sheet IDs (from sheetBreakdowns and materialSheets) so labor from line items is never missed when sheetBreakdowns is empty
-  // Exclude optional sheets from labor as well
+  // Use proposal sheet IDs only (exclude change_order and optional) so proposal total does not include change order labor
   const allSheetIds = Array.from(new Set([
     ...materialsBreakdown.sheetBreakdowns.map((s: any) => s.sheetId),
     ...materialSheets.map((s: any) => s.id),
-  ])).filter(id => !!id && !optionalSheetIds.has(id));
+  ])).filter(id => {
+    if (!id || optionalSheetIds.has(id)) return false;
+    const ms = materialSheets.find((m: any) => m.id === id);
+    return ms?.sheet_type !== 'change_order';
+  });
   const totalSheetLaborCost = allSheetIds.reduce((sum, sheetId) => {
     const labor = sheetLabor[sheetId];
     
@@ -6901,7 +6917,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
               variant="outline"
               size="sm"
               onClick={handleLockUnlock}
-              className="absolute right-2 bottom-2 h-8 w-8 p-0 rounded-md border-slate-300 text-slate-600 hover:bg-slate-100"
+              className={isReadOnly ? 'absolute right-2 bottom-2 h-8 w-8 p-0 rounded-md border-amber-400 text-amber-600 bg-amber-50 hover:bg-amber-100 hover:border-amber-500' : 'absolute right-2 bottom-2 h-8 w-8 p-0 rounded-md border-slate-300 text-slate-600 hover:bg-slate-100'}
               title={isReadOnly ? 'Unlock to edit' : 'Lock proposal (read-only; does not mark as sent)'}
             >
               {isReadOnly ? <Lock className="w-4 h-4" /> : <LockOpen className="w-4 h-4" />}

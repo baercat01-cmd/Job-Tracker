@@ -529,6 +529,90 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         materialSheets = sheets;
       }
 
+      // Change order proposal: separate quote for this job with is_change_order_proposal = true; load its workbook/sheets for the Change orders card.
+      let changeOrderSheets: any[] = [];
+      const { data: changeOrderQuoteRow } = await supabase
+        .from('quotes')
+        .select('id')
+        .eq('job_id', jobId)
+        .eq('is_change_order_proposal', true)
+        .limit(1)
+        .maybeSingle();
+      if (changeOrderQuoteRow?.id) {
+        const { data: coWb } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('quote_id', changeOrderQuoteRow.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (coWb?.id) {
+          const { data: coSheets } = await supabase
+            .from('material_sheets')
+            .select('*')
+            .eq('workbook_id', coWb.id)
+            .order('order_index');
+          const coSheetsList = coSheets || [];
+          for (const sheet of coSheetsList) {
+            const [{ data: items }, { data: laborRows }, { data: categoryMarkupRows }] = await Promise.all([
+              supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
+              supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
+              supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id),
+            ]);
+            (sheet as any).items = items || [];
+            const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
+            (sheet as any).laborTotal = laborTotal;
+            const catMarkupMap: Record<string, number> = {};
+            (categoryMarkupRows || []).forEach((cm: any) => { catMarkupMap[cm.category_name] = cm.markup_percent ?? 10; });
+            (sheet as any).categoryMarkups = catMarkupMap;
+          }
+          const coSheetIds = coSheetsList.map((s: any) => s.id);
+          if (coSheetIds.length > 0) {
+            const { data: sheetLineItems } = await supabase
+              .from('custom_financial_row_items')
+              .select('*')
+              .in('sheet_id', coSheetIds)
+              .is('row_id', null)
+              .order('order_index');
+            const bySheet: Record<string, any[]> = {};
+            (sheetLineItems || []).forEach((item: any) => {
+              const sid = item.sheet_id;
+              if (sid) { if (!bySheet[sid]) bySheet[sid] = []; bySheet[sid].push(item); }
+            });
+            coSheetsList.forEach((sheet: any) => { (sheet as any).sheetLinkedItems = bySheet[sheet.id] || []; });
+          }
+          coSheetsList.forEach((sheet: any) => {
+            const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
+            const byCategory = new Map<string, any[]>();
+            (sheet.items || []).forEach((item: any) => {
+              const cat = item.category || 'Uncategorized';
+              if (!byCategory.has(cat)) byCategory.set(cat, []);
+              byCategory.get(cat)!.push(item);
+            });
+            let sheetCatPrice = 0;
+            byCategory.forEach((catItems, catName) => {
+              const markup = catMarkups[catName] ?? 10;
+              sheetCatPrice += catItems.reduce((s: number, i: any) => {
+                const ext = i.extended_price != null && i.extended_price !== '' ? Number(i.extended_price) : null;
+                if (ext != null && ext > 0) return s + ext;
+                const qty = Number(i.quantity) || 0;
+                const pricePerUnit = Number(i.price_per_unit) || 0;
+                if (pricePerUnit > 0) return s + qty * pricePerUnit;
+                const cost = i.extended_cost != null ? Number(i.extended_cost) : qty * (Number(i.cost_per_unit) || 0);
+                return s + cost * (1 + markup / 100);
+              }, 0);
+            });
+            let sheetLinkedLabor = 0;
+            (sheet.sheetLinkedItems || []).forEach((item: any) => {
+              if ((item.item_type || 'material') === 'labor')
+                sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
+            });
+            (sheet as any)._computedTotal = sheetCatPrice + (sheet.laborTotal ?? 0) + sheetLinkedLabor;
+          });
+          changeOrderSheets = coSheetsList;
+        }
+      }
+
       // Custom rows: quote-specific + job-level (quote_id null), deduplicated and sorted.
       // Matches JobFinancials exactly: quote rows take priority; job-level rows that share an id are dropped.
       let customRowsData: any[] = [];
@@ -563,7 +647,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
       const TAX_RATE = 0.07;
 
       // Materials: use extended_price (selling price override) per category; fall back to extended_cost × markup.
-      // Also store per-sheet _computedTotal so the UI can display it without re-computing.
+      // Also store per-sheet _computedTotal so the UI can display it. Proposal total excludes change_order sheets.
       let sheetMaterialsTotal = 0;
       let sheetLaborTotal = 0;
       (materialSheets || []).forEach((sheet: any) => {
@@ -588,20 +672,19 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           }, 0);
           sheetCatPrice += categoryTotal;
         });
-        sheetMaterialsTotal += sheetCatPrice;
-        // Sheet-level labor from material_sheet_labor
         const sheetDirectLabor = sheet.laborTotal ?? 0;
-        sheetLaborTotal += sheetDirectLabor;
-        // Sheet-linked labor from custom_financial_row_items (row_id IS NULL, item_type = 'labor')
         let sheetLinkedLabor = 0;
         (sheet.sheetLinkedItems || []).forEach((item: any) => {
           if ((item.item_type || 'material') === 'labor') {
             sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
           }
         });
-        sheetLaborTotal += sheetLinkedLabor;
-        // Store for display in UI
         (sheet as any)._computedTotal = sheetCatPrice + sheetDirectLabor + sheetLinkedLabor;
+        // Only add to proposal totals if not a change order sheet
+        if (sheet.sheet_type !== 'change_order') {
+          sheetMaterialsTotal += sheetCatPrice;
+          sheetLaborTotal += sheetDirectLabor + sheetLinkedLabor;
+        }
       });
 
       // Custom rows — also store per-row _computedTotal
@@ -653,6 +736,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
       return {
         materialSheets,
+        changeOrderSheets,
         customRows: customRowsData,
         subcontractorEstimates: subEstimatesData,
         totals: { subtotal, tax, grandTotal },
@@ -661,6 +745,7 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
       console.error('Error loading proposal data:', error);
       return {
         materialSheets: [],
+        changeOrderSheets: [],
         customRows: [],
         subcontractorEstimates: [],
         totals: { subtotal: 0, tax: 0, grandTotal: 0 },
@@ -958,10 +1043,11 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                       </div>
                     ) : proposalData ? (
                       <>
-                        {/* All sections combined and sorted by order_index — mirrors JobFinancials allItemsUnsorted */}
+                        {/* Proposal sections only (exclude change order sheets); change orders shown in separate card below */}
                         {(() => {
+                          const proposalSheets = (proposalData.materialSheets || []).filter((s: any) => s.sheet_type !== 'change_order');
                           const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
-                            ...(proposalData.materialSheets || []).map((sheet: any) => ({
+                            ...proposalSheets.map((sheet: any) => ({
                               type: 'material' as const,
                               id: sheet.id,
                               orderIndex: sheet.order_index ?? 0,
@@ -1116,6 +1202,57 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                     ) : null}
                   </CardContent>
                 </Card>
+
+                {/* Change orders — from separate change order proposal (quote); not added to proposal total */}
+                {proposalData && (() => {
+                  const changeOrderSheets = proposalData.changeOrderSheets || [];
+                  if (changeOrderSheets.length === 0) return null;
+                  return (
+                    <Card className="mt-6 border-amber-200 bg-amber-50/30">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-amber-900">
+                          <FileSpreadsheet className="w-5 h-5" />
+                          Change Orders
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground font-normal">
+                          The following change orders are separate from the main proposal total.
+                        </p>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {changeOrderSheets.map((sheet: any) => (
+                          <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4 bg-white">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                              {sheet.description && (
+                                <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                              )}
+                              {(sheet.sheetLinkedItems || []).length > 0 && (
+                                <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
+                                  {(sheet.sheetLinkedItems || []).map((item: any) => (
+                                    <li key={item.id}>{item.description}</li>
+                                  ))}
+                                </ul>
+                              )}
+                              {!sheet.description && (!sheet.sheetLinkedItems || sheet.sheetLinkedItems.length === 0) && (sheet.items || []).length > 0 && (
+                                <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
+                                  {(sheet.items || []).slice(0, 5).map((item: any) => (
+                                    <li key={item.id}>{[item.quantity, item.material_name].filter(Boolean).join(' - ')}</li>
+                                  ))}
+                                  {(sheet.items || []).length > 5 && <li>… and {(sheet.items || []).length - 5} more</li>}
+                                </ul>
+                              )}
+                            </div>
+                            {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
+                              <p className="text-base font-bold text-amber-700 shrink-0">
+                                ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
               </>
             )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -68,7 +68,6 @@ import {
   ArrowDown,
   ListOrdered,
   GripVertical,
-  Lock,
   Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -116,6 +115,7 @@ interface MaterialSheet {
   workbook_id: string;
   sheet_name: string;
   order_index: number;
+  sheet_type?: 'proposal' | 'change_order';
   category_order: string[] | null;
   items: MaterialItem[];
   created_at: string;
@@ -136,6 +136,7 @@ interface JobQuote {
   created_at: string;
   sent_at: string | null;
   locked_for_editing: boolean | null;
+  is_change_order_proposal?: boolean;
 }
 
 interface MaterialsManagementProps {
@@ -315,6 +316,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Sheet management state
   const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
   const [newSheetName, setNewSheetName] = useState('');
+  const [newSheetType, setNewSheetType] = useState<'proposal' | 'change_order'>('proposal');
   const [addingSheet, setAddingSheet] = useState(false);
 
   // Sort categories dialog state
@@ -340,7 +342,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing')
+        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -355,7 +357,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (!isControlled) {
         setSelectedQuoteId(prev => {
           if (quotes.length === 0) return null;
-          if (!prev || !quotes.some(q => q.id === prev)) return quotes[0].id;
+          if (!prev || !quotes.some(q => q.id === prev)) {
+            const defaultQuote = quotes.find(q => !q.is_change_order_proposal) ?? quotes[0];
+            return defaultQuote.id;
+          }
           return prev;
         });
       }
@@ -370,7 +375,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing')
+        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -665,9 +670,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
-  async function loadWorkbook(silent = false) {
+  async function loadWorkbook(silent = false, overrideQuoteId?: string | null) {
     try {
-      const quoteIdForLoad = effectiveQuoteId ?? null;
+      const quoteIdForLoad = overrideQuoteId !== undefined ? overrideQuoteId : (effectiveQuoteId ?? null);
       const cacheKey = `${job.id}:${quoteIdForLoad}`;
 
       // Serve from cache immediately (stale-while-revalidate pattern)
@@ -835,6 +840,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       // Enrich items that have a SKU but missing cost/price with values from materials_catalog
       // so the sheet shows cost and price on first paint when the catalog has them.
       itemsData = await enrichItemsWithCatalogPrices(itemsData);
+
+      // Sort: proposal sheets first, then change order sheets (each group by order_index)
+      sheetsData.sort((a: any, b: any) => {
+        const typeA = a.sheet_type === 'change_order' ? 1 : 0;
+        const typeB = b.sheet_type === 'change_order' ? 1 : 0;
+        if (typeA !== typeB) return typeA - typeB;
+        return (a.order_index ?? 0) - (b.order_index ?? 0);
+      });
 
       const sheets: MaterialSheet[] = sheetsData.map((sheet: any) => ({
         ...sheet,
@@ -1655,13 +1668,72 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     loadCatalogMaterials();
   }
 
-  async function addNewSheet() {
-    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
-    if (!workbook || workbook.status === 'locked') {
-      toast.error('Cannot add sheets to a locked workbook');
-      return;
+  /** Get or create the dedicated change order proposal (quote + workbook) for this job. */
+  async function getOrCreateChangeOrderWorkbook(): Promise<{ quoteId: string; workbookId: string; quote: { sent_at: string | null; locked_for_editing: boolean | null } }> {
+    const { data: changeOrderQuotes } = await supabase
+      .from('quotes')
+      .select('id, sent_at, locked_for_editing')
+      .eq('job_id', job.id)
+      .eq('is_change_order_proposal', true)
+      .limit(1);
+    let quoteId: string;
+    let quote: { sent_at: string | null; locked_for_editing: boolean | null };
+    if (changeOrderQuotes?.length) {
+      quoteId = changeOrderQuotes[0].id;
+      quote = { sent_at: changeOrderQuotes[0].sent_at ?? null, locked_for_editing: changeOrderQuotes[0].locked_for_editing ?? null };
+    } else {
+      const { data: newQuote, error: quoteErr } = await supabase
+        .from('quotes')
+        .insert({
+          job_id: job.id,
+          is_change_order_proposal: true,
+          created_by: userId,
+        } as Record<string, unknown>)
+        .select('id, sent_at, locked_for_editing')
+        .single();
+      if (quoteErr || !newQuote) throw new Error(newQuote ? quoteErr?.message : 'Failed to create change order proposal');
+      quoteId = newQuote.id;
+      quote = { sent_at: newQuote.sent_at ?? null, locked_for_editing: newQuote.locked_for_editing ?? null };
     }
+    const { data: workbooks } = await supabase
+      .from('material_workbooks')
+      .select('id')
+      .eq('quote_id', quoteId)
+      .eq('status', 'working')
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    let workbookId: string;
+    if (workbooks?.length) {
+      workbookId = workbooks[0].id;
+    } else {
+      const { data: maxWb } = await supabase
+        .from('material_workbooks')
+        .select('version_number')
+        .eq('job_id', job.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextVer = (maxWb?.version_number ?? 0) + 1;
+      const { data: newWb, error: wbErr } = await supabase
+        .from('material_workbooks')
+        .insert({ job_id: job.id, quote_id: quoteId, version_number: nextVer, status: 'working', created_by: userId })
+        .select('id')
+        .single();
+      if (wbErr || !newWb) throw new Error(wbErr?.message ?? 'Failed to create change order workbook');
+      workbookId = newWb.id;
+    }
+    return { quoteId, workbookId, quote };
+  }
 
+  async function addNewSheet() {
+    const isChangeOrder = newSheetType === 'change_order';
+    if (!isChangeOrder) {
+      if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
+      if (!workbook || workbook.status === 'locked') {
+        toast.error('Cannot add sheets to a locked workbook');
+        return;
+      }
+    }
     if (!newSheetName.trim()) {
       toast.error('Please enter a sheet name');
       return;
@@ -1670,36 +1742,80 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     setAddingSheet(true);
 
     try {
-      // Get max order index
-      const maxOrderIndex = Math.max(...workbook.sheets.map(s => s.order_index), -1);
+      let targetWorkbookId: string;
+      let orderIndex: number;
+      let changeOrderQuoteId: string | null = null;
 
-      // Create new sheet
-      const { data: newSheet, error } = await supabase
+      if (isChangeOrder) {
+        const co = await getOrCreateChangeOrderWorkbook();
+        if (co.quote.sent_at || co.quote.locked_for_editing) {
+          toast.error('The change order proposal is locked and cannot be edited.');
+          return;
+        }
+        targetWorkbookId = co.workbookId;
+        changeOrderQuoteId = co.quoteId;
+        const { data: existingSheets } = await supabase
+          .from('material_sheets')
+          .select('id')
+          .eq('workbook_id', targetWorkbookId)
+          .order('order_index');
+        orderIndex = (existingSheets?.length ?? 0);
+      } else {
+        targetWorkbookId = workbook!.id;
+        const proposalSheets = workbook!.sheets.filter((s: any) => s.sheet_type !== 'change_order');
+        orderIndex = proposalSheets.length > 0 ? Math.max(...proposalSheets.map((s: any) => (s.order_index ?? 0)), -1) + 1 : 0;
+      }
+
+      const payload: Record<string, unknown> = {
+        workbook_id: targetWorkbookId,
+        sheet_name: newSheetName.trim(),
+        order_index: orderIndex,
+      };
+      payload.sheet_type = isChangeOrder ? 'change_order' : 'proposal';
+
+      let { data: newSheet, error } = await supabase
         .from('material_sheets')
-        .insert({
-          workbook_id: workbook.id,
-          sheet_name: newSheetName.trim(),
-          order_index: maxOrderIndex + 1,
-        })
+        .insert(payload)
         .select()
         .single();
+
+      if (error && typeof error.message === 'string' && /sheet_type|does not exist|unknown column/i.test(error.message)) {
+        const { sheet_type: _st, ...payloadWithoutType } = payload as Record<string, unknown> & { sheet_type?: string };
+        const res = await supabase.from('material_sheets').insert(payloadWithoutType).select().single();
+        newSheet = res.data;
+        error = res.error;
+        if (!error && isChangeOrder) {
+          toast.info('Sheet added. Run the migration that adds sheet_type to material_sheets (see Supabase SQL) to use change order sheets.');
+        }
+      }
 
       if (error) throw error;
 
       toast.success(`Sheet "${newSheetName}" added successfully`);
       setShowAddSheetDialog(false);
       setNewSheetName('');
-      
-      // Reload workbook to show new sheet
-      await loadWorkbook();
-      
-      // Set new sheet as active
-      if (newSheet) {
-        setActiveSheetId(newSheet.id);
+      setNewSheetType('proposal');
+
+      if (isChangeOrder && changeOrderQuoteId) {
+        workbookCache.delete(`${job.id}:${changeOrderQuoteId}`);
+        const { data: quotes } = await supabase
+          .from('quotes')
+          .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal')
+          .eq('job_id', job.id)
+          .order('created_at', { ascending: false });
+        if (quotes?.length) setJobQuotes(quotes as JobQuote[]);
+        onQuoteChange?.(changeOrderQuoteId);
+        setSelectedQuoteId(changeOrderQuoteId);
+        await loadWorkbook(false, changeOrderQuoteId);
+        if (newSheet) setActiveSheetId(newSheet.id);
+      } else {
+        await loadWorkbook();
+        if (newSheet) setActiveSheetId(newSheet.id);
       }
     } catch (error: any) {
       console.error('Error adding sheet:', error);
-      toast.error('Failed to add sheet');
+      const msg = error?.message ? `Failed to add sheet: ${error.message}` : 'Failed to add sheet';
+      toast.error(msg);
     } finally {
       setAddingSheet(false);
     }
@@ -2077,22 +2193,23 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   const selectedQuote = jobQuotes.find(q => q.id === effectiveQuoteId);
   const proposalLabel = selectedQuote
-    ? (selectedQuote.proposal_number || selectedQuote.quote_number || `Proposal ${selectedQuote.id.slice(0, 8)}`)
+    ? (selectedQuote.is_change_order_proposal ? 'Change orders' : (selectedQuote.proposal_number || selectedQuote.quote_number || `Proposal ${selectedQuote.id.slice(0, 8)}`))
     : (proposalNumber || 'Proposal');
 
-  // Mirror the same locked logic used in JobFinancials so materials stay in sync with proposal state.
-  // Sort quotes by proposal_number/quote_number descending (same order as JobFinancials) to find the latest.
+  // Mirror the same locked logic used in JobFinancials. Put change order proposal last; then sort regular quotes by proposal_number descending.
   const sortedQuotes = [...jobQuotes].sort((a, b) => {
+    if (a.is_change_order_proposal && !b.is_change_order_proposal) return 1;
+    if (!a.is_change_order_proposal && b.is_change_order_proposal) return -1;
     const na = (a.proposal_number || a.quote_number || '').toString();
     const nb = (b.proposal_number || b.quote_number || '').toString();
     if (na === nb) return 0;
     return nb.localeCompare(na, undefined, { numeric: true });
   });
-  const latestQuoteId = sortedQuotes[0]?.id;
+  const latestQuoteId = sortedQuotes.find(q => !q.is_change_order_proposal)?.id ?? sortedQuotes[0]?.id;
   const isWorkbookReadOnly = !!selectedQuote && (
-    (sortedQuotes.length > 0 && selectedQuote.id !== latestQuoteId) ||
-    !!selectedQuote.sent_at ||
-    !!selectedQuote.locked_for_editing
+    selectedQuote.is_change_order_proposal
+      ? (!!selectedQuote.sent_at || !!selectedQuote.locked_for_editing)
+      : ((sortedQuotes.length > 0 && selectedQuote.id !== latestQuoteId) || !!selectedQuote.sent_at || !!selectedQuote.locked_for_editing)
   );
 
   const materialsSlot = useMaterialsToolbarSlot();
@@ -2255,7 +2372,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   <SelectContent>
                     {jobQuotes.map((q) => (
                       <SelectItem key={q.id} value={q.id}>
-                        {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
+                        {q.is_change_order_proposal ? 'Change orders' : (q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2325,12 +2442,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             />
           ) : (
             <>
-              {isWorkbookReadOnly && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
-                  <Lock className="w-3.5 h-3.5 flex-shrink-0" />
-                  This proposal is locked. The materials workbook is view-only. Unlock the proposal to make changes.
-                </div>
-              )}
               <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
                 <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
                   <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b">
@@ -2338,8 +2449,17 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                       <span className="font-semibold text-slate-700 text-sm flex-shrink-0 whitespace-nowrap">
                         {proposalLabel}
                       </span>
-                      {workbook.sheets.map((sheet) => (
-                        <div key={sheet.id} className="relative group flex-shrink-0">
+                      {workbook.sheets.map((sheet, idx) => {
+                        const isChangeOrder = sheet.sheet_type === 'change_order';
+                        const prevIsProposal = idx > 0 && workbook.sheets[idx - 1].sheet_type !== 'change_order';
+                        return (
+                        <Fragment key={sheet.id}>
+                          {isChangeOrder && prevIsProposal && (
+                            <span className="flex-shrink-0 px-2 py-1 text-[10px] font-semibold text-amber-700 bg-amber-50 rounded border border-amber-200">
+                              Change orders
+                            </span>
+                          )}
+                        <div className="relative group flex-shrink-0">
                           <Button
                             variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
                             size="sm"
@@ -2368,7 +2488,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             </Button>
                           )}
                         </div>
-                      ))}
+                        </Fragment>
+                      ); })}
 
                       {/* Add Sheet Button */}
                       {workbook.status === 'working' && (
@@ -3656,7 +3777,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       </Dialog>
 
       {/* Add Sheet Dialog */}
-      <Dialog open={showAddSheetDialog} onOpenChange={setShowAddSheetDialog}>
+      <Dialog open={showAddSheetDialog} onOpenChange={(open) => { setShowAddSheetDialog(open); if (!open) setNewSheetType('proposal'); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -3666,12 +3787,40 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
+              <Label>Type</Label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="sheet-type"
+                    checked={newSheetType === 'proposal'}
+                    onChange={() => setNewSheetType('proposal')}
+                    className="rounded-full"
+                  />
+                  <span className="text-sm font-medium">Proposal sheet</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="sheet-type"
+                    checked={newSheetType === 'change_order'}
+                    onChange={() => setNewSheetType('change_order')}
+                    className="rounded-full"
+                  />
+                  <span className="text-sm font-medium">Change order</span>
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {newSheetType === 'change_order' ? 'Change order sheets appear below the proposal and have separate totals. Customers see them in the Change orders section.' : 'Proposal sheets are part of the main proposal total.'}
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="sheet-name">Sheet Name *</Label>
               <Input
                 id="sheet-name"
                 value={newSheetName}
                 onChange={(e) => setNewSheetName(e.target.value)}
-                placeholder="e.g., Porch, Garage, Interior..."
+                placeholder={newSheetType === 'change_order' ? 'e.g., Change order #1, Addition...' : 'e.g., Porch, Garage, Interior...'}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !addingSheet && newSheetName.trim()) {
                     addNewSheet();
@@ -3694,7 +3843,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 ) : (
                   <>
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Sheet
+                    {newSheetType === 'change_order' ? 'Add Change Order' : 'Add Sheet'}
                   </>
                 )}
               </Button>
@@ -3703,6 +3852,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 onClick={() => {
                   setShowAddSheetDialog(false);
                   setNewSheetName('');
+                  setNewSheetType('proposal');
                 }}
                 disabled={addingSheet}
               >
