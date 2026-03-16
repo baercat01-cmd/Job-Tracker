@@ -118,7 +118,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
   async function loadCustomerInfo() {
     try {
-      console.log('🔍 Loading customer info for job:', job.id);
+      console.log('🔍 Loading customer info for job:', job.id, job.name || job.client_name);
 
       // Priority 1: Job overview (Edit Job form – customer email, client name, phone)
       const jobEmail = (job as { customer_email?: string | null }).customer_email;
@@ -127,38 +127,56 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         setCustomerName(job.client_name || '');
         setCustomerEmail(jobEmail.trim());
         setCustomerPhone((jobPhone && jobPhone.trim()) || '');
-        console.log('✅ Loaded from job overview:', job.client_name, jobEmail);
+        console.log('✅ Loaded from job overview:', job.client_name, jobEmail, 'for job', job.id);
         return;
       }
 
-      // Priority 2: Contacts table (customer contact for this job)
-      const { data: contactData } = await supabase
+      // Priority 2: Contacts table (customer contact for THIS SPECIFIC JOB ONLY)
+      console.log('  📞 Checking contacts for job_id:', job.id);
+      const { data: contactData, error: contactError } = await supabase
         .from('contacts')
         .select('*')
         .eq('job_id', job.id)
         .eq('category', 'customer')
         .maybeSingle();
 
+      if (contactError) {
+        console.error('  ❌ Error loading contact:', contactError);
+      } else if (contactData) {
+        console.log('  📋 Contact found:', contactData);
+      } else {
+        console.log('  ℹ️ No customer contact found for this job');
+      }
+
       if (contactData && contactData.email) {
         setCustomerName(contactData.name);
         setCustomerEmail(contactData.email);
         setCustomerPhone(contactData.phone || '');
-        console.log('✅ Loaded from contacts:', contactData.name, contactData.email);
+        console.log('✅ Loaded from contacts:', contactData.name, contactData.email, 'for job', job.id);
         return;
       }
 
-      // Priority 3: Quote
-      const { data: quoteData } = await supabase
+      // Priority 3: Quote (for THIS SPECIFIC JOB ONLY)
+      console.log('  📄 Checking quote for job_id:', job.id);
+      const { data: quoteData, error: quoteError } = await supabase
         .from('quotes')
         .select('customer_name, customer_email, customer_phone')
         .eq('job_id', job.id)
         .maybeSingle();
 
+      if (quoteError) {
+        console.error('  ❌ Error loading quote:', quoteError);
+      } else if (quoteData) {
+        console.log('  📋 Quote found:', quoteData);
+      } else {
+        console.log('  ℹ️ No quote found for this job');
+      }
+
       if (quoteData && quoteData.customer_email) {
         setCustomerName(quoteData.customer_name || job.client_name || '');
         setCustomerEmail(quoteData.customer_email);
         setCustomerPhone(quoteData.customer_phone || '');
-        console.log('✅ Loaded from quote:', quoteData.customer_name, quoteData.customer_email);
+        console.log('✅ Loaded from quote:', quoteData.customer_name, quoteData.customer_email, 'for job', job.id);
         return;
       }
 
@@ -166,14 +184,14 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       setCustomerName(job.client_name || '');
       setCustomerEmail('');
       setCustomerPhone('');
-      console.log('⚠️ No email found - user must enter manually');
+      console.log('⚠️ No email found for job', job.id, '- user must enter manually');
 
       toast.warning(
         'Customer email not found.\n\nAdd it in Job Overview (Edit Job → Customer Email), or enter it below.',
         { duration: 8000 }
       );
     } catch (error: any) {
-      console.error('❌ Error loading customer info:', error);
+      console.error('❌ Error loading customer info for job', job.id, ':', error);
       // Fallback to job data on error
       setCustomerName(job.client_name || '');
       setCustomerEmail('');
@@ -420,6 +438,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         updated_at: new Date().toISOString(),
       };
 
+      console.log('  🔷 CREATING/UPDATING PORTAL LINK FOR JOB:', job.id, job.name || job.client_name);
       console.log('  Portal data:', JSON.stringify(portalData, null, 2));
 
       let data: any;
