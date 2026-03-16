@@ -69,6 +69,7 @@ import {
   ListOrdered,
   GripVertical,
   Pencil,
+  Ruler,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -82,6 +83,7 @@ import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
+import { getTotalInchesFromTrimConfig } from './TrimDrawingPreview';
 
 interface MaterialItem {
   id: string;
@@ -161,7 +163,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const effectiveQuoteId = isControlled ? controlledQuoteId : selectedQuoteId;
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'upload'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'trim-flatstock' | 'upload'>('manage');
   const [pendingCrewCount, setPendingCrewCount] = useState(0);
   const [activeSheetId, setActiveSheetId] = useState<string>('');
   const activeSheetIdRef = useRef<string>('');
@@ -243,6 +245,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [savedTrimConfigs, setSavedTrimConfigs] = useState<{ id: string; name: string; drawing_segments?: unknown }[]>([]);
   const [loadingTrimConfigs, setLoadingTrimConfigs] = useState(false);
   const [linkingTrimConfigId, setLinkingTrimConfigId] = useState<string | null>(null);
+  const [trimFlatstockConfigMap, setTrimFlatstockConfigMap] = useState<Record<string, { name: string; totalInches: number }>>({});
+  const [loadingTrimFlatstock, setLoadingTrimFlatstock] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -262,6 +266,41 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         setLoadingTrimConfigs(false);
       });
   }, [openLinkTrimForItem]);
+
+  // Load trim configs for Trim / Flatstock tab (total inches per config)
+  useEffect(() => {
+    if (activeTab !== 'trim-flatstock' || !workbook?.sheets) {
+      setTrimFlatstockConfigMap({});
+      return;
+    }
+    const configIds = new Set<string>();
+    workbook.sheets.forEach((s: MaterialSheet) => {
+      s.items.forEach((i: MaterialItem) => {
+        if (i.trim_saved_config_id) configIds.add(i.trim_saved_config_id);
+      });
+    });
+    if (configIds.size === 0) {
+      setTrimFlatstockConfigMap({});
+      return;
+    }
+    setLoadingTrimFlatstock(true);
+    supabase
+      .from('trim_saved_configs')
+      .select('id, name, inches, drawing_segments')
+      .in('id', Array.from(configIds))
+      .then(({ data, error }) => {
+        if (error) {
+          setTrimFlatstockConfigMap({});
+        } else {
+          const map: Record<string, { name: string; totalInches: number }> = {};
+          (data || []).forEach((row: any) => {
+            map[row.id] = { name: row.name ?? 'Trim', totalInches: getTotalInchesFromTrimConfig(row) };
+          });
+          setTrimFlatstockConfigMap(map);
+        }
+        setLoadingTrimFlatstock(false);
+      });
+  }, [activeTab, workbook?.sheets]);
 
   async function setMaterialItemTrimConfig(itemId: string, trimConfigId: string | null) {
     const { error: rpcError } = await supabase.rpc('set_material_item_trim_config', {
@@ -321,7 +360,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [newSheetName, setNewSheetName] = useState('');
   const [newSheetType, setNewSheetType] = useState<'proposal' | 'change_order'>('proposal');
   const [addingSheet, setAddingSheet] = useState(false);
-  
+
   // Sort categories dialog state
   const [showSortCategoriesDialog, setShowSortCategoriesDialog] = useState(false);
   const [sortCategoriesOrder, setSortCategoriesOrder] = useState<string[]>([]);
@@ -1589,6 +1628,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             notes: null,
             order_index: orderIndex++,
             status: 'not_ordered',
+            trim_saved_config_id: item.default_trim_saved_config_id ?? null,
           });
         if (error) throw error;
       }
@@ -2130,6 +2170,18 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
       const nextOrderIndex = (maxData?.order_index || -1) + 1;
 
+      // If SKU is set, check catalog for default trim drawing to attach
+      let defaultTrimConfigId: string | null = null;
+      const skuTrim = newSku.trim();
+      if (skuTrim) {
+        const { data: catalogRow } = await supabase
+          .from('materials_catalog')
+          .select('default_trim_saved_config_id')
+          .eq('sku', skuTrim)
+          .maybeSingle();
+        defaultTrimConfigId = catalogRow?.default_trim_saved_config_id ?? null;
+      }
+
       // Insert new material
       const { error } = await supabase
         .from('material_items')
@@ -2137,7 +2189,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           sheet_id: activeSheetId,
           category: addToCategory.trim(),
           usage: newUsage.trim() || null,
-          sku: newSku.trim() || null,
+          sku: skuTrim || null,
           material_name: newMaterialName.trim(),
           quantity,
           length: newLength.trim() || null,
@@ -2151,6 +2203,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           notes: newNotes.trim() || null,
           order_index: nextOrderIndex,
           status: 'not_ordered',
+          trim_saved_config_id: defaultTrimConfigId,
         });
 
       if (error) throw error;
@@ -2341,6 +2394,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           )}
         </TabsTrigger>
         <TabsTrigger
+          value="trim-flatstock"
+          className="flex items-center gap-1 h-8 text-xs px-2 rounded-md border border-yellow-600/40 bg-white/10 hover:bg-white/20 text-yellow-100 data-[state=active]:bg-white data-[state=active]:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:shadow-sm"
+        >
+          <Ruler className="w-3 h-3" />
+          <span>Trim / Flatstock</span>
+        </TabsTrigger>
+        <TabsTrigger
           value="upload"
           className="flex items-center gap-1 h-8 text-xs px-2 rounded-md border border-yellow-600/40 bg-white/10 hover:bg-white/20 text-yellow-100 data-[state=active]:bg-white data-[state=active]:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:shadow-sm"
         >
@@ -2386,7 +2446,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             ) : null}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 min-w-0">
-                <TabsList className="grid w-full grid-cols-5 h-9 bg-white shadow-sm">
+                <TabsList className="grid w-full grid-cols-6 h-9 bg-white shadow-sm">
                   <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
                     <FileSpreadsheet className="w-3.5 h-3.5" />
                     <span>Workbook</span>
@@ -2407,6 +2467,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                         {pendingCrewCount}
                       </Badge>
                     )}
+                  </TabsTrigger>
+                  <TabsTrigger value="trim-flatstock" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                    <Ruler className="w-3.5 h-3.5" />
+                    <span>Trim / Flatstock</span>
                   </TabsTrigger>
                   <TabsTrigger value="upload" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
                     <Upload className="w-3.5 h-3.5" />
@@ -3181,6 +3245,114 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
         <TabsContent value="crew-orders" className="space-y-2">
           <OfficeCrewOrders jobId={job.id} onCountChange={setPendingCrewCount} />
+        </TabsContent>
+
+        <TabsContent value="trim-flatstock" className="space-y-2 flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
+          <Card className="border-2">
+            <CardHeader className="pb-2 border-b">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Ruler className="w-5 h-5" />
+                Trim &amp; flatstock order
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Trim lines that have a drawing (figured) with total inches and pieces of 16&apos; flatstock to order.
+              </p>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {!workbook ? (
+                <p className="text-muted-foreground text-sm">No workbook. Upload or create one first.</p>
+              ) : loadingTrimFlatstock ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  Loading trim data…
+                </div>
+              ) : (() => {
+                const FLATSTOCK_INCHES = 192; // 16'
+                const itemsWithTrim: { item: MaterialItem; configName: string; inchesPerPiece: number }[] = [];
+                workbook.sheets?.forEach((s: MaterialSheet) => {
+                  s.items.forEach((i: MaterialItem) => {
+                    if (!i.trim_saved_config_id) return;
+                    const config = trimFlatstockConfigMap[i.trim_saved_config_id];
+                    if (!config) return;
+                    itemsWithTrim.push({
+                      item: i,
+                      configName: config.name,
+                      inchesPerPiece: config.totalInches,
+                    });
+                  });
+                });
+                if (itemsWithTrim.length === 0) {
+                  return (
+                    <p className="text-muted-foreground text-sm">
+                      No trim with drawings on this job. Link trim drawings to material lines in the Workbook tab.
+                    </p>
+                  );
+                }
+                const q = (n: number) => Number(n) || 0;
+                const bySku = new Map<string, { name: string; sku: string | null; totalInches: number; rows: typeof itemsWithTrim }>();
+                itemsWithTrim.forEach(({ item, configName, inchesPerPiece }) => {
+                  const key = item.sku ?? item.material_name ?? item.id;
+                  const totalInches = inchesPerPiece * q(item.quantity);
+                  if (!bySku.has(key)) bySku.set(key, { name: item.material_name, sku: item.sku ?? null, totalInches: 0, rows: [] });
+                  const agg = bySku.get(key)!;
+                  agg.totalInches += totalInches;
+                  agg.rows.push({ item, configName, inchesPerPiece });
+                });
+                const skuRows = Array.from(bySku.entries()).map(([key, agg]) => ({
+                  key,
+                  ...agg,
+                  piecesToOrder: Math.ceil(agg.totalInches / FLATSTOCK_INCHES),
+                }));
+                return (
+                  <div className="space-y-4">
+                    <div className="rounded-md border overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-muted/50 border-b">
+                            <th className="text-left p-2 font-semibold">Material</th>
+                            <th className="text-left p-2 font-semibold">SKU</th>
+                            <th className="text-left p-2 font-semibold">Trim drawing</th>
+                            <th className="text-right p-2 font-semibold">In./piece</th>
+                            <th className="text-right p-2 font-semibold">Qty</th>
+                            <th className="text-right p-2 font-semibold">Total in.</th>
+                            <th className="text-right p-2 font-semibold">Pieces (16&apos;)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {itemsWithTrim.map(({ item, configName, inchesPerPiece }) => {
+                            const totalInches = inchesPerPiece * q(item.quantity);
+                            const pieces = Math.ceil(totalInches / FLATSTOCK_INCHES);
+                            return (
+                              <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30">
+                                <td className="p-2">{item.material_name}</td>
+                                <td className="p-2 font-mono text-xs">{item.sku ?? '–'}</td>
+                                <td className="p-2">{configName}</td>
+                                <td className="p-2 text-right">{inchesPerPiece.toFixed(1)}</td>
+                                <td className="p-2 text-right">{item.quantity}</td>
+                                <td className="p-2 text-right">{totalInches.toFixed(1)}</td>
+                                <td className="p-2 text-right font-medium">{pieces}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="rounded-md border bg-muted/30 p-3">
+                      <h4 className="font-semibold text-sm mb-2">By SKU — pieces of 16&apos; flatstock to order</h4>
+                      <ul className="space-y-1 text-sm">
+                        {skuRows.map(({ key, name, sku, totalInches, piecesToOrder }) => (
+                          <li key={key} className="flex justify-between gap-4">
+                            <span>{name} {sku && <span className="text-muted-foreground font-mono">({sku})</span>}</span>
+                            <span className="font-medium">{piecesToOrder} pieces</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-2">

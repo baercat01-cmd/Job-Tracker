@@ -818,17 +818,17 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                   )}
                   {/* Overlay with badges */}
                   <div className="absolute top-2 right-2 flex gap-2">
-                    <Badge className="text-xs bg-primary/90 backdrop-blur-sm">
+                    <Badge className="text-xs bg-primary/95">
                       v{doc.current_version}
                     </Badge>
                     {doc.visible_to_crew && (
-                      <Badge className="text-xs bg-green-500/90 backdrop-blur-sm text-white">
+                      <Badge className="text-xs bg-green-500/95 text-white">
                         <Eye className="w-3 h-3 mr-1" />
                         Crew
                       </Badge>
                     )}
                     {doc.visible_to_customer_portal && (
-                      <Badge className="text-xs bg-amber-500/90 backdrop-blur-sm text-white">
+                      <Badge className="text-xs bg-amber-500/95 text-white">
                         <Globe className="w-3 h-3 mr-1" />
                         Portal
                       </Badge>

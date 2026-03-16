@@ -139,6 +139,8 @@ export function TrimPricingCalculator() {
   // Drawing feature states
   const [showDrawing, setShowDrawing] = useState(true); // Always show drawing
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number } | null>(null);
   const [drawing, setDrawing] = useState<DrawingState>({
     segments: [],
     selectedSegmentId: null,
@@ -162,8 +164,10 @@ export function TrimPricingCalculator() {
   const [priceListMaterialId, setPriceListMaterialId] = useState<string>('');
   const BASE_CANVAS_WIDTH = 1400;
   const BASE_CANVAS_HEIGHT = 700;
-  const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
-  const CANVAS_HEIGHT = BASE_CANVAS_HEIGHT * (scale / 80);
+  const baseW = BASE_CANVAS_WIDTH * (scale / 80);
+  const baseH = BASE_CANVAS_HEIGHT * (scale / 80);
+  const CANVAS_WIDTH = containerSize ? Math.max(baseW, containerSize.w) : baseW;
+  const CANVAS_HEIGHT = containerSize ? Math.max(baseH, containerSize.h) : baseH;
 
   // Helper function to remove trailing zeros
   function cleanNumber(num: number, decimals: number = 3): string {
@@ -255,12 +259,30 @@ export function TrimPricingCalculator() {
   useEffect(() => {
     if (showDrawing) {
       setCanvasReady(false);
+      setContainerSize(null);
       // Small delay to ensure canvas is mounted
       setTimeout(() => setCanvasReady(true), 100);
     } else {
       setCanvasReady(false);
+      setContainerSize(null);
     }
   }, [showDrawing]);
+
+  // Measure canvas container so the grid fills the entire box (no white margin at bottom)
+  useEffect(() => {
+    if (!canvasReady || !canvasContainerRef.current) return;
+    const el = canvasContainerRef.current;
+    const updateSize = () => {
+      if (!el) return;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) setContainerSize({ w, h });
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [canvasReady]);
 
   // Calculate the centroid of the drawing for intelligent label placement
   function calculateCentroid(segments: LineSegment[]): Point {
@@ -2032,7 +2054,7 @@ export function TrimPricingCalculator() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-2 flex-1 flex flex-col overflow-hidden">
-          <div className="relative border-4 border-gray-300 rounded overflow-hidden shadow-2xl bg-white h-full">
+          <div ref={canvasContainerRef} className="relative border-4 border-gray-300 rounded overflow-hidden shadow-2xl bg-white h-full">
             {!canvasReady ? (
               <div className="w-full h-full flex items-center justify-center bg-gray-100">
                 <div className="text-center">
@@ -2041,7 +2063,7 @@ export function TrimPricingCalculator() {
                 </div>
               </div>
             ) : (
-              <div className="overflow-auto h-full">
+              <div className="overflow-auto h-full w-full min-h-0">
                 <canvas
                   ref={canvasRef}
                   width={CANVAS_WIDTH}
@@ -2055,7 +2077,7 @@ export function TrimPricingCalculator() {
             )}
             
             {/* Top Controls - Overlaid on Canvas */}
-            <div className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-sm p-2 rounded-lg border-2 border-gray-300 shadow-lg text-xs">
+            <div className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border-2 border-gray-300 shadow-lg text-xs">
               {/* Draw/Stop Drawing Button */}
               {!isDrawingMode ? (
                 <Button
@@ -2190,7 +2212,7 @@ export function TrimPricingCalculator() {
 
             {/* Segment Selection List - Bottom Left */}
             {drawing.segments.length > 0 && (
-              <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm border-2 border-gray-300 rounded-lg p-2 shadow-lg max-w-xs">
+              <div className="absolute bottom-2 left-2 bg-white border-2 border-gray-300 rounded-lg p-2 shadow-lg max-w-xs">
                 <p className="text-gray-800 font-bold mb-1 text-xs">Segments:</p>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {drawing.segments.map(seg => (
@@ -2240,7 +2262,7 @@ export function TrimPricingCalculator() {
 
             {/* Live Drawing Info - Bottom Right (Minimal Black & White) - Only when actively drawing */}
             {isDrawingMode && drawing.currentPoint && mousePos && (
-              <div className="absolute bottom-14 right-2 bg-white/95 backdrop-blur-sm border border-gray-300 rounded p-2 shadow-md">
+              <div className="absolute bottom-14 right-2 bg-white border border-gray-300 rounded p-2 shadow-md">
                 <div className="space-y-1">
                   {(() => {
                     const dx = mousePos.x - drawing.currentPoint.x;

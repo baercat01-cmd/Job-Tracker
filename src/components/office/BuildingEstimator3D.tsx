@@ -559,7 +559,7 @@ export default function BuildingEstimator3D({
                 </div>
 
                 {/* Visibility Toggles */}
-                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-2 p-1.5 bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-xl border border-white/10">
+                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-2 p-1.5 bg-slate-900/95 rounded-2xl shadow-xl border border-white/10">
                   <button
                     onClick={() => setVisibility(prev => ({ ...prev, shell: !prev.shell }))}
                     className={`px-5 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${

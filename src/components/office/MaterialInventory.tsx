@@ -49,7 +49,8 @@ import {
   RefreshCw,
   CheckCircle,
   AlertCircle,
-  X
+  X,
+  Ruler
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -63,6 +64,7 @@ interface MaterialCatalogItem {
   part_length: string | null;
   raw_metadata: any;
   displayName?: string;
+  default_trim_saved_config_id?: string | null;
 }
 
 interface LumberRebarMaterial {
@@ -125,11 +127,51 @@ export function MaterialInventory() {
   const [syncResults, setSyncResults] = useState<any>(null);
   const [syncChangeDetailsView, setSyncChangeDetailsView] = useState<'inserted' | 'updated' | 'vendors' | null>(null);
 
+  // Default trim drawing per catalog SKU
+  const [attachTrimForSku, setAttachTrimForSku] = useState<{ sku: string; materialName: string } | null>(null);
+  const [savedTrimConfigs, setSavedTrimConfigs] = useState<{ id: string; name: string }[]>([]);
+  const [loadingTrimConfigs, setLoadingTrimConfigs] = useState(false);
+  const [selectedDefaultTrimId, setSelectedDefaultTrimId] = useState<string | null>(null);
+  const [savingDefaultTrim, setSavingDefaultTrim] = useState(false);
+  const [trimNameById, setTrimNameById] = useState<Record<string, string>>({});
+
   useEffect(() => {
     loadMaterials();
     loadLumberRebarMaterials();
     loadVendors();
   }, []);
+
+  // When attach-trim dialog opens, load saved trim configs
+  useEffect(() => {
+    if (!attachTrimForSku) return;
+    setLoadingTrimConfigs(true);
+    supabase
+      .from('trim_saved_configs')
+      .select('id, name')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        setSavedTrimConfigs(data || []);
+        setLoadingTrimConfigs(false);
+      });
+  }, [attachTrimForSku]);
+
+  // Load trim config names for catalog rows that have a default trim
+  useEffect(() => {
+    const ids = [...new Set(materials.map(m => m.default_trim_saved_config_id).filter(Boolean))] as string[];
+    if (ids.length === 0) {
+      setTrimNameById({});
+      return;
+    }
+    supabase
+      .from('trim_saved_configs')
+      .select('id, name')
+      .in('id', ids)
+      .then(({ data }) => {
+        const map: Record<string, string> = {};
+        (data || []).forEach((r: any) => { map[r.id] = r.name ?? 'Trim'; });
+        setTrimNameById(map);
+      });
+  }, [materials]);
 
   async function loadMaterials() {
     try {
@@ -752,6 +794,25 @@ export function MaterialInventory() {
     }
   }
 
+  async function saveDefaultTrimForSku() {
+    if (!attachTrimForSku) return;
+    setSavingDefaultTrim(true);
+    try {
+      const { error } = await supabase
+        .from('materials_catalog')
+        .update({ default_trim_saved_config_id: selectedDefaultTrimId })
+        .eq('sku', attachTrimForSku.sku);
+      if (error) throw error;
+      toast.success(selectedDefaultTrimId ? `Default trim set for ${attachTrimForSku.materialName}` : 'Default trim cleared.');
+      setAttachTrimForSku(null);
+      loadMaterials();
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Failed to save');
+    } finally {
+      setSavingDefaultTrim(false);
+    }
+  }
+
   const totalItems = materials.length;
   
   async function exportMaterialsCatalog() {
@@ -1022,6 +1083,7 @@ export function MaterialInventory() {
                 <TableHead className="bg-slate-50 font-bold">Length</TableHead>
                 <TableHead className="bg-slate-50 font-bold">SKU</TableHead>
                 <TableHead className="bg-slate-50 font-bold">Category</TableHead>
+                <TableHead className="bg-slate-50 font-bold">Default trim</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Cost</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Markup %</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Price</TableHead>
@@ -1030,7 +1092,7 @@ export function MaterialInventory() {
             <TableBody>
               {filteredMaterials.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No materials found</p>
                   </TableCell>
@@ -1038,7 +1100,7 @@ export function MaterialInventory() {
               ) : (
                 filteredMaterials.map(material => {
                   const markupDisplay = getMarkupDisplay(material.purchase_cost, material.unit_price);
-                  
+                  const trimName = material.default_trim_saved_config_id ? trimNameById[material.default_trim_saved_config_id] : null;
                   return (
                     <TableRow key={material.sku} className="hover:bg-slate-50 border-b border-slate-100">
                       <TableCell className="font-medium text-slate-900">
@@ -1060,6 +1122,20 @@ export function MaterialInventory() {
                         {cleanCategory(material.category) && (
                           <Badge variant="outline" className="font-medium">{cleanCategory(material.category)}</Badge>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setAttachTrimForSku({ sku: material.sku, materialName: material.material_name });
+                            setSelectedDefaultTrimId(material.default_trim_saved_config_id ?? null);
+                          }}
+                        >
+                          <Ruler className="w-3 h-3 mr-1" />
+                          {trimName ?? 'Attach trim'}
+                        </Button>
                       </TableCell>
                       <TableCell className="text-right font-semibold text-black">
                         ${(material.purchase_cost || 0).toFixed(2)}
@@ -1241,6 +1317,50 @@ export function MaterialInventory() {
                 )}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Default trim drawing for catalog SKU */}
+      <Dialog open={!!attachTrimForSku} onOpenChange={(open) => !open && setAttachTrimForSku(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ruler className="w-5 h-5" />
+              Default trim drawing
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            When this material is added to a job from the catalog, its line item will automatically get this trim drawing.
+          </p>
+          {attachTrimForSku && (
+            <p className="text-sm font-medium">
+              Material: {attachTrimForSku.materialName} ({attachTrimForSku.sku})
+            </p>
+          )}
+          {loadingTrimConfigs ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              Loading saved trims…
+            </div>
+          ) : (
+            <Select value={selectedDefaultTrimId ?? 'none'} onValueChange={(v) => setSelectedDefaultTrimId(v === 'none' ? null : v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a trim drawing" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No default trim</SelectItem>
+                {savedTrimConfigs.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setAttachTrimForSku(null)}>Cancel</Button>
+            <Button onClick={saveDefaultTrimForSku} disabled={savingDefaultTrim}>
+              {savingDefaultTrim ? 'Saving…' : 'Save'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -188,7 +188,7 @@ export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'at_
                 return (
                 <div key={categoryName} className="space-y-2">
                   {/* Category Header */}
-                  <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2 px-3 border-b">
+                  <div className="sticky top-0 z-10 bg-background py-2 px-3 border-b">
                     <h3 className="font-bold text-base text-primary">{categoryName}</h3>
                     <p className="text-xs text-muted-foreground">
                       {grouped[categoryName].length} item{grouped[categoryName].length !== 1 ? 's' : ''}

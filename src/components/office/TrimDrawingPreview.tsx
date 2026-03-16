@@ -58,6 +58,37 @@ export function getInteriorAngleDeg(seg1: LineSegment, seg2: LineSegment): numbe
   return interiorAngleDeg(seg1, seg2);
 }
 
+/** Segment length in inches (start to end). */
+function segmentLengthInches(seg: { start: Point; end: Point }): number {
+  const dx = seg.end.x - seg.start.x;
+  const dy = seg.end.y - seg.start.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/** Total linear inches of trim from drawing segments. */
+export function getTotalInchesFromSegments(segments: LineSegment[]): number {
+  if (!segments?.length) return 0;
+  return segments.reduce((sum, seg) => sum + segmentLengthInches(seg), 0);
+}
+
+/** Total inches from a trim_saved_config: uses inches array if present, else computes from drawing_segments. */
+export function getTotalInchesFromTrimConfig(config: { inches?: unknown; drawing_segments?: unknown } | null): number {
+  if (!config) return 0;
+  if (config.inches != null) {
+    const arr = Array.isArray(config.inches) ? config.inches : (typeof config.inches === 'string' ? JSON.parse(config.inches) : null);
+    if (Array.isArray(arr)) return arr.reduce((s: number, n: number) => s + Number(n), 0);
+  }
+  if (config.drawing_segments != null) {
+    const raw = typeof config.drawing_segments === 'string' ? JSON.parse(config.drawing_segments) : config.drawing_segments;
+    const segs = Array.isArray(raw) ? raw : null;
+    if (segs?.length) return segs.reduce((sum: number, seg: any) => {
+      const s = seg?.start && seg?.end ? { start: seg.start, end: seg.end } : null;
+      return sum + (s ? segmentLengthInches(s) : 0);
+    }, 0);
+  }
+  return 0;
+}
+
 interface TrimDrawingPreviewProps {
   segments: LineSegment[];
   width?: number;
