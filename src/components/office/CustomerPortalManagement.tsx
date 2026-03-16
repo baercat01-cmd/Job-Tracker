@@ -11,6 +11,7 @@ import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, Building2, 
 import { supabase } from '@/lib/supabase';
 import { loadViewerLinksForJob } from '@/lib/viewer-links';
 import { toast } from 'sonner';
+import { computeProposalTotals } from '@/lib/proposalTotals';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -1019,12 +1020,48 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         subEstimatesData = data || [];
       }
 
-      // Totals — extended_price when set, else price_per_unit×qty, else cost×markup (mirrors JobFinancials)
-      let sheetMaterialsTotal = 0, sheetLaborTotal = 0;
+      // Build input for shared totals calculation function
+      const customRowLineItems: Record<string, any[]> = {};
+      (customRowsData || []).forEach((row: any) => {
+        customRowLineItems[row.id] = row.custom_financial_row_items || [];
+      });
+
+      const subcontractorLineItems: Record<string, any[]> = {};
+      (subEstimatesData || []).forEach((est: any) => {
+        subcontractorLineItems[est.id] = est.subcontractor_estimate_line_items || [];
+      });
+
+      // Build global category markups map from all sheets
+      const categoryMarkups: Record<string, number> = {};
+      (materialSheets || []).forEach((sheet: any) => {
+        Object.entries(sheet.categoryMarkups || {}).forEach(([cat, markup]) => {
+          if (categoryMarkups[cat] === undefined) {
+            categoryMarkups[cat] = markup as number;
+          }
+        });
+      });
+
+      // Call shared totals function to ensure consistency with customer portal
+      const totals = computeProposalTotals({
+        materialSheets: materialSheets || [],
+        customRows: customRowsData || [],
+        subcontractorEstimates: subEstimatesData || [],
+        customRowLineItems,
+        subcontractorLineItems,
+        categoryMarkups,
+        taxRate: TAX_RATE,
+        taxExempt,
+      });
+
+      // Also compute _computedTotal for each item for UI display
       (materialSheets || []).forEach((sheet: any) => {
         const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
         const byCategory = new Map<string, any[]>();
-        (sheet.items || []).forEach((item: any) => { const cat = item.category || 'Uncategorized'; if (!byCategory.has(cat)) byCategory.set(cat, []); byCategory.get(cat)!.push(item); });
+        (sheet.items || []).forEach((item: any) => {
+          const cat = item.category || 'Uncategorized';
+          if (!byCategory.has(cat)) byCategory.set(cat, []);
+          byCategory.get(cat)!.push(item);
+        });
         let sheetCatPrice = 0;
         byCategory.forEach((catItems, catName) => {
           const markup = catMarkups[catName] ?? 10;
@@ -1039,46 +1076,45 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           }, 0);
           sheetCatPrice += categoryTotal;
         });
-        sheetMaterialsTotal += sheetCatPrice;
-        const directLabor = sheet.laborTotal ?? 0;
-        sheetLaborTotal += directLabor;
-        let linkedLabor = 0;
-        (sheet.sheetLinkedItems || []).forEach((item: any) => { if ((item.item_type || 'material') === 'labor') linkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100)); });
-        sheetLaborTotal += linkedLabor;
-        (sheet as any)._computedTotal = sheetCatPrice + directLabor + linkedLabor;
+        const sheetDirectLabor = sheet.laborTotal ?? 0;
+        let sheetLinkedLabor = 0;
+        (sheet.sheetLinkedItems || []).forEach((item: any) => {
+          if ((item.item_type || 'material') === 'labor') {
+            sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
+          }
+        });
+        (sheet as any)._computedTotal = sheetCatPrice + sheetDirectLabor + sheetLinkedLabor;
       });
 
-      let customMaterialsTotal = 0, customLaborTotal = 0;
       (customRowsData || []).forEach((row: any) => {
         const lineItems: any[] = row.custom_financial_row_items || [];
         const rowMarkup = 1 + (Number(row.markup_percent) || 0) / 100;
         let rowTotal = 0;
         if (lineItems.length > 0) {
-          const matTotal = lineItems.filter((li: any) => (li.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0) * rowMarkup;
-          const labTotal = lineItems.filter((li: any) => (li.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
-          customMaterialsTotal += matTotal; customLaborTotal += labTotal; rowTotal = matTotal + labTotal;
+          const matItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'material');
+          const labItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'labor');
+          const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0) * rowMarkup;
+          const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
+          rowTotal = matTotal + labTotal;
         } else {
           rowTotal = (Number(row.total_cost) || 0) * rowMarkup;
-          if (row.category === 'labor') customLaborTotal += rowTotal; else customMaterialsTotal += rowTotal;
         }
         (row as any)._computedTotal = rowTotal;
       });
 
-      let subMaterialsTotal = 0, subLaborTotalVal = 0;
       (subEstimatesData || []).forEach((est: any) => {
         const lineItems: any[] = est.subcontractor_estimate_line_items || [];
         const markup = 1 + (Number(est.markup_percent) || 0) / 100;
-        const matTotal = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        const labTotal = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        subMaterialsTotal += matTotal; subLaborTotalVal += labTotal;
+        const matItems = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material');
+        const labItems = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor');
+        const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
+        const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
         (est as any)._computedTotal = matTotal + labTotal;
       });
 
-      const totalMaterials = sheetMaterialsTotal + customMaterialsTotal + subMaterialsTotal;
-      const totalLabor = sheetLaborTotal + customLaborTotal + subLaborTotalVal;
-      const subtotal = totalMaterials + totalLabor;
-      const tax = taxExempt ? 0 : totalMaterials * TAX_RATE;
-      const grandTotal = subtotal + tax;
+      const subtotal = totals.subtotal;
+      const tax = totals.tax;
+      const grandTotal = totals.grandTotal;
 
       return { materialSheets, customRows: customRowsData, subcontractorEstimates: subEstimatesData, totals: { subtotal, tax, grandTotal } };
     } catch (error) {
