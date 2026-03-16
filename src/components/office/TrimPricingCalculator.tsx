@@ -870,12 +870,14 @@ export function TrimPricingCalculator() {
     const dy = segment.end.y - segment.start.y;
     const measurement = Math.sqrt(dx * dx + dy * dy);
     
-    // Calculate current angle
+    // Use the same angle as shown on the drawing (including complement if toggled)
     const segmentIndex = drawing.segments.indexOf(segment);
     let angle = 0;
     if (segmentIndex > 0) {
       const prevSegment = drawing.segments[segmentIndex - 1];
-      angle = calculateAngleBetweenSegments(prevSegment, segment);
+      const interiorAngle = calculateAngleBetweenSegments(prevSegment, segment);
+      const useComplement = angleDisplayMode[segment.id] || false;
+      angle = useComplement ? 360 - interiorAngle : interiorAngle;
     }
     
     setEditMode({
@@ -889,7 +891,7 @@ export function TrimPricingCalculator() {
     if (!editMode) return;
     
     const newMeasurement = parseFloat(editMode.measurement);
-    const newAngle = parseFloat(editMode.angle);
+    let newAngle = parseFloat(editMode.angle);
     
     if (isNaN(newMeasurement) || newMeasurement <= 0) {
       toast.error('Please enter a valid measurement');
@@ -900,6 +902,10 @@ export function TrimPricingCalculator() {
     if (segmentIndex === -1) return;
     
     const segment = drawing.segments[segmentIndex];
+    // If drawing shows complement for this segment, edit box value is complement — convert back to interior for math
+    if (segmentIndex > 0 && angleDisplayMode[segment.id]) {
+      newAngle = 360 - newAngle;
+    }
     
     // Calculate new endpoint based on measurement and angle
     let angleRadians: number;

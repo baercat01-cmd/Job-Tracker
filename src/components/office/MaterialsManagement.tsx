@@ -129,6 +129,7 @@ interface MaterialWorkbook {
   version_number: number;
   status: 'working' | 'locked';
   sheets: MaterialSheet[];
+  flatstock_width_inches?: number | null;
 }
 
 interface JobQuote {
