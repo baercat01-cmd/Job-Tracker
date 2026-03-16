@@ -154,6 +154,8 @@ export function TrimPricingCalculator() {
   const [majorGridSize] = useState(0.5); // 1/2" major grid blocks
   const [scale, setScale] = useState(80); // pixels per inch (adjustable with zoom)
   const [mousePos, setMousePos] = useState<Point | null>(null);
+  /** Screen position for custom crosshair cursor (avoids cursor hidden behind canvas on laptops) */
+  const [crosshairScreenPos, setCrosshairScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const [hemPreviewMode, setHemPreviewMode] = useState<HemPreviewMode | null>(null);
   const [angleDisplayMode, setAngleDisplayMode] = useState<Record<string, boolean>>({});
@@ -692,7 +694,7 @@ export function TrimPricingCalculator() {
 
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!canvasRef.current) return;
-    
+    setCrosshairScreenPos({ x: e.clientX, y: e.clientY });
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -2070,9 +2072,30 @@ export function TrimPricingCalculator() {
                   height={CANVAS_HEIGHT}
                   onClick={handleCanvasClick}
                   onMouseMove={handleCanvasMouseMove}
-                  className="cursor-crosshair"
-                  style={{ display: 'block' }}
+                  onMouseLeave={() => setCrosshairScreenPos(null)}
+                  className={crosshairScreenPos !== null ? '' : 'cursor-crosshair'}
+                  style={{ display: 'block', cursor: crosshairScreenPos !== null ? 'none' : 'crosshair' }}
                 />
+                {/* Custom crosshair drawn in DOM so it stays on top of canvas (fixes cursor hidden on laptops) */}
+                {crosshairScreenPos && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none fixed z-[999999]"
+                    style={{
+                      left: crosshairScreenPos.x,
+                      top: crosshairScreenPos.y,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-800 drop-shadow-sm">
+                      <line x1="12" y1="2" x2="12" y2="8" />
+                      <line x1="12" y1="16" x2="12" y2="22" />
+                      <line x1="2" y1="12" x2="8" y2="12" />
+                      <line x1="16" y1="12" x2="22" y2="12" />
+                      <circle cx="12" cy="12" r="2" fill="currentColor" />
+                    </svg>
+                  </div>
+                )}
               </div>
             )}
             
