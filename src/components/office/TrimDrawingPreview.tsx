@@ -252,8 +252,9 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         const labelX = startX + Math.cos(exteriorBisector) * angleDistPx;
         const labelY = startY + Math.sin(exteriorBisector) * angleDistPx;
         anglePositionsOut.push({ index: i, x: originX + labelX, y: originY + labelY });
+        // Degree label: blue with ° symbol (standard trim drawing style)
         ctx.fillStyle = '#2563eb';
-        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.font = `bold ${Math.max(12, fontSize)}px sans-serif`;
         ctx.fillText(`${angle}°`, labelX, labelY);
       }
     }

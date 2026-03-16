@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useSearchParams } from 'react-router-dom';
-import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download } from 'lucide-react';
+import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
@@ -147,6 +147,8 @@ export function TrimPricingCalculator() {
     currentPoint: null,
     nextLabel: 65 // ASCII 'A'
   });
+  const MAX_DRAWING_HISTORY = 50;
+  const [drawingHistory, setDrawingHistory] = useState<DrawingState[]>([]);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [drawingLocked, setDrawingLocked] = useState(true);
   const [canvasReady, setCanvasReady] = useState(false);
@@ -466,12 +468,8 @@ export function TrimPricingCalculator() {
         if (angleDiff < 0) angleDiff += 360;
         if (angleDiff > 360) angleDiff -= 360;
         
-        // Background for angle
-        ctx.fillStyle = 'rgba(107, 33, 168, 0.9)';
-        ctx.fillRect(startX + 5, startY - 40, 70, 24);
-        
-        // Angle text
-        ctx.fillStyle = '#ffffff';
+        // Angle text: blue with degree symbol (match final trim drawing style)
+        ctx.fillStyle = '#2563eb';
         ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(`${Math.round(angleDiff)}°`, startX + 10, startY - 22);
@@ -621,7 +619,7 @@ export function TrimPricingCalculator() {
         const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
         const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
 
-        // Draw degree text out from corner (blue, close to bend)
+        // Degree label: blue text with ° symbol (standard trim drawing style)
         ctx.fillStyle = '#2563eb';
         ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
@@ -828,7 +826,7 @@ export function TrimPricingCalculator() {
         hasHem: false,
         hemAtStart: false
       };
-      
+      pushDrawingHistory();
       setDrawing(prev => ({
         segments: [...prev.segments, newSegment],
         currentPoint: null, // Clear current point to allow starting next line
@@ -847,12 +845,47 @@ export function TrimPricingCalculator() {
     setDrawing(prev => ({ ...prev, selectedSegmentId: segmentId }));
   }
 
+  function pushDrawingHistory() {
+    setDrawingHistory(prev => {
+      const snapshot: DrawingState = {
+        segments: drawing.segments.map(seg => ({
+          ...seg,
+          start: { x: seg.start.x, y: seg.start.y },
+          end: { x: seg.end.x, y: seg.end.y },
+        })),
+        selectedSegmentId: drawing.selectedSegmentId,
+        currentPoint: drawing.currentPoint ? { x: drawing.currentPoint.x, y: drawing.currentPoint.y } : null,
+        nextLabel: drawing.nextLabel,
+      };
+      const next = [...prev, snapshot].slice(-MAX_DRAWING_HISTORY);
+      return next;
+    });
+  }
+
+  function undoDrawing() {
+    if (drawingHistory.length === 0) return;
+    const last = drawingHistory[drawingHistory.length - 1];
+    setDrawing({
+      segments: last.segments.map(seg => ({
+        ...seg,
+        start: { x: seg.start.x, y: seg.start.y },
+        end: { x: seg.end.x, y: seg.end.y },
+      })),
+      selectedSegmentId: last.selectedSegmentId,
+      currentPoint: last.currentPoint ? { x: last.currentPoint.x, y: last.currentPoint.y } : null,
+      nextLabel: last.nextLabel,
+    });
+    setDrawingHistory(prev => prev.slice(0, -1));
+    setEditMode(null);
+    toast.success('Undo');
+  }
+
   function deleteSelectedSegment() {
     if (!drawing.selectedSegmentId) {
       toast.error('No segment selected');
       return;
     }
-    
+    pushDrawingHistory();
     setDrawing(prev => ({
       ...prev,
       segments: prev.segments.filter(s => s.id !== prev.selectedSegmentId),
@@ -902,6 +935,7 @@ export function TrimPricingCalculator() {
     if (segmentIndex === -1) return;
     
     const segment = drawing.segments[segmentIndex];
+    const oldEnd = segment.end;
     // If drawing shows complement for this segment, edit box value is complement — convert back to interior for math
     if (segmentIndex > 0 && angleDisplayMode[segment.id]) {
       newAngle = 360 - newAngle;
@@ -909,49 +943,48 @@ export function TrimPricingCalculator() {
     
     // Calculate new endpoint based on measurement and angle
     let angleRadians: number;
+    let snappedEndX: number;
+    let snappedEndY: number;
     
     if (segmentIndex === 0) {
-      // First segment - use angle from horizontal
+      // First segment - use angle from horizontal (0 = +X, 90 = +Y)
       angleRadians = (newAngle * Math.PI) / 180;
       const newEndX = segment.start.x + newMeasurement * Math.cos(angleRadians);
       const newEndY = segment.start.y + newMeasurement * Math.sin(angleRadians);
-      
-      // Snap to grid
-      const snappedEndX = Math.round(newEndX / gridSize) * gridSize;
-      const snappedEndY = Math.round(newEndY / gridSize) * gridSize;
-      
-      const updatedSegments = [...drawing.segments];
-      updatedSegments[segmentIndex] = {
-        ...segment,
-        end: { x: snappedEndX, y: snappedEndY }
-      };
-      
-      setDrawing(prev => ({ ...prev, segments: updatedSegments }));
+      snappedEndX = Math.round(newEndX / gridSize) * gridSize;
+      snappedEndY = Math.round(newEndY / gridSize) * gridSize;
     } else {
-      // Not first segment - calculate based on previous segment's angle
+      // Not first segment - direction = previous segment direction + interior angle (edit box value)
       const prevSegment = drawing.segments[segmentIndex - 1];
       const prevDx = prevSegment.end.x - prevSegment.start.x;
       const prevDy = prevSegment.end.y - prevSegment.start.y;
-      const prevAngle = Math.atan2(prevDy, prevDx);
-      
-      angleRadians = prevAngle + (newAngle * Math.PI / 180);
-      
+      const prevAngleRad = Math.atan2(prevDy, prevDx);
+      angleRadians = prevAngleRad + (newAngle * Math.PI / 180);
       const newEndX = segment.start.x + newMeasurement * Math.cos(angleRadians);
       const newEndY = segment.start.y + newMeasurement * Math.sin(angleRadians);
-      
-      // Snap to grid
-      const snappedEndX = Math.round(newEndX / gridSize) * gridSize;
-      const snappedEndY = Math.round(newEndY / gridSize) * gridSize;
-      
-      const updatedSegments = [...drawing.segments];
-      updatedSegments[segmentIndex] = {
-        ...segment,
-        end: { x: snappedEndX, y: snappedEndY }
-      };
-      
-      setDrawing(prev => ({ ...prev, segments: updatedSegments }));
+      snappedEndX = Math.round(newEndX / gridSize) * gridSize;
+      snappedEndY = Math.round(newEndY / gridSize) * gridSize;
     }
     
+    pushDrawingHistory();
+    const updatedSegments = drawing.segments.map((s, i) => ({ ...s, start: { ...s.start }, end: { ...s.end } }));
+    updatedSegments[segmentIndex] = {
+      ...updatedSegments[segmentIndex],
+      end: { x: snappedEndX, y: snappedEndY }
+    };
+    
+    // Keep chain connected: the vertex we moved is segment[segmentIndex].end = start of segment[segmentIndex+1].
+    // Translate all later segments by the same displacement so they stay attached.
+    const deltaX = snappedEndX - oldEnd.x;
+    const deltaY = snappedEndY - oldEnd.y;
+    for (let j = segmentIndex + 1; j < updatedSegments.length; j++) {
+      updatedSegments[j].start.x += deltaX;
+      updatedSegments[j].start.y += deltaY;
+      updatedSegments[j].end.x += deltaX;
+      updatedSegments[j].end.y += deltaY;
+    }
+    
+    setDrawing(prev => ({ ...prev, segments: updatedSegments }));
     setEditMode(null);
     toast.success('Segment updated');
   }
@@ -1005,7 +1038,7 @@ export function TrimPricingCalculator() {
         hasHem: false,
         hemAtStart: false
       };
-      
+      pushDrawingHistory();
       setDrawing(prev => ({
         segments: [...prev.segments, newSegment],
         currentPoint: null,
@@ -1051,7 +1084,7 @@ export function TrimPricingCalculator() {
 
   function addHemToSide(side: 'left' | 'right') {
     if (!hemPreviewMode) return;
-    
+    pushDrawingHistory();
     setDrawing(prev => ({
       ...prev,
       segments: prev.segments.map(seg => 
@@ -1103,6 +1136,7 @@ export function TrimPricingCalculator() {
   function clearDrawing() {
     if (drawing.segments.length > 0 && !confirm('Clear all segments?')) return;
 
+    pushDrawingHistory();
     setDrawing({
       segments: [],
       selectedSegmentId: null,
@@ -1219,8 +1253,9 @@ export function TrimPricingCalculator() {
         const angleDist = 28 * (scale / 80);
         const angleX = startX + Math.cos(exteriorBisector) * angleDist;
         const angleY = startY + Math.sin(exteriorBisector) * angleDist;
+        // Degree label: blue text with ° symbol (match on-screen trim drawing style)
         ctx.fillStyle = '#2563eb';
-        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.font = `bold ${Math.max(12, fontSize)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
       }
@@ -2127,6 +2162,17 @@ export function TrimPricingCalculator() {
                 </>
               )}              
               
+              <Button
+                onClick={undoDrawing}
+                size="sm"
+                variant="outline"
+                disabled={drawingHistory.length === 0}
+                className="h-7 px-2 border border-slate-400 text-slate-700 hover:bg-slate-50 disabled:opacity-50 text-xs"
+                title="Undo last change"
+              >
+                <Undo2 className="w-3 h-3 mr-1" />
+                Undo
+              </Button>
               <Button
                 onClick={clearDrawing}
                 size="sm"
