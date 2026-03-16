@@ -47,6 +47,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { generateProposalHTML } from '@/components/office/ProposalPDFTemplate';
+import { computeProposalTotals } from '@/lib/proposalTotals';
 
 interface Job {
   id: string;
@@ -646,13 +647,43 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
 
       const TAX_RATE = 0.07;
 
-      // Materials: use extended_price (selling price override) per category; fall back to extended_cost × markup.
-      // Also store per-sheet _computedTotal so the UI can display it. Proposal total excludes change_order sheets.
-      let sheetMaterialsTotal = 0;
-      let sheetLaborTotal = 0;
+      // Build input data for shared totals function
+      // Extract line item maps from nested arrays
+      const customRowLineItems: Record<string, any[]> = {};
+      (customRowsData || []).forEach((row: any) => {
+        customRowLineItems[row.id] = row.custom_financial_row_items || [];
+      });
+
+      const subcontractorLineItems: Record<string, any[]> = {};
+      (subEstimatesData || []).forEach((est: any) => {
+        subcontractorLineItems[est.id] = est.subcontractor_estimate_line_items || [];
+      });
+
+      // Build global category markups map from all sheets
+      const categoryMarkups: Record<string, number> = {};
       (materialSheets || []).forEach((sheet: any) => {
-        // Skip change order sheets in proposal totals
-        const isChangeOrder = sheet.sheet_type === 'change_order';
+        Object.entries(sheet.categoryMarkups || {}).forEach(([cat, markup]) => {
+          // Use the first markup seen for each category (sheet markups take priority)
+          if (categoryMarkups[cat] === undefined) {
+            categoryMarkups[cat] = markup as number;
+          }
+        });
+      });
+
+      // Call shared totals function
+      const totals = computeProposalTotals({
+        materialSheets: materialSheets || [],
+        customRows: customRowsData || [],
+        subcontractorEstimates: subEstimatesData || [],
+        customRowLineItems,
+        subcontractorLineItems,
+        categoryMarkups,
+        taxRate: TAX_RATE,
+        taxExempt,
+      });
+
+      // Also store per-item _computedTotal for UI display (separate from shared totals calculation)
+      (materialSheets || []).forEach((sheet: any) => {
         const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
         const byCategory = new Map<string, any[]>();
         (sheet.items || []).forEach((item: any) => {
@@ -682,16 +713,8 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           }
         });
         (sheet as any)._computedTotal = sheetCatPrice + sheetDirectLabor + sheetLinkedLabor;
-        // Only add to proposal totals if not a change order sheet
-        if (sheet.sheet_type !== 'change_order') {
-          sheetMaterialsTotal += sheetCatPrice;
-          sheetLaborTotal += sheetDirectLabor + sheetLinkedLabor;
-        }
       });
 
-      // Custom rows — also store per-row _computedTotal
-      let customMaterialsTotal = 0;
-      let customLaborTotal = 0;
       (customRowsData || []).forEach((row: any) => {
         const lineItems: any[] = row.custom_financial_row_items || [];
         const rowMarkup = 1 + (Number(row.markup_percent) || 0) / 100;
@@ -701,23 +724,13 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
           const labItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'labor');
           const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0) * rowMarkup;
           const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
-          customMaterialsTotal += matTotal;
-          customLaborTotal += labTotal;
           rowTotal = matTotal + labTotal;
         } else {
           rowTotal = (Number(row.total_cost) || 0) * rowMarkup;
-          if (row.category === 'labor') {
-            customLaborTotal += rowTotal;
-          } else {
-            customMaterialsTotal += rowTotal;
-          }
         }
         (row as any)._computedTotal = rowTotal;
       });
 
-      // Subcontractors — also store per-est _computedTotal
-      let subMaterialsTotal = 0;
-      let subLaborTotalVal = 0;
       (subEstimatesData || []).forEach((est: any) => {
         const lineItems: any[] = est.subcontractor_estimate_line_items || [];
         const markup = 1 + (Number(est.markup_percent) || 0) / 100;
@@ -725,23 +738,15 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         const labItems = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor');
         const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
         const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        subMaterialsTotal += matTotal;
-        subLaborTotalVal += labTotal;
         (est as any)._computedTotal = matTotal + labTotal;
       });
-
-      const totalMaterials = sheetMaterialsTotal + customMaterialsTotal + subMaterialsTotal;
-      const totalLabor = sheetLaborTotal + customLaborTotal + subLaborTotalVal;
-      const subtotal = totalMaterials + totalLabor;
-      const tax = taxExempt ? 0 : totalMaterials * TAX_RATE;
-      const grandTotal = subtotal + tax;
 
       return {
         materialSheets,
         changeOrderSheets,
         customRows: customRowsData,
         subcontractorEstimates: subEstimatesData,
-        totals: { subtotal, tax, grandTotal },
+        totals,
       };
     } catch (error) {
       console.error('Error loading proposal data:', error);

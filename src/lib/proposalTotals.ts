@@ -58,30 +58,77 @@ export function computeProposalTotals(input: {
       continue;
     }
 
-    // Sum sheet materials from categories or items
-    if (sheet.categories && Array.isArray(sheet.categories)) {
+    // Sum sheet materials from items array, organized by category with markup
+    if (sheet.items && Array.isArray(sheet.items)) {
+      // Group items by category to apply category-specific markup
+      const byCategory = new Map<string, MaterialItem[]>();
+      for (const item of sheet.items) {
+        const cat = item.category || 'Uncategorized';
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat)!.push(item);
+      }
+
+      // Calculate price for each category with its markup
+      byCategory.forEach((catItems, catName) => {
+        const categoryMarkup = sheet.categoryMarkups?.[catName] ?? input.categoryMarkups?.[catName] ?? 10;
+        
+        for (const item of catItems) {
+          // Use extended_price if set, else price_per_unit * quantity, else cost with markup
+          const ext = item.extended_price != null && item.extended_price !== '' ? Number(item.extended_price) : null;
+          let itemPrice: number;
+          
+          if (ext != null && ext > 0) {
+            itemPrice = ext;
+          } else {
+            const qty = Number(item.quantity) || 0;
+            const pricePerUnit = Number(item.price_per_unit) || 0;
+            
+            if (pricePerUnit > 0) {
+              itemPrice = qty * pricePerUnit;
+            } else {
+              const cost = item.extended_cost != null ? Number(item.extended_cost) : qty * (Number(item.cost_per_unit) || 0);
+              itemPrice = cost * (1 + categoryMarkup / 100);
+            }
+          }
+          
+          sheetMaterialsTotal += itemPrice;
+          
+          // Track taxable materials for tax calculation
+          if (item.taxable !== false) {
+            sheetMaterialsTaxableOnly += itemPrice;
+          }
+        }
+      });
+    } else if (sheet.categories && Array.isArray(sheet.categories)) {
+      // Alternative structure with pre-grouped categories
       for (const category of sheet.categories) {
         if (category.items && Array.isArray(category.items)) {
+          const categoryMarkup = sheet.categoryMarkups?.[category.name] ?? input.categoryMarkups?.[category.name] ?? 10;
+          
           for (const item of category.items) {
-            const itemPrice = item.totalPrice ?? item.extended_price ?? 
-              ((item.cost_per_unit ?? 0) * (item.quantity ?? 0) * (1 + (item.markup_percent ?? 0) / 100));
+            const ext = item.extended_price != null && item.extended_price !== '' ? Number(item.extended_price) : null;
+            let itemPrice: number;
+            
+            if (ext != null && ext > 0) {
+              itemPrice = ext;
+            } else {
+              const qty = Number(item.quantity) || 0;
+              const pricePerUnit = Number(item.price_per_unit) || 0;
+              
+              if (pricePerUnit > 0) {
+                itemPrice = qty * pricePerUnit;
+              } else {
+                const cost = item.extended_cost != null ? Number(item.extended_cost) : qty * (Number(item.cost_per_unit) || 0);
+                itemPrice = cost * (1 + categoryMarkup / 100);
+              }
+            }
+            
             sheetMaterialsTotal += itemPrice;
             
-            // Track taxable materials for tax calculation
             if (item.taxable !== false) {
               sheetMaterialsTaxableOnly += itemPrice;
             }
           }
-        }
-      }
-    } else if (sheet.items && Array.isArray(sheet.items)) {
-      for (const item of sheet.items) {
-        const itemPrice = item.totalPrice ?? item.extended_price ?? 
-          ((item.cost_per_unit ?? 0) * (item.quantity ?? 0) * (1 + (item.markup_percent ?? 0) / 100));
-        sheetMaterialsTotal += itemPrice;
-        
-        if (item.taxable !== false) {
-          sheetMaterialsTaxableOnly += itemPrice;
         }
       }
     }
@@ -99,12 +146,23 @@ export function computeProposalTotals(input: {
       }
     }
 
+    // Sum sheet-linked labor line items (custom_financial_row_items with sheet_id, no row_id)
+    const sheetLinkedItems = sheet.sheetLinkedItems || [];
+    for (const item of sheetLinkedItems) {
+      if ((item.item_type || 'material') === 'labor') {
+        const itemCost = Number(item.total_cost) || 0;
+        const itemMarkup = item.markup_percent ?? 0;
+        const itemPrice = itemCost * (1 + itemMarkup / 100);
+        sheetLaborTotal += itemPrice;
+      }
+    }
+
     // Sum linked custom rows (rows where row.sheet_id === sheet.id)
     const linkedRows = input.customRows.filter(row => row.sheet_id === sheet.id);
     for (const row of linkedRows) {
       const rowLineItems = input.customRowLineItems[row.id] || [];
       for (const item of rowLineItems) {
-        const itemCost = (item.quantity ?? 0) * (item.unit_cost ?? 0);
+        const itemCost = Number(item.total_cost) || (item.quantity ?? 0) * (item.unit_cost ?? 0);
         const itemMarkup = item.markup_percent ?? row.markup_percent ?? 0;
         const itemPrice = itemCost * (1 + itemMarkup / 100);
         
@@ -177,7 +235,7 @@ export function computeProposalTotals(input: {
   for (const row of standaloneRows) {
     const rowLineItems = input.customRowLineItems[row.id] || [];
     for (const item of rowLineItems) {
-      const itemCost = (item.quantity ?? 0) * (item.unit_cost ?? 0);
+      const itemCost = Number(item.total_cost) || (item.quantity ?? 0) * (item.unit_cost ?? 0);
       const itemMarkup = item.markup_percent ?? row.markup_percent ?? 0;
       const itemPrice = itemCost * (1 + itemMarkup / 100);
       
