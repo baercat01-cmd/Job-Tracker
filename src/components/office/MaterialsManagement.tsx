@@ -322,9 +322,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [newSheetType, setNewSheetType] = useState<'proposal' | 'change_order'>('proposal');
   const [addingSheet, setAddingSheet] = useState(false);
   
-  // Sheet type filter
-  const [sheetTypeFilter, setSheetTypeFilter] = useState<'all' | 'proposal' | 'change_order'>('proposal');
-
   // Sort categories dialog state
   const [showSortCategoriesDialog, setShowSortCategoriesDialog] = useState(false);
   const [sortCategoriesOrder, setSortCategoriesOrder] = useState<string[]>([]);
