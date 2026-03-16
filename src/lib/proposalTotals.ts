@@ -168,7 +168,92 @@ export function computeProposalTotals(input: {
     }
   }
 
-  // TODO: Add standalone custom rows and subcontractors in step 3
-  // For now, return zeros for subtotal, tax, and grandTotal
-  return { subtotal: 0, tax: 0, grandTotal: 0 };
+  // Process standalone custom rows (rows with no sheet_id)
+  let customMaterialsTotal = 0;
+  let customLaborTotal = 0;
+  let customMaterialsTaxableOnly = 0;
+
+  const standaloneRows = input.customRows.filter(row => !row.sheet_id);
+  for (const row of standaloneRows) {
+    const rowLineItems = input.customRowLineItems[row.id] || [];
+    for (const item of rowLineItems) {
+      const itemCost = (item.quantity ?? 0) * (item.unit_cost ?? 0);
+      const itemMarkup = item.markup_percent ?? row.markup_percent ?? 0;
+      const itemPrice = itemCost * (1 + itemMarkup / 100);
+      
+      if (item.item_type === 'labor') {
+        customLaborTotal += itemPrice;
+      } else {
+        customMaterialsTotal += itemPrice;
+        if (item.taxable !== false) {
+          customMaterialsTaxableOnly += itemPrice;
+        }
+      }
+    }
+    
+    // Add linked subcontractors for this standalone row
+    const rowSubs = input.subcontractorEstimates.filter(
+      sub => sub.row_id === row.id && !sub.sheet_id
+    );
+    for (const sub of rowSubs) {
+      const subLineItems = input.subcontractorLineItems[sub.id] || [];
+      for (const item of subLineItems) {
+        if (item.excluded) continue;
+        
+        const itemPrice = item.total_price ?? 0;
+        const itemMarkup = item.markup_percent ?? sub.markup_percent ?? 0;
+        const markedUpPrice = itemPrice * (1 + itemMarkup / 100);
+        
+        if (item.item_type === 'labor') {
+          customLaborTotal += markedUpPrice;
+        } else {
+          customMaterialsTotal += markedUpPrice;
+          if (item.taxable !== false) {
+            customMaterialsTaxableOnly += markedUpPrice;
+          }
+        }
+      }
+    }
+  }
+
+  // Process standalone subcontractors (no sheet_id and no row_id)
+  let subMaterialsTotal = 0;
+  let subLaborTotal = 0;
+  let subMaterialsTaxableOnly = 0;
+
+  const standaloneSubs = input.subcontractorEstimates.filter(
+    sub => !sub.sheet_id && !sub.row_id
+  );
+  for (const sub of standaloneSubs) {
+    const subLineItems = input.subcontractorLineItems[sub.id] || [];
+    for (const item of subLineItems) {
+      if (item.excluded) continue;
+      
+      const itemPrice = item.total_price ?? 0;
+      const itemMarkup = item.markup_percent ?? sub.markup_percent ?? 0;
+      const markedUpPrice = itemPrice * (1 + itemMarkup / 100);
+      
+      if (item.item_type === 'labor') {
+        subLaborTotal += markedUpPrice;
+      } else {
+        subMaterialsTotal += markedUpPrice;
+        if (item.taxable !== false) {
+          subMaterialsTaxableOnly += markedUpPrice;
+        }
+      }
+    }
+  }
+
+  // Calculate final totals
+  const totalMaterials = sheetMaterialsTotal + customMaterialsTotal + subMaterialsTotal;
+  const totalLabor = sheetLaborTotal + customLaborTotal + subLaborTotal;
+  const subtotal = totalMaterials + totalLabor;
+  
+  // Calculate tax on taxable materials only
+  const totalTaxableMaterials = sheetMaterialsTaxableOnly + customMaterialsTaxableOnly + subMaterialsTaxableOnly;
+  const tax = input.taxExempt ? 0 : totalTaxableMaterials * (input.taxRate ?? 0.07);
+  
+  const grandTotal = subtotal + tax;
+
+  return { subtotal, tax, grandTotal };
 }
