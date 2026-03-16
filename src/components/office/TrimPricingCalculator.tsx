@@ -300,6 +300,28 @@ export function TrimPricingCalculator() {
     return { x: sumX / count, y: sumY / count };
   }
 
+  /** Pick the bisector that places the angle label on the outside of the bend. Top bends: side farther from centroid. Bottom bends: side closer to centroid. */
+  function getExteriorBisector(prevSegment: LineSegment, segment: LineSegment, centroidPoint: Point): number {
+    const corner = segment.start;
+    const prevDx = prevSegment.end.x - prevSegment.start.x;
+    const prevDy = prevSegment.end.y - prevSegment.start.y;
+    const currDx = segment.end.x - segment.start.x;
+    const currDy = segment.end.y - segment.start.y;
+    const prevAngle = Math.atan2(prevDy, prevDx);
+    const currAngle = Math.atan2(currDy, currDx);
+    const fromCornerBack = prevAngle + Math.PI;
+    const fromCornerFwd = currAngle;
+    const bisector1 = (fromCornerBack + fromCornerFwd) / 2;
+    const bisector2 = bisector1 + Math.PI;
+    const dist = 1;
+    const pos1 = { x: corner.x + Math.cos(bisector1) * dist, y: corner.y + Math.sin(bisector1) * dist };
+    const pos2 = { x: corner.x + Math.cos(bisector2) * dist, y: corner.y + Math.sin(bisector2) * dist };
+    const d1 = Math.hypot(pos1.x - centroidPoint.x, pos1.y - centroidPoint.y);
+    const d2 = Math.hypot(pos2.x - centroidPoint.x, pos2.y - centroidPoint.y);
+    const isBottomBend = corner.y > centroidPoint.y;
+    return isBottomBend ? (d1 < d2 ? bisector1 : bisector2) : (d1 > d2 ? bisector1 : bisector2);
+  }
+
   /** Hem offset from trim = 2 line widths (must match drawHem). */
   const HEM_LINE_WIDTH_OFFSET = 0.03125 * 2; // 1/16"
 
@@ -586,7 +608,7 @@ export function TrimPricingCalculator() {
       ctx.fillText(`${cleanNumber(lengthInInches)}"`, baseX, baseY + 8);
       ctx.textAlign = 'left';
 
-      // Draw angle label if not first segment - RADIALLY FROM CORNER AT 45° BISECTOR
+      // Draw angle label if not first segment - on outside of bend (side farther from profile centroid)
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
@@ -594,25 +616,13 @@ export function TrimPricingCalculator() {
         const useComplement = angleDisplayMode[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
         
-        // Calculate the two line directions
-        const prevDx = prevSegment.end.x - prevSegment.start.x;
-        const prevDy = prevSegment.end.y - prevSegment.start.y;
-        const currDx = segment.end.x - segment.start.x;
-        const currDy = segment.end.y - segment.start.y;
-        
-        // Two rays FROM the corner: backward along prev segment, forward along current segment
-        const prevAngle = Math.atan2(prevDy, prevDx);
-        const currAngle = Math.atan2(currDy, currDx);
-        const fromCornerBack = prevAngle + Math.PI;
-        const fromCornerFwd = currAngle;
-        // Exterior bisector = same angular distance from both lines, pointing outside the bend
-        const exteriorBisector = (fromCornerBack + fromCornerFwd) / 2 + Math.PI;
-        const angleDistance = 58;
+        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
+        const angleDistance = 28;
         const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
         const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
-        
-        // Draw degree text out from corner, equidistant from both sides of the bend (on the 45° bisector)
-        ctx.fillStyle = '#6b21a8'; // Purple for angles
+
+        // Draw degree text out from corner (blue, close to bend)
+        ctx.fillStyle = '#2563eb';
         ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
@@ -727,19 +737,12 @@ export function TrimPricingCalculator() {
       
       const startX = segment.start.x * scale;
       const startY = segment.start.y * scale;
-      const prevDx = prevSegment.end.x - prevSegment.start.x;
-      const prevDy = prevSegment.end.y - prevSegment.start.y;
-      const currDx = segment.end.x - segment.start.x;
-      const currDy = segment.end.y - segment.start.y;
-      const prevAngle = Math.atan2(prevDy, prevDx);
-      const currAngle = Math.atan2(currDy, currDx);
-      const fromCornerBack = prevAngle + Math.PI;
-      const fromCornerFwd = currAngle;
-      const exteriorBisector = (fromCornerBack + fromCornerFwd) / 2 + Math.PI;
-      const angleDistance = 58;
+      const centroid = calculateCentroid(drawing.segments);
+      const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
+      const angleDistance = 28;
       const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
       const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
-      
+
       // Check if click is near the angle label (click in canvas pixels)
       const clickPixelX = (e.clientX - rect.left) * scaleX;
       const clickPixelY = (e.clientY - rect.top) * scaleY;
@@ -1129,17 +1132,12 @@ export function TrimPricingCalculator() {
       }
     });
     // Include angle label position in bbox so degree is not cut off
-    const angleDistInches = 58 / 80; // ~0.725" offset for angle label so bbox includes it
+    const angleDistInches = 28 / 80; // offset for angle label so bbox includes it
+    const centroid = calculateCentroid(segments);
     segments.forEach((segment, segmentIndex) => {
       if (segmentIndex > 0) {
         const prevSegment = segments[segmentIndex - 1];
-        const prevDx = prevSegment.end.x - prevSegment.start.x;
-        const prevDy = prevSegment.end.y - prevSegment.start.y;
-        const currDx = segment.end.x - segment.start.x;
-        const currDy = segment.end.y - segment.start.y;
-        const prevAngle = Math.atan2(prevDy, prevDx);
-        const currAngle = Math.atan2(currDy, currDx);
-        const exteriorBisector = (prevAngle + Math.PI + currAngle) / 2 + Math.PI;
+        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
         const cornerX = segment.start.x;
         const cornerY = segment.start.y;
         points.push({
@@ -1166,7 +1164,6 @@ export function TrimPricingCalculator() {
     ctx.translate(originX, originY);
 
     const mainLineWidth = Math.max(2, 3 * (scale / 80));
-    const centroid = calculateCentroid(segments);
     const labelMeasurementGap = 14; // more space between segment letter (A, B) and length
     segments.forEach((segment, segmentIndex) => {
       const startX = segment.start.x * scale;
@@ -1212,19 +1209,11 @@ export function TrimPricingCalculator() {
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
         const useComplement = angleDisplayModeRecord[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
-        const prevDx = prevSegment.end.x - prevSegment.start.x;
-        const prevDy = prevSegment.end.y - prevSegment.start.y;
-        const currDx = segment.end.x - segment.start.x;
-        const currDy = segment.end.y - segment.start.y;
-        const prevAngle = Math.atan2(prevDy, prevDx);
-        const currAngle = Math.atan2(currDy, currDx);
-        const fromCornerBack = prevAngle + Math.PI;
-        const fromCornerFwd = currAngle;
-        const exteriorBisector = (fromCornerBack + fromCornerFwd) / 2 + Math.PI;
-        const angleDist = 58 * (scale / 80);
+        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
+        const angleDist = 28 * (scale / 80);
         const angleX = startX + Math.cos(exteriorBisector) * angleDist;
         const angleY = startY + Math.sin(exteriorBisector) * angleDist;
-        ctx.fillStyle = '#6b21a8';
+        ctx.fillStyle = '#2563eb';
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
@@ -2279,6 +2268,59 @@ export function TrimPricingCalculator() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Edit segment — length and angle (shown when pencil is clicked) */}
+            {editMode && (
+              <div className="absolute bottom-40 left-2 right-auto bg-white border-2 border-blue-500 rounded-lg p-3 shadow-lg max-w-xs z-10">
+                <p className="text-gray-800 font-bold text-xs mb-2">
+                  Edit segment {drawing.segments.find(s => s.id === editMode.segmentId)?.label ?? ''}
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <Label className="text-xs text-gray-600">Length (in.)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={editMode.measurement}
+                      onChange={(e) => setEditMode(prev => prev ? { ...prev, measurement: e.target.value } : null)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') applyEdit(); if (e.key === 'Escape') setEditMode(null); }}
+                      className="h-8 text-sm mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-600">Angle (°)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="360"
+                      step="1"
+                      value={editMode.angle}
+                      onChange={(e) => setEditMode(prev => prev ? { ...prev, angle: e.target.value } : null)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') applyEdit(); if (e.key === 'Escape') setEditMode(null); }}
+                      className="h-8 text-sm mt-0.5"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
+                    onClick={applyEdit}
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs"
+                    onClick={() => setEditMode(null)}
+                  >
+                    Cancel
+                  </Button>
                 </div>
               </div>
             )}

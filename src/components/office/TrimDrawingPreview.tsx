@@ -54,6 +54,28 @@ function centroid(segments: LineSegment[]): Point {
   return { x: sumX / count, y: sumY / count };
 }
 
+/** Pick the bisector that places the angle label on the outside of the bend. Top bends: side farther from centroid. Bottom bends: side closer to centroid. */
+function getExteriorBisector(prev: LineSegment, curr: LineSegment, centroidPoint: Point): number {
+  const corner = curr.start;
+  const prevDx = prev.end.x - prev.start.x;
+  const prevDy = prev.end.y - prev.start.y;
+  const currDx = curr.end.x - curr.start.x;
+  const currDy = curr.end.y - curr.start.y;
+  const prevAngle = Math.atan2(prevDy, prevDx);
+  const currAngle = Math.atan2(currDy, currDx);
+  const fromCornerBack = prevAngle + Math.PI;
+  const fromCornerFwd = currAngle;
+  const bisector1 = (fromCornerBack + fromCornerFwd) / 2;
+  const bisector2 = bisector1 + Math.PI;
+  const dist = 1;
+  const pos1 = { x: corner.x + Math.cos(bisector1) * dist, y: corner.y + Math.sin(bisector1) * dist };
+  const pos2 = { x: corner.x + Math.cos(bisector2) * dist, y: corner.y + Math.sin(bisector2) * dist };
+  const d1 = Math.hypot(pos1.x - centroidPoint.x, pos1.y - centroidPoint.y);
+  const d2 = Math.hypot(pos2.x - centroidPoint.x, pos2.y - centroidPoint.y);
+  const isBottomBend = corner.y > centroidPoint.y;
+  return isBottomBend ? (d1 < d2 ? bisector1 : bisector2) : (d1 > d2 ? bisector1 : bisector2);
+}
+
 export function getInteriorAngleDeg(seg1: LineSegment, seg2: LineSegment): number {
   return interiorAngleDeg(seg1, seg2);
 }
@@ -216,6 +238,7 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         ctx.fillText(formatLengthInches(lengthInches), baseX, baseY);
       });
 
+      const centroidPoint = centroid(segments);
       for (let i = 1; i < segments.length; i++) {
         const prev = segments[i - 1];
         const curr = segments[i];
@@ -224,21 +247,12 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         const angle = showComplement ? 360 - interiorAngle : interiorAngle;
         const startX = curr.start.x * scale;
         const startY = curr.start.y * scale;
-        const prevDx = prev.end.x - prev.start.x;
-        const prevDy = prev.end.y - prev.start.y;
-        const currDx = curr.end.x - curr.start.x;
-        const currDy = curr.end.y - curr.start.y;
-        const prevAngle = Math.atan2(prevDy, prevDx);
-        const currAngle = Math.atan2(currDy, currDx);
-        // Interior of bend is between (prevAngle+π) and currAngle; interior bisector points into the bend
-        const interiorBisector = (prevAngle + Math.PI + currAngle) / 2;
-        // Exterior = opposite side of bend: interior bisector + π so label is always outside
-        const exteriorBisector = interiorBisector + Math.PI;
-        const angleDistPx = 58 * (scale / 80);
+        const exteriorBisector = getExteriorBisector(prev, curr, centroidPoint);
+        const angleDistPx = 28 * (scale / 80);
         const labelX = startX + Math.cos(exteriorBisector) * angleDistPx;
         const labelY = startY + Math.sin(exteriorBisector) * angleDistPx;
         anglePositionsOut.push({ index: i, x: originX + labelX, y: originY + labelY });
-        ctx.fillStyle = '#6b21a8';
+        ctx.fillStyle = '#2563eb';
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.fillText(`${angle}°`, labelX, labelY);
       }

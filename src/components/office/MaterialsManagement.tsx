@@ -247,6 +247,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [linkingTrimConfigId, setLinkingTrimConfigId] = useState<string | null>(null);
   const [trimFlatstockConfigMap, setTrimFlatstockConfigMap] = useState<Record<string, { name: string; totalInches: number }>>({});
   const [loadingTrimFlatstock, setLoadingTrimFlatstock] = useState(false);
+  const [savingFlatstockWidth, setSavingFlatstockWidth] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -301,6 +302,23 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         setLoadingTrimFlatstock(false);
       });
   }, [activeTab, workbook?.sheets]);
+
+  async function setFlatstockWidthInches(width: number | null) {
+    if (!workbook?.id) return;
+    setSavingFlatstockWidth(true);
+    const { error } = await supabase
+      .from('material_workbooks')
+      .update({ flatstock_width_inches: width })
+      .eq('id', workbook.id);
+    setSavingFlatstockWidth(false);
+    if (error) {
+      toast.error(error.message || 'Failed to save flatstock width');
+      return;
+    }
+    setWorkbook((prev) => (prev ? { ...prev, flatstock_width_inches: width } : null));
+    workbookCache.delete(`${job.id}:${effectiveQuoteId ?? null}`);
+    toast.success('Flatstock width saved');
+  }
 
   async function setMaterialItemTrimConfig(itemId: string, trimConfigId: string | null) {
     const { error: rpcError } = await supabase.rpc('set_material_item_trim_config', {
@@ -3261,12 +3279,33 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             <CardContent className="pt-4">
               {!workbook ? (
                 <p className="text-muted-foreground text-sm">No workbook. Upload or create one first.</p>
-              ) : loadingTrimFlatstock ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  Loading trim data…
-                </div>
-              ) : (() => {
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-3 mb-4">
+                    <Label htmlFor="flatstock-width" className="text-sm font-medium">Flatstock width</Label>
+                    <Select
+                      value={workbook.flatstock_width_inches != null ? String(workbook.flatstock_width_inches) : '42'}
+                      onValueChange={(v) => setFlatstockWidthInches(v === '' ? null : parseInt(v, 10))}
+                      disabled={savingFlatstockWidth}
+                    >
+                      <SelectTrigger id="flatstock-width" className="w-[140px]">
+                        <SelectValue placeholder="Width" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="41">41&quot; wide</SelectItem>
+                        <SelectItem value="42">42&quot; wide</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {savingFlatstockWidth && (
+                      <span className="text-xs text-muted-foreground">Saving…</span>
+                    )}
+                  </div>
+                  {loadingTrimFlatstock ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      Loading trim data…
+                    </div>
+                  ) : (() => {
                 const FLATSTOCK_INCHES = 192; // 16'
                 const itemsWithTrim: { item: MaterialItem; configName: string; inchesPerPiece: number }[] = [];
                 workbook.sheets?.forEach((s: MaterialSheet) => {
@@ -3338,7 +3377,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                       </table>
                     </div>
                     <div className="rounded-md border bg-muted/30 p-3">
-                      <h4 className="font-semibold text-sm mb-2">By SKU — pieces of 16&apos; flatstock to order</h4>
+                      <h4 className="font-semibold text-sm mb-2">
+                        By SKU — pieces of 16&apos; flatstock to order
+                        {workbook?.flatstock_width_inches != null && (
+                          <span className="text-muted-foreground font-normal"> ({workbook.flatstock_width_inches}&quot; wide)</span>
+                        )}
+                      </h4>
                       <ul className="space-y-1 text-sm">
                         {skuRows.map(({ key, name, sku, totalInches, piecesToOrder }) => (
                           <li key={key} className="flex justify-between gap-4">
@@ -3351,6 +3395,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   </div>
                 );
               })()}
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
