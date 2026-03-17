@@ -162,6 +162,8 @@ export function TrimPricingCalculator() {
   const [crosshairScreenPos, setCrosshairScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const [hemPreviewMode, setHemPreviewMode] = useState<HemPreviewMode | null>(null);
+  /** Hem length in inches (default 1/2"). Used for drawing and material take-off. */
+  const [hemDepthInches, setHemDepthInches] = useState(0.5);
   const [angleDisplayMode, setAngleDisplayMode] = useState<Record<string, boolean>>({});
   const [lengthInput, setLengthInput] = useState('');
   const lengthInputRef = useRef<HTMLInputElement>(null);
@@ -210,8 +212,8 @@ export function TrimPricingCalculator() {
     const perpX = side === 'right' ? perpLeftX : perpRightX;
     const perpY = side === 'right' ? perpLeftY : perpRightY;
     
-    // Hem: 1/2" along the trim, 180° double back; offset from trim by 2 line widths; ends connected
-    const hemDepth = 0.5; // 1/2"
+    // Hem: configurable length along the trim, 180° double back; offset from trim by 2 line widths; ends connected
+    const hemDepth = Math.max(0.125, hemDepthInches);
     const oneLineWidth = 0.03125; // 1/32"
     const lineWidthOffset = oneLineWidth * 2; // offset more by one line width (2 total)
     const alongX = unitX;
@@ -662,7 +664,7 @@ export function TrimPricingCalculator() {
     }
 
     // "Colour Side" markers removed - no blue dot at starting point
-  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked, hemPreviewMode, angleDisplayMode]);
+  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked, hemPreviewMode, angleDisplayMode, hemDepthInches]);
 
   function pointToLineDistance(point: Point, lineStart: Point, lineEnd: Point): number {
     const dx = lineEnd.x - lineStart.x;
@@ -1081,7 +1083,7 @@ export function TrimPricingCalculator() {
     // Auto-select this segment so user sees which one gets the hem
     setDrawing(prev => ({ ...prev, selectedSegmentId: segmentId }));
     setHemPreviewMode({ segmentId, hemAtStart: false });
-    toast.info('Choose which end, then LEFT or RIGHT for the 1/2" U hem');
+    toast.info(`Choose which end, then LEFT or RIGHT for the ${hemDepthInches === 0.5 ? '1/2"' : `${hemDepthInches}"`} U hem`);
   }
 
   function addHemToSide(side: 'left' | 'right') {
@@ -1311,10 +1313,9 @@ export function TrimPricingCalculator() {
       const length = Math.sqrt(dx * dx + dy * dy);
       total += length;
       
-      // Add hem length - true 1/2" U-shaped hem adds to material take-off
-      // Hem includes: 0.5" out + 180° bend + 0.5" back = 0.5" to total girth
+      // Add hem length - U-shaped hem adds to material take-off (configurable depth)
       if (segment.hasHem) {
-        total += 0.5; // Hem adds exactly 0.5" to total material needed
+        total += Math.max(0.125, hemDepthInches);
       }
     });
     
@@ -1440,9 +1441,6 @@ export function TrimPricingCalculator() {
       }
       
       setSavedConfigs(data || []);
-      if (!silent) {
-        toast.success(`Loaded ${data?.length || 0} saved trim configurations`);
-      }
     } catch (error: any) {
       console.error('❌ Unexpected error loading saved configs:', error);
       toast.error(`Error: ${error.message || 'Unknown error'}`);
@@ -2220,6 +2218,25 @@ export function TrimPricingCalculator() {
                 Save as PDF
               </Button>
               
+              {/* Hem length (default 1/2") - visible when drawing has segments or in hem preview */}
+              {(drawing.segments.length > 0 || hemPreviewMode) && (
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 border border-gray-300 rounded">
+                  <label className="text-gray-700 text-xs whitespace-nowrap">Hem (in):</label>
+                  <input
+                    type="number"
+                    min={0.125}
+                    max={2}
+                    step={0.125}
+                    value={hemDepthInches}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!Number.isNaN(v) && v >= 0.125 && v <= 2) setHemDepthInches(v);
+                    }}
+                    className="w-14 h-6 text-xs border border-gray-400 rounded px-1 text-center"
+                    title="Hem length in inches (default 1/2&quot;)"
+                  />
+                </div>
+              )}
               {/* Add Hem Button - Available when segment selected or last segment exists */}
               {!hemPreviewMode && (drawing.selectedSegmentId || drawing.segments.length > 0) && (
                 <Button
@@ -2243,7 +2260,7 @@ export function TrimPricingCalculator() {
               {hemPreviewMode && (
                 <>
                   <div className="flex items-center gap-2 px-2 py-1 bg-purple-100 border-2 border-purple-500 rounded">
-                    <span className="text-purple-700 font-bold text-xs">1/2&quot; U Hem — choose end, then side:</span>
+                    <span className="text-purple-700 font-bold text-xs">U Hem ({hemDepthInches === 0.5 ? '1/2"' : `${hemDepthInches}"`}) — choose end, then side:</span>
                   </div>
                   <Button
                     onClick={() => setHemPreviewEnd(false)}
