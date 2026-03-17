@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign, Mail } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign, Mail, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -47,16 +47,28 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useUndo } from '@/contexts/UndoContext';
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(() => {
     // Always default to 'jobs' tab for office users (ignore localStorage on initial load)
     return tabParam || 'jobs';
   });
+
+  // When the page loads or refreshes on /office, always open at jobs home (jobs tab, no job detail)
+  useEffect(() => {
+    if (location.pathname !== '/office') return;
+    navigate('/office?tab=jobs', { replace: true });
+    setActiveTab('jobs');
+    setSelectedJobId(null);
+    // Intentionally run only on mount so in-app tab switches are not overwritten
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // When URL tab param changes (e.g. link from Materials "Open Trim Calculator"), switch to that tab
   useEffect(() => {
@@ -68,6 +80,7 @@ export function OfficeDashboard() {
   const [materialsCount, setMaterialsCount] = useState(0);
   const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
+  const { canUndo, undo, lastLabel } = useUndo();
 
   // Save view state to localStorage and update URL
   // CRITICAL: Use replace: true to prevent scroll reset on URL changes
@@ -197,6 +210,19 @@ export function OfficeDashboard() {
             alt="Martin Builder" 
             className="h-8 w-auto flex-shrink-0 sm:h-10"
           />
+
+          {/* Undo - always visible in its own slot after logo */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0"
+            onClick={undo}
+            disabled={!canUndo}
+            title={canUndo ? (lastLabel ? `Undo: ${lastLabel}` : 'Undo') : 'Nothing to undo'}
+          >
+            <Undo2 className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Undo</span>
+          </Button>
           
           {/* Navigation Tabs - mobile: 44px touch targets, smooth scroll; desktop: unchanged */}
           <div className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide overflow-y-hidden py-1 -my-1 md:gap-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x [&>button]:min-h-[44px] [&>button]:min-w-[44px] md:[&>button]:min-h-0 md:[&>button]:min-w-0">

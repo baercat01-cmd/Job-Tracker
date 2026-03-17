@@ -41,6 +41,7 @@ import { ProposalComparisonView } from './ProposalComparisonView';
 import { useProposalToolbar } from '@/contexts/JobDetailProposalToolbarContext';
 import { useProposalSummary } from '@/contexts/ProposalSummaryContext';
 import { useDocumentPanel } from '@/contexts/DocumentPanelContext';
+import { useUndo } from '@/contexts/UndoContext';
 import type { Job } from '@/types';
 import {
   DndContext,
@@ -172,6 +173,7 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
     toggleSubcontractorLineItemTaxable,
     toggleSubcontractorLineItemType,
     unlinkSubcontractor,
+    deleteSubcontractorSection = async () => {},
     updateSubcontractorMarkup,
     updateCustomRowMarkup,
     updateCustomRowBaseCost,
@@ -1765,6 +1767,25 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                 <Eye className="w-4 h-4 text-blue-600" />
               </Button>
             )}
+
+            {!isReadOnly && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="text-red-600 focus:text-red-600"
+                    onSelect={() => deleteSubcontractorSection(est.id)}
+                  >
+                    <Trash2 className="w-3 h-3 mr-2" />
+                    Delete section
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
 
           {/* Two-column layout: Description + Pricing */}
@@ -1961,6 +1982,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const { profile } = useAuth();
   const setProposalToolbar = useProposalToolbar();
   const proposalSummaryCtx = useProposalSummary();
+  const undoApi = useUndo();
   const [loading, setLoading] = useState(true);
   const [initialDataLoaded, setInitialDataLoaded] = useState(false);
   const [customRows, setCustomRows] = useState<CustomFinancialRow[]>([]);
@@ -3802,10 +3824,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
   function handleLockUnlock() {
     if (!quote) return;
     if (isReadOnly) {
-      if ((quote as any).sent_at) {
-        toast.info('Cannot unlock a proposal that has been sent to the customer.');
-        return;
-      }
+      // Allow unlock even after sent: DB lock applies to all users; otherwise session-only unlock
       if ((quote as any).locked_for_editing) {
         unlockProposalForEditing();
         return;
@@ -5842,6 +5861,88 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     }
   }
 
+  async function deleteSubcontractorSection(estimateId: string) {
+    if (isReadOnly) {
+      toast.error('Cannot delete in historical view');
+      return;
+    }
+    if (!confirm('Delete this subcontractor section from the proposal? Line items will be removed.')) return;
+
+    const est = subcontractorEstimates.find((e: any) => e.id === estimateId);
+    const lineItems = (subcontractorLineItems[estimateId] || []).map((li: any) => ({ ...li }));
+    const sectionLabel = est?.company_name || 'Subcontractor section';
+
+    setSubcontractorEstimates((prev) => prev.filter((e: any) => e.id !== estimateId));
+    setSubcontractorLineItems((prev) => {
+      const next = { ...prev };
+      delete next[estimateId];
+      return next;
+    });
+    toast.success('Subcontractor section removed');
+
+    try {
+      const { error: lineErr } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .delete()
+        .eq('estimate_id', estimateId);
+      if (lineErr) throw lineErr;
+
+      const { error } = await supabase
+        .from('subcontractor_estimates')
+        .delete()
+        .eq('id', estimateId);
+
+      if (error) throw error;
+
+      undoApi.push({
+        label: `Delete "${sectionLabel}"`,
+        undo: async () => {
+          const { id: _id, created_at: _ca, updated_at: _ua, ...estPayload } = est || {};
+          const { data: newEst, error: insErr } = await supabase
+            .from('subcontractor_estimates')
+            .insert({
+              quote_id: estPayload.quote_id ?? quote?.id ?? null,
+              job_id: estPayload.job_id ?? job.id,
+              company_name: estPayload.company_name ?? '',
+              scope_of_work: estPayload.scope_of_work ?? null,
+              markup_percent: estPayload.markup_percent ?? 0,
+              order_index: estPayload.order_index ?? 0,
+              sheet_id: estPayload.sheet_id ?? null,
+              row_id: estPayload.row_id ?? null,
+              pdf_url: estPayload.pdf_url ?? null,
+            })
+            .select('id')
+            .single();
+          if (insErr || !newEst?.id) throw new Error(insErr?.message || 'Failed to restore section');
+          if (lineItems.length > 0) {
+            const itemsPayload = lineItems.map((li: any) => {
+              const { id: _i, estimate_id: _e, created_at: _c, updated_at: _u, ...rest } = li;
+              return { ...rest, estimate_id: newEst.id };
+            });
+            const { error: itemsErr } = await supabase.from('subcontractor_estimate_line_items').insert(itemsPayload);
+            if (itemsErr) throw itemsErr;
+          }
+          await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+          window.dispatchEvent(new CustomEvent('proposal-updated', { detail: { quoteId: quote?.id, jobId: job.id } }));
+        },
+      });
+
+      await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+      window.dispatchEvent(new CustomEvent('proposal-updated', { detail: { quoteId: quote?.id, jobId: job.id } }));
+    } catch (error: any) {
+      console.error('Error deleting subcontractor section:', error);
+      setSubcontractorEstimates((prev) => {
+        if (est) return [...prev, est].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        return prev;
+      });
+      setSubcontractorLineItems((prev) => {
+        if (lineItems.length > 0) return { ...prev, [estimateId]: lineItems };
+        return prev;
+      });
+      toast.error(error?.message ?? 'Failed to delete subcontractor section');
+    }
+  }
+
   async function updateSubcontractorMarkup(estimateId: string, newMarkup: number) {
     try {
       const { error } = await supabase
@@ -7269,6 +7370,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                         toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
                         toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                         unlinkSubcontractor={unlinkSubcontractor}
+                        deleteSubcontractorSection={deleteSubcontractorSection}
                         updateSubcontractorMarkup={updateSubcontractorMarkup}
                         updateCustomRowMarkup={updateCustomRowMarkup}
                         updateCustomRowBaseCost={updateCustomRowBaseCost}
@@ -7371,6 +7473,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                               toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
                               toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                               unlinkSubcontractor={unlinkSubcontractor}
+                              deleteSubcontractorSection={deleteSubcontractorSection}
                               updateSubcontractorMarkup={updateSubcontractorMarkup}
                               updateCustomRowMarkup={updateCustomRowMarkup}
                               updateCustomRowBaseCost={updateCustomRowBaseCost}

@@ -137,10 +137,15 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
   const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set());
   const [jobQuotes, setJobQuotes] = useState<{ id: string; proposal_number?: string; quote_number?: string }[]>([]);
   const [proposalQuoteId, setProposalQuoteId] = useState<string | null>(quoteId || null);
+  const [estimatesNotOnProposal, setEstimatesNotOnProposal] = useState<SubcontractorEstimate[]>([]);
 
   useEffect(() => {
     if (quoteId) setProposalQuoteId(quoteId);
   }, [quoteId]);
+
+  useEffect(() => {
+    loadEstimatesNotOnProposal();
+  }, [proposalQuoteId, jobId]);
 
   useEffect(() => {
     loadData();
@@ -201,6 +206,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
       loadSubcontractors(),
       jobId ? loadJobQuotes() : Promise.resolve(),
     ]);
+    await loadEstimatesNotOnProposal();
     setLoading(false);
   }
 
@@ -245,6 +251,30 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
     }
   }
 
+  /** Load estimates for this job that are not on the current proposal (removed or on another proposal) so user can add them back. */
+  async function loadEstimatesNotOnProposal() {
+    if (!jobId || !proposalQuoteId) {
+      setEstimatesNotOnProposal([]);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('subcontractor_estimates')
+        .select(`
+          *,
+          line_items:subcontractor_estimate_line_items(*)
+        `)
+        .eq('job_id', jobId)
+        .or(`quote_id.is.null,quote_id.neq.${proposalQuoteId}`)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setEstimatesNotOnProposal(data || []);
+    } catch (error: any) {
+      console.error('Error loading estimates not on proposal:', error);
+      setEstimatesNotOnProposal([]);
+    }
+  }
+
   async function addToProposal(estimateId: string) {
     if (!proposalQuoteId) {
       toast.error('Select a proposal above first');
@@ -258,6 +288,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
       if (error) throw error;
       toast.success('Added to proposal');
       loadEstimates();
+      loadEstimatesNotOnProposal();
     } catch (error: any) {
       console.error('Error adding to proposal:', error);
       toast.error('Failed to add to proposal');
@@ -273,6 +304,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
       if (error) throw error;
       toast.success('Removed from proposal');
       loadEstimates();
+      loadEstimatesNotOnProposal();
     } catch (error: any) {
       console.error('Error removing from proposal:', error);
       toast.error('Failed to remove from proposal');
@@ -1296,6 +1328,48 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
                 </Card>
               );  
             })
+          )}
+
+          {/* Estimates for this job that are not on the current proposal (e.g. removed) — add back to proposal */}
+          {proposalQuoteId && estimatesNotOnProposal.length > 0 && (
+            <Card className="border-amber-200 bg-amber-50/30">
+              <CardHeader className="py-3">
+                <CardTitle className="text-sm font-medium text-amber-900">
+                  Not on this proposal ({estimatesNotOnProposal.length})
+                </CardTitle>
+                <p className="text-xs text-amber-800">
+                  These estimates are for this job but not attached to the selected proposal. Add any back with &quot;Add to proposal&quot;.
+                </p>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2">
+                {estimatesNotOnProposal.map((estimate) => {
+                  const hasLineItems = (estimate.line_items || []).length > 0;
+                  const baseAmount = hasLineItems ? calculateIncludedBaseTotal(estimate.line_items || []) : (estimate.total_amount || 0);
+                  const markedUpAmount = hasLineItems ? calculateIncludedTotal(estimate.line_items || []) : (baseAmount * (1 + (estimate.markup_percent || 0) / 100));
+                  return (
+                    <div
+                      key={estimate.id}
+                      className="flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-white p-3"
+                    >
+                      <div>
+                        <p className="font-medium text-sm">{estimate.company_name || estimate.file_name || 'Unnamed'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          ${markedUpAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 border-amber-600 text-amber-800 hover:bg-amber-100"
+                        onClick={() => addToProposal(estimate.id)}
+                      >
+                        Add to proposal
+                      </Button>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
           )}
         </div>
       )}

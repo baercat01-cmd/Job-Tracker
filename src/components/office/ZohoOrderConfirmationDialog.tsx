@@ -74,11 +74,19 @@ export function ZohoOrderConfirmationDialog({
         }
       }
       
+      // Ensure workbook length and color are sent for Zoho Part Length and Color custom fields
+      const materialItemsForZoho = materials.map(m => ({
+        ...m,
+        part_length: m.part_length ?? m.length ?? null,
+        length: m.length ?? m.part_length ?? null,
+        color: m.color ?? null,
+      }));
+
       const { data, error } = await supabase.functions.invoke('zoho-sync', {
         body: {
           action: 'create_orders',
           jobName: jobName,
-          materialItems: materials,
+          materialItems: materialItemsForZoho,
           materialItemIds: materials.map(m => m.id),
           userId: profile?.id,
           notes: packageName ? `Package: ${packageName}` : undefined,
@@ -241,7 +249,7 @@ export function ZohoOrderConfirmationDialog({
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm truncate">{material.material_name}</p>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             {material.sku && (
                               <Badge variant="outline" className="text-xs">
                                 SKU: {material.sku}
@@ -251,6 +259,16 @@ export function ZohoOrderConfirmationDialog({
                               <Badge variant="secondary" className="text-xs">
                                 {material.category}
                               </Badge>
+                            )}
+                            {(material.length || material.part_length) && (
+                              <span className="text-xs text-muted-foreground">
+                                Length: {material.length || material.part_length}
+                              </span>
+                            )}
+                            {material.color && (
+                              <span className="text-xs text-muted-foreground">
+                                Color: {material.color}
+                              </span>
                             )}
                             {material.usage && (
                               <span className="text-xs text-muted-foreground truncate">

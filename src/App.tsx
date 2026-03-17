@@ -33,6 +33,7 @@ import { VendorPricingForm } from '@/pages/VendorPricingForm';
 import CustomerPortal, { CUSTOMER_PORTAL_TOKEN_KEY } from '@/pages/customer/CustomerPortal';
 import SubcontractorPortal from '@/pages/SubcontractorPortal';
 import { Toaster } from '@/components/ui/sonner';
+import { UndoProvider } from '@/contexts/UndoContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
@@ -248,8 +249,10 @@ export default function App() {
           <Route path="/*" element={
             <MaybeRedirectToCustomerPortal>
               <AuthProvider>
-                <AppContent />
-                <Toaster position="top-center" richColors />
+                <UndoProvider>
+                  <AppContent />
+                  <Toaster position="top-center" richColors />
+                </UndoProvider>
               </AuthProvider>
             </MaybeRedirectToCustomerPortal>
           } />

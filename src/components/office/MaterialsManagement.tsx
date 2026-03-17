@@ -177,6 +177,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [allCategories, setAllCategories] = useState<string[]>([]);
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [cellValue, setCellValue] = useState('');
+  const [categoryFootPriceEdit, setCategoryFootPriceEdit] = useState<{ category: string; costPerFoot: string; pricePerFoot: string } | null>(null);
+  const [metalCatalogBySku, setMetalCatalogBySku] = useState<Record<string, { purchase_cost: number; unit_price: number }>>({});
   const scrollPositionRef = useRef<number>(0);
 
   // Keep ref in sync so loadWorkbook (called from realtime/subscription) always sees latest selection
@@ -268,6 +270,38 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         setLoadingTrimConfigs(false);
       });
   }, [openLinkTrimForItem]);
+
+  // Load materials_catalog for Metal category SKUs (e.g. OMNI) so lineal ft price shows from material database
+  useEffect(() => {
+    if (!workbook?.sheets?.length) {
+      setMetalCatalogBySku({});
+      return;
+    }
+    const metalItems = workbook.sheets.flatMap((s: MaterialSheet) => (s.items || []).filter((i: MaterialItem) => i.category === 'Metal' && i.sku));
+    const skus = [...new Set(metalItems.map((i: MaterialItem) => i.sku!))];
+    if (skus.length === 0) {
+      setMetalCatalogBySku({});
+      return;
+    }
+    supabase
+      .from('materials_catalog')
+      .select('sku, purchase_cost, unit_price')
+      .in('sku', skus)
+      .then(({ data, error }) => {
+        if (error || !data?.length) {
+          setMetalCatalogBySku({});
+          return;
+        }
+        const map: Record<string, { purchase_cost: number; unit_price: number }> = {};
+        data.forEach((r: { sku: string; purchase_cost: number | null; unit_price: number | null }) => {
+          map[r.sku] = {
+            purchase_cost: Number(r.purchase_cost) || 0,
+            unit_price: Number(r.unit_price) || 0,
+          };
+        });
+        setMetalCatalogBySku(map);
+      });
+  }, [workbook]);
 
   // Load trim configs for Trim / Flatstock tab (total inches per config)
   useEffect(() => {
@@ -1313,6 +1347,115 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return ((price - cost) / cost) * 100;
   }
 
+  /** True if this category has items priced by lineal foot (have length). */
+  function categoryHasLinealFootPricing(catGroup: CategoryGroup): boolean {
+    return catGroup.items.some((i) => parseLengthToFeet(i.length) != null && parseLengthToFeet(i.length)! > 0);
+  }
+
+  /** Get cost/price per foot for Metal: use item's saved values when set (so user-entered plf stays visible), else materials_catalog for that SKU. */
+  function getCategoryFootPrice(catGroup: CategoryGroup): { costPerFoot: number | null; pricePerFoot: number | null } {
+    const withLength = catGroup.items.find((i) => parseLengthToFeet(i.length) != null && parseLengthToFeet(i.length)! > 0);
+    if (!withLength) return { costPerFoot: null, pricePerFoot: null };
+    const hasItemPrices = withLength.cost_per_unit != null || withLength.price_per_unit != null;
+    if (hasItemPrices) {
+      return {
+        costPerFoot: withLength.cost_per_unit ?? null,
+        pricePerFoot: withLength.price_per_unit ?? null,
+      };
+    }
+    if (catGroup.category === 'Metal' && withLength.sku && metalCatalogBySku[withLength.sku]) {
+      const cat = metalCatalogBySku[withLength.sku];
+      return {
+        costPerFoot: cat.purchase_cost > 0 ? cat.purchase_cost : null,
+        pricePerFoot: cat.unit_price > 0 ? cat.unit_price : null,
+      };
+    }
+    return {
+      costPerFoot: withLength.cost_per_unit ?? null,
+      pricePerFoot: withLength.price_per_unit ?? null,
+    };
+  }
+
+  /** Apply new cost/price per foot to all lineal-foot items in this category; persist and update workbook. Metal: price = cost + $0.10, total = (price per ft × length) × qty. */
+  async function applyCategoryFootPrice(catGroup: CategoryGroup, costPerFoot: number | null, pricePerFoot: number | null) {
+    if (isWorkbookReadOnly) {
+      toast.error('This proposal is locked and cannot be edited.');
+      return;
+    }
+    const linealItems = catGroup.items.filter((i) => {
+      const feet = parseLengthToFeet(i.length);
+      return feet != null && feet > 0;
+    });
+    if (linealItems.length === 0) return;
+    const current = getCategoryFootPrice(catGroup);
+    let safeCost =
+      costPerFoot != null && Number.isFinite(costPerFoot)
+        ? Math.round(costPerFoot * 10000) / 10000
+        : (current.costPerFoot != null ? Math.round(current.costPerFoot * 10000) / 10000 : null);
+    let safePrice =
+      pricePerFoot != null && Number.isFinite(pricePerFoot)
+        ? Math.round(pricePerFoot * 10000) / 10000
+        : (current.pricePerFoot != null ? Math.round(current.pricePerFoot * 10000) / 10000 : null);
+    if (catGroup.category === 'Metal') {
+      if (safeCost != null) safePrice = Math.round((safeCost + 0.1) * 10000) / 10000;
+      else if (safePrice != null) safeCost = Math.round((safePrice - 0.1) * 10000) / 10000;
+    }
+    const safeMarkup =
+      safeCost != null && safePrice != null && safeCost > 0
+        ? Math.round(((safePrice - safeCost) / safeCost) * 100 * 10000) / 10000
+        : null;
+    const updates: Array<{ id: string; extended_cost: number | null; extended_price: number | null }> = [];
+    for (const item of linealItems) {
+      const lengthFeet = parseLengthToFeet(item.length) ?? 0;
+      const qty = Number(item.quantity) || 1;
+      const mult = catGroup.category === 'Metal' ? lengthFeet * qty : getEffectiveMultiplierForExtended(item);
+      const extended_cost = safeCost != null && mult ? Math.round(mult * safeCost * 10000) / 10000 : null;
+      const extended_price = safePrice != null && mult ? Math.round(mult * safePrice * 10000) / 10000 : null;
+      updates.push({ id: item.id, extended_cost, extended_price });
+      const { error } = await supabase
+        .from('material_items')
+        .update({
+          cost_per_unit: safeCost,
+          price_per_unit: safePrice,
+          markup_percent: safeMarkup,
+          extended_cost,
+          extended_price,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', item.id);
+      if (error) {
+        toast.error(`Failed to update ${item.material_name}: ${error.message}`);
+        return;
+      }
+    }
+    setCategoryFootPriceEdit(null);
+    if (workbook) {
+      const updatedWorkbook = {
+        ...workbook,
+        sheets: workbook.sheets.map((sheet) => ({
+          ...sheet,
+          items: sheet.items.map((i) => {
+            const u = updates.find((x) => x.id === i.id);
+            if (!u) return i;
+            return {
+              ...i,
+              cost_per_unit: safeCost,
+              price_per_unit: safePrice,
+              markup_percent: safeMarkup,
+              extended_cost: u.extended_cost,
+              extended_price: u.extended_price,
+            };
+          }),
+        })),
+      };
+      setWorkbook(updatedWorkbook);
+      const cacheKey = `${job.id}:${effectiveQuoteId ?? null}`;
+      const existing = workbookCache.get(cacheKey);
+      if (existing) workbookCache.set(cacheKey, { ...existing, workbook: updatedWorkbook, cachedAt: Date.now() });
+    }
+    toast.success(`Updated ${updates.length} metal panel(s) to $${safeCost?.toFixed(2) ?? '—'}/ft cost, $${safePrice?.toFixed(2) ?? '—'}/ft price.`);
+  }
+
   function startCellEdit(itemId: string, field: string, currentValue: any) {
     if (isWorkbookReadOnly) return;
     setEditingCell({ itemId, field });
@@ -1356,7 +1499,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const newLength = field === 'length' ? value : item.length;
       const newCost = field === 'cost_per_unit' ? value : item.cost_per_unit;
       const newPrice = field === 'price_per_unit' ? value : item.price_per_unit;
-      const mult = getEffectiveMultiplierForExtended(item, newLength, newQty);
+      let mult = getEffectiveMultiplierForExtended(item, newLength, newQty);
+      if (item.category === 'Metal') {
+        const lengthFeet = parseLengthToFeet(newLength);
+        if (lengthFeet != null && lengthFeet > 0) mult = lengthFeet * (Number(newQty) || 1);
+      }
 
       // Recalc both extended cost and extended price whenever any of quantity, length, cost/price per unit change (so cost and price stay in sync for lineal-foot items)
       const recalcExtended = ['quantity', 'cost_per_unit', 'price_per_unit', 'length'].includes(field);
@@ -2259,9 +2406,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     try {
       const quantity = parseFloat(newQuantity) || 1;
       const costPerUnit = parseFloat(newCostPerUnit) || null;
-      // For lineal-foot priced items (e.g. metal/Omni), use length in feet × unit price/cost
       const lengthFeet = parseLengthToFeet(newLength.trim() || null);
-      const addMult = lengthFeet != null && lengthFeet > 0 ? lengthFeet : quantity;
+      const isMetal = addToCategory.trim() === 'Metal';
+      const addMult =
+        lengthFeet != null && lengthFeet > 0
+          ? isMetal
+            ? lengthFeet * quantity
+            : lengthFeet
+          : quantity;
 
       // Use price from Zoho Books if available, otherwise calculate from markup
       let pricePerUnit: number | null = null;
@@ -2767,6 +2919,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             <>
                               <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y border-indigo-300">
                                 <td colSpan={packageSelectionMode ? 14 : 13} className="p-1">
+                                  {(() => {
+                                    const footPrice = getCategoryFootPrice(catGroup);
+                                    return (
                                   <div className="flex items-center justify-between flex-wrap gap-1">
                                     <div className="flex items-center gap-1">
                                       <FileSpreadsheet className="w-3 h-3 text-indigo-700" />
@@ -2775,6 +2930,118 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                         {catGroup.items.length} items
                                       </Badge>
                                     </div>
+                                    {catGroup.category === 'Metal' && categoryHasLinealFootPricing(catGroup) && (
+                                      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                                        <span className="text-[10px] font-medium text-indigo-800 whitespace-nowrap">Lineal ft:</span>
+                                        {categoryFootPriceEdit?.category === catGroup.category ? (
+                                          <>
+                                            <div className="flex items-center gap-1">
+                                              <Label className="text-[10px] text-indigo-700 whitespace-nowrap">Cost $</Label>
+                                              <Input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                className="h-6 w-16 text-[10px] px-1"
+                                                value={categoryFootPriceEdit.costPerFoot}
+                                                onChange={(e) => {
+                                                  const v = e.target.value;
+                                                  setCategoryFootPriceEdit((prev) => {
+                                                    if (!prev) return null;
+                                                    const next = { ...prev, costPerFoot: v };
+                                                    if (catGroup.category === 'Metal') {
+                                                      const c = parseFloat(v);
+                                                      if (Number.isFinite(c)) next.pricePerFoot = (c + 0.1).toFixed(2);
+                                                    }
+                                                    return next;
+                                                  });
+                                                }}
+                                                onBlur={() => {
+                                                  const cost = parseFloat(categoryFootPriceEdit?.costPerFoot ?? '');
+                                                  const price = parseFloat(categoryFootPriceEdit?.pricePerFoot ?? '');
+                                                  if (Number.isFinite(cost) || Number.isFinite(price)) {
+                                                    applyCategoryFootPrice(catGroup, Number.isFinite(cost) ? cost : null, Number.isFinite(price) ? price : null);
+                                                  }
+                                                }}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    const cost = parseFloat(categoryFootPriceEdit?.costPerFoot ?? '');
+                                                    const price = parseFloat(categoryFootPriceEdit?.pricePerFoot ?? '');
+                                                    applyCategoryFootPrice(catGroup, Number.isFinite(cost) ? cost : null, Number.isFinite(price) ? price : null);
+                                                  }
+                                                }}
+                                              />
+                                              <span className="text-[10px] text-indigo-600">/ft</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                              <Label className="text-[10px] text-indigo-700 whitespace-nowrap">Price $</Label>
+                                              <Input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                className="h-6 w-16 text-[10px] px-1"
+                                                value={categoryFootPriceEdit.pricePerFoot}
+                                                onChange={(e) => setCategoryFootPriceEdit((prev) => (prev ? { ...prev, pricePerFoot: e.target.value } : null))}
+                                                onBlur={() => {
+                                                  const cost = parseFloat(categoryFootPriceEdit?.costPerFoot ?? '');
+                                                  const price = parseFloat(categoryFootPriceEdit?.pricePerFoot ?? '');
+                                                  if (Number.isFinite(cost) || Number.isFinite(price)) {
+                                                    applyCategoryFootPrice(catGroup, Number.isFinite(cost) ? cost : null, Number.isFinite(price) ? price : null);
+                                                  }
+                                                }}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    const cost = parseFloat(categoryFootPriceEdit?.costPerFoot ?? '');
+                                                    const price = parseFloat(categoryFootPriceEdit?.pricePerFoot ?? '');
+                                                    applyCategoryFootPrice(catGroup, Number.isFinite(cost) ? cost : null, Number.isFinite(price) ? price : null);
+                                                  }
+                                                }}
+                                              />
+                                              <span className="text-[10px] text-indigo-600">/ft</span>
+                                            </div>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-6 text-[10px] px-1.5"
+                                              onClick={() => {
+                                                const cost = parseFloat(categoryFootPriceEdit?.costPerFoot ?? '');
+                                                const price = parseFloat(categoryFootPriceEdit?.pricePerFoot ?? '');
+                                                applyCategoryFootPrice(catGroup, Number.isFinite(cost) ? cost : null, Number.isFinite(price) ? price : null);
+                                              }}
+                                            >
+                                              Apply
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-6 text-[10px] px-1"
+                                              onClick={() => setCategoryFootPriceEdit(null)}
+                                            >
+                                              <X className="w-3 h-3" />
+                                            </Button>
+                                          </>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (isWorkbookReadOnly) return;
+                                              const { costPerFoot, pricePerFoot } = getCategoryFootPrice(catGroup);
+                                              setCategoryFootPriceEdit({
+                                                category: catGroup.category,
+                                                costPerFoot: costPerFoot != null ? String(costPerFoot) : '',
+                                                pricePerFoot: pricePerFoot != null ? String(pricePerFoot) : '',
+                                              });
+                                            }}
+                                            className="text-[10px] text-indigo-700 hover:text-indigo-900 hover:underline flex items-center gap-1.5"
+                                          >
+                                            <DollarSign className="w-3 h-3" />
+                                            Cost {footPrice.costPerFoot != null ? `$${footPrice.costPerFoot.toFixed(2)}` : '—'}/ft
+                                            <span className="text-slate-400">|</span>
+                                            Price {footPrice.pricePerFoot != null ? `$${footPrice.pricePerFoot.toFixed(2)}` : '—'}/ft
+                                            <Pencil className="w-2.5 h-2.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
                                     <div className="flex gap-1">
                                       <Button
                                         size="sm"
@@ -2794,6 +3061,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                       </Button>
                                     </div>
                                   </div>
+                                    );
+                                  })()}
                                 </td>
                               </tr>
                               {catGroup.items.map((item, itemIndex) => {
@@ -3055,8 +3324,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                         <div
                                           onClick={() => startCellEdit(item.id, 'cost_per_unit', item.cost_per_unit)}
                                           className="text-right font-mono text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
+                                          title={item.category === 'Metal' && parseLengthToFeet(item.length) != null ? 'Cost per piece (cost/ft × length); click to edit cost per ft' : undefined}
                                         >
-                                          {item.cost_per_unit ? `$${item.cost_per_unit.toFixed(2)}` : '-'}
+                                          {item.cost_per_unit != null ? (() => {
+                                            const lengthFeet = item.category === 'Metal' ? parseLengthToFeet(item.length) : null;
+                                            const perPiece = lengthFeet != null && lengthFeet > 0 ? item.cost_per_unit * lengthFeet : item.cost_per_unit;
+                                            return `$${perPiece.toFixed(2)}`;
+                                          })() : '-'}
                                         </div>
                                       )}
                                     </td>
@@ -3131,8 +3405,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                         <div
                                           onClick={() => startCellEdit(item.id, 'price_per_unit', item.price_per_unit)}
                                           className="text-right font-mono text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
+                                          title={item.category === 'Metal' && parseLengthToFeet(item.length) != null ? 'Price per piece (price/ft × length); click to edit price per ft' : undefined}
                                         >
-                                          {item.price_per_unit ? `$${item.price_per_unit.toFixed(2)}` : '-'}
+                                          {item.price_per_unit != null ? (() => {
+                                            const lengthFeet = item.category === 'Metal' ? parseLengthToFeet(item.length) : null;
+                                            const perPiece = lengthFeet != null && lengthFeet > 0 ? item.price_per_unit * lengthFeet : item.price_per_unit;
+                                            return `$${perPiece.toFixed(2)}`;
+                                          })() : '-'}
                                         </div>
                                       )}
                                     </td>

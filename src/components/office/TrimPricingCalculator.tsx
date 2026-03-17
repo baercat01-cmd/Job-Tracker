@@ -142,6 +142,7 @@ export function TrimPricingCalculator() {
   const [showDrawing, setShowDrawing] = useState(true); // Always show drawing
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const canvasScrollContainerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState<{ w: number; h: number } | null>(null);
   const [drawing, setDrawing] = useState<DrawingState>({
     segments: [],
@@ -156,7 +157,9 @@ export function TrimPricingCalculator() {
   const [canvasReady, setCanvasReady] = useState(false);
   const [gridSize] = useState(0.125); // 1/8" snap precision
   const [majorGridSize] = useState(0.5); // 1/2" major grid blocks
-  const [scale, setScale] = useState(80); // pixels per inch (adjustable with zoom)
+  const [scale, setScale] = useState(80); // pixels per inch (adjustable with Ctrl+scroll zoom)
+  const CANVAS_ZOOM_MIN = 30;
+  const CANVAS_ZOOM_MAX = 240;
   const [mousePos, setMousePos] = useState<Point | null>(null);
   /** Screen position for custom crosshair cursor (avoids cursor hidden behind canvas on laptops) */
   const [crosshairScreenPos, setCrosshairScreenPos] = useState<{ x: number; y: number } | null>(null);
@@ -292,6 +295,23 @@ export function TrimPricingCalculator() {
     return () => ro.disconnect();
   }, [canvasReady]);
 
+  // Ctrl+scroll to zoom on canvas (non-passive listener so preventDefault works)
+  useEffect(() => {
+    const el = canvasScrollContainerRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setScale((s) => {
+        const factor = e.deltaY > 0 ? 0.92 : 1.08;
+        const next = s * factor;
+        return Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, next));
+      });
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [canvasReady]);
+
   // Calculate the centroid of the drawing for intelligent label placement
   function calculateCentroid(segments: LineSegment[]): Point {
     if (segments.length === 0) return { x: 0, y: 0 };
@@ -330,6 +350,44 @@ export function TrimPricingCalculator() {
 
   /** Hem offset from trim = 2 line widths (must match drawHem). */
   const HEM_LINE_WIDTH_OFFSET = 0.03125 * 2; // 1/16"
+
+  const POINT_MATCH_TOLERANCE = 0.02; // inches - endpoints within this are considered the same (corner)
+
+  /** True if this end of the segment is not attached to another segment (open end). No hem allowed at corners. */
+  function isSegmentEndOpen(segmentId: string, atStart: boolean): boolean {
+    const segment = drawing.segments.find(s => s.id === segmentId);
+    if (!segment) return false;
+    const pt = atStart ? segment.start : segment.end;
+    for (const seg of drawing.segments) {
+      if (seg.id === segmentId) continue;
+      const dStart = Math.sqrt((pt.x - seg.start.x) ** 2 + (pt.y - seg.start.y) ** 2);
+      const dEnd = Math.sqrt((pt.x - seg.end.x) ** 2 + (pt.y - seg.end.y) ** 2);
+      if (dStart < POINT_MATCH_TOLERANCE || dEnd < POINT_MATCH_TOLERANCE) return false; // corner
+    }
+    return true;
+  }
+
+  /** Get hem preview tip point in inch coords (for click-to-select hem option). */
+  function getHemPreviewTipPoint(segment: LineSegment, hemAtStart: boolean, side: 'left' | 'right'): Point {
+    const hemPoint = hemAtStart ? segment.start : segment.end;
+    const otherPoint = hemAtStart ? segment.end : segment.start;
+    const dx = otherPoint.x - hemPoint.x;
+    const dy = otherPoint.y - hemPoint.y;
+    const length = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+    const unitX = dx / length;
+    const unitY = dy / length;
+    const perpRightX = -unitY;
+    const perpRightY = unitX;
+    const perpLeftX = unitY;
+    const perpLeftY = -unitX;
+    const perpX = side === 'right' ? perpLeftX : perpRightX;
+    const perpY = side === 'right' ? perpLeftY : perpRightY;
+    const hemDepth = Math.max(0.125, hemDepthInches);
+    const oneLineWidth = 0.03125 * 2;
+    const baseX = hemPoint.x + perpX * oneLineWidth;
+    const baseY = hemPoint.y + perpY * oneLineWidth;
+    return { x: baseX + unitX * hemDepth, y: baseY + unitY * hemDepth };
+  }
 
   /** Get the "open end" of a hem (where it doubles back — one line width off the segment). Used as a snap point. */
   function getHemOpenEndPoint(segment: LineSegment): Point | null {
@@ -498,16 +556,6 @@ export function TrimPricingCalculator() {
         ctx.textAlign = 'left';
       }
     } else if (isDrawingMode && !drawing.currentPoint) {
-      ctx.fillStyle = '#3b82f6';
-      ctx.font = 'bold 20px sans-serif';
-      ctx.textAlign = 'center';
-      if (drawing.segments.length === 0) {
-        ctx.fillText('Click anywhere to start your first line', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-      } else {
-        ctx.fillText('Click an endpoint to continue, or anywhere to start new line', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-      }
-      ctx.textAlign = 'left';
-      
       // Highlight all connection points when in drawing mode (endpoints + hem open ends)
       ctx.fillStyle = '#10b981';
       drawing.segments.forEach(seg => {
@@ -634,13 +682,18 @@ export function TrimPricingCalculator() {
 
 
 
-    // Draw hem previews if in preview mode
+    // Draw hem preview options only at open ends (not at corners)
     if (hemPreviewMode) {
       const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
       if (segment) {
-        const segWithHem = { ...segment, hasHem: true, hemAtStart: hemPreviewMode.hemAtStart };
-        drawHem(ctx, segWithHem, scale, true, 'left');
-        drawHem(ctx, segWithHem, scale, true, 'right');
+        if (isSegmentEndOpen(segment.id, true)) {
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'left');
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'right');
+        }
+        if (isSegmentEndOpen(segment.id, false)) {
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'left');
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'right');
+        }
       }
     }
 
@@ -721,6 +774,8 @@ export function TrimPricingCalculator() {
     setMousePos({ x: snappedX, y: snappedY });
   }
 
+  const HEM_PREVIEW_CLICK_TOLERANCE = 0.45; // inches - click near a hem preview to choose that option
+
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!canvasRef.current) return;
     
@@ -732,33 +787,92 @@ export function TrimPricingCalculator() {
     const clickX = ((e.clientX - rect.left) * scaleX) / scale;
     const clickY = ((e.clientY - rect.top) * scaleY) / scale;
     
-    // Check if user clicked on an angle label to toggle it
-    for (let i = 1; i < drawing.segments.length; i++) {
-      const segment = drawing.segments[i];
-      const prevSegment = drawing.segments[i - 1];
-      
-      const startX = segment.start.x * scale;
-      const startY = segment.start.y * scale;
-      const centroid = calculateCentroid(drawing.segments);
-      const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
-      const angleDistance = 28;
-      const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
-      const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
+    // When in hem preview mode: click on a hem option (open ends only, left/right) to apply it
+    if (hemPreviewMode) {
+      const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
+      if (segment) {
+        const options: { hemAtStart: boolean; side: 'left' | 'right' }[] = [];
+        if (isSegmentEndOpen(segment.id, true)) {
+          options.push({ hemAtStart: true, side: 'left' }, { hemAtStart: true, side: 'right' });
+        }
+        if (isSegmentEndOpen(segment.id, false)) {
+          options.push({ hemAtStart: false, side: 'left' }, { hemAtStart: false, side: 'right' });
+        }
+        for (const { hemAtStart, side } of options) {
+          const tip = getHemPreviewTipPoint(segment, hemAtStart, side);
+          const dist = Math.sqrt((clickX - tip.x) ** 2 + (clickY - tip.y) ** 2);
+          if (dist < HEM_PREVIEW_CLICK_TOLERANCE) {
+            addHemToSide(side, hemAtStart);
+            return;
+          }
+        }
+      }
+    }
+    
+    // When finishing a line (currentPoint set), don't treat clicks as angle-toggle or segment-select — let them complete the segment
+    const isFinishingLine = isDrawingMode && drawing.currentPoint != null;
 
-      // Check if click is near the angle label (click in canvas pixels)
-      const clickPixelX = (e.clientX - rect.left) * scaleX;
-      const clickPixelY = (e.clientY - rect.top) * scaleY;
-      const distToAngle = Math.sqrt(
-        (clickPixelX - angleX) ** 2 + (clickPixelY - angleY) ** 2
-      );
-      
-      if (distToAngle < 20) { // Within 20 pixels of angle label
-        // Toggle angle display mode
-        setAngleDisplayMode(prev => ({
-          ...prev,
-          [segment.id]: !prev[segment.id]
-        }));
-        toast.info('Angle view toggled');
+    // Check if user clicked on an angle label to toggle it (skip when finishing a line so click sets the endpoint)
+    if (!isFinishingLine) {
+      for (let i = 1; i < drawing.segments.length; i++) {
+        const segment = drawing.segments[i];
+        const prevSegment = drawing.segments[i - 1];
+        
+        const startX = segment.start.x * scale;
+        const startY = segment.start.y * scale;
+        const centroid = calculateCentroid(drawing.segments);
+        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
+        const angleDistance = 28;
+        const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
+        const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
+
+        const clickPixelX = (e.clientX - rect.left) * scaleX;
+        const clickPixelY = (e.clientY - rect.top) * scaleY;
+        const distToAngle = Math.sqrt(
+          (clickPixelX - angleX) ** 2 + (clickPixelY - angleY) ** 2
+        );
+        
+        if (distToAngle < 20) {
+          setAngleDisplayMode(prev => ({
+            ...prev,
+            [segment.id]: !prev[segment.id]
+          }));
+          toast.info('Angle view toggled');
+          return;
+        }
+      }
+    }
+
+    // In drawing mode, when not placing a line: only open hem when clicking the *middle* of a segment (not the green dots)
+    const endpointSnapTolerance = 0.35;
+    if (isDrawingMode && !drawing.currentPoint) {
+      for (let i = drawing.segments.length - 1; i >= 0; i--) {
+        const seg = drawing.segments[i];
+        const distToLine = pointToLineDistance({ x: clickX, y: clickY }, seg.start, seg.end);
+        if (distToLine >= 0.5) continue;
+        const connectionPoints = getSegmentConnectionPoints(seg);
+        const nearEndpoint = connectionPoints.some(
+          (p) => Math.sqrt((clickX - p.x) ** 2 + (clickY - p.y) ** 2) < endpointSnapTolerance
+        );
+        if (nearEndpoint) continue;
+        selectSegment(seg.id);
+        if (seg.hasHem) {
+          setDrawing(prev => ({
+            ...prev,
+            segments: prev.segments.map(s =>
+              s.id === seg.id ? { ...s, hasHem: false, hemAtStart: false, hemSide: undefined } : s
+            )
+          }));
+          toast.success('Hem removed');
+        } else {
+          const startOpen = isSegmentEndOpen(seg.id, true);
+          const endOpen = isSegmentEndOpen(seg.id, false);
+          if (startOpen || endOpen) {
+            startHemPreview(seg.id);
+          } else {
+            toast.info('This segment has no open end — hems can only be added at ends not attached to another line.');
+          }
+        }
         return;
       }
     }
@@ -787,33 +901,36 @@ export function TrimPricingCalculator() {
     
     // Drawing mode - add new points
     // First check if user clicked near an existing endpoint to snap to it
+    const snapTolerance = 0.35; // inches - generous so open end of closed U is easy to hit
     let snappedToEndpoint = false;
     let point: Point = { x: 0, y: 0 };
-    
-    if (!drawing.currentPoint) {
-      // Check all segment connection points: start, end, and hem open end (where the U closes)
-      const snapTolerance = 0.35; // inches - generous so open end of closed U is easy to hit
-      for (const seg of drawing.segments) {
-        const connectionPoints = getSegmentConnectionPoints(seg);
-        for (const p of connectionPoints) {
-          const dist = Math.sqrt((clickX - p.x) ** 2 + (clickY - p.y) ** 2);
-          if (dist < snapTolerance) {
-            point = { x: p.x, y: p.y };
-            snappedToEndpoint = true;
-            break;
-          }
+
+    for (const seg of drawing.segments) {
+      const connectionPoints = getSegmentConnectionPoints(seg);
+      for (const p of connectionPoints) {
+        const dist = Math.sqrt((clickX - p.x) ** 2 + (clickY - p.y) ** 2);
+        if (dist < snapTolerance) {
+          point = { x: p.x, y: p.y };
+          snappedToEndpoint = true;
+          break;
         }
-        if (snappedToEndpoint) break;
       }
+      if (snappedToEndpoint) break;
     }
-    
+
     // If not snapped to endpoint, snap to grid
     if (!snappedToEndpoint) {
       const snappedX = Math.round(clickX / gridSize) * gridSize;
       const snappedY = Math.round(clickY / gridSize) * gridSize;
       point = { x: snappedX, y: snappedY };
     }
-    
+
+    // When trim has started, only the *start* of a new line must be on an endpoint; the end can be placed anywhere (grid or endpoint)
+    const trimStarted = drawing.segments.length > 0;
+    if (trimStarted && !drawing.currentPoint && !snappedToEndpoint) {
+      return;
+    }
+
     if (!drawing.currentPoint) {
       // Start new line
       setDrawing(prev => ({ ...prev, currentPoint: point }));
@@ -821,7 +938,7 @@ export function TrimPricingCalculator() {
       // Focus the length input after a short delay to allow state to update
       setTimeout(() => lengthInputRef.current?.focus(), 100);
     } else {
-      // Complete line and STAY in drawing mode
+      // Complete line (end point can be anywhere — grid or endpoint) and STAY in drawing mode
       const newSegment: LineSegment = {
         id: Date.now().toString(),
         start: drawing.currentPoint,
@@ -837,11 +954,11 @@ export function TrimPricingCalculator() {
         selectedSegmentId: null,
         nextLabel: prev.nextLabel + 1
       }));
-      
+
       setLengthInput(''); // Clear length input after completing line
-      
+
       // STAY in drawing mode - user can continue adding lines
-      toast.success('Line added - click endpoint to continue or anywhere to start new');
+      toast.success('Line added - click endpoint to continue or on an existing endpoint to start new');
     }
   }
 
@@ -1055,8 +1172,8 @@ export function TrimPricingCalculator() {
     }
   }
 
-  function startHemPreview() {
-    const segmentId = drawing.selectedSegmentId || drawing.segments[drawing.segments.length - 1]?.id;
+  function startHemPreview(segmentIdOverride?: string) {
+    const segmentId = segmentIdOverride ?? drawing.selectedSegmentId ?? drawing.segments[drawing.segments.length - 1]?.id;
     
     if (!segmentId) {
       toast.error('Draw at least one segment, then select it (or leave it selected) and click Add Hem.');
@@ -1070,7 +1187,7 @@ export function TrimPricingCalculator() {
       // Remove hem if already exists
       setDrawing(prev => ({
         ...prev,
-        segments: prev.segments.map(seg => 
+        segments: prev.segments.map(seg =>
           seg.id === segmentId
             ? { ...seg, hasHem: false, hemAtStart: false, hemSide: undefined }
             : seg
@@ -1079,21 +1196,31 @@ export function TrimPricingCalculator() {
       toast.success('Hem removed');
       return;
     }
-    
-    // Auto-select this segment so user sees which one gets the hem
+
+    const startOpen = isSegmentEndOpen(segment.id, true);
+    const endOpen = isSegmentEndOpen(segment.id, false);
+    if (!startOpen && !endOpen) {
+      toast.error('This segment has no open end — hems can only be added at ends that are not attached to another line (no corners).');
+      return;
+    }
+
+    // Default to first available open end: prefer end, then start
+    const defaultAtStart = !endOpen && startOpen;
     setDrawing(prev => ({ ...prev, selectedSegmentId: segmentId }));
-    setHemPreviewMode({ segmentId, hemAtStart: false });
-    toast.info(`Choose which end, then LEFT or RIGHT for the ${hemDepthInches === 0.5 ? '1/2"' : `${hemDepthInches}"`} U hem`);
+    setHemPreviewMode({ segmentId, hemAtStart: defaultAtStart });
+    toast.info(`Click a purple hem on the drawing to choose open end and side, or use the buttons above`);
   }
 
-  function addHemToSide(side: 'left' | 'right') {
-    if (!hemPreviewMode) return;
+  function addHemToSide(side: 'left' | 'right', atStart?: boolean) {
+    const mode = hemPreviewMode;
+    if (!mode) return;
+    const hemAtStart = atStart !== undefined ? atStart : mode.hemAtStart;
     pushDrawingHistory();
     setDrawing(prev => ({
       ...prev,
-      segments: prev.segments.map(seg => 
-        seg.id === hemPreviewMode.segmentId
-          ? { ...seg, hasHem: true, hemAtStart: hemPreviewMode.hemAtStart, hemSide: side }
+      segments: prev.segments.map(seg =>
+        seg.id === mode.segmentId
+          ? { ...seg, hasHem: true, hemAtStart, hemSide: side }
           : seg
       )
     }));
@@ -1172,7 +1299,8 @@ export function TrimPricingCalculator() {
         const perpY = (seg.hemSide === 'right' ? -ux : ux);
         const lw = 0.03125 * 2;
         const baseX = hemPoint.x + perpX * lw, baseY = hemPoint.y + perpY * lw;
-        points.push({ x: baseX + ux * 0.5, y: baseY + uy * 0.5 });
+        const hemDepth = Math.max(0.125, hemDepthInches);
+        points.push({ x: baseX + ux * hemDepth, y: baseY + uy * hemDepth });
       }
     });
     // Include angle label position in bbox so degree is not cut off
@@ -2100,7 +2228,7 @@ export function TrimPricingCalculator() {
         After you save this trim, it will be linked to the material item you selected. Shop will see the drawing in the pull form.
       </div>
     )}
-    <div className="grid grid-cols-[1.6fr,1fr] gap-3 max-w-full mx-auto h-[calc(100vh-80px)] overflow-hidden p-2">
+    <div className="grid grid-cols-[2.2fr,0.8fr] gap-3 max-w-full mx-auto h-[calc(100vh-80px)] overflow-hidden p-2">
       {/* Drawing Tool - Left Side */}
       <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl flex flex-col h-full overflow-hidden">
         <CardHeader className="pb-2 border-b-2 border-yellow-500 py-2">
@@ -2119,7 +2247,7 @@ export function TrimPricingCalculator() {
                 </div>
               </div>
             ) : (
-              <div className="overflow-auto h-full w-full min-h-0">
+              <div ref={canvasScrollContainerRef} className="overflow-auto h-full w-full min-h-0">
                 <canvas
                   ref={canvasRef}
                   width={CANVAS_WIDTH}
@@ -2169,13 +2297,6 @@ export function TrimPricingCalculator() {
                 </Button>
               ) : (
                 <>
-                  <div className="flex items-center gap-2 px-2 py-1 bg-green-100 border-2 border-green-500 rounded">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-green-700 font-bold text-xs">
-                      {drawing.currentPoint ? 'Click to finish line' : 'Click endpoint or anywhere to start'}
-                    </span>
-                  </div>
-                  
                   <Button
                     onClick={stopDrawing}
                     size="sm"
@@ -2218,6 +2339,12 @@ export function TrimPricingCalculator() {
                 Save as PDF
               </Button>
               
+              {/* Zoom: Ctrl+scroll on canvas */}
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 border border-gray-300 rounded text-gray-700" title="Ctrl + scroll on canvas to zoom">
+                <span className="text-xs whitespace-nowrap">Zoom:</span>
+                <span className="text-xs font-medium tabular-nums">{Math.round((scale / 80) * 100)}%</span>
+              </div>
+              
               {/* Hem length (default 1/2") - visible when drawing has segments or in hem preview */}
               {(drawing.segments.length > 0 || hemPreviewMode) && (
                 <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 border border-gray-300 rounded">
@@ -2256,11 +2383,16 @@ export function TrimPricingCalculator() {
               )}
               
               {/* Hem Preview Choice Buttons */}
-              {hemPreviewMode && (
+              {hemPreviewMode && (() => {
+                const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
+                const endOpen = segment ? isSegmentEndOpen(segment.id, false) : false;
+                const startOpen = segment ? isSegmentEndOpen(segment.id, true) : false;
+                return (
                 <>
                   <div className="flex items-center gap-2 px-2 py-1 bg-purple-100 border-2 border-purple-500 rounded">
-                    <span className="text-purple-700 font-bold text-xs">U Hem ({hemDepthInches === 0.5 ? '1/2"' : `${hemDepthInches}"`}) — choose end, then side:</span>
+                    <span className="text-purple-700 font-bold text-xs">U Hem ({hemDepthInches === 0.5 ? '1/2"' : `${hemDepthInches}"`}) — open end only, then side:</span>
                   </div>
+                  {endOpen && (
                   <Button
                     onClick={() => setHemPreviewEnd(false)}
                     size="sm"
@@ -2269,6 +2401,8 @@ export function TrimPricingCalculator() {
                   >
                     At end
                   </Button>
+                  )}
+                  {startOpen && (
                   <Button
                     onClick={() => setHemPreviewEnd(true)}
                     size="sm"
@@ -2277,6 +2411,7 @@ export function TrimPricingCalculator() {
                   >
                     At start
                   </Button>
+                  )}
                   <Button
                     onClick={() => addHemToSide('left')}
                     size="sm"
@@ -2300,7 +2435,8 @@ export function TrimPricingCalculator() {
                     Cancel
                   </Button>
                 </>
-              )}
+                );
+              })()}
               
               {/* Zoom Controls */}
               <div className="flex gap-1 bg-gray-100 px-2 py-1 rounded border border-gray-300 ml-auto">

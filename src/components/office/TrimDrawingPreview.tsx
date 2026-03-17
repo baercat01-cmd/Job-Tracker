@@ -149,10 +149,12 @@ interface TrimDrawingPreviewProps {
   onAnglePositions?: (positions: { index: number; x: number; y: number }[]) => void;
   /** When true for bend index i, show (360 - interior angle) instead of interior angle (toggle 90° ↔ 270°) */
   angleDisplayMode?: Record<number, boolean>;
+  /** Hem depth in inches for drawing the U-hem (default 1/2"). Use when hem is longer than 1/2". */
+  hemDepthInches?: number;
 }
 
 /** Draw trim profile from segments (no grid). Used in shop pull form and elsewhere. */
-export function TrimDrawingPreview({ segments, width = 280, height = 160, className, showMeasurements = false, onAnglePositions, angleDisplayMode }: TrimDrawingPreviewProps) {
+export function TrimDrawingPreview({ segments, width = 280, height = 160, className, showMeasurements = false, onAnglePositions, angleDisplayMode, hemDepthInches = DEFAULT_HEM_DEPTH_INCHES }: TrimDrawingPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -177,7 +179,8 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         const lw = 0.03125 * 2;
         const baseX = hemPoint.x + perpX * lw;
         const baseY = hemPoint.y + perpY * lw;
-        points.push({ x: baseX + ux * 0.5, y: baseY + uy * 0.5 });
+        const hemDepth = Math.max(0.125, hemDepthInches);
+        points.push({ x: baseX + ux * hemDepth, y: baseY + uy * hemDepth });
       }
     });
     const minX = Math.min(...points.map((p) => p.x));
@@ -223,12 +226,13 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         const perpX = (segment.hemSide === 'right' ? uy : -uy);
         const perpY = (segment.hemSide === 'right' ? -ux : ux);
         const lw = 0.03125 * 2;
+        const hemDepth = Math.max(0.125, hemDepthInches);
         const baseX = (hemPoint.x + perpX * lw) * scale;
         const baseY = (hemPoint.y + perpY * lw) * scale;
         const p0x = hemPoint.x * scale;
         const p0y = hemPoint.y * scale;
-        const p2x = (hemPoint.x + perpX * lw + ux * 0.5) * scale;
-        const p2y = (hemPoint.y + perpY * lw + uy * 0.5) * scale;
+        const p2x = (hemPoint.x + perpX * lw + ux * hemDepth) * scale;
+        const p2y = (hemPoint.y + perpY * lw + uy * hemDepth) * scale;
         ctx.beginPath();
         ctx.moveTo(p0x, p0y);
         ctx.lineTo(baseX, baseY);
@@ -292,7 +296,7 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
     if (showMeasurements && onAnglePositions && anglePositionsOut.length > 0) {
       onAnglePositions(anglePositionsOut);
     }
-  }, [segments, width, height, showMeasurements, onAnglePositions, angleDisplayMode]);
+  }, [segments, width, height, showMeasurements, onAnglePositions, angleDisplayMode, hemDepthInches]);
 
   if (!segments?.length) return null;
 
