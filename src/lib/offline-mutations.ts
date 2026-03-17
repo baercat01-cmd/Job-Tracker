@@ -2,7 +2,7 @@
 // Handles create/update/delete operations with offline support
 
 import { supabase } from './supabase';
-import { put, remove, addToSyncQueue } from './offline-db';
+import { put, remove, addToSyncQueue, getById } from './offline-db';
 import { isOnline, updatePendingChangesCount } from './offline-manager';
 import { syncTable } from './offline-sync';
 import { withRetry, logError, extractHttpStatus, showErrorToast } from './error-handler';
@@ -115,7 +115,6 @@ export async function updateOffline<T extends { id: string }>(
 
     // Offline or server failed - update locally and queue
     // First, get current data from local cache
-    const { getById } = await import('./offline-db');
     const currentData = await getById<T>(tableName, id);
 
     if (!currentData) {
