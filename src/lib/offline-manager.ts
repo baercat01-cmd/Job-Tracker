@@ -1,7 +1,7 @@
 // Offline Manager - Handles online/offline state and automatic syncing
 
 import { useState, useEffect } from 'react';
-import { initDB, getAll, put, getPendingSyncCount } from './offline-db';
+import { initDB, getAll, put, getPendingSyncCount, addToSyncQueue, getById } from './offline-db';
 import { supabase } from './supabase';
 
 // Online state management
@@ -210,7 +210,6 @@ export async function saveData<T extends { id: string }>(
       // Data is already saved locally, will sync when connection is restored
       
       // Queue for sync
-      const { addToSyncQueue } = await import('./offline-db');
       await addToSyncQueue({
         table: tableName,
         operation: 'update',
@@ -220,7 +219,6 @@ export async function saveData<T extends { id: string }>(
     }
   } else if (!onlineState) {
     // Offline - queue for sync
-    const { addToSyncQueue } = await import('./offline-db');
     await addToSyncQueue({
       table: tableName,
       operation: 'update',
