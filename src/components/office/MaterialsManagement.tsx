@@ -581,6 +581,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const rawItemLength = (item.length != null && item.length !== '') ? String(item.length).trim() : null;
       const itemLengthIsUnit = rawItemLength && unitOnly.test(rawItemLength);
       const mergedLength = !itemLengthIsUnit && rawItemLength ? rawItemLength : catalogLength;
+      const lengthFeet = parseLengthToFeet(mergedLength ?? null);
+      const mult = lengthFeet != null && lengthFeet > 0 ? lengthFeet : qty;
 
       return {
         ...item,
@@ -590,11 +592,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         markup_percent: item.markup_percent == null ? safeMarkup : item.markup_percent,
         extended_cost:
           item.extended_cost == null && safeCost
-            ? Math.round(safeCost * qty * 10000) / 10000
+            ? Math.round(safeCost * mult * 10000) / 10000
             : item.extended_cost,
         extended_price:
           item.extended_price == null && safePrice
-            ? Math.round(safePrice * qty * 10000) / 10000
+            ? Math.round(safePrice * mult * 10000) / 10000
             : item.extended_price,
       };
     });
@@ -637,6 +639,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           ? Math.round(((safePrice - safeCost) / safeCost) * 100 * 10000) / 10000
           : null;
         const qty = Number(item.quantity) || 1;
+        const backfillLengthFeet = parseLengthToFeet(item.length);
+        const backfillMult = backfillLengthFeet != null && backfillLengthFeet > 0 ? backfillLengthFeet : qty;
 
         await supabase
           .from('material_items')
@@ -644,8 +648,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             cost_per_unit:  item.cost_per_unit  == null ? safeCost  : undefined,
             price_per_unit: item.price_per_unit == null ? safePrice : undefined,
             markup_percent: item.markup_percent == null ? safeMarkup : undefined,
-            extended_cost:  (item.extended_cost  == null && safeCost)  ? Math.round(safeCost  * qty * 10000) / 10000 : undefined,
-            extended_price: (item.extended_price == null && safePrice) ? Math.round(safePrice * qty * 10000) / 10000 : undefined,
+            extended_cost:  (item.extended_cost  == null && safeCost)  ? Math.round(safeCost  * backfillMult * 10000) / 10000 : undefined,
+            extended_price: (item.extended_price == null && safePrice) ? Math.round(safePrice * backfillMult * 10000) / 10000 : undefined,
             updated_at: new Date().toISOString(),
           })
           .eq('id', item.id);
@@ -701,6 +705,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         const cat = catalogMap.get(item.sku);
         if (!cat || (cat.cost === 0 && cat.price === 0)) continue;
         const qty = Number(item.quantity) || 1;
+        const refreshLength = item.length ?? cat.length ?? null;
+        const refreshLengthFeet = parseLengthToFeet(refreshLength);
+        const refreshMult = refreshLengthFeet != null && refreshLengthFeet > 0 ? refreshLengthFeet : qty;
         const safeCost = cat.cost > 0 ? Math.round(cat.cost * 10000) / 10000 : null;
         const safePrice = cat.price > 0 ? Math.round(cat.price * 10000) / 10000 : null;
         const safeMarkup = safeCost && safePrice && safeCost > 0
@@ -710,8 +717,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           cost_per_unit: safeCost,
           price_per_unit: safePrice,
           markup_percent: safeMarkup,
-          extended_cost: safeCost != null ? Math.round(safeCost * qty * 10000) / 10000 : null,
-          extended_price: safePrice != null ? Math.round(safePrice * qty * 10000) / 10000 : null,
+          extended_cost: safeCost != null ? Math.round(safeCost * refreshMult * 10000) / 10000 : null,
+          extended_price: safePrice != null ? Math.round(safePrice * refreshMult * 10000) / 10000 : null,
           updated_at: new Date().toISOString(),
         };
         if (cat.length != null) updatePayload.length = cat.length;
@@ -1185,6 +1192,40 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
+  /**
+   * Parse length string to decimal feet for lineal-foot pricing (e.g. metal/Omni panels).
+   * Supports: "27' 11\"", "27.9167", "12' 6\"", "12'", "10".
+   * Returns null if not parseable or not a feet/inches value.
+   */
+  function parseLengthToFeet(length: string | null | undefined): number | null {
+    if (length == null || String(length).trim() === '') return null;
+    const s = String(length).trim();
+    // Feet and inches: 27' 11" or 12' 6" or 27'
+    const ftInMatch = s.match(/^(\d+(?:\.\d+)?)\s*'\s*(?:(\d+(?:\.\d+)?)\s*[""]?\s*)?$/);
+    if (ftInMatch) {
+      const feet = parseFloat(ftInMatch[1]);
+      const inches = ftInMatch[2] != null ? parseFloat(ftInMatch[2]) : 0;
+      if (!Number.isFinite(feet)) return null;
+      return feet + (Number.isFinite(inches) ? inches / 12 : 0);
+    }
+    // Plain decimal (already in feet)
+    const num = parseFloat(s);
+    if (Number.isFinite(num) && num >= 0) return num;
+    return null;
+  }
+
+  /**
+   * For extended cost/price: use length in feet when item has a length (lineal-foot priced, e.g. metal/Omni);
+   * otherwise use quantity.
+   */
+  function getEffectiveMultiplierForExtended(item: MaterialItem, lengthOverride?: string | null, quantityOverride?: number): number {
+    const len = lengthOverride !== undefined ? lengthOverride : item.length;
+    const lengthFeet = parseLengthToFeet(len);
+    if (lengthFeet != null && lengthFeet > 0) return lengthFeet;
+    const qty = quantityOverride !== undefined ? quantityOverride : item.quantity;
+    return Number(qty) || 1;
+  }
+
   function isMaterialInAnyPackage(materialId: string): boolean {
     return packages.some(pkg => 
       pkg.bundle_items?.some((item: any) => item.material_item_id === materialId)
@@ -1310,22 +1351,25 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         updated_at: new Date().toISOString(),
       };
 
-      if (field === 'quantity' || field === 'cost_per_unit') {
-        const qty = field === 'quantity' ? value : item.quantity;
-        const cost = field === 'cost_per_unit' ? value : item.cost_per_unit;
-        updateData.extended_cost = qty && cost ? qty * cost : null;
+      // After-edit values for quantity, length, cost, price (for recalc)
+      const newQty = field === 'quantity' ? value : item.quantity;
+      const newLength = field === 'length' ? value : item.length;
+      const newCost = field === 'cost_per_unit' ? value : item.cost_per_unit;
+      const newPrice = field === 'price_per_unit' ? value : item.price_per_unit;
+      const mult = getEffectiveMultiplierForExtended(item, newLength, newQty);
+
+      // Recalc both extended cost and extended price whenever any of quantity, length, cost/price per unit change (so cost and price stay in sync for lineal-foot items)
+      const recalcExtended = ['quantity', 'cost_per_unit', 'price_per_unit', 'length'].includes(field);
+      if (recalcExtended) {
+        updateData.extended_cost = newCost != null && mult ? Math.round(mult * newCost * 10000) / 10000 : null;
+        updateData.extended_price = newPrice != null && mult ? Math.round(mult * newPrice * 10000) / 10000 : null;
       }
 
       if (field === 'markup_percent' && item.cost_per_unit) {
         const newPricePerUnit = item.cost_per_unit * (1 + value);
         updateData.price_per_unit = newPricePerUnit;
-        updateData.extended_price = item.quantity && newPricePerUnit ? item.quantity * newPricePerUnit : null;
-      }
-
-      if (field === 'quantity' || field === 'price_per_unit') {
-        const qty = field === 'quantity' ? value : item.quantity;
-        const price = field === 'price_per_unit' ? value : item.price_per_unit;
-        updateData.extended_price = qty && price ? qty * price : null;
+        updateData.extended_price = newPricePerUnit != null && mult ? Math.round(mult * newPricePerUnit * 10000) / 10000 : null;
+        updateData.extended_cost = item.cost_per_unit != null && mult ? Math.round(mult * item.cost_per_unit * 10000) / 10000 : null;
       }
 
       scrollPositionRef.current = window.scrollY;
@@ -1624,8 +1668,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         const markupDecimal = (costNum != null && costNum > 0 && priceNum != null)
           ? (priceNum - costNum) / costNum
           : 0;
-        const extendedCost = costNum != null ? costNum * quantity : null;
-        const extendedPrice = priceNum != null ? priceNum * quantity : null;
+        const partLengthFeet = parseLengthToFeet(item.part_length ?? null);
+        const catalogMult = partLengthFeet != null && partLengthFeet > 0 ? partLengthFeet : quantity;
+        const extendedCost = costNum != null ? Math.round(costNum * catalogMult * 10000) / 10000 : null;
+        const extendedPrice = priceNum != null ? Math.round(priceNum * catalogMult * 10000) / 10000 : null;
 
         const { error } = await supabase
           .from('material_items')
@@ -2213,11 +2259,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     try {
       const quantity = parseFloat(newQuantity) || 1;
       const costPerUnit = parseFloat(newCostPerUnit) || null;
-      
+      // For lineal-foot priced items (e.g. metal/Omni), use length in feet × unit price/cost
+      const lengthFeet = parseLengthToFeet(newLength.trim() || null);
+      const addMult = lengthFeet != null && lengthFeet > 0 ? lengthFeet : quantity;
+
       // Use price from Zoho Books if available, otherwise calculate from markup
       let pricePerUnit: number | null = null;
       let markupDecimal = 0;
-      
+
       if (newPricePerUnit) {
         // Price from Zoho Books - use as-is
         pricePerUnit = parseFloat(newPricePerUnit) || null;
@@ -2231,9 +2280,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         markupDecimal = markup / 100;
         pricePerUnit = costPerUnit ? costPerUnit * (1 + markupDecimal) : null;
       }
-      
-      const extendedCost = costPerUnit ? costPerUnit * quantity : null;
-      const extendedPrice = pricePerUnit ? pricePerUnit * quantity : null;
+
+      const extendedCost = costPerUnit ? Math.round(costPerUnit * addMult * 10000) / 10000 : null;
+      const extendedPrice = pricePerUnit ? Math.round(pricePerUnit * addMult * 10000) / 10000 : null;
 
       // Get max order_index for current sheet and category
       const { data: maxData } = await supabase

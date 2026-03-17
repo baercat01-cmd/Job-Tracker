@@ -131,6 +131,8 @@ export function TrimPricingCalculator() {
   const [configName, setConfigName] = useState('');
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [addToJobWorkbook, setAddToJobWorkbook] = useState(false);
+  const [workbookAddQty, setWorkbookAddQty] = useState<string>('1');
+  const [workbookAddColor, setWorkbookAddColor] = useState('');
   const [jobs, setJobs] = useState<any[]>([]);
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([]);
   const [saving, setSaving] = useState(false);
@@ -1796,11 +1798,33 @@ export function TrimPricingCalculator() {
               .limit(1);
             const sheetId = sheets?.[0]?.id;
             if (sheetId) {
+              const { data: maxOrder } = await supabase
+                .from('material_items')
+                .select('order_index')
+                .eq('sheet_id', sheetId)
+                .eq('category', 'Trim')
+                .order('order_index', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              const nextOrderIndex = (maxOrder?.order_index ?? -1) + 1;
+              const qty = Math.max(1, Math.floor(parseFloat(String(workbookAddQty)) || 1));
+              const costPerUnit = Math.round(materialCost * 10000) / 10000;
+              const pricePerUnit = Math.round(sellingPrice * 10000) / 10000;
               const insertPayload: Record<string, unknown> = {
                 sheet_id: sheetId,
                 category: 'Trim',
+                sku: 'CW-CBT10',
                 material_name: configName.trim() || insertedData[0].name,
-                quantity: 1,
+                quantity: qty,
+                color: (workbookAddColor && String(workbookAddColor).trim()) || null,
+                cost_per_unit: costPerUnit,
+                price_per_unit: pricePerUnit,
+                extended_cost: Math.round(costPerUnit * qty * 10000) / 10000,
+                extended_price: Math.round(pricePerUnit * qty * 10000) / 10000,
+                markup_percent: materialCost > 0 ? (sellingPrice - materialCost) / materialCost : null,
+                order_index: nextOrderIndex,
+                status: 'not_ordered',
+                taxable: true,
               };
               const { data: insertedRows, error: itemErr } = await supabase.from('material_items').insert(insertPayload as any).select('id');
               if (itemErr) throw itemErr;
@@ -1850,6 +1874,8 @@ export function TrimPricingCalculator() {
       setConfigName('');
       setSelectedJobId('');
       setAddToJobWorkbook(false);
+      setWorkbookAddQty('1');
+      setWorkbookAddColor('');
       // Reload configs to show the new one
       setTimeout(() => loadSavedConfigs(), 500);
     } catch (error: any) {
@@ -2897,6 +2923,34 @@ export function TrimPricingCalculator() {
                       />
                       Add to job workbook (shop will see drawing in pull form)
                     </label>
+                    {addToJobWorkbook && (
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                        <div>
+                          <Label className="text-white/80 text-xs">Qty</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={workbookAddQty}
+                            onChange={(e) => setWorkbookAddQty(e.target.value)}
+                            placeholder="1"
+                            className="bg-white border-green-700 mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-white/80 text-xs">Color (optional)</Label>
+                          <Input
+                            value={workbookAddColor}
+                            onChange={(e) => setWorkbookAddColor(e.target.value)}
+                            placeholder="e.g. White"
+                            className="bg-white border-green-700 mt-1"
+                          />
+                        </div>
+                        <p className="text-white/60 text-xs col-span-2">
+                          Custom trim will be added with SKU CW-CBT10 and current cost/price from this configuration.
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
