@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { TrimDrawingPreview, getInteriorAngleDeg, type LineSegment } from '@/components/office/TrimDrawingPreview';
+import { TrimDrawingPreview, getInteriorAngleDeg, getCutLengthFromSegments, formatLengthInches, type LineSegment } from '@/components/office/TrimDrawingPreview';
 
 /** Apply new interior angle at bend between segment[index-1] and segment[index]. Updates segment[index].end and translates all later segments. */
 function applyAngleAtBend(segments: LineSegment[], index: number, newInteriorAngleDeg: number): LineSegment[] {
@@ -101,6 +101,9 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
           Back
         </button>
         <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <span className="ml-auto rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">
+          Cut length: {formatLengthInches(getCutLengthFromSegments(segments))} <span className="text-slate-500 font-normal">(total lineal inches including hem)</span>
+        </span>
       </div>
       <div
         ref={containerRef}

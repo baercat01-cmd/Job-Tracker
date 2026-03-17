@@ -2225,12 +2225,11 @@ export function TrimPricingCalculator() {
                   <input
                     type="number"
                     min={0.125}
-                    max={2}
                     step={0.125}
                     value={hemDepthInches}
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
-                      if (!Number.isNaN(v) && v >= 0.125 && v <= 2) setHemDepthInches(v);
+                      if (!Number.isNaN(v) && v >= 0.125) setHemDepthInches(v);
                     }}
                     className="w-14 h-6 text-xs border border-gray-400 rounded px-1 text-center"
                     title="Hem length in inches (default 1/2&quot;)"

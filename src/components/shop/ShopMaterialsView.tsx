@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/collapsible';
 import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck, Building2, FileSpreadsheet, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { TrimDrawingPreview, type LineSegment } from '@/components/office/TrimDrawingPreview';
+import { TrimDrawingPreview, getCutLengthFromTrimConfig, formatLengthInches, type LineSegment } from '@/components/office/TrimDrawingPreview';
 import { TrimDrawingFullScreenView } from '@/components/office/TrimDrawingFullScreenView';
 
 function toNum(v: unknown): number {
@@ -1078,6 +1078,15 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                   {item.material_items.length || '-'}
                                                 </p>
                                               </div>
+                                              {item.material_items.trim_saved_configs?.drawing_segments && (
+                                                <div>
+                                                  <span className="text-muted-foreground">Cut length:</span>
+                                                  <p className="font-medium">
+                                                    {formatLengthInches(getCutLengthFromTrimConfig(item.material_items.trim_saved_configs))}
+                                                    <span className="text-muted-foreground text-xs font-normal block">total lineal in. including hem</span>
+                                                  </p>
+                                                </div>
+                                              )}
                                             </div>
                                           </div>
                                           
@@ -1265,6 +1274,15 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                 <span className="text-muted-foreground">Length:</span>
                                                 <p className="font-medium">{item.material_items.length || '-'}</p>
                                               </div>
+                                              {item.material_items.trim_saved_configs?.drawing_segments && (
+                                                <div>
+                                                  <span className="text-muted-foreground">Cut length:</span>
+                                                  <p className="font-medium">
+                                                    {formatLengthInches(getCutLengthFromTrimConfig(item.material_items.trim_saved_configs))}
+                                                    <span className="text-muted-foreground text-xs font-normal block">total lineal in. including hem</span>
+                                                  </p>
+                                                </div>
+                                              )}
                                             </div>
                                           </div>
                                           <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">

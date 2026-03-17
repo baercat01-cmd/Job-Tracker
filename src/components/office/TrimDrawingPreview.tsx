@@ -15,7 +15,7 @@ export interface LineSegment {
   hemSide?: 'left' | 'right';
 }
 
-function formatLengthInches(n: number): string {
+export function formatLengthInches(n: number): string {
   const rounded = Math.round(n * 16) / 16;
   if (rounded % 1 === 0) return `${rounded}"`;
   const whole = Math.floor(rounded);
@@ -87,13 +87,24 @@ function segmentLengthInches(seg: { start: Point; end: Point }): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/** Total linear inches of trim from drawing segments. */
+/** Total linear inches of trim from drawing segments (excluding hem add-on). */
 export function getTotalInchesFromSegments(segments: LineSegment[]): number {
   if (!segments?.length) return 0;
   return segments.reduce((sum, seg) => sum + segmentLengthInches(seg), 0);
 }
 
-/** Total inches from a trim_saved_config: uses inches array if present, else computes from drawing_segments. */
+/** Default hem depth in inches when not stored on config (matches TrimPricingCalculator default). */
+const DEFAULT_HEM_DEPTH_INCHES = 0.5;
+
+/** Cut length = total lineal inches including hem(s). Each segment with hasHem adds hemDepthInches to the total. */
+export function getCutLengthFromSegments(segments: LineSegment[], hemDepthInches: number = DEFAULT_HEM_DEPTH_INCHES): number {
+  if (!segments?.length) return 0;
+  const segmentTotal = getTotalInchesFromSegments(segments);
+  const hemCount = segments.filter((s) => s.hasHem).length;
+  return segmentTotal + hemCount * Math.max(0.125, hemDepthInches);
+}
+
+/** Total inches from a trim_saved_config: uses inches array if present, else computes from drawing_segments (excludes hem add-on). */
 export function getTotalInchesFromTrimConfig(config: { inches?: unknown; drawing_segments?: unknown } | null): number {
   if (!config) return 0;
   if (config.inches != null) {
@@ -109,6 +120,22 @@ export function getTotalInchesFromTrimConfig(config: { inches?: unknown; drawing
     }, 0);
   }
   return 0;
+}
+
+/** Cut length (total lineal inches including hem) from a trim_saved_config. Uses drawing_segments to sum segment lengths and add hem depth for each segment with hasHem. */
+export function getCutLengthFromTrimConfig(config: { drawing_segments?: unknown } | null, hemDepthInches: number = DEFAULT_HEM_DEPTH_INCHES): number {
+  if (!config?.drawing_segments) return 0;
+  const raw = typeof config.drawing_segments === 'string' ? JSON.parse(config.drawing_segments) : config.drawing_segments;
+  const segs = Array.isArray(raw) ? raw : null;
+  if (!segs?.length) return 0;
+  let total = 0;
+  let hemCount = 0;
+  segs.forEach((seg: any) => {
+    const s = seg?.start && seg?.end ? { start: seg.start, end: seg.end } : null;
+    if (s) total += segmentLengthInches(s);
+    if (seg?.hasHem === true) hemCount += 1;
+  });
+  return total + hemCount * Math.max(0.125, hemDepthInches);
 }
 
 interface TrimDrawingPreviewProps {
@@ -157,11 +184,13 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
     const minY = Math.min(...points.map((p) => p.y));
     const maxX = Math.max(...points.map((p) => p.x));
     const maxY = Math.max(...points.map((p) => p.y));
-    const boxW = maxX - minX + 2 * pad;
-    const boxH = maxY - minY + 2 * pad;
+    // When showing measurements, add margin so labels (drawn off to the side) stay visible and drawing is shrunk
+    const labelMargin = showMeasurements ? 2.5 : 0;
+    const boxW = maxX - minX + 2 * pad + 2 * labelMargin;
+    const boxH = maxY - minY + 2 * pad + 2 * labelMargin;
     const scale = Math.min((width - 2) / boxW, (height - 2) / boxH);
-    const originX = (width - boxW * scale) / 2 + (pad - minX) * scale;
-    const originY = (height - boxH * scale) / 2 + (pad - minY) * scale;
+    const originX = (width - boxW * scale) / 2 + (pad + labelMargin - minX) * scale;
+    const originY = (height - boxH * scale) / 2 + (pad + labelMargin - minY) * scale;
 
     // Plain white background — no grid (match trim calculator export / PDF style)
     ctx.fillStyle = '#ffffff';
@@ -218,7 +247,7 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      // Measurements only (no A, B, C labels) — drawn off to the side of each segment
+      // Measurements only (no A, B, C labels) — drawn off to the side of each segment so all are visible
       segments.forEach((segment, i) => {
         const dx = segment.end.x - segment.start.x;
         const dy = segment.end.y - segment.start.y;

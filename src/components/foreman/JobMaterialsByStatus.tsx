@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Collapsible,
   CollapsibleContent,
@@ -12,9 +13,45 @@ import {
 import { ChevronDown, ChevronRight, Package, CheckCircle2, Check, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
+import { TrimDrawingPreview, getCutLengthFromTrimConfig, formatLengthInches, type LineSegment } from '@/components/office/TrimDrawingPreview';
+import { TrimDrawingFullScreenView } from '@/components/office/TrimDrawingFullScreenView';
+
+function toNum(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') return parseFloat(v) || 0;
+  return 0;
+}
+
+function normalizeDrawingSegments(raw: unknown): LineSegment[] {
+  if (!raw) return [];
+  try {
+    let arr: unknown[] = typeof raw === 'string' ? JSON.parse(raw) : (raw as unknown);
+    if (arr && typeof arr === 'object' && !Array.isArray(arr) && 'segments' in arr) arr = (arr as { segments: unknown[] }).segments;
+    if (!Array.isArray(arr) || arr.length === 0) return [];
+    return arr.map((seg: any, index: number) => ({
+      id: seg.id ?? `seg-${index}`,
+      start: seg.start ? { x: toNum(seg.start.x), y: toNum(seg.start.y) } : { x: 0, y: 0 },
+      end: seg.end ? { x: toNum(seg.end.x), y: toNum(seg.end.y) } : { x: 0, y: 0 },
+      label: seg.label ?? String.fromCharCode(65 + index),
+      hasHem: seg.hasHem === true,
+      hemAtStart: seg.hemAtStart === true,
+      hemSide: seg.hemSide === 'left' || seg.hemSide === 'right' ? seg.hemSide : 'right',
+    }));
+  } catch {
+    return [];
+  }
+}
+
+const TRIM_PREVIEW_SIZE = { width: 88, height: 48 };
 
 /** DB-approved value for "at job site". Must match material_items_status_check constraint. */
 const MATERIAL_STATUS_AT_JOB = 'at_job';
+
+interface TrimConfig {
+  id: string;
+  name: string;
+  drawing_segments: unknown;
+}
 
 interface MaterialItem {
   id: string;
@@ -26,6 +63,9 @@ interface MaterialItem {
   usage: string | null;
   status: string;
   _sheet_name?: string;
+  trim_saved_config_id?: string | null;
+  trim_saved_configs?: TrimConfig | null;
+  quantity_ready_for_job?: number;
 }
 
 interface MaterialBundle {
@@ -46,6 +86,8 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
   const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set());
   const [processingMaterials, setProcessingMaterials] = useState<Set<string>>(new Set());
   const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
+  const [viewingTrimConfig, setViewingTrimConfig] = useState<{ name: string; drawing_segments: unknown } | null>(null);
+  const [partialQtyInput, setPartialQtyInput] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadMaterials();
@@ -112,7 +154,9 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
               length,
               color,
               usage,
-              status
+              status,
+              trim_saved_config_id,
+              quantity_ready_for_job
             )
           )
         `)
@@ -205,7 +249,7 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
 
       const { data: unbundledRows } = await supabase
         .from('material_items')
-        .select('id, sheet_id, material_name, quantity, length, color, usage, status')
+        .select('id, sheet_id, material_name, quantity, length, color, usage, status, trim_saved_config_id, quantity_ready_for_job')
         .in('sheet_id', sheetIds)
         .eq('status', status);
 
@@ -229,9 +273,28 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
         });
       }
 
-      console.log(`✅ Found ${packagesWithStatusMaterials.length} packages and ${sheetGroups.length} sheet groups with ${status} materials`);
+      // Fetch trim configs for all items that have trim_saved_config_id (crew gets same trim drawings as shop)
+      const allItems = [...packagesWithStatusMaterials.flatMap((p) => p.items), ...sheetGroups.flatMap((p) => p.items)];
+      const trimIds = [...new Set(allItems.map((i: MaterialItem) => i.trim_saved_config_id).filter(Boolean))] as string[];
+      const trimConfigMap = new Map<string, TrimConfig>();
+      if (trimIds.length > 0) {
+        const { data: trimConfigs } = await supabase
+          .from('trim_saved_configs')
+          .select('id, name, drawing_segments')
+          .in('id', trimIds);
+        (trimConfigs || []).forEach((c: TrimConfig) => trimConfigMap.set(c.id, c));
+      }
+      const enrichWithTrim = (items: MaterialItem[]): MaterialItem[] =>
+        items.map((i) => ({
+          ...i,
+          trim_saved_configs: i.trim_saved_config_id ? trimConfigMap.get(i.trim_saved_config_id) ?? null : null,
+        }));
+      const packagesEnriched = packagesWithStatusMaterials.map((p) => ({ ...p, items: enrichWithTrim(p.items) }));
+      const sheetGroupsEnriched = sheetGroups.map((p) => ({ ...p, items: enrichWithTrim(p.items) }));
 
-      setPackages([...packagesWithStatusMaterials, ...sheetGroups]);
+      console.log(`✅ Found ${packagesEnriched.length} packages and ${sheetGroupsEnriched.length} sheet groups with ${status} materials`);
+
+      setPackages([...packagesEnriched, ...sheetGroupsEnriched]);
 
       setExpandedPackages(new Set());
     } catch (error: any) {
@@ -336,6 +399,53 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
       }
     }
     void persistInBackground();
+  }
+
+  async function markPartialReady(itemId: string, qtyToMark: number, currentReady: number, totalQty: number) {
+    if (processingMaterials.has(itemId) || qtyToMark <= 0 || currentReady >= totalQty) return;
+    const capped = Math.min(qtyToMark, totalQty - currentReady);
+    setProcessingMaterials((prev) => new Set(prev).add(itemId));
+    setPartialQtyInput((prev) => ({ ...prev, [itemId]: '' }));
+    try {
+      const { error } = await supabase.rpc('mark_material_partial_ready', {
+        p_material_item_id: itemId,
+        p_quantity_to_mark: capped,
+      });
+      if (error) {
+        if (/schema cache|could not find the function/i.test(error.message)) {
+          const newReady = currentReady + capped;
+          const { error: updateErr } = await supabase
+            .from('material_items')
+            .update({
+              quantity_ready_for_job: newReady,
+              ...(newReady >= totalQty ? { status: 'ready_for_job' } : {}),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', itemId);
+          if (updateErr) throw updateErr;
+        } else {
+          throw error;
+        }
+      }
+      toast.success(`Marked ${capped} as ready for job${capped >= totalQty - currentReady ? ' (all remaining)' : ''}.`);
+      loadMaterials();
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (/quantity_ready_for_job|schema cache|could not find the function/i.test(msg)) {
+        toast.error(
+          'Partial "Mark ready" requires a database update. In Supabase SQL Editor run: supabase/migrations/RUN_THIS_FOR_PARTIAL_READY.sql',
+          { duration: 8000 }
+        );
+      } else {
+        toast.error(msg || 'Failed to mark partial ready');
+      }
+    } finally {
+      setProcessingMaterials((prev) => {
+        const n = new Set(prev);
+        n.delete(itemId);
+        return n;
+      });
+    }
   }
 
   if (loading) {
@@ -461,6 +571,44 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                   </div>
                                 </div>
 
+                                {/* Pull-from-shop: show to-pull / ready counts when quantity > 1 (same as shop) */}
+                                {status === 'pull_from_shop' && item.quantity > 1 && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {Math.max(0, item.quantity - (item.quantity_ready_for_job ?? 0))} to pull
+                                    <span className="font-normal"> (of {item.quantity} total)</span>
+                                    {(item.quantity_ready_for_job ?? 0) > 0 && (
+                                      <span className="font-normal"> — {item.quantity_ready_for_job} ready</span>
+                                    )}
+                                  </p>
+                                )}
+
+                                {/* Trim drawing and cut length (same as shop user) */}
+                                {item.trim_saved_configs?.drawing_segments && (
+                                  <div className="mt-2 flex items-center gap-3 flex-wrap">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setViewingTrimConfig({
+                                          name: item.trim_saved_configs!.name || item.material_name,
+                                          drawing_segments: item.trim_saved_configs.drawing_segments,
+                                        });
+                                      }}
+                                      className="rounded border bg-muted/30 hover:bg-muted/50 transition-colors overflow-hidden shrink-0"
+                                      title="View trim drawing"
+                                    >
+                                      <TrimDrawingPreview
+                                        segments={normalizeDrawingSegments(item.trim_saved_configs.drawing_segments)}
+                                        width={TRIM_PREVIEW_SIZE.width}
+                                        height={TRIM_PREVIEW_SIZE.height}
+                                      />
+                                    </button>
+                                    <span className="text-xs text-muted-foreground">
+                                      Cut length: {formatLengthInches(getCutLengthFromTrimConfig(item.trim_saved_configs))}
+                                    </span>
+                                  </div>
+                                )}
+
                                 {isMaterialExpanded && item.usage && (
                                   <div className="mt-2 pt-2 border-t">
                                     <p className="text-xs text-muted-foreground font-medium">Usage:</p>
@@ -471,27 +619,63 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                 )}
                               </div>
 
-                              {/* Right side - Action Button (NOT clickable for expand) */}
-                              <div className="flex-shrink-0">
+                              {/* Right side - Action (partial check-off like shop, or full checkmark) */}
+                              <div className="flex-shrink-0 flex flex-col items-end gap-1">
                                 {status === 'pull_from_shop' && (
-                                  <Button
-                                    size="sm"
-                                    onClick={(e) => {
-                                      console.log('🖱️ CREW Pull from Shop button clicked');
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      updateMaterialStatus(item.id, 'ready_for_job');
-                                    }}
-                                    disabled={processingMaterials.has(item.id)}
-                                    className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
-                                    title="Mark as Ready for Job"
-                                  >
-                                    {processingMaterials.has(item.id) ? (
-                                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                      <CheckCircle2 className="w-5 h-5" />
-                                    )}
-                                  </Button>
+                                  item.quantity > 1 ? (
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        type="number"
+                                        min={1}
+                                        max={Math.max(1, item.quantity - (item.quantity_ready_for_job ?? 0))}
+                                        className="w-14 h-9 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        value={partialQtyInput[item.id] ?? String(Math.max(0, item.quantity - (item.quantity_ready_for_job ?? 0)))}
+                                        onChange={(e) => setPartialQtyInput((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                                        onFocus={(e) => e.currentTarget.select()}
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        disabled={processingMaterials.has(item.id)}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          const ready = item.quantity_ready_for_job ?? 0;
+                                          const total = item.quantity;
+                                          const remaining = total - ready;
+                                          const raw = partialQtyInput[item.id] ?? String(remaining);
+                                          const v = Math.min(Math.max(parseInt(raw, 10) || 0, 1), remaining);
+                                          if (v > 0 && ready < total) markPartialReady(item.id, v, ready, total);
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-700 h-9"
+                                        title="Mark this many as ready for job"
+                                      >
+                                        {processingMaterials.has(item.id) ? (
+                                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                          'Mark ready'
+                                        )}
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        updateMaterialStatus(item.id, 'ready_for_job');
+                                      }}
+                                      disabled={processingMaterials.has(item.id)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
+                                      title="Mark as Ready for Job"
+                                    >
+                                      {processingMaterials.has(item.id) ? (
+                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <CheckCircle2 className="w-5 h-5" />
+                                      )}
+                                    </Button>
+                                  )
                                 )}
                                 {status === 'ready_for_job' && (
                                   <Button
@@ -525,6 +709,14 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
           </Card>
         );
       })}
+
+      {viewingTrimConfig && (
+        <TrimDrawingFullScreenView
+          title={viewingTrimConfig.name}
+          segments={normalizeDrawingSegments(viewingTrimConfig.drawing_segments)}
+          onClose={() => setViewingTrimConfig(null)}
+        />
+      )}
     </div>
   );
 }
