@@ -13,7 +13,7 @@ interface MaterialItem {
   markup_percent?: number;
   taxable?: boolean;
   extended_cost?: number;
-  extended_price?: number;
+  extended_price?: number | string;
   totalPrice?: number;
   totalCost?: number;
 }

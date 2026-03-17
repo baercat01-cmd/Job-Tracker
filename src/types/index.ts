@@ -10,6 +10,8 @@ export interface UserProfile {
   pin_hash?: string | null;
   webauthn_credentials?: any[] | null;
   is_admin?: boolean;
+  /** From Supabase Auth; may contain full_name etc. when profile is augmented from auth. */
+  user_metadata?: { full_name?: string; [key: string]: unknown } | null;
 }
 
 export interface Component {
