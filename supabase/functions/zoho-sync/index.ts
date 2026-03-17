@@ -31,11 +31,28 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // Read the request body ONCE and use it throughout
-    const requestBody = await req.json();
-    const { action, grantCode, clientId, clientSecret, jobName, jobId, materialItems, notes, orderType } = requestBody;
+    // Read the request body ONCE and use it throughout (allow empty body for GET-style calls)
+    let requestBody: Record<string, unknown> = {};
+    try {
+      const raw = await req.json();
+      if (raw && typeof raw === 'object') requestBody = raw as Record<string, unknown>;
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid or missing request body', details: 'Request body must be valid JSON.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const { action, grantCode, clientId, clientSecret, jobName, jobId, materialItems, notes, orderType, syncPage: syncPageParam } = requestBody;
 
     console.log('📡 Zoho sync request:', action);
+
+    // Warm-up: return immediately so next request (sync_materials page 1) hits a warm instance and avoids cold-start timeout
+    if (action === 'warm') {
+      return new Response(
+        JSON.stringify({ ok: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Handle grant code exchange (no settings needed yet)
     if (action === 'exchange_grant_code') {
@@ -120,30 +137,95 @@ serve(async (req) => {
     const accessToken = await getValidAccessToken(settings, supabase);
 
     if (action === 'sync_materials') {
-      console.log('🔄 Starting materials sync from Zoho Books...');
-      
-      // Update sync status
-      await supabase
-        .from('zoho_integration_settings')
-        .update({ sync_status: 'syncing', sync_error: null })
-        .eq('id', settings.id);
+      // Always use chunked mode to avoid timeout; default to page 1 if syncPage missing
+      const pageNum = syncPageParam != null ? Number(syncPageParam) : 1;
+      const syncPage = Number.isFinite(pageNum) && pageNum >= 1 ? pageNum : 1;
+      const isChunked = true;
+
+      console.log('🔄 Chunked materials sync, page', syncPage);
 
       try {
+        // --- CHUNKED MODE: minimal work per request to stay under function timeout ---
+        if (isChunked) {
+          const accountIdToName = new Map<string, string>();
+          const ITEMS_PER_PAGE = 10;
+          const { items, hasMore } = await fetchZohoItemsPage(accessToken, settings.countywide_org_id, syncPage, ITEMS_PER_PAGE);
+          const now = new Date().toISOString();
+          const rows: any[] = [];
+          let itemsSkipped = 0;
+          const skippedItems: string[] = [];
+
+          for (const item of items) {
+            const sku =
+              item.sku || item.item_id || item.product_id || item.id || item.item_code || item.code || item.part_number;
+            if (!sku || sku.trim() === '') {
+              itemsSkipped++;
+              skippedItems.push(item.name || 'Unknown');
+              continue;
+            }
+            const unitPrice = parseFloat(item.rate || item.selling_price || item.sales_rate || item.price || '0');
+            const purchaseCost = parseFloat(item.purchase_rate || item.purchase_cost || item.cost_price || item.cost || '0');
+            rows.push({
+              sku,
+              material_name: item.name || 'Unknown Material',
+              category: getCategoryFromZohoItem(item, accountIdToName),
+              unit_price: unitPrice,
+              purchase_cost: purchaseCost,
+              part_length: getPartLengthFromZohoItem(item),
+              raw_metadata: item,
+              updated_at: now,
+              created_at: now,
+            });
+          }
+
+          let itemsSynced = 0;
+          if (rows.length > 0) {
+            const { error: uErr } = await supabase
+              .from('materials_catalog')
+              .upsert(rows, { onConflict: 'sku' });
+            if (!uErr) itemsSynced = rows.length;
+          }
+
+          if (!hasMore) {
+            await supabase
+              .from('zoho_integration_settings')
+              .update({ sync_status: 'completed', last_sync_at: new Date().toISOString() })
+              .eq('id', settings.id);
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              hasMore,
+              nextPage: hasMore ? syncPage + 1 : undefined,
+              message: hasMore
+                ? `Synced page ${syncPage} (${itemsSynced} materials). More pages to go...`
+                : `Synced ${itemsSynced} materials from Zoho Books (${itemsSkipped} skipped)`,
+              vendorsSynced: 0,
+              itemsSynced,
+              itemsInserted: itemsSynced,
+              itemsUpdated: 0,
+              itemsSkipped,
+              skippedItems,
+              insertedItems: [],
+              updatedItems: [],
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // --- FULL SYNC (legacy; may timeout on very large catalogs) ---
         console.log('📡 Fetching vendors from Zoho Books...');
-        // Fetch vendors from Zoho
         const vendors = await fetchZohoVendors(accessToken, settings.countywide_org_id);
         console.log(`✅ Fetched ${vendors.length} vendors from Zoho`);
 
         console.log('📡 Fetching items from Zoho Books...');
-        // Fetch items (materials) from Zoho
         const items = await fetchZohoItems(accessToken, settings.countywide_org_id);
         console.log(`✅ Fetched ${items.length} items from Zoho`);
 
-        // Fetch chart of accounts so we can resolve account_id -> account_name for category
         const accountIdToName = await fetchChartOfAccounts(accessToken, settings.countywide_org_id);
         console.log(`✅ Loaded ${accountIdToName.size} accounts for category lookup`);
 
-        // Sync vendors to database
         let vendorsSynced = 0;
         for (const vendor of vendors) {
           const { error } = await supabase
@@ -365,17 +447,26 @@ serve(async (req) => {
 
       } catch (syncError: any) {
         console.error('❌ Sync error:', syncError);
-        
-        // Update error status
+        const details = syncError?.message || String(syncError);
+
+        // Update error status so UI can show it
         await supabase
           .from('zoho_integration_settings')
           .update({
             sync_status: 'error',
-            sync_error: syncError.message,
+            sync_error: details,
           })
           .eq('id', settings.id);
 
-        throw syncError;
+        // Return a proper JSON response so the client always gets a parseable body (no rethrow)
+        const isAuthError = /token|refresh|unauthorized|invalid_grant|expired|credentials/i.test(details);
+        const userMessage = isAuthError
+          ? 'Zoho authentication failed. Check your Zoho Books credentials and re-authorize in Settings.'
+          : 'Zoho sync failed';
+        return new Response(
+          JSON.stringify({ error: userMessage, details }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     }
 
@@ -853,11 +944,11 @@ async function fetchZohoVendors(accessToken: string, orgId: string): Promise<any
 }
 
 /** Fetch chart of accounts and return map of account_id -> account_name for category lookup. */
-async function fetchChartOfAccounts(accessToken: string, orgId: string): Promise<Map<string, string>> {
+async function fetchChartOfAccounts(accessToken: string, orgId: string, maxPages = 50): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   let page = 1;
   let hasMore = true;
-  while (hasMore) {
+  while (hasMore && page <= maxPages) {
     const url = `https://www.zohoapis.com/books/v3/chartofaccounts?organization_id=${orgId}&page=${page}&per_page=200`;
     const res = await fetch(url, {
       headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}` },
@@ -875,7 +966,6 @@ async function fetchChartOfAccounts(accessToken: string, orgId: string): Promise
     }
     hasMore = data.page_context?.has_more_page === true;
     page++;
-    if (page > 50) break;
   }
   return map;
 }
@@ -949,65 +1039,51 @@ async function fetchZohoItemDetails(accessToken: string, orgId: string, itemId: 
   return data.item || null;
 }
 
+/** Fetch a single page of items from Zoho Books. Used for chunked sync to avoid timeout. */
+async function fetchZohoItemsPage(
+  accessToken: string,
+  orgId: string,
+  page: number,
+  perPage = 100
+): Promise<{ items: any[]; hasMore: boolean }> {
+  const url = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&page=${page}&per_page=${perPage}`;
+  const response = await fetch(url, {
+    headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}` },
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.code === 2 || errorJson.message?.includes('organization_id')) {
+        throw new Error('Invalid Organization ID. Please check your Zoho Books Organization ID in Settings.');
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('Organization ID')) throw e;
+    }
+    throw new Error(`Failed to fetch Zoho items: ${errorText}`);
+  }
+  const data = await response.json();
+  let pageItems = data.items;
+  if (!Array.isArray(pageItems)) {
+    pageItems = data.item != null ? (Array.isArray(data.item) ? data.item : [data.item]) : [];
+  }
+  const hasMore = !!data.page_context?.has_more_page;
+  return { items: pageItems, hasMore };
+}
+
 async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]> {
   console.log('🌐 Fetching all items from Zoho Books with pagination...');
-  
   let allItems: any[] = [];
   let page = 1;
   let hasMorePages = true;
-  const perPage = 200; // Zoho Books max per page
-  
-  // Fetch all pages
   while (hasMorePages) {
-    const url = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&page=${page}&per_page=${perPage}`;
-    
-    console.log(`📄 Fetching page ${page}...`);
-    
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Zoho-oauthtoken ${accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Zoho API Error Response:', errorText);
-      
-      // Parse error to provide helpful message
-      try {
-        const errorJson = JSON.parse(errorText);
-        if (errorJson.code === 2 || errorJson.message?.includes('organization_id')) {
-          throw new Error('Invalid Organization ID. Please check your Zoho Books Organization ID in Settings.');
-        }
-      } catch (e) {
-        // If parsing fails, use original error
-      }
-      
-      throw new Error(`Failed to fetch Zoho items: ${errorText}`);
-    }
-
-    const data = await response.json();
-    const pageItems = data.items || [];
-    
-    console.log(`📦 Page ${page}: ${pageItems.length} items`);
+    const { items: pageItems, hasMore } = await fetchZohoItemsPage(accessToken, orgId, page);
     allItems = allItems.concat(pageItems);
-    
-    // Check if there are more pages
-    hasMorePages = data.page_context?.has_more_page || false;
+    hasMorePages = hasMore;
     page++;
-    
-    // Safety limit to prevent infinite loops
-    if (page > 50) {
-      console.warn('⚠️ Reached safety limit of 50 pages. Stopping pagination.');
-      break;
-    }
+    if (page > 50) break;
   }
-  
   console.log(`📦 Fetched ${allItems.length} total items from ${page - 1} page(s)`);
-  console.log(`✅ Using list API data with pricing information`);
-  
-  // The list API should include pricing - no need to fetch individual details for 800+ items
-  // This prevents timeout issues
   return allItems;
 }
 

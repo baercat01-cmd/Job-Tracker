@@ -193,39 +193,75 @@ export function MaterialInventory() {
 
   async function syncMaterialsFromZoho() {
     setSyncingZoho(true);
-    
+
     try {
-      console.log('🔄 Starting Zoho Books material sync...');
-      
-      const { data, error } = await supabase.functions.invoke('zoho-sync', {
-        body: { action: 'sync_materials' },
-      });
+      console.log('🔄 Starting Zoho Books material sync (chunked)...');
+      await supabase.functions.invoke('zoho-sync', { body: { action: 'warm' } });
+      let page = 1;
+      let data: any = null;
+      let totalSynced = 0;
 
-      if (error) {
-        let message = error.message;
-        if (error instanceof FunctionsHttpError && error.context) {
-          try {
-            const body = await error.context.json();
-            if (body?.error) message = body.details ? `${body.error}: ${body.details}` : body.error;
-          } catch {
-            try { message = await error.context.text() || message; } catch { /* keep message */ }
+      do {
+        const { data: pageData, error } = await supabase.functions.invoke('zoho-sync', {
+          body: { action: 'sync_materials', syncPage: page },
+        });
+
+        if (error) {
+          let message = error.message;
+          if (error instanceof FunctionsHttpError && error.context) {
+            try {
+              const raw = await error.context.text();
+              if (raw) {
+                try {
+                  const body = JSON.parse(raw);
+                  if (body?.error) message = body.details ? `${body.error}: ${body.details}` : body.error;
+                  else message = raw || message;
+                } catch {
+                  message = raw || message;
+                }
+              }
+            } catch {
+              /* keep message */
+            }
           }
+          throw new Error(message);
         }
-        throw new Error(message);
-      }
 
+        data = pageData;
+        totalSynced += data?.itemsSynced ?? 0;
+
+        if (data?.hasMore && data?.nextPage) {
+          page = data.nextPage;
+          toast.loading(`Syncing materials... (page ${page})`, { id: 'zoho-sync' });
+        }
+      } while (data?.hasMore && data?.nextPage);
+
+      toast.dismiss('zoho-sync');
       console.log('✅ Sync completed:', data);
-      
+
       setSyncResults(data);
       setShowSyncResults(true);
-      
-      // Reload materials to show updated data
+
       await loadMaterials();
-      
-      toast.success(`✅ Synced ${data.itemsSynced || 0} materials from Zoho Books`);
+
+      toast.success(`✅ Synced ${totalSynced} materials from Zoho Books`);
     } catch (error: any) {
       console.error('❌ Sync error:', error);
-      toast.error(`Failed to sync materials: ${error?.message || 'Unknown error'}`);
+      let msg = error?.message || 'Unknown error';
+      const isGeneric = /non-2xx|status code/i.test(msg);
+      if (isGeneric) {
+        try {
+          const { data: zohoSettings } = await supabase
+            .from('zoho_integration_settings')
+            .select('sync_error')
+            .limit(1)
+            .maybeSingle();
+          if (zohoSettings?.sync_error) msg = zohoSettings.sync_error;
+        } catch {
+          /* ignore */
+        }
+      }
+      toast.error(`Failed to sync materials: ${msg}`, { duration: 8000 });
     } finally {
       setSyncingZoho(false);
     }

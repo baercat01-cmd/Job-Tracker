@@ -8,8 +8,55 @@ DROP FUNCTION IF EXISTS public.update_customer_portal_link CASCADE;
 DROP FUNCTION IF EXISTS public.get_customer_portal_link_by_job CASCADE;
 DROP FUNCTION IF EXISTS public.get_customer_portal_access_by_token CASCADE;
 
--- Create: insert a new portal link or update if exists (runs with definer rights, bypasses RLS)
-CREATE FUNCTION public.create_customer_portal_link(
+-- Get: return the portal link row for a job (SECURITY DEFINER so office always gets full row including visibility)
+CREATE OR REPLACE FUNCTION public.get_customer_portal_link_by_job(p_job_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT to_jsonb(r) FROM (
+    SELECT id, job_id, customer_identifier, access_token, customer_name, customer_email, customer_phone,
+           is_active, expires_at, last_accessed_at, created_by, created_at, updated_at,
+           show_proposal, show_payments, show_schedule, show_documents, show_photos,
+           show_financial_summary, COALESCE(show_line_item_prices, false) AS show_line_item_prices,
+           custom_message
+    FROM customer_portal_access
+    WHERE job_id = p_job_id
+    ORDER BY updated_at DESC NULLS LAST, created_at DESC
+    LIMIT 1
+  ) r;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_customer_portal_link_by_job(uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.get_customer_portal_link_by_job(uuid) TO authenticated;
+COMMENT ON FUNCTION public.get_customer_portal_link_by_job(uuid) IS 'Return the portal link for a job with full visibility columns; used so office UI does not reset toggles on reload.';
+
+-- Get by token: used by customer portal so visibility settings always reflect what office saved (SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION public.get_customer_portal_access_by_token(p_access_token text)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT to_jsonb(r) FROM (
+    SELECT id, job_id, customer_identifier, access_token, customer_name, customer_email, customer_phone,
+           is_active, expires_at, last_accessed_at, created_by, created_at, updated_at,
+           show_proposal, show_payments, show_schedule, show_documents, show_photos,
+           show_financial_summary, COALESCE(show_line_item_prices, false) AS show_line_item_prices,
+           custom_message
+    FROM customer_portal_access
+    WHERE access_token = p_access_token AND is_active = true
+    LIMIT 1
+  ) r;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_customer_portal_access_by_token(text) TO anon;
+GRANT EXECUTE ON FUNCTION public.get_customer_portal_access_by_token(text) TO authenticated;
+COMMENT ON FUNCTION public.get_customer_portal_access_by_token(text) IS 'Return portal access row by token so customer portal always gets current visibility settings.';
+
+-- Create: insert a new portal link (runs with definer rights, bypasses RLS)
+CREATE OR REPLACE FUNCTION public.create_customer_portal_link(
   p_job_id uuid,
   p_customer_identifier text,
   p_access_token text,
@@ -25,8 +72,8 @@ CREATE FUNCTION public.create_customer_portal_link(
   p_show_documents boolean DEFAULT true,
   p_show_photos boolean DEFAULT true,
   p_show_financial_summary boolean DEFAULT true,
-  p_custom_message text DEFAULT null,
-  p_show_line_item_prices boolean DEFAULT false
+  p_show_line_item_prices boolean DEFAULT false,
+  p_custom_message text DEFAULT null
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -40,13 +87,13 @@ BEGIN
   INSERT INTO public.customer_portal_access (
     job_id, customer_identifier, access_token, customer_name, customer_email, customer_phone,
     is_active, expires_at, created_by,
-    show_proposal, show_payments, show_schedule, show_documents, show_photos, show_financial_summary,
-    custom_message, show_line_item_prices, updated_at
+    show_proposal, show_payments, show_schedule, show_documents, show_photos, show_financial_summary, show_line_item_prices,
+    custom_message, updated_at
   ) VALUES (
     p_job_id, p_customer_identifier, p_access_token, p_customer_name, p_customer_email, p_customer_phone,
     p_is_active, p_expires_at, p_created_by,
-    p_show_proposal, p_show_payments, p_show_schedule, p_show_documents, p_show_photos, p_show_financial_summary,
-    p_custom_message, p_show_line_item_prices, now()
+    p_show_proposal, p_show_payments, p_show_schedule, p_show_documents, p_show_photos, p_show_financial_summary, coalesce(p_show_line_item_prices, false),
+    p_custom_message, now()
   )
   ON CONFLICT (job_id, customer_identifier)
   DO UPDATE SET
@@ -86,8 +133,8 @@ CREATE FUNCTION public.update_customer_portal_link(
   p_show_documents boolean,
   p_show_photos boolean,
   p_show_financial_summary boolean,
-  p_custom_message text,
-  p_show_line_item_prices boolean
+  p_show_line_item_prices boolean DEFAULT false,
+  p_custom_message text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -111,130 +158,12 @@ BEGIN
     show_documents = p_show_documents,
     show_photos = p_show_photos,
     show_financial_summary = p_show_financial_summary,
+    show_line_item_prices = coalesce(p_show_line_item_prices, false),
     custom_message = p_custom_message,
-    show_line_item_prices = p_show_line_item_prices,
     updated_at = now()
   WHERE id = p_id
   RETURNING to_jsonb(customer_portal_access.*) INTO v_row;
   RETURN v_row;
-END;
-$$;
-
--- Get link by job ID
-CREATE FUNCTION public.get_customer_portal_link_by_job(p_job_id uuid)
-RETURNS TABLE (
-  id uuid,
-  job_id uuid,
-  access_token text,
-  customer_name text,
-  customer_email text,
-  customer_phone text,
-  customer_identifier text,
-  is_active boolean,
-  expires_at timestamptz,
-  last_accessed_at timestamptz,
-  created_by uuid,
-  created_at timestamptz,
-  updated_at timestamptz,
-  show_proposal boolean,
-  show_payments boolean,
-  show_schedule boolean,
-  show_documents boolean,
-  show_photos boolean,
-  show_financial_summary boolean,
-  custom_message text,
-  show_line_item_prices boolean
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    cpa.id,
-    cpa.job_id,
-    cpa.access_token,
-    cpa.customer_name,
-    cpa.customer_email,
-    cpa.customer_phone,
-    cpa.customer_identifier,
-    cpa.is_active,
-    cpa.expires_at,
-    cpa.last_accessed_at,
-    cpa.created_by,
-    cpa.created_at,
-    cpa.updated_at,
-    cpa.show_proposal,
-    cpa.show_payments,
-    cpa.show_schedule,
-    cpa.show_documents,
-    cpa.show_photos,
-    cpa.show_financial_summary,
-    cpa.custom_message,
-    cpa.show_line_item_prices
-  FROM public.customer_portal_access cpa
-  WHERE cpa.job_id = p_job_id
-  ORDER BY cpa.created_at DESC
-  LIMIT 1;
-END;
-$$;
-
--- Get access by token
-CREATE FUNCTION public.get_customer_portal_access_by_token(p_access_token text)
-RETURNS TABLE (
-  id uuid,
-  job_id uuid,
-  access_token text,
-  customer_name text,
-  customer_email text,
-  customer_phone text,
-  customer_identifier text,
-  is_active boolean,
-  expires_at timestamptz,
-  last_accessed_at timestamptz,
-  created_by uuid,
-  created_at timestamptz,
-  updated_at timestamptz,
-  show_proposal boolean,
-  show_payments boolean,
-  show_schedule boolean,
-  show_documents boolean,
-  show_photos boolean,
-  show_financial_summary boolean,
-  custom_message text,
-  show_line_item_prices boolean
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    cpa.id,
-    cpa.job_id,
-    cpa.access_token,
-    cpa.customer_name,
-    cpa.customer_email,
-    cpa.customer_phone,
-    cpa.customer_identifier,
-    cpa.is_active,
-    cpa.expires_at,
-    cpa.last_accessed_at,
-    cpa.created_by,
-    cpa.created_at,
-    cpa.updated_at,
-    cpa.show_proposal,
-    cpa.show_payments,
-    cpa.show_schedule,
-    cpa.show_documents,
-    cpa.show_photos,
-    cpa.show_financial_summary,
-    cpa.custom_message,
-    cpa.show_line_item_prices
-  FROM public.customer_portal_access cpa
-  WHERE cpa.access_token = p_access_token;
 END;
 $$;
 

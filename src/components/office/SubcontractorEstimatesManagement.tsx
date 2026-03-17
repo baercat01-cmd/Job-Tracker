@@ -36,6 +36,8 @@ import {
   Users,
   Percent,
   Edit,
+  Plus,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -102,9 +104,11 @@ interface SubcontractorEstimatesManagementProps {
   jobId?: string;
   quoteId?: string;
   onClose?: () => void;
+  /** When proposal dropdown changes, notify parent so Proposal & Materials can stay in sync. */
+  onProposalChange?: (quoteId: string | null) => void;
 }
 
-export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: SubcontractorEstimatesManagementProps) {
+export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onProposalChange }: SubcontractorEstimatesManagementProps) {
   const { profile } = useAuth();
   const [estimates, setEstimates] = useState<SubcontractorEstimate[]>([]);
   const [invoices, setInvoices] = useState<SubcontractorInvoice[]>([]);
@@ -131,6 +135,12 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
   const [isDraggingEstimate, setIsDraggingEstimate] = useState(false);
   const [isDraggingInvoice, setIsDraggingInvoice] = useState(false);
   const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set());
+  const [jobQuotes, setJobQuotes] = useState<{ id: string; proposal_number?: string; quote_number?: string }[]>([]);
+  const [proposalQuoteId, setProposalQuoteId] = useState<string | null>(quoteId || null);
+
+  useEffect(() => {
+    if (quoteId) setProposalQuoteId(quoteId);
+  }, [quoteId]);
 
   useEffect(() => {
     loadData();
@@ -158,12 +168,38 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
     };
   }, [jobId, quoteId]);
 
+  async function loadJobQuotes() {
+    if (!jobId) return;
+    try {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('id, proposal_number, quote_number')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const raw = data || [];
+      // Same order as Proposal & Materials and JobFinancials: highest proposal number first (e.g. 26006-3 before 26006-2)
+      const quotes = [...raw].sort((a: any, b: any) => {
+        const na = (a.proposal_number || a.quote_number || '').toString();
+        const nb = (b.proposal_number || b.quote_number || '').toString();
+        return nb.localeCompare(na, undefined, { numeric: true });
+      });
+      setJobQuotes(quotes);
+      if (quotes.length > 0 && !quoteId) {
+        setProposalQuoteId((prev) => (prev && quotes.some((q: any) => q.id === prev) ? prev : quotes[0].id));
+      }
+    } catch (error: any) {
+      console.error('Error loading job quotes:', error);
+    }
+  }
+
   async function loadData() {
     setLoading(true);
     await Promise.all([
       loadEstimates(),
       loadInvoices(),
       loadSubcontractors(),
+      jobId ? loadJobQuotes() : Promise.resolve(),
     ]);
     setLoading(false);
   }
@@ -206,6 +242,40 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
       setEstimates(data || []);
     } catch (error: any) {
       console.error('Error loading estimates:', error);
+    }
+  }
+
+  async function addToProposal(estimateId: string) {
+    if (!proposalQuoteId) {
+      toast.error('Select a proposal above first');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimates')
+        .update({ quote_id: proposalQuoteId })
+        .eq('id', estimateId);
+      if (error) throw error;
+      toast.success('Added to proposal');
+      loadEstimates();
+    } catch (error: any) {
+      console.error('Error adding to proposal:', error);
+      toast.error('Failed to add to proposal');
+    }
+  }
+
+  async function removeFromProposal(estimateId: string) {
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimates')
+        .update({ quote_id: null })
+        .eq('id', estimateId);
+      if (error) throw error;
+      toast.success('Removed from proposal');
+      loadEstimates();
+    } catch (error: any) {
+      console.error('Error removing from proposal:', error);
+      toast.error('Failed to remove from proposal');
     }
   }
 
@@ -732,6 +802,33 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
       {/* Estimates Tab */}
       {activeTab === 'estimates' && (
         <div className="space-y-2">
+          {jobId && jobQuotes.length > 0 && (
+            <div className="flex items-center gap-2 pb-2 border-b">
+              <Label className="text-sm font-medium shrink-0">Proposal:</Label>
+              <Select
+                value={proposalQuoteId || ''}
+                onValueChange={(v) => {
+                  const next = v || null;
+                  setProposalQuoteId(next);
+                  onProposalChange?.(next);
+                }}
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Select proposal" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobQuotes.map((q) => (
+                    <SelectItem key={q.id} value={q.id}>
+                      #{q.proposal_number || q.quote_number || q.id.slice(0, 8)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                Add or remove subcontractors below for this proposal.
+              </span>
+            </div>
+          )}
           {estimates.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -793,6 +890,11 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                               {(estimate.markup_percent || 0).toFixed(1)}% markup
                             </Badge>
                           )}
+                          {proposalQuoteId && estimate.quote_id === proposalQuoteId && (
+                            <Badge className="bg-primary/90 text-white ml-1">
+                              In proposal
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {new Date(estimate.uploaded_at || estimate.created_at).toLocaleDateString()}
@@ -801,6 +903,35 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                       {getStatusBadge(estimate.extraction_status)}
                     </div>
                     <div className="flex items-center gap-3">
+                      {proposalQuoteId && (
+                        estimate.quote_id === proposalQuoteId ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFromProposal(estimate.id);
+                            }}
+                            title="Remove from proposal"
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            Remove from proposal
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addToProposal(estimate.id);
+                            }}
+                            title="Add to proposal"
+                          >
+                            <Plus className="w-4 h-4 mr-1" />
+                            Add to proposal
+                          </Button>
+                        )
+                      )}
                       <div className="text-right">
                         {!hasLineItems ? (
                           <div className="flex items-center gap-2 text-xs text-slate-600 mb-1 justify-end">

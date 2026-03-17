@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, Building2, Calendar, DollarSign, FileText, Image, Settings } from 'lucide-react';
+import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, EyeOff, Building2, Calendar, DollarSign, FileText, Image, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { loadViewerLinksForJob } from '@/lib/viewer-links';
 import { toast } from 'sonner';
@@ -39,15 +39,29 @@ interface CustomerPortalLink {
   custom_message: string | null;
 }
 
-// Explicit column list omitting show_line_item_prices so app works when PostgREST schema cache is stale (PGRST204)
+// Full select including show_line_item_prices (use fallback if column not in schema yet)
 const CUSTOMER_PORTAL_ACCESS_SELECT =
+  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,custom_message';
+// Fallback when show_line_item_prices column is missing (PGRST204 / migration not run)
+const CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
 
 interface CustomerPortalManagementProps {
   job: Job;
+  /** Job id used for all portal link operations. When provided (e.g. JobsView detailDialogJobId), this is the single source of truth so the link is always for the job the user opened. */
+  portalJobId?: string | null;
+  /** Called at click time when creating a link; returns the current dialog job id so the link is never created for a stale job. */
+  getPortalJobId?: () => string | null;
 }
 
-export function CustomerPortalManagement({ job }: CustomerPortalManagementProps) {
+export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: CustomerPortalManagementProps) {
+  // Job id for loading/display: use portalJobId when provided, otherwise job.id.
+  const jobId = portalJobId ?? job.id;
+
+  // Ref updated every render: the job id we are currently showing. Used when creating a link so we always create for THIS job (avoids wrong-job link from stale closures).
+  const createLinkJobIdRef = useRef<string>(job.id);
+  createLinkJobIdRef.current = job.id;
+
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [portalLinks, setPortalLinks] = useState<CustomerPortalLink[]>([]);
@@ -55,6 +69,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [selectedLink, setSelectedLink] = useState<CustomerPortalLink | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
 
   // Form state - Start empty, will be populated from job/contacts
   const [customerName, setCustomerName] = useState('');
@@ -78,43 +93,104 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewSettings, setPreviewSettings] = useState<any>(null);
 
-  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  // Proposal line items visibility (for "Hide from customer portal" toggles)
+  const [proposalLineItems, setProposalLineItems] = useState<{ rows: Array<{ id: string; description?: string; category?: string; sheet_id?: string; items: Array<{ id: string; description?: string; hide_from_customer?: boolean }> }> }>({ rows: [] });
+  const [proposalLineItemsLoading, setProposalLineItemsLoading] = useState(false);
 
+  // Mount once — jobId is frozen, so these never need to re-run
   useEffect(() => {
+    console.log(`[PortalMgmt] Mounted for job: "${job.name}" id=${jobId}`);
     loadPortalLinks();
     loadCustomerInfo();
-    setPreviewJobs([]);
-  }, [job.id]);
+  }, []);
 
-  // When no portal links exist, set pending token for new link
-  useEffect(() => {
-    if (loading || portalLinks.length > 0 || !customerName?.trim()) return;
-    setPendingToken((t) => t || crypto.randomUUID().replace(/-/g, ''));
-  }, [loading, portalLinks.length, customerName, job.id]);
-
-  // Load preview data whenever we have customer name so the portal page can show the customer view
+  // Load preview data whenever customer name is filled
   useEffect(() => {
     if (loading || !customerName?.trim()) return;
     loadPreviewData(false);
-  }, [loading, customerName, job.id]);
+  }, [loading, customerName]);
 
-  // When we have an existing portal link for this job, sync sidebar form from it
+  // When a saved link is found, sync the form from it
   useEffect(() => {
-    const link = portalLinks.find(l => l.job_id === job.id);
+    const link = portalLinks.find(l => l.job_id === jobId);
     if (!link) return;
-    setCustomerName(link.customer_name);
+    setCustomerName(link.customer_name ?? '');
     setCustomerEmail(link.customer_email || '');
     setCustomerPhone(link.customer_phone || '');
-    setShowProposal(link.show_proposal);
-    setShowPayments(link.show_payments);
-    setShowSchedule(link.show_schedule);
-    setShowDocuments(link.show_documents);
-    setShowPhotos(link.show_photos);
-    setShowFinancialSummary(link.show_financial_summary);
-    setShowLineItemPrices(link.show_line_item_prices ?? false);
+    setShowProposal(link.show_proposal === true);
+    setShowPayments(link.show_payments === true);
+    setShowSchedule(link.show_schedule === true);
+    setShowDocuments(link.show_documents === true);
+    setShowPhotos(link.show_photos === true);
+    setShowFinancialSummary(link.show_financial_summary === true);
+    setShowLineItemPrices(link.show_line_item_prices === true);
     setCustomMessage(link.custom_message || '');
     setExpiresInDays(link.expires_at ? '' : '');
-  }, [portalLinks, job.id]);
+  }, [portalLinks]);
+
+  useEffect(() => {
+    loadProposalLineItems();
+  }, []);
+
+  async function loadProposalLineItems() {
+    setProposalLineItemsLoading(true);
+    try {
+      const { data: quotes } = await supabase
+        .from('quotes')
+        .select('id')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false });
+      const quoteId = (quotes && quotes[0]) ? quotes[0].id : null;
+      if (!quoteId) {
+        setProposalLineItems({ rows: [] });
+        return;
+      }
+      const [quoteRows, jobRows] = await Promise.all([
+        supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('quote_id', quoteId).order('order_index'),
+        supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
+      ]);
+      const quoteRowIds = new Set((quoteRows.data || []).map((r: any) => r.id));
+      const jobOnlyRows = (jobRows.data || []).filter((r: any) => !quoteRowIds.has(r.id));
+      const allRows = [...(quoteRows.data || []), ...jobOnlyRows].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      const rowsWithItems = allRows.map((row: any) => ({
+        id: row.id,
+        description: row.description || row.category,
+        category: row.category,
+        sheet_id: row.sheet_id,
+        items: ((row.custom_financial_row_items || []) as any[])
+          .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+          .map((i: any) => ({ id: i.id, description: i.description, hide_from_customer: !!i.hide_from_customer })),
+      }));
+      setProposalLineItems({ rows: rowsWithItems });
+    } catch (e) {
+      console.error('Load proposal line items:', e);
+      setProposalLineItems({ rows: [] });
+    } finally {
+      setProposalLineItemsLoading(false);
+    }
+  }
+
+  async function setLineItemVisibleToCustomer(lineItemId: string, visible: boolean) {
+    try {
+      const { error } = await supabase
+        .from('custom_financial_row_items')
+        .update({ hide_from_customer: !visible })
+        .eq('id', lineItemId);
+      if (error) throw error;
+      setProposalLineItems((prev) => ({
+        rows: prev.rows.map((row) => ({
+          ...row,
+          items: row.items.map((it) =>
+            it.id === lineItemId ? { ...it, hide_from_customer: !visible } : it
+          ),
+        })),
+      }));
+      toast.success(visible ? 'Line item will show in portal' : 'Line item hidden from portal');
+    } catch (e: any) {
+      console.error('Update line item visibility:', e);
+      toast.error(e?.message || 'Failed to update');
+    }
+  }
 
   async function loadCustomerInfo() {
     try {
@@ -136,7 +212,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const { data: contactData, error: contactError } = await supabase
         .from('contacts')
         .select('*')
-        .eq('job_id', job.id)
+        .eq('job_id', jobId)
         .eq('category', 'customer')
         .maybeSingle();
 
@@ -161,7 +237,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const { data: quoteData, error: quoteError } = await supabase
         .from('quotes')
         .select('customer_name, customer_email, customer_phone')
-        .eq('job_id', job.id)
+        .eq('job_id', jobId)
         .maybeSingle();
 
       if (quoteError) {
@@ -200,157 +276,53 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     }
   }
 
-  /** When no portal link exists, create one with defaults so the copy link is always valid. */
-  async function ensureOnePortalLink(): Promise<boolean> {
-    const jobEmail = (job as { customer_email?: string | null }).customer_email;
-    if (jobEmail && jobEmail.trim()) {
-      const token = generateAccessToken();
-      const payload = {
-        job_id: job.id,
-        customer_identifier: jobEmail.trim().toLowerCase(),
-        access_token: token,
-        customer_name: (job.client_name || '').trim() || 'Customer',
-        customer_email: jobEmail.trim(),
-        customer_phone: (job as { customer_phone?: string | null }).customer_phone?.trim() || null,
-        is_active: true,
-        expires_at: null,
-        created_by: profile?.id,
-        show_proposal: true,
-        show_payments: true,
-        show_schedule: true,
-        show_documents: true,
-        show_photos: true,
-        show_financial_summary: true,
-        custom_message: null,
-      };
-      let { data, error } = await supabase
-        .from('customer_portal_access')
-        .insert([payload])
-        .select(CUSTOMER_PORTAL_ACCESS_SELECT)
-        .single();
-      if (error?.code === '42501' || error?.code === 'PGRST116') {
-        const rpcResult = await supabase.rpc('create_customer_portal_link', {
-          p_job_id: payload.job_id,
-          p_customer_identifier: payload.customer_identifier,
-          p_access_token: payload.access_token,
-          p_customer_name: payload.customer_name,
-          p_customer_email: payload.customer_email,
-          p_customer_phone: payload.customer_phone,
-          p_is_active: payload.is_active,
-          p_expires_at: payload.expires_at,
-          p_created_by: payload.created_by,
-          p_show_proposal: payload.show_proposal,
-          p_show_payments: payload.show_payments,
-          p_show_schedule: payload.show_schedule,
-          p_show_documents: payload.show_documents,
-          p_show_photos: payload.show_photos,
-          p_show_financial_summary: payload.show_financial_summary,
-          p_custom_message: payload.custom_message,
-        });
-        if (!rpcResult.error) {
-          data = rpcResult.data;
-          error = null;
-        } else {
-          data = rpcResult.data;
-          error = rpcResult.error;
-        }
-      }
-      if (!error && data) {
-        toast.success('Portal link ready. Use Copy link to share with the customer.');
-        return true;
-      }
-    }
-    const { data: contactData } = await supabase
-      .from('contacts')
-      .select('*')
-      .eq('job_id', job.id)
-      .eq('category', 'customer')
-      .maybeSingle();
-    if (contactData?.email) {
-      const token = generateAccessToken();
-      const payload = {
-        job_id: job.id,
-        customer_identifier: contactData.email.trim().toLowerCase(),
-        access_token: token,
-        customer_name: (contactData.name || '').trim() || 'Customer',
-        customer_email: contactData.email.trim(),
-        customer_phone: contactData.phone?.trim() || null,
-        is_active: true,
-        expires_at: null,
-        created_by: profile?.id,
-        show_proposal: true,
-        show_payments: true,
-        show_schedule: true,
-        show_documents: true,
-        show_photos: true,
-        show_financial_summary: true,
-        custom_message: null,
-      };
-      let { data, error } = await supabase
-        .from('customer_portal_access')
-        .insert([payload])
-        .select(CUSTOMER_PORTAL_ACCESS_SELECT)
-        .single();
-      if (error?.code === '42501' || error?.code === 'PGRST116') {
-        const rpcResult = await supabase.rpc('create_customer_portal_link', {
-          p_job_id: payload.job_id,
-          p_customer_identifier: payload.customer_identifier,
-          p_access_token: payload.access_token,
-          p_customer_name: payload.customer_name,
-          p_customer_email: payload.customer_email,
-          p_customer_phone: payload.customer_phone,
-          p_is_active: payload.is_active,
-          p_expires_at: payload.expires_at,
-          p_created_by: payload.created_by,
-          p_show_proposal: payload.show_proposal,
-          p_show_payments: payload.show_payments,
-          p_show_schedule: payload.show_schedule,
-          p_show_documents: payload.show_documents,
-          p_show_photos: payload.show_photos,
-          p_show_financial_summary: payload.show_financial_summary,
-          p_custom_message: payload.custom_message,
-        });
-        if (!rpcResult.error) {
-          data = rpcResult.data;
-          error = null;
-        } else {
-          data = rpcResult.data;
-          error = rpcResult.error;
-        }
-      }
-      if (!error && data) {
-        toast.success('Portal link ready. Use Copy link to share with the customer.');
-        return true;
-      }
-    }
-    return false;
-  }
-
   async function loadPortalLinks() {
+    console.log(`[PortalMgmt] loadPortalLinks for job="${job.name}" id=${jobId}`);
     try {
-      const { data, error } = await supabase
+      // Try RPC first (has SECURITY DEFINER, bypasses RLS, returns full visibility row)
+      const { data: rpcRow, error: rpcError } = await supabase.rpc('get_customer_portal_link_by_job', { p_job_id: jobId });
+      if (!rpcError && rpcRow != null) {
+        // Normalize: RPC can return single jsonb object, or array of one row, or stringified JSON
+        let row: any = rpcRow;
+        if (typeof row === 'string') {
+          try { row = JSON.parse(row); } catch { row = null; }
+        }
+        if (Array.isArray(row) && row.length > 0) row = row[0];
+        if (row && typeof row === 'object' && (row.job_id != null || row.id != null)) {
+          const link = { ...row, show_line_item_prices: row.show_line_item_prices ?? false } as CustomerPortalLink;
+          console.log(`[PortalMgmt] RPC found link job_id=${link.job_id} token=${link.access_token?.slice(0, 8)}...`);
+          setPortalLinks([link]);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Fallback: direct table query filtered strictly by this job's id
+      let select = CUSTOMER_PORTAL_ACCESS_SELECT;
+      let { data, error } = await supabase
         .from('customer_portal_access')
-        .select(CUSTOMER_PORTAL_ACCESS_SELECT)
+        .select(select)
+        .eq('job_id', jobId)
         .order('created_at', { ascending: false });
+
+      if (error && (error?.code === 'PGRST204' || (error?.message && /show_line_item_prices|column.*exist/i.test(error.message)))) {
+        select = CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK;
+        const fallback = await supabase
+          .from('customer_portal_access')
+          .select(select)
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: false });
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) throw error;
 
-      const jobLink = (data || []).filter(link => link.job_id === job.id);
-      setPortalLinks(jobLink);
-
-      if (jobLink.length === 0) {
-        const created = await ensureOnePortalLink();
-        if (created) {
-          const { data: data2, error: err2 } = await supabase
-            .from('customer_portal_access')
-            .select(CUSTOMER_PORTAL_ACCESS_SELECT)
-            .eq('job_id', job.id)
-            .order('created_at', { ascending: false });
-          if (!err2 && data2?.length) setPortalLinks(data2);
-        }
-      }
+      const jobLinks = (data || []).map((l: any) => ({ ...l, show_line_item_prices: l.show_line_item_prices ?? false }));
+      console.log(`[PortalMgmt] Direct query found ${jobLinks.length} link(s) for job ${jobId}`);
+      setPortalLinks(jobLinks);
     } catch (error: any) {
-      console.error('Error loading portal links:', error);
+      console.error('[PortalMgmt] Error loading portal links:', error);
       toast.error('Failed to load portal links');
     } finally {
       setLoading(false);
@@ -367,6 +339,14 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   }
 
   async function createPortalLink() {
+    // Use the job id we are currently displaying (ref updated every render). This guarantees the link is for the job shown in this tab.
+    const jobIdToUse = createLinkJobIdRef.current || jobId;
+    if (!jobIdToUse) {
+      toast.error('Could not determine which job to create the link for. Please close and reopen this job.');
+      return;
+    }
+    console.log(`[PortalMgmt] createPortalLink for job="${job.name}" id=${jobIdToUse}`);
+
     // Validate customer name
     if (!customerName || customerName.trim() === '') {
       toast.error('❌ Customer name is required');
@@ -389,14 +369,14 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       return;
     }
 
-    // One link per job: update existing or create new
-    const existingLink = portalLinks.find(link => link.job_id === job.id);
+    // One link per job: update existing or create new (jobIdToUse = getter at click time)
+    const existingLink = portalLinks.find(link => link.job_id === jobIdToUse);
     const isUpdate = !!existingLink;
 
     console.log(isUpdate ? '🔷 Updating portal link...' : '🔷 Creating portal link...');
     console.log('  Customer:', customerName);
     console.log('  Email:', customerEmail);
-    console.log('  Job:', job.name, `(${job.id})`);
+    console.log('  Job id (for link):', jobIdToUse);
 
     try {
       const token = isUpdate ? existingLink!.access_token : (pendingToken || generateAccessToken());
@@ -419,7 +399,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       }
 
       const portalData = {
-        job_id: job.id,
+        job_id: jobIdToUse,
         customer_identifier: customerEmail.trim().toLowerCase(),
         access_token: token,
         customer_name: customerName.trim(),
@@ -434,6 +414,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         show_documents: showDocuments,
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
+        show_line_item_prices: showLineItemPrices,
         custom_message: customMessage?.trim() || null,
         updated_at: new Date().toISOString(),
       };
@@ -444,33 +425,50 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       let data: any;
       let error: any;
 
+      const isColumnError = (e: any) =>
+        e?.code === 'PGRST204' || (e?.message && /show_line_item_prices|column.*exist|schema cache/i.test(String(e.message)));
+
       // Try direct table access first (no RPC/schema cache). If blocked by RLS (42501), try RPC.
       if (isUpdate) {
-        const direct = await supabase
+        const updatePayload = {
+          customer_identifier: portalData.customer_identifier,
+          customer_name: portalData.customer_name,
+          customer_email: portalData.customer_email,
+          customer_phone: portalData.customer_phone,
+          is_active: portalData.is_active,
+          expires_at: portalData.expires_at,
+          show_proposal: portalData.show_proposal,
+          show_payments: portalData.show_payments,
+          show_schedule: portalData.show_schedule,
+          show_documents: portalData.show_documents,
+          show_photos: portalData.show_photos,
+          show_financial_summary: portalData.show_financial_summary,
+          show_line_item_prices: portalData.show_line_item_prices,
+          custom_message: portalData.custom_message,
+          updated_at: portalData.updated_at,
+        };
+        let direct = await supabase
           .from('customer_portal_access')
-          .update({
-            customer_identifier: portalData.customer_identifier,
-            customer_name: portalData.customer_name,
-            customer_email: portalData.customer_email,
-            customer_phone: portalData.customer_phone,
-            is_active: portalData.is_active,
-            expires_at: portalData.expires_at,
-            show_proposal: portalData.show_proposal,
-            show_payments: portalData.show_payments,
-            show_schedule: portalData.show_schedule,
-            show_documents: portalData.show_documents,
-            show_photos: portalData.show_photos,
-            show_financial_summary: portalData.show_financial_summary,
-            custom_message: portalData.custom_message,
-            updated_at: portalData.updated_at,
-          })
+          .update(updatePayload)
           .eq('id', existingLink!.id)
           .select(CUSTOMER_PORTAL_ACCESS_SELECT)
           .single();
         data = direct.data;
         error = direct.error;
+        if (error && isColumnError(error)) {
+          const { show_line_item_prices: _dropped, ...payloadWithout } = updatePayload as any;
+          direct = await supabase
+            .from('customer_portal_access')
+            .update(payloadWithout)
+            .eq('id', existingLink!.id)
+            .select(CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK)
+            .single();
+          data = direct.data;
+          error = direct.error;
+          if (!error && data) (data as any).show_line_item_prices = false;
+        }
         if (error?.code === '42501' || error?.code === 'PGRST116') {
-          const rpcResult = await supabase.rpc('update_customer_portal_link', {
+          let rpcResult = await supabase.rpc('update_customer_portal_link', {
             p_id: existingLink!.id,
             p_customer_identifier: portalData.customer_identifier,
             p_customer_name: portalData.customer_name,
@@ -484,8 +482,27 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             p_show_documents: portalData.show_documents,
             p_show_photos: portalData.show_photos,
             p_show_financial_summary: portalData.show_financial_summary,
+            p_show_line_item_prices: portalData.show_line_item_prices,
             p_custom_message: portalData.custom_message,
           });
+          if (rpcResult.error && (rpcResult.error?.code === '42883' || /unknown function|argument|does not exist/i.test(String(rpcResult.error?.message)))) {
+            rpcResult = await supabase.rpc('update_customer_portal_link', {
+              p_id: existingLink!.id,
+              p_customer_identifier: portalData.customer_identifier,
+              p_customer_name: portalData.customer_name,
+              p_customer_email: portalData.customer_email,
+              p_customer_phone: portalData.customer_phone,
+              p_is_active: portalData.is_active,
+              p_expires_at: portalData.expires_at,
+              p_show_proposal: portalData.show_proposal,
+              p_show_payments: portalData.show_payments,
+              p_show_schedule: portalData.show_schedule,
+              p_show_documents: portalData.show_documents,
+              p_show_photos: portalData.show_photos,
+              p_show_financial_summary: portalData.show_financial_summary,
+              p_custom_message: portalData.custom_message,
+            });
+          }
           if (!rpcResult.error) {
             data = rpcResult.data;
             error = null;
@@ -495,15 +512,27 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           }
         }
       } else {
-        const direct = await supabase
+        const insertPayload = { ...portalData, created_by: profile?.id };
+        let direct = await supabase
           .from('customer_portal_access')
-          .insert([{ ...portalData, created_by: profile?.id }])
+          .insert([insertPayload])
           .select(CUSTOMER_PORTAL_ACCESS_SELECT)
           .single();
         data = direct.data;
         error = direct.error;
+        if (error && isColumnError(error)) {
+          const { show_line_item_prices: _dropped, ...payloadWithout } = insertPayload as any;
+          direct = await supabase
+            .from('customer_portal_access')
+            .insert([payloadWithout])
+            .select(CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK)
+            .single();
+          data = direct.data;
+          error = direct.error;
+          if (!error && data) (data as any).show_line_item_prices = false;
+        }
         if (error?.code === '42501' || error?.code === 'PGRST116') {
-          const rpcResult = await supabase.rpc('create_customer_portal_link', {
+          let rpcResult = await supabase.rpc('create_customer_portal_link', {
             p_job_id: portalData.job_id,
             p_customer_identifier: portalData.customer_identifier,
             p_access_token: portalData.access_token,
@@ -519,8 +548,31 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             p_show_documents: portalData.show_documents,
             p_show_photos: portalData.show_photos,
             p_show_financial_summary: portalData.show_financial_summary,
+            p_show_line_item_prices: portalData.show_line_item_prices,
             p_custom_message: portalData.custom_message,
           });
+          if (rpcResult.error && (rpcResult.error?.code === '42883' || /unknown function|argument|does not exist/i.test(String(rpcResult.error?.message)))) {
+            const createParams: Record<string, unknown> = {
+              p_job_id: portalData.job_id,
+              p_customer_identifier: portalData.customer_identifier,
+              p_access_token: portalData.access_token,
+              p_customer_name: portalData.customer_name,
+              p_customer_email: portalData.customer_email,
+              p_customer_phone: portalData.customer_phone,
+              p_is_active: portalData.is_active,
+              p_expires_at: portalData.expires_at,
+              p_created_by: profile?.id,
+              p_show_proposal: portalData.show_proposal,
+              p_show_payments: portalData.show_payments,
+              p_show_schedule: portalData.show_schedule,
+              p_show_documents: portalData.show_documents,
+              p_show_photos: portalData.show_photos,
+              p_show_financial_summary: portalData.show_financial_summary,
+              p_custom_message: portalData.custom_message,
+            };
+            delete createParams.p_show_line_item_prices;
+            rpcResult = await supabase.rpc('create_customer_portal_link', createParams as any);
+          }
           if (!rpcResult.error) {
             data = rpcResult.data;
             error = null;
@@ -561,12 +613,25 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             '❌ API can\'t see the portal link function.\n\n1. Run scripts/create-portal-link-rpc.sql in Supabase SQL Editor (same project as this app).\n2. Go to Project Settings → General → click "Restart project".\n3. Wait for the project to finish restarting, then try again.',
             { duration: 10000 }
           );
+        } else if (error.code === 'PGRST204' || (error.message && /show_line_item_prices|schema cache/i.test(String(error.message)))) {
+          toast.error(
+            '❌ Could not save: database schema is missing the show_line_item_prices column.\n\nRun the migration that adds it to customer_portal_access, or try saving again (the app will retry without that option).',
+            { duration: 8000 }
+          );
         } else {
           toast.error(
             `❌ Database error: ${error.message}\n\nError code: ${error.code || 'unknown'}`,
             { duration: 8000 }
           );
         }
+        return;
+      }
+
+      // Safety: ensure the saved row is for the job we intended (never copy a link for the wrong job)
+      const savedJobId = data?.job_id ?? null;
+      if (savedJobId && savedJobId !== jobIdToUse) {
+        console.error('[PortalMgmt] Wrong job in response: expected', jobIdToUse, 'got', savedJobId);
+        toast.error('The link was saved for a different job. Please close this dialog, open the correct job (e.g. Ropp Barn), and create the link again.');
         return;
       }
 
@@ -577,15 +642,26 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         toast.success(`✅ Customer portal link created for ${job.name}`, { duration: 3000 });
       }
 
+      // Optimistically set the link from the create response so the UI shows it even if loadPortalLinks RPC returns a different shape
+      if (data && typeof data === 'object' && (data.job_id != null || data.id != null)) {
+        const newLink = { ...data, show_line_item_prices: (data as any).show_line_item_prices ?? false } as CustomerPortalLink;
+        setPortalLinks((prev) => {
+          const rest = prev.filter((l) => l.job_id !== jobIdToUse);
+          return [newLink, ...rest];
+        });
+      }
+
       setShowCreateDialog(false);
       resetForm();
       await loadPortalLinks();
 
-      const portalUrl = `${window.location.origin}/customer-portal?token=${token}`;
+      // Use token from the row we just saved so we never copy a wrong-job link
+      const tokenToCopy = data?.access_token ?? token;
+      const portalUrl = `${window.location.origin}/customer-portal?token=${tokenToCopy}`;
       await navigator.clipboard.writeText(portalUrl);
       toast.success(isUpdate ? 'Portal URL copied (unchanged).' : '🔗 Portal link copied to clipboard!', { duration: 3000 });
-      
-      console.log('🔗 Portal URL:', portalUrl);
+
+      console.log('[PortalMgmt] Copied URL for job_id=', jobIdToUse, 'token=', tokenToCopy?.slice(0, 8) + '...');
     } catch (error: any) {
       console.error('❌ Unexpected error creating portal link:', error);
       console.error('  Error type:', error.constructor.name);
@@ -601,19 +677,31 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   async function updatePortalSettings() {
     if (!selectedLink) return;
 
+    const isColumnError = (e: any) =>
+      e?.code === 'PGRST204' || (e?.message && /show_line_item_prices|column.*exist|schema cache/i.test(String(e.message)));
+
     try {
+      const updatePayload = {
+        show_proposal: showProposal,
+        show_payments: showPayments,
+        show_schedule: showSchedule,
+        show_documents: showDocuments,
+        show_photos: showPhotos,
+        show_financial_summary: showFinancialSummary,
+        show_line_item_prices: showLineItemPrices,
+        custom_message: customMessage || null,
+      };
       let result = await supabase
         .from('customer_portal_access')
-        .update({
-          show_proposal: showProposal,
-          show_payments: showPayments,
-          show_schedule: showSchedule,
-          show_documents: showDocuments,
-          show_photos: showPhotos,
-          show_financial_summary: showFinancialSummary,
-          custom_message: customMessage || null,
-        })
+        .update(updatePayload)
         .eq('id', selectedLink.id);
+      if (result.error && isColumnError(result.error)) {
+        const { show_line_item_prices: _dropped, ...payloadWithout } = updatePayload as any;
+        result = await supabase
+          .from('customer_portal_access')
+          .update(payloadWithout)
+          .eq('id', selectedLink.id);
+      }
       if (result.error?.code === '42501') {
         result = await supabase.rpc('update_customer_portal_link', {
           p_id: selectedLink.id,
@@ -629,8 +717,29 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           p_show_documents: showDocuments,
           p_show_photos: showPhotos,
           p_show_financial_summary: showFinancialSummary,
+          p_show_line_item_prices: showLineItemPrices,
           p_custom_message: customMessage || null,
         });
+        if (result.error && (result.error?.code === '42883' || /unknown function|argument|does not exist/i.test(String(result?.error?.message)))) {
+          const rpcPayload: Record<string, unknown> = {
+            p_id: selectedLink.id,
+            p_customer_identifier: selectedLink.customer_identifier,
+            p_customer_name: selectedLink.customer_name,
+            p_customer_email: selectedLink.customer_email ?? '',
+            p_customer_phone: selectedLink.customer_phone,
+            p_is_active: selectedLink.is_active,
+            p_expires_at: selectedLink.expires_at,
+            p_show_proposal: showProposal,
+            p_show_payments: showPayments,
+            p_show_schedule: showSchedule,
+            p_show_documents: showDocuments,
+            p_show_photos: showPhotos,
+            p_show_financial_summary: showFinancialSummary,
+            p_custom_message: customMessage || null,
+          };
+          delete rpcPayload.p_show_line_item_prices;
+          result = await supabase.rpc('update_customer_portal_link', rpcPayload as any);
+        }
       }
       if (result.error) throw result.error;
 
@@ -645,7 +754,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
   /** Auto-save a single visibility toggle the moment it changes (only when a link already exists). */
   async function autoSaveVisibility(field: string, newValue: boolean) {
-    const link = portalLinks.find((l: any) => l.job_id === job.id);
+    const link = portalLinks.find((l: any) => l.job_id === jobId);
     if (!link) return; // No existing link yet — will be saved when "Save & create link" is clicked
 
     const updated = {
@@ -659,11 +768,23 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       updated_at: new Date().toISOString(),
     };
 
+    const isColumnError = (e: any) =>
+      e?.code === 'PGRST204' || (e?.message && /show_line_item_prices|column.*exist|unknown column/i.test(String(e.message)));
+
     try {
       let result = await supabase
         .from('customer_portal_access')
         .update(updated)
         .eq('id', link.id);
+
+      if (result.error && isColumnError(result.error)) {
+        const withoutLinePrices = { ...updated };
+        delete (withoutLinePrices as any).show_line_item_prices;
+        result = await supabase
+          .from('customer_portal_access')
+          .update(withoutLinePrices)
+          .eq('id', link.id);
+      }
 
       if (result.error?.code === '42501' || result.error?.code === 'PGRST116') {
         result = await supabase.rpc('update_customer_portal_link', {
@@ -680,12 +801,38 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           p_show_documents:         updated.show_documents,
           p_show_photos:            updated.show_photos,
           p_show_financial_summary: updated.show_financial_summary,
+          p_show_line_item_prices:  updated.show_line_item_prices,
           p_custom_message: customMessage || null,
         });
+        if (result.error && (result.error?.code === '42883' || /unknown function|does not exist|argument/i.test(String(result.error?.message)))) {
+          result = await supabase.rpc('update_customer_portal_link', {
+            p_id: link.id,
+            p_customer_identifier: link.customer_identifier,
+            p_customer_name: link.customer_name,
+            p_customer_email: link.customer_email ?? '',
+            p_customer_phone: link.customer_phone,
+            p_is_active: link.is_active,
+            p_expires_at: link.expires_at,
+            p_show_proposal:          updated.show_proposal,
+            p_show_payments:          updated.show_payments,
+            p_show_schedule:          updated.show_schedule,
+            p_show_documents:         updated.show_documents,
+            p_show_photos:            updated.show_photos,
+            p_show_financial_summary: updated.show_financial_summary,
+            p_custom_message: customMessage || null,
+          });
+        }
       }
 
       if (result.error) throw result.error;
-      await loadPortalLinks();
+
+      // Update local portal links with the values we just saved so the sync effect doesn't overwrite with stale refetch data (which was causing toggles to reset)
+      setPortalLinks((prev) =>
+        prev.map((l) =>
+          l.id === link.id ? { ...l, ...updated, show_line_item_prices: updated.show_line_item_prices ?? l.show_line_item_prices } : l
+        )
+      );
+      toast.success('Setting saved — customer link will reflect this.');
     } catch (err: any) {
       console.error('Failed to auto-save visibility setting:', err);
       toast.error('Failed to save setting');
@@ -731,7 +878,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const { data: jobRow, error: jobError } = await supabase
         .from('jobs')
         .select('*')
-        .eq('id', job.id)
+        .eq('id', jobId)
         .maybeSingle();
 
       if (jobError || !jobRow) {
@@ -937,7 +1084,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     }
   }
 
-  /** Load proposal data for a specific quote — mirrors CustomerPortal.tsx logic exactly. */
+  /** Load proposal data for a specific quote — mirrors CustomerPortal.tsx logic exactly. Use stored totals from quote when available so office preview matches customer portal & JobFinancials. */
   async function loadProposalDataForQuote(jobId: string, quoteId: string | null, taxExempt: boolean): Promise<{
     materialSheets: any[];
     customRows: any[];
@@ -947,6 +1094,31 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     const TAX_RATE = 0.07;
     const empty = { materialSheets: [], customRows: [], subcontractorEstimates: [], totals: { subtotal: 0, tax: 0, grandTotal: 0 } };
     try {
+      // Use same source as JobFinancials & CustomerPortal: quote columns (proposal_subtotal, proposal_tax, proposal_grand_total) so preview Grand Total matches Proposal & Materials
+      let storedTotals: { subtotal: number; tax: number; grandTotal: number } | null = null;
+      if (quoteId) {
+        const { data: quoteRow } = await supabase
+          .from('quotes')
+          .select('proposal_subtotal, proposal_tax, proposal_grand_total')
+          .eq('id', quoteId)
+          .maybeSingle();
+        let sub = quoteRow?.proposal_subtotal != null ? Number(quoteRow.proposal_subtotal) : NaN;
+        let tax = quoteRow?.proposal_tax != null ? Number(quoteRow.proposal_tax) : 0;
+        let grand = quoteRow?.proposal_grand_total != null ? Number(quoteRow.proposal_grand_total) : NaN;
+        if (!Number.isFinite(sub) || !Number.isFinite(grand)) {
+          const { data: rpcData } = await supabase.rpc('get_quote_proposal_totals', { p_quote_id: quoteId });
+          const row = Array.isArray(rpcData) && rpcData.length > 0 ? (rpcData[0] as { subtotal?: number | null; tax?: number | null; grand_total?: number | null }) : null;
+          if (row) {
+            sub = row.subtotal != null ? Number(row.subtotal) : sub;
+            tax = row.tax != null ? Number(row.tax) : tax;
+            grand = row.grand_total != null ? Number(row.grand_total) : grand;
+          }
+        }
+        if (Number.isFinite(sub) && Number.isFinite(grand)) {
+          storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
+        }
+      }
+
       // Workbook: prefer status='working' for this quoteId, then any status, then null-quote, then scan all
       let workbookData: { id: string } | null = null;
       if (quoteId) {
@@ -1135,7 +1307,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const tax = totals.tax;
       const grandTotal = totals.grandTotal;
 
-      return { materialSheets, customRows: customRowsData, subcontractorEstimates: subEstimatesData, totals: { subtotal, tax, grandTotal } };
+      return { materialSheets, customRows: customRowsData, subcontractorEstimates: subEstimatesData, totals };
     } catch (error) {
       console.error('Error loading proposal data for quote:', error);
       return empty;
@@ -1209,8 +1381,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     return <div className="text-center py-4">Loading portal links...</div>;
   }
 
-  const currentLink = portalLinks.find(l => l.job_id === job.id);
-  const portalUrl = currentLink ? `${window.location.origin}/customer-portal?token=${currentLink.access_token}` : (pendingToken ? `${window.location.origin}/customer-portal?token=${pendingToken}` : null);
+  const currentLink = portalLinks.find(l => l.job_id === jobId);
+  // Only show a URL when we have a saved link for THIS job. Never show a pendingToken URL (not in DB yet).
+  const portalUrl = currentLink ? `${window.location.origin}/customer-portal?token=${currentLink.access_token}` : null;
   const visibilitySettings = {
     show_proposal: showProposal,
     show_payments: showPayments,
@@ -1222,13 +1395,22 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     custom_message: customMessage,
   };
 
+  // Map line item id -> visible (so preview reflects "Proposal line items" toggles immediately)
+  const lineItemVisibleToCustomer: Record<string, boolean> = {};
+  proposalLineItems.rows.forEach((row) => {
+    row.items.forEach((item) => {
+      lineItemVisibleToCustomer[item.id] = !item.hide_from_customer;
+    });
+  });
+
   return (
     <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-12rem)] min-h-[500px]">
       {/* Settings sidebar – built into the portal page */}
       <aside className="w-full lg:w-[340px] shrink-0 flex flex-col gap-4 overflow-y-auto border rounded-lg bg-card p-4">
         <div>
           <h3 className="text-lg font-semibold">Portal settings</h3>
-          <p className="text-sm text-muted-foreground">Control what the customer sees. Changes update the preview.</p>
+          <p className="text-sm font-medium text-primary mt-1">This portal is for: {job.name}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Control what the customer sees. The link below opens this job’s info for the customer.</p>
         </div>
 
         <div className="space-y-3">
@@ -1263,6 +1445,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
         <div className="border-t pt-4">
           <h4 className="font-semibold mb-3">Visibility</h4>
+          <p className="text-xs text-muted-foreground mb-2">Saved to the portal link below. When the customer opens the link, they see only what you enable here.</p>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Show final price</span>
@@ -1295,6 +1478,49 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           </div>
         </div>
 
+        <div className="border-t pt-4">
+          <h4 className="font-semibold mb-1">Proposal line items</h4>
+          <p className="text-xs text-muted-foreground mb-3">Choose which line items the customer sees in the portal.</p>
+          {proposalLineItemsLoading ? (
+            <p className="text-xs text-muted-foreground">Loading…</p>
+          ) : proposalLineItems.rows.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No proposal line items for this job. Add rows and line items in the Proposal tab.</p>
+          ) : (
+            <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
+              {proposalLineItems.rows.map((row) => (
+                <div key={row.id} className="space-y-1.5">
+                  <p className="text-xs font-medium text-slate-700">{row.description || row.category || 'Custom row'}</p>
+                  {row.items.length === 0 ? (
+                    <p className="text-xs text-muted-foreground pl-2">No line items</p>
+                  ) : (
+                    <ul className="space-y-1 pl-2 border-l-2 border-slate-200">
+                      {row.items.map((item) => (
+                        <li key={item.id} className="flex items-center justify-between gap-2 py-0.5">
+                          <span className="text-xs text-slate-600 truncate flex-1 min-w-0" title={item.description || ''}>
+                            {item.description || 'Line item'}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {item.hide_from_customer ? (
+                              <span title="Hidden from customer"><EyeOff className="w-3.5 h-3.5 text-amber-600" /></span>
+                            ) : (
+                              <span title="Visible to customer"><Eye className="w-3.5 h-3.5 text-emerald-600" /></span>
+                            )}
+                            <Switch
+                              checked={!item.hide_from_customer}
+                              onCheckedChange={(v) => setLineItemVisibleToCustomer(item.id, v)}
+                              title={item.hide_from_customer ? 'Show in portal' : 'Hide from portal'}
+                            />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="space-y-2">
           <Label>Custom welcome message</Label>
           <Textarea
@@ -1307,10 +1533,11 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         </div>
 
         <div className="flex flex-col gap-2 pt-2 border-t">
-          {portalUrl && (
+          <p className="text-sm font-semibold">Customer portal link for this job</p>
+          {portalUrl ? (
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-muted-foreground">Customer portal link</p>
-              <div className="flex items-center gap-1 bg-muted/60 border rounded-md px-2 py-1.5 group">
+              <p className="text-xs text-muted-foreground">Copy this link to share with the customer. It opens this job’s proposal, payments, schedule, and documents.</p>
+              <div className="flex items-center gap-1 bg-primary/5 border-2 border-primary/20 rounded-md px-2 py-1.5 group">
                 <a
                   href={portalUrl}
                   target="_blank"
@@ -1323,7 +1550,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 <button
                   className="flex-shrink-0 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                   title="Copy link"
-                  onClick={() => currentLink ? copyPortalLink(currentLink.access_token) : (navigator.clipboard.writeText(portalUrl), toast.success('Link copied'))}
+                  onClick={() => currentLink && copyPortalLink(currentLink.access_token)}
                 >
                   {currentLink && copied === currentLink.access_token
                     ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
@@ -1354,8 +1581,21 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 </a>
               )}
             </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No link yet. Enter customer name and email above, then click <strong>Save & create link</strong> to generate the portal link for <strong>{job.name}</strong>. Only the link that appears after saving is valid for this job.
+            </p>
           )}
-          <Button onClick={createPortalLink} className="w-full">
+          <Button
+            type="button"
+            onClick={() => {
+              createPortalLink().catch((err) => {
+                console.error('[PortalMgmt] createPortalLink error:', err);
+                toast.error(err?.message ?? 'Something went wrong. Please try again.');
+              });
+            }}
+            className="w-full"
+          >
             {currentLink ? 'Save changes' : 'Save & create link'}
           </Button>
           {currentLink && (
@@ -1400,6 +1640,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 jobs={previewJobs}
                 visibilitySettings={visibilitySettings}
                 customMessage={customMessage}
+                lineItemVisibleToCustomer={lineItemVisibleToCustomer}
               />
             </div>
           </div>
@@ -1425,7 +1666,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <Label className="font-medium">Show final price</Label>
                   <p className="text-sm text-muted-foreground">Show subtotal, tax, and grand total at bottom of proposal. Turn off to hide all pricing.</p>
                 </div>
-                <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
+                <Switch checked={showFinancialSummary} onCheckedChange={(v) => { setShowFinancialSummary(v); selectedLink && autoSaveVisibility('show_financial_summary', v); }} />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1433,7 +1674,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <Label className="font-medium">Show line item prices</Label>
                   <p className="text-sm text-muted-foreground">When on, show $ on each proposal line. When off (default), only show total, tax, and grand total at bottom.</p>
                 </div>
-                <Switch checked={showLineItemPrices} onCheckedChange={setShowLineItemPrices} />
+                <Switch checked={showLineItemPrices} onCheckedChange={(v) => { setShowLineItemPrices(v); selectedLink && autoSaveVisibility('show_line_item_prices', v); }} />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1441,7 +1682,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <Label className="font-medium">Proposal Details</Label>
                   <p className="text-sm text-muted-foreground">Show itemized proposal/pricing breakdown</p>
                 </div>
-                <Switch checked={showProposal} onCheckedChange={setShowProposal} />
+                <Switch checked={showProposal} onCheckedChange={(v) => { setShowProposal(v); selectedLink && autoSaveVisibility('show_proposal', v); }} />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1449,7 +1690,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <Label className="font-medium">Payment History</Label>
                   <p className="text-sm text-muted-foreground">Show all payment records</p>
                 </div>
-                <Switch checked={showPayments} onCheckedChange={setShowPayments} />
+                <Switch checked={showPayments} onCheckedChange={(v) => { setShowPayments(v); selectedLink && autoSaveVisibility('show_payments', v); }} />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1457,7 +1698,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <Label className="font-medium">Schedule/Timeline</Label>
                   <p className="text-sm text-muted-foreground">Show project timeline and milestones</p>
                 </div>
-                <Switch checked={showSchedule} onCheckedChange={setShowSchedule} />
+                <Switch checked={showSchedule} onCheckedChange={(v) => { setShowSchedule(v); selectedLink && autoSaveVisibility('show_schedule', v); }} />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1465,7 +1706,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <Label className="font-medium">Documents</Label>
                   <p className="text-sm text-muted-foreground">Show project documents and drawings</p>
                 </div>
-                <Switch checked={showDocuments} onCheckedChange={setShowDocuments} />
+                <Switch checked={showDocuments} onCheckedChange={(v) => { setShowDocuments(v); selectedLink && autoSaveVisibility('show_documents', v); }} />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1473,7 +1714,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <Label className="font-medium">Photos</Label>
                   <p className="text-sm text-muted-foreground">Show progress photos</p>
                 </div>
-                <Switch checked={showPhotos} onCheckedChange={setShowPhotos} />
+                <Switch checked={showPhotos} onCheckedChange={(v) => { setShowPhotos(v); selectedLink && autoSaveVisibility('show_photos', v); }} />
               </div>
             </div>
 
@@ -1595,7 +1836,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                     <Label className="font-medium">Show final price</Label>
                     <p className="text-sm text-muted-foreground">Show totals and proposal prices. Turn off to hide until you’re ready.</p>
                   </div>
-                  <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
+                  <Switch checked={showFinancialSummary} onCheckedChange={(v) => { setShowFinancialSummary(v); autoSaveVisibility('show_financial_summary', v); }} />
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1603,7 +1844,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                     <Label className="font-medium">Proposal (scope & description)</Label>
                     <p className="text-sm text-muted-foreground">Show proposal tab with scope; prices only if “Show final price” is on</p>
                   </div>
-                  <Switch checked={showProposal} onCheckedChange={setShowProposal} />
+                  <Switch checked={showProposal} onCheckedChange={(v) => { setShowProposal(v); autoSaveVisibility('show_proposal', v); }} />
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1611,7 +1852,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                     <Label className="font-medium">Payment History</Label>
                     <p className="text-sm text-muted-foreground">Show all payment records</p>
                   </div>
-                  <Switch checked={showPayments} onCheckedChange={setShowPayments} />
+                  <Switch checked={showPayments} onCheckedChange={(v) => { setShowPayments(v); autoSaveVisibility('show_payments', v); }} />
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1619,7 +1860,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                     <Label className="font-medium">Schedule/Timeline</Label>
                     <p className="text-sm text-muted-foreground">Show project timeline</p>
                   </div>
-                  <Switch checked={showSchedule} onCheckedChange={setShowSchedule} />
+                  <Switch checked={showSchedule} onCheckedChange={(v) => { setShowSchedule(v); autoSaveVisibility('show_schedule', v); }} />
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1635,7 +1876,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                     <Label className="font-medium">Photos</Label>
                     <p className="text-sm text-muted-foreground">Show progress photos</p>
                   </div>
-                  <Switch checked={showPhotos} onCheckedChange={setShowPhotos} />
+                  <Switch checked={showPhotos} onCheckedChange={(v) => { setShowPhotos(v); autoSaveVisibility('show_photos', v); }} />
                 </div>
               </div>
             </div>
@@ -1656,7 +1897,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 <Eye className="w-4 h-4 mr-2" />
                 Preview Customer View
               </Button>
-              <Button onClick={createPortalLink} className="flex-1">
+              <Button type="button" onClick={() => createPortalLink().catch((err) => { console.error(err); toast.error(err?.message ?? 'Something went wrong.'); })} className="flex-1">
                 Save
               </Button>
               <Button variant="outline" onClick={() => {
@@ -1695,7 +1936,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 <Button onClick={() => setShowPreview(false)} variant="outline" className="flex-1">
                   Close Preview
                 </Button>
-                <Button onClick={createPortalLink} className="flex-1">
+                <Button type="button" onClick={() => createPortalLink().catch((err) => { console.error(err); toast.error(err?.message ?? 'Something went wrong.'); })} className="flex-1">
                   Save link
                 </Button>
               </div>
@@ -1708,7 +1949,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <div className="flex items-center gap-3">
                     <Eye className="w-6 h-6" />
                     <div>
-                      <h2 className="text-xl font-bold">Preview – see what the customer will see</h2>
+                      <h2 className="text-xl font-bold">Preview - see what the customer will see</h2>
                       <p className="text-purple-100 text-sm">This is exactly what the customer will see. Adjust settings and preview again until it’s then save. Use Copy link to share the portal URL with the customer.</p>
                     </div>
                   </div>
@@ -1723,14 +1964,13 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 </div>
               </div>
 
-              {/* Portal URL – copy before or after creating */}
+              {/* Portal URL - only show when we have a saved link for this job */}
               {(() => {
-                const existingLink = portalLinks.find(l => l.job_id === job.id);
-                const token = existingLink?.access_token ?? pendingToken;
-                const previewPortalUrl = token ? `${window.location.origin}/customer-portal?token=${token}` : '';
+                const existingLink = portalLinks.find(l => l.job_id === jobId);
+                const previewPortalUrl = existingLink ? `${window.location.origin}/customer-portal?token=${existingLink.access_token}` : '';
                 return previewPortalUrl ? (
                   <div className="bg-white border-b px-6 py-3 flex-shrink-0 flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Portal link:</span>
+                    <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Portal link for this job:</span>
                     <code className="flex-1 min-w-0 text-sm text-slate-700 bg-slate-100 rounded px-2 py-1.5 truncate">
                       {previewPortalUrl}
                     </code>
@@ -1746,13 +1986,12 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                       <Copy className="w-4 h-4 mr-2" />
                       Copy link
                     </Button>
-                    {!existingLink && pendingToken && (
-                      <span className="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">
-                        Save in the dialog to activate this link.
-                      </span>
-                    )}
                   </div>
-                ) : null;
+                ) : (
+                  <div className="bg-white border-b px-6 py-3 flex-shrink-0">
+                    <span className="text-sm text-slate-600">Save & create link in the sidebar to get the portal URL for this job.</span>
+                  </div>
+                );
               })()}
 
               {/* Embedded Interactive Portal */}
@@ -1763,6 +2002,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                     jobs={previewJobs}
                     visibilitySettings={previewSettings}
                     customMessage={previewSettings?.custom_message}
+                    lineItemVisibleToCustomer={lineItemVisibleToCustomer}
                   />
                 </div>
               </div>
@@ -1772,7 +2012,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 <Button onClick={() => setShowPreview(false)} variant="outline" className="flex-1">
                   Back to settings
                 </Button>
-                <Button onClick={createPortalLink} className="flex-1">
+                <Button type="button" onClick={() => createPortalLink().catch((err) => { console.error(err); toast.error(err?.message ?? 'Something went wrong.'); })} className="flex-1">
                   Save settings
                 </Button>
               </div>

@@ -38,6 +38,10 @@ import { ProposalSummaryProvider } from '@/contexts/ProposalSummaryContext';
 
 interface JobDetailedViewProps {
   job: Job;
+  /** Job id to use for customer portal link creation. When set (from JobsView detail dialog), this is the single source of truth so the link is always for the job the user opened. */
+  portalJobId?: string | null;
+  /** Called at click time when creating a portal link; returns the current dialog job id so the link is never created for a stale job. */
+  getPortalJobId?: () => string | null;
   onBack?: () => void;
   onEdit?: () => void;
   initialTab?: string;
@@ -382,7 +386,7 @@ interface DailyLog {
   created_at: string;
 }
 
-export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }: JobDetailedViewProps) {
+export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEdit, initialTab = 'overview' }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [proposalNumber, setProposalNumber] = useState<string | null>(null);
@@ -415,6 +419,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const [proposalToolbarContent, setProposalToolbarContent] = useState<React.ReactNode>(null);
   type ProposalViewMode = 'split' | 'proposal' | 'materials';
   const [proposalViewMode, setProposalViewMode] = useState<ProposalViewMode>('split');
+  /** Shared proposal selection so Subcontractors tab and Proposal & Materials show the same proposal. */
+  const [selectedProposalQuoteId, setSelectedProposalQuoteId] = useState<string | null>(null);
   const materialsToolbarSlotRef = useRef<HTMLDivElement>(null);
   const [materialsToolbarSlotReady, setMaterialsToolbarSlotReady] = useState(false);
 
@@ -478,6 +484,37 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   function collapseAllLogs() {
     setExpandedLogs(new Set());
   }
+
+  // Keep shared proposal selection in sync with job quotes (same order as Proposal & Materials: highest proposal number first)
+  useEffect(() => {
+    if (!job?.id) {
+      setSelectedProposalQuoteId(null);
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      const { data: quotes, error } = await supabase
+        .from('quotes')
+        .select('id, proposal_number, quote_number, created_at')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false });
+      if (!mounted) return;
+      if (error || !quotes?.length) {
+        setSelectedProposalQuoteId(null);
+        return;
+      }
+      const sorted = [...quotes].sort((a: any, b: any) => {
+        const na = (a.proposal_number || a.quote_number || '').toString();
+        const nb = (b.proposal_number || b.quote_number || '').toString();
+        return nb.localeCompare(na, undefined, { numeric: true });
+      });
+      setSelectedProposalQuoteId((prev) => {
+        if (prev && sorted.some((q: any) => q.id === prev)) return prev;
+        return sorted[0]?.id ?? null;
+      });
+    })();
+    return () => { mounted = false; };
+  }, [job?.id]);
 
   useEffect(() => {
     loadData();
@@ -1769,7 +1806,14 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
         {/* forceMount keeps the panel alive across tab switches — data persists, no cold-restart */}
         <TabsContent forceMount value="proposal-materials" className="w-full flex flex-col min-h-0 data-[state=inactive]:hidden h-[calc(100vh-8rem)] min-h-[400px] sm:min-h-[520px]">
-          <ProposalAndMaterialsView job={job} userId={profile?.id} viewMode={proposalViewMode} onViewModeChange={setProposalViewMode} />
+          <ProposalAndMaterialsView
+              job={job}
+              userId={profile?.id}
+              viewMode={proposalViewMode}
+              onViewModeChange={setProposalViewMode}
+              controlledQuoteId={selectedProposalQuoteId}
+              onQuoteChange={setSelectedProposalQuoteId}
+            />
         </TabsContent>
 
         <TabsContent value="components" className="w-full">
@@ -1813,13 +1857,17 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
         <TabsContent value="subcontractors" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
-            <SubcontractorEstimatesManagement jobId={job.id} />
+            <SubcontractorEstimatesManagement
+              jobId={job.id}
+              quoteId={selectedProposalQuoteId ?? undefined}
+              onProposalChange={setSelectedProposalQuoteId}
+            />
           </div>
         </TabsContent>
 
         <TabsContent value="customer-portal" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
-            <CustomerPortalManagement job={job} />
+            <CustomerPortalManagement key={portalJobId ?? job.id} job={job} portalJobId={portalJobId ?? job.id} getPortalJobId={getPortalJobId} />
           </div>
         </TabsContent>
 

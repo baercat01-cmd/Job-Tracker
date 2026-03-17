@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, ChevronLeft, ChevronRight, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, Settings, Printer, Send, CheckCircle, GitCompare } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, ChevronLeft, ChevronRight, Briefcase, Edit, Upload, MoreVertical, List, Eye, EyeOff, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, Settings, Printer, Send, CheckCircle, GitCompare, Link2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -92,6 +92,7 @@ interface CustomRowLineItem {
   markup_percent?: number;
   item_type?: 'material' | 'labor';
   sheet_id?: string;
+  hide_from_customer?: boolean;
 }
 
 interface LaborPricing {
@@ -783,6 +784,11 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                               <p className="text-xs font-bold text-blue-700">
                                 ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
+                              {(lineItem as any).hide_from_customer && (
+                                <span className="text-slate-400" title="Hidden from customer portal">
+                                  <EyeOff className="w-3 h-3" />
+                                </span>
+                              )}
                               <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, lineItem, isLabor ? 'labor' : 'material')}>
                                 <Edit className="w-3 h-3" />
                               </Button>
@@ -1481,6 +1487,11 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                               <p className="text-xs font-bold text-blue-700">
                                 ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
+                              {(lineItem as any).hide_from_customer && (
+                                <span className="text-slate-400" title="Hidden from customer portal">
+                                  <EyeOff className="w-3 h-3" />
+                                </span>
+                              )}
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -1979,6 +1990,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     labor_hours: '0',
     labor_rate: '60',
     labor_markup_percent: '10',
+    hide_from_customer: false,
   });
   
   // Individual row markups state
@@ -2033,6 +2045,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [taxExemptSaved, setTaxExemptSaved] = useState(false);
   // Supabase Realtime broadcast channel for instant cross-user sync
   const taxExemptChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const quoteIdForSubsRef = useRef<string | null>(null);
 
   // Subcontractor dialog state
   const [showSubcontractorDialog, setShowSubcontractorDialog] = useState(false);
@@ -2249,6 +2262,20 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       supabase.removeChannel(channel);
       taxExemptChannelRef.current = null;
     };
+  }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  quoteIdForSubsRef.current = quote?.id ?? null;
+
+  // Realtime: refetch subcontractor estimates when they change (e.g. "Add to proposal" from Subcontractors tab)
+  useEffect(() => {
+    if (!job?.id) return;
+    const channel = supabase
+      .channel(`job-subs-${job.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subcontractor_estimates', filter: `job_id=eq.${job.id}` }, () => {
+        loadSubcontractorEstimates(quoteIdForSubsRef.current ?? undefined, false);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Notify parent when proposal changes (for combined Proposal+Materials view).
@@ -2492,6 +2519,32 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     } catch (error: any) {
       console.error('Error setting as contract:', error);
       toast.error(error?.message ?? 'Failed to set as contract');
+    }
+  }
+
+  /** Revoke contract (only with customer consent – confirmed in dialog). */
+  async function revokeQuoteContract() {
+    if (!quote) return;
+    const hasCustomerSignature = !!(quote as any).customer_signed_at;
+    const msg = hasCustomerSignature
+      ? 'Only revoke with the customer\'s consent. Have you obtained the customer\'s consent to revoke this contract? This will clear the signed contract and allow the proposal to be edited again.'
+      : 'Revoke this contract? This will clear the signed version and allow the proposal to be edited again.';
+    if (!confirm(msg)) return;
+    try {
+      const { data, error } = await supabase.rpc('revoke_quote_contract', { p_quote_id: quote.id });
+      const result = data as { ok?: boolean; error?: string } | null;
+      if (error) throw error;
+      if (result?.ok) {
+        toast.success('Contract revoked. Proposal can be edited again.');
+        await loadProposalVersions();
+        await loadQuoteData();
+        await loadData(true);
+      } else {
+        toast.error(result?.error ?? 'Failed to revoke contract');
+      }
+    } catch (error: any) {
+      console.error('Error revoking contract:', error);
+      toast.error(error?.message ?? 'Failed to revoke contract');
     }
   }
 
@@ -3691,6 +3744,29 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     setHistoricalUnlockedQuoteId(null);
     setTimeout(() => loadData(false, quote), 0);
     toast.info('Proposal locked. Viewing read-only.');
+  }
+
+  /** Copy customer portal URL with current proposal so portal total matches this GRAND TOTAL. */
+  async function copyPortalLinkForThisProposal() {
+    if (!job?.id || !quote?.id) return;
+    try {
+      const { data: link } = await supabase
+        .from('customer_portal_access')
+        .select('access_token')
+        .eq('job_id', job.id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      if (!link?.access_token) {
+        toast.error('Create a portal link in the Portal tab first.');
+        return;
+      }
+      const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/customer-portal?token=${link.access_token}&quote=${quote.id}`;
+      await navigator.clipboard.writeText(url);
+      toast.success('Portal link copied. Customer will see this proposal and the same total.');
+    } catch {
+      toast.error('Could not copy link.');
+    }
   }
 
   async function lockProposalForEditing() {
@@ -5319,6 +5395,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         labor_hours: laborData.hours.toString(),
         labor_rate: laborData.rate.toString(),
         labor_markup_percent: laborData.markup.toString(),
+        hide_from_customer: !!(lineItem as any).hide_from_customer,
       });
     } else {
       setEditingLineItem(null);
@@ -5335,6 +5412,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         labor_hours: '0',
         labor_rate: '60',
         labor_markup_percent: '10',
+        hide_from_customer: false,
       });
     }
     
@@ -5421,6 +5499,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       order_index: editingLineItem 
         ? editingLineItem.order_index 
         : (customRowLineItems[lineItemParentRowId]?.length || 0),
+      hide_from_customer: lineItemForm.hide_from_customer,
     };
 
     try {
@@ -5524,6 +5603,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           labor_hours: '0',
           labor_rate: currentLaborRate,
           labor_markup_percent: currentLaborMarkup,
+          hide_from_customer: lineItemForm.hide_from_customer,
         });
         setEditingLineItem(null);
       } else {
@@ -6796,9 +6876,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Create a new proposal (allowed even when current proposal is locked)">
           {creatingVersion ? <><span className="animate-spin mr-0.5">⏳</span>Creating...</> : <><Plus className="w-2.5 h-2.5 mr-0.5" />New Proposal</>}
         </Button>
-        {quote && !(quote as any).signed_version && (
+        {quote && !(quote as any).signed_version && !(quote as any).customer_signed_at && (
           <Button size="sm" onClick={setActiveProposalAsContract} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2">
             <Lock className="w-2.5 h-2.5 mr-0.5" />Set as Contract
+          </Button>
+        )}
+        {quote && ((quote as any).signed_version || (quote as any).customer_signed_at) && (
+          <Button size="sm" onClick={revokeQuoteContract} variant="outline" className="border-amber-400 text-amber-800 hover:bg-amber-50 h-8 text-xs px-2" title="Only with customer consent">
+            <LockOpen className="w-2.5 h-2.5 mr-0.5" />Revoke contract
           </Button>
         )}
         {quote && (
@@ -6829,7 +6914,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       </div>
     );
     return () => { setProposalToolbar(null); };
-  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version]);
+  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version, (quote as any)?.customer_signed_at]);
 
   // Sync proposal summary to green header bar (Proposal #, Materials, Labor, Grand Total)
   useEffect(() => {
@@ -6849,6 +6934,28 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     });
     return () => setSummary(null);
   }, [proposalSummaryCtx?.setSummary, quote, proposalMaterialsTotalWithSubcontractors, proposalLaborPrice, proposalSubtotal, proposalTotalTax, proposalGrandTotal]);
+
+  // Sync proposal totals to quote so customer portal can display the same numbers (single source of truth)
+  const lastSyncedTotalsRef = useRef<{ quoteId: string; sub: number; tax: number; grand: number } | null>(null);
+  useEffect(() => {
+    if (!quote?.id || !Number.isFinite(proposalSubtotal) || !Number.isFinite(proposalGrandTotal)) return;
+    const sub = Math.round(proposalSubtotal * 100) / 100;
+    const tax = Math.round((proposalTotalTax ?? 0) * 100) / 100;
+    const grand = Math.round(proposalGrandTotal * 100) / 100;
+    const prev = lastSyncedTotalsRef.current;
+    if (prev && prev.quoteId === quote.id && prev.sub === sub && prev.tax === tax && prev.grand === grand) return;
+    lastSyncedTotalsRef.current = { quoteId: quote.id, sub, tax, grand };
+    supabase
+      .from('quotes')
+      .update({
+        proposal_subtotal: sub,
+        proposal_tax: tax,
+        proposal_grand_total: grand,
+        proposal_totals_updated_at: new Date().toISOString(),
+      })
+      .eq('id', quote.id)
+      .then(({ error }) => { if (error) console.warn('Sync proposal totals to quote:', error?.message); });
+  }, [quote?.id, proposalSubtotal, proposalTotalTax, proposalGrandTotal]);
 
   if (loading) {
     return (
@@ -6912,6 +7019,17 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           )}
           <span className="text-slate-300">|</span>
           <span className="text-base font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          {quote && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={copyPortalLinkForThisProposal}
+              className="h-8 w-8 p-0 shrink-0"
+              title="Copy portal link for this proposal (customer will see this total)"
+            >
+              <Link2 className="w-4 h-4 text-slate-500" />
+            </Button>
+          )}
           {quote && (
             <Button
               variant="outline"
@@ -7042,9 +7160,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
               <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion} className="bg-blue-600 hover:bg-blue-700" title="Create a new proposal (allowed even when current proposal is locked)">
                 {creatingVersion ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />Creating...</> : <><Plus className="w-3 h-3 mr-2" />New Proposal</>}
               </Button>
-              {quote && !(quote as any).signed_version && (
+              {quote && !(quote as any).signed_version && !(quote as any).customer_signed_at && (
                 <Button size="sm" onClick={setActiveProposalAsContract} className="bg-emerald-600 hover:bg-emerald-700">
                   <Lock className="w-3 h-3 mr-2" />Set as Contract
+                </Button>
+              )}
+              {quote && ((quote as any).signed_version || (quote as any).customer_signed_at) && (
+                <Button size="sm" onClick={revokeQuoteContract} variant="outline" className="border-amber-400 text-amber-800 hover:bg-amber-50" title="Only with customer consent">
+                  <LockOpen className="w-3 h-3 mr-2" />Revoke contract
                 </Button>
               )}
               {quote && (
@@ -8096,6 +8219,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 rows={2}
                 placeholder="Additional details about this line item..."
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="lineitem-hide-from-customer"
+                checked={lineItemForm.hide_from_customer}
+                onChange={(e) => setLineItemForm(prev => ({ ...prev, hide_from_customer: e.target.checked }))}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <Label htmlFor="lineitem-hide-from-customer" className="cursor-pointer text-sm">
+                Hide from customer portal
+              </Label>
             </div>
 
             <div className="flex justify-end gap-2">

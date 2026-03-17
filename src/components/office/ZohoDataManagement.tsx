@@ -191,45 +191,63 @@ export function ZohoDataManagement() {
     setSyncing(true);
     try {
       toast.info('Starting sync from Zoho Books...');
+      await supabase.functions.invoke('zoho-sync', { body: { action: 'warm' } });
+      let page = 1;
+      let data: any = null;
+      let totalSynced = 0;
+      let totalVendors = 0;
 
-      const { data, error } = await supabase.functions.invoke('zoho-sync', {
-        body: { action: 'sync_materials' },
-      });
+      do {
+        const { data: pageData, error } = await supabase.functions.invoke('zoho-sync', {
+          body: { action: 'sync_materials', syncPage: page },
+        });
 
-      if (error) {
-        let errorMessage = error.message;
-        if (error instanceof FunctionsHttpError) {
-          try {
-            const statusCode = error.context?.status ?? 500;
-            const textContent = await error.context?.text();
-            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
-          } catch {
-            errorMessage = error.message || 'Failed to read response';
+        if (error) {
+          let errorMessage = error.message;
+          if (error instanceof FunctionsHttpError && error.context) {
+            try {
+              const raw = await error.context.text();
+              if (raw) {
+                try {
+                  const body = JSON.parse(raw);
+                  errorMessage = body?.details ?? body?.error ?? raw;
+                } catch {
+                  errorMessage = raw || error.message;
+                }
+              }
+            } catch {
+              /* keep message */
+            }
           }
+          throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
-      }
 
-      const message = data.message || 'Sync completed successfully';
+        data = pageData;
+        totalSynced += data?.itemsSynced ?? 0;
+        if (page === 1 && data?.vendorsSynced != null) totalVendors = data.vendorsSynced;
+        if (data?.hasMore && data?.nextPage) {
+          page = data.nextPage;
+          toast.loading(`Syncing materials... (page ${page})`, { id: 'zoho-sync-dm' });
+        }
+      } while (data?.hasMore && data?.nextPage);
+
+      toast.dismiss('zoho-sync-dm');
+      const message = data?.message || 'Sync completed successfully';
       console.log('✅ Zoho sync result:', data);
       toast.success(message, { duration: 5000 });
-      
-      // Force reload all data
+
       await loadData();
       await loadSyncStatus();
-      
-      // Show detailed sync results
-      if (data.itemsInserted > 0 || data.itemsUpdated > 0) {
+
+      if (totalSynced > 0) {
         toast.success(
           `📊 Sync Details:\n` +
-          `• ${data.itemsInserted || 0} new materials added to catalog\n` +
-          `• ${data.itemsUpdated || 0} materials updated\n` +
-          `• ${data.vendorsSynced || 0} vendors synced\n\n` +
+          `• ${totalSynced} materials synced\n` +
+          `• ${totalVendors || 0} vendors synced\n\n` +
           `✅ Materials are now available in the Materials Catalog`,
           { duration: 10000 }
         );
-        
-        // Additional guidance
+
         toast.info(
           `💡 To use these materials in jobs:\n` +
           `1. Go to a Job's Materials tab\n` +
@@ -250,7 +268,7 @@ export function ZohoDataManagement() {
       }
       
       // If nothing was synced, show detailed message
-      if (data.itemsInserted === 0 && data.itemsUpdated === 0 && data.itemsSkipped === 0) {
+      if (totalSynced === 0 && (data?.itemsSkipped ?? 0) === 0) {
         toast.info(
           `ℹ️ No new materials to sync. All Zoho Books items are already in the catalog.\n\n` +
           `Total materials in catalog: ${materials.length}`,

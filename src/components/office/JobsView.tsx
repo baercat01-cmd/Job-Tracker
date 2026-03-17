@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,8 +17,18 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical, DollarSign, TrendingUp, TrendingDown, ScrollText } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical, DollarSign, TrendingUp, TrendingDown, ScrollText, Mail, Reply, Send } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
 import { CreateJobDialog } from './CreateJobDialog';
@@ -53,7 +63,22 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  /** Single source of truth for which job the detail dialog is for. Used for portal link so it never points at the wrong job. */
+  const [detailDialogJobId, setDetailDialogJobId] = useState<string | null>(null);
+  /** Ref set synchronously when dialog opens so portal "Save & create link" always uses the job the user opened (avoids stale state). */
+  const portalJobIdRef = useRef<string | null>(null);
   const [selectedTab, setSelectedTab] = useState('overview');
+
+  function openJobDetail(job: Job) {
+    portalJobIdRef.current = job.id;
+    setSelectedJob(job);
+    setDetailDialogJobId(job.id);
+  }
+  function closeJobDetail() {
+    portalJobIdRef.current = null;
+    setSelectedJob(null);
+    setDetailDialogJobId(null);
+  }
   const [stats, setStats] = useState<Record<string, any>>({});
   const [statusFilter, setStatusFilter] = useState<'active' | 'quoting' | 'on_hold'>('active');
   const [crewOrderCounts, setCrewOrderCounts] = useState<Record<string, number>>({});
@@ -63,12 +88,25 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [budgetJobId, setBudgetJobId] = useState<string | null>(null);
   const [jobQuotes, setJobQuotes] = useState<Record<string, any>>({});
+  const [recentMessages, setRecentMessages] = useState<Array<{ id: string; job_id: string; subject: string; from_name: string | null; from_email: string | null; body_text: string | null; email_date: string; direction?: string; jobs: { id: string; name: string } | null }>>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [showReplyDialog, setShowReplyDialog] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<typeof recentMessages[0] | null>(null);
+  const [replySubject, setReplySubject] = useState('');
+  const [replyBody, setReplyBody] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [showNewMessageDialog, setShowNewMessageDialog] = useState(false);
+  const [newMessageJobId, setNewMessageJobId] = useState<string>('');
+  const [newMessageSubject, setNewMessageSubject] = useState('');
+  const [newMessageBody, setNewMessageBody] = useState('');
+  const [sendingNewMessage, setSendingNewMessage] = useState(false);
 
   useEffect(() => {
     loadJobs();
     loadCrewOrderCounts();
     loadJobBudgets();
     loadJobQuotes();
+    if (!showArchived) loadRecentMessages();
 
     // Subscribe to material changes to update crew order counts in real-time
     const materialsChannel = supabase
@@ -90,24 +128,22 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
     };
   }, []);
 
-  // Auto-scroll to selected job when selectedJobId changes
+  // When dialog is closed, open the job for selectedJobId (e.g. from notification or calendar).
+  // When dialog is already open, do NOT overwrite selectedJob — otherwise the detail view would
+  // switch to another job (e.g. last created) and "Save & create link" would create for the wrong job.
   useEffect(() => {
-    if (selectedJobId && selectedJob?.id !== selectedJobId) {
-      const job = jobs.find(j => j.id === selectedJobId);
-      if (job) {
-        setSelectedJob(job);
-        // Default to proposal-materials so most recent proposal and first sheet are visible
-        setSelectedTab('proposal-materials');
-        // Scroll to job card if it exists in the DOM
-        setTimeout(() => {
-          const element = document.getElementById(`job-${selectedJobId}`);
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 100);
-      }
-    }
-  }, [selectedJobId, jobs, openMaterialsTab]);
+    if (!selectedJobId) return;
+    const job = jobs.find(j => j.id === selectedJobId);
+    if (!job) return;
+    // Only sync when no job is currently selected (dialog closed). If user has a job open, leave it.
+    if (selectedJob) return;
+    openJobDetail(job);
+    setSelectedTab('proposal-materials');
+    setTimeout(() => {
+      const element = document.getElementById(`job-${selectedJobId}`);
+      if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }, [selectedJobId, jobs, openMaterialsTab, selectedJob]);
 
   async function loadJobs() {
     try {
@@ -361,9 +397,131 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
     }
   }
 
+  async function loadRecentMessages() {
+    setLoadingMessages(true);
+    try {
+      const { data, error } = await supabase
+        .from('job_emails')
+        .select('id, job_id, subject, from_name, from_email, body_text, email_date, direction, jobs(id, name)')
+        .order('email_date', { ascending: false })
+        .limit(25);
+
+      if (error) throw error;
+      setRecentMessages((data || []) as any);
+    } catch (error: any) {
+      console.error('Error loading recent messages:', error);
+      setRecentMessages([]);
+    } finally {
+      setLoadingMessages(false);
+    }
+  }
+
+  async function openJobCommunications(jobId: string) {
+    let job = jobs.find((j) => j.id === jobId);
+    if (!job) {
+      const { data, error } = await supabase.from('jobs').select('*').eq('id', jobId).maybeSingle();
+      if (error || !data) {
+        toast.error('Job not found');
+        return;
+      }
+      job = data as Job;
+    }
+    setSelectedTab('communications');
+    openJobDetail(job);
+  }
+
   function openBudgetDialog(jobId: string) {
     setBudgetJobId(jobId);
     setShowBudgetDialog(true);
+  }
+
+  function openReplyDialog(msg: (typeof recentMessages)[0]) {
+    setReplyToMessage(msg);
+    setReplySubject(msg.subject?.startsWith('Re:') ? msg.subject : `Re: ${msg.subject || 'Message'}`);
+    setReplyBody('');
+    setShowReplyDialog(true);
+  }
+
+  async function sendReplyToCustomer() {
+    if (!replyToMessage || !replyBody.trim()) {
+      toast.error('Please enter a message');
+      return;
+    }
+    setSendingReply(true);
+    try {
+      const { error } = await supabase.from('job_emails').insert({
+        job_id: replyToMessage.job_id,
+        message_id: `office-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        subject: replySubject.trim(),
+        from_email: profile?.email ?? 'office@company.com',
+        from_name: profile?.user_metadata?.full_name ?? profile?.email ?? 'Project Team',
+        to_emails: replyToMessage.from_email ? [replyToMessage.from_email] : [],
+        cc_emails: [],
+        body_text: replyBody.trim(),
+        email_date: new Date().toISOString(),
+        direction: 'sent',
+        is_read: false,
+      });
+      if (error) throw error;
+      toast.success('Message sent. Customer will see it in their portal.');
+      setShowReplyDialog(false);
+      setReplyToMessage(null);
+      setReplySubject('');
+      setReplyBody('');
+      await loadRecentMessages();
+    } catch (err: any) {
+      console.error('Send reply error:', err);
+      toast.error(err?.message ?? 'Failed to send message');
+    } finally {
+      setSendingReply(false);
+    }
+  }
+
+  function openNewMessageDialog() {
+    setNewMessageJobId('');
+    setNewMessageSubject('');
+    setNewMessageBody('');
+    setShowNewMessageDialog(true);
+  }
+
+  async function sendNewMessageToCustomer() {
+    if (!newMessageJobId || !newMessageBody.trim()) {
+      toast.error('Select a job and enter a message');
+      return;
+    }
+    const job = jobs.find((j) => j.id === newMessageJobId);
+    if (!job) {
+      toast.error('Job not found');
+      return;
+    }
+    setSendingNewMessage(true);
+    try {
+      const { error } = await supabase.from('job_emails').insert({
+        job_id: job.id,
+        message_id: `office-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        subject: newMessageSubject.trim() || `Message from project team`,
+        from_email: profile?.email ?? 'office@company.com',
+        from_name: profile?.user_metadata?.full_name ?? profile?.email ?? 'Project Team',
+        to_emails: job.customer_email ? [job.customer_email] : [],
+        cc_emails: [],
+        body_text: newMessageBody.trim(),
+        email_date: new Date().toISOString(),
+        direction: 'sent',
+        is_read: false,
+      });
+      if (error) throw error;
+      toast.success('Message sent. Customer will see it in their portal.');
+      setShowNewMessageDialog(false);
+      setNewMessageJobId('');
+      setNewMessageSubject('');
+      setNewMessageBody('');
+      await loadRecentMessages();
+    } catch (err: any) {
+      console.error('Send new message error:', err);
+      toast.error(err?.message ?? 'Failed to send message');
+    } finally {
+      setSendingNewMessage(false);
+    }
   }
 
   async function reloadSelectedJob() {
@@ -377,7 +535,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         .single();
 
       if (error) throw error;
-      if (data) setSelectedJob(data);
+      if (data) openJobDetail(data);
     } catch (error) {
       console.error('Error reloading job:', error);
     }
@@ -393,7 +551,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
           <TodayTasksSidebar 
             onJobSelect={(jobId) => {
               const j = jobs.find(j => j.id === jobId) || null;
-              setSelectedJob(j);
+              openJobDetail(j);
               if (j) setSelectedTab('proposal-materials');
             }}
             onAddTask={onAddTask}
@@ -449,6 +607,90 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 <Plus className="w-4 h-4 mr-2" />
                 New Job
               </Button>
+              {!showArchived && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="relative flex-1 sm:flex-initial bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white min-w-[2.5rem]"
+                      title="Customer messages"
+                    >
+                      <Mail className="w-4 h-4" />
+                      {recentMessages.length > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
+                          {recentMessages.length > 25 ? '25+' : recentMessages.length}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-96 max-h-80 overflow-hidden flex flex-col p-0" align="end">
+                    <div className="p-3 border-b bg-muted/30">
+                      <p className="font-medium text-sm">Customer messages</p>
+                      <p className="text-xs text-muted-foreground">Click a message to open that job&apos;s Communications tab.</p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="mt-2 w-full"
+                        onClick={openNewMessageDialog}
+                      >
+                        <Send className="w-3.5 h-3.5 mr-1.5" />
+                        Start a conversation
+                      </Button>
+                    </div>
+                    <div className="overflow-y-auto flex-1 min-h-0">
+                      {loadingMessages ? (
+                        <p className="p-3 text-sm text-muted-foreground">Loading...</p>
+                      ) : recentMessages.length === 0 ? (
+                        <p className="p-3 text-sm text-muted-foreground">No customer messages yet.</p>
+                      ) : (
+                        <ul className="p-2 space-y-1">
+                          {recentMessages.map((msg) => (
+                            <li key={msg.id} className="flex flex-col gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openJobCommunications(msg.job_id)}
+                                className="w-full text-left rounded-lg border p-2.5 hover:bg-muted/50 transition-colors"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <span className="font-medium text-foreground text-sm">
+                                      {msg.jobs?.name ?? 'Unknown job'}
+                                    </span>
+                                    <span className="text-muted-foreground text-xs ml-1">
+                                      {msg.from_name ?? 'Customer'}
+                                    </span>
+                                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                      {msg.subject || (msg.body_text ?? '').slice(0, 50) || 'No subject'}
+                                    </p>
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground shrink-0">
+                                    {new Date(msg.email_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </button>
+                              {msg.direction === 'inbound' && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs self-end"
+                                  onClick={(e) => { e.stopPropagation(); openReplyDialog(msg); }}
+                                >
+                                  <Reply className="w-3 h-3 mr-1" />
+                                  Reply (sends to customer portal)
+                                </Button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
             </div>
           )}
         </div>
@@ -496,7 +738,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div className="flex-1 cursor-pointer" onClick={() => {
-                        setSelectedJob(job);
+                        openJobDetail(job);
                         setSelectedTab('proposal-materials');
                       }}>
                         <CardTitle className="text-lg">{job.name}</CardTitle>
@@ -597,7 +839,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="cursor-pointer" onClick={() => {
-                      setSelectedJob(job);
+                      openJobDetail(job);
                       setSelectedTab('overview');
                     }}>
                       <div className="flex items-start text-sm">
@@ -657,7 +899,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                           className="h-7 px-2 text-xs"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedJob(job);
+                            openJobDetail(job);
                             setSelectedTab('proposal-materials');
                           }}
                         >
@@ -670,7 +912,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                           className="h-7 px-2 text-xs"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedJob(job);
+                            openJobDetail(job);
                             setSelectedTab('schedule');
                           }}
                         >
@@ -684,7 +926,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         className="h-7 px-2 text-xs"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedJob(job);
+                          openJobDetail(job);
                           setSelectedTab('photos');
                         }}
                       >
@@ -738,7 +980,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}>
                               <div className="flex items-center gap-1.5">
@@ -761,7 +1003,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                   className="h-6 px-1.5 text-xs flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setSelectedJob(job);
+                                    openJobDetail(job);
                                     setSelectedTab('photos');
                                   }}
                                 >
@@ -837,7 +1079,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
                           <div className="cursor-pointer" onClick={() => {
-                            setSelectedJob(job);
+                            openJobDetail(job);
                             setSelectedTab('overview');
                           }}>
                             <div className="flex items-start text-xs">
@@ -890,7 +1132,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -943,7 +1185,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -956,7 +1198,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -974,7 +1216,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('schedule');
                               }}
                             >
@@ -1017,7 +1259,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}>
                               <div className="flex items-center gap-1.5">
@@ -1040,7 +1282,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                   className="h-6 px-1.5 text-xs flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setSelectedJob(job);
+                                    openJobDetail(job);
                                     setSelectedTab('photos');
                                   }}
                                 >
@@ -1098,7 +1340,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
                           <div className="cursor-pointer" onClick={() => {
-                            setSelectedJob(job);
+                            openJobDetail(job);
                             setSelectedTab('overview');
                           }}>
                             <div className="flex items-start text-xs">
@@ -1121,7 +1363,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1174,7 +1416,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1187,7 +1429,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1205,7 +1447,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('schedule');
                               }}
                             >
@@ -1247,7 +1489,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}>
                               <div className="flex items-center gap-1.5">
@@ -1270,7 +1512,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                   className="h-6 px-1.5 text-xs flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setSelectedJob(job);
+                                    openJobDetail(job);
                                     setSelectedTab('photos');
                                   }}
                                 >
@@ -1319,7 +1561,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
                           <div className="cursor-pointer" onClick={() => {
-                            setSelectedJob(job);
+                            openJobDetail(job);
                             setSelectedTab('overview');
                           }}>
                             <div className="flex items-start text-xs">
@@ -1343,7 +1585,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1396,7 +1638,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1409,7 +1651,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1427,7 +1669,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('schedule');
                               }}
                             >
@@ -1469,7 +1711,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}>
                               <div className="flex items-center gap-1.5">
@@ -1492,7 +1734,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                   className="h-6 px-1.5 text-xs flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setSelectedJob(job);
+                                    openJobDetail(job);
                                     setSelectedTab('photos');
                                   }}
                                 >
@@ -1550,7 +1792,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
                           <div className="cursor-pointer" onClick={() => {
-                            setSelectedJob(job);
+                            openJobDetail(job);
                             setSelectedTab('overview');
                           }}>
                             <div className="flex items-start text-xs">
@@ -1574,7 +1816,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1627,7 +1869,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1640,7 +1882,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('proposal-materials');
                               }}
                             >
@@ -1658,7 +1900,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedJob(job);
+                                openJobDetail(job);
                                 setSelectedTab('schedule');
                               }}
                             >
@@ -1687,7 +1929,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
       <EditJobDialog
         open={showEditDialog}
-        job={selectedJob}
+        job={detailDialogJobId ? (jobs.find(j => j.id === detailDialogJobId) ?? selectedJob) : selectedJob}
         onClose={() => setShowEditDialog(false)}
         onSuccess={() => {
           setShowEditDialog(false);
@@ -1703,7 +1945,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         onJobSelect={(jobId) => {
           const job = jobs.find(j => j.id === jobId);
           if (job) {
-            setSelectedJob(job);
+            openJobDetail(job);
             setSelectedTab('proposal-materials');
           }
         }}
@@ -1744,40 +1986,189 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         </DialogContent>
       </Dialog>
 
-      {/* Job Details Dialog - Full Screen */}
-      <Dialog open={!!selectedJob} onOpenChange={() => setSelectedJob(null)}>
-        <DialogContent className="h-screen w-screen max-w-none flex flex-col p-0 m-0 rounded-none">
-          <DialogHeader className="px-2 pt-2 pb-2 border-b shrink-0 bg-white">
-            <div className="flex items-center justify-between">
-              <DialogTitle className="text-xl">
-                {selectedJob?.name}
-              </DialogTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowEditDialog(true);
-                }}
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Edit Job
-              </Button>
-            </div>
+      {/* Start a conversation (new message to customer) */}
+      <Dialog
+        open={showNewMessageDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowNewMessageDialog(false);
+            setNewMessageJobId('');
+            setNewMessageSubject('');
+            setNewMessageBody('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5" />
+              Start a conversation
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Send a message to a customer. They&apos;ll see it in their portal under Messages.
+            </p>
           </DialogHeader>
-          {selectedJob && (
-            <div className="flex-1 overflow-y-auto w-full">
-              <JobDetailedView 
-                job={selectedJob} 
-                onBack={() => setSelectedJob(null)}
-                onEdit={() => {
-                  setShowEditDialog(true);
-                }}
-                initialTab={selectedTab}
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label>Job</Label>
+              <Select value={newMessageJobId} onValueChange={setNewMessageJobId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a job" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs
+                    .filter((j) => !j.is_internal && j.status !== 'archived')
+                    .map((j) => (
+                      <SelectItem key={j.id} value={j.id}>
+                        {j.name} {j.client_name ? `(${j.client_name})` : ''}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="new-msg-subject">Subject (optional)</Label>
+              <Input
+                id="new-msg-subject"
+                value={newMessageSubject}
+                onChange={(e) => setNewMessageSubject(e.target.value)}
+                placeholder="Message from project team"
+                className="mt-1"
               />
             </div>
-          )}
+            <div>
+              <Label htmlFor="new-msg-body">Message</Label>
+              <Textarea
+                id="new-msg-body"
+                value={newMessageBody}
+                onChange={(e) => setNewMessageBody(e.target.value)}
+                placeholder="Type your message..."
+                rows={4}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowNewMessageDialog(false);
+                  setNewMessageJobId('');
+                  setNewMessageSubject('');
+                  setNewMessageBody('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={sendNewMessageToCustomer}
+                disabled={sendingNewMessage || !newMessageJobId || !newMessageBody.trim()}
+              >
+                {sendingNewMessage ? 'Sending...' : (
+                  <>
+                    <Send className="w-4 h-4 mr-1" />
+                    Send
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
+
+      {/* Reply to customer (portal) */}
+      <Dialog open={showReplyDialog} onOpenChange={(open) => { if (!open) { setShowReplyDialog(false); setReplyToMessage(null); setReplySubject(''); setReplyBody(''); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Reply to customer</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {replyToMessage?.jobs?.name ? `Job: ${replyToMessage.jobs.name}` : ''} — Customer will see this in their portal.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label htmlFor="reply-subject">Subject</Label>
+              <Input
+                id="reply-subject"
+                value={replySubject}
+                onChange={(e) => setReplySubject(e.target.value)}
+                placeholder="Re: ..."
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="reply-body">Message</Label>
+              <Textarea
+                id="reply-body"
+                value={replyBody}
+                onChange={(e) => setReplyBody(e.target.value)}
+                placeholder="Type your message..."
+                rows={4}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => { setShowReplyDialog(false); setReplyToMessage(null); setReplySubject(''); setReplyBody(''); }}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={sendReplyToCustomer} disabled={sendingReply || !replyBody.trim()}>
+                {sendingReply ? 'Sending...' : (
+                  <>
+                    <Send className="w-4 h-4 mr-1" />
+                    Send
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Job Details Dialog - Full Screen */}
+      {/* Resolve job from detailDialogJobId so portal link and content always match the job the user opened */}
+      {(() => {
+        const dialogJob = selectedJob && detailDialogJobId
+          ? (jobs.find(j => j.id === detailDialogJobId) ?? selectedJob)
+          : selectedJob;
+        return (
+          <Dialog open={!!selectedJob} onOpenChange={() => closeJobDetail()}>
+            <DialogContent className="h-screen w-screen max-w-none flex flex-col p-0 m-0 rounded-none">
+              <DialogHeader className="px-2 pt-2 pb-2 border-b shrink-0 bg-white">
+                <div className="flex items-center justify-between">
+                  <DialogTitle className="text-xl">
+                    {dialogJob?.name}
+                  </DialogTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowEditDialog(true);
+                    }}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Job
+                  </Button>
+                </div>
+              </DialogHeader>
+              {dialogJob && (
+                <div className="flex-1 overflow-y-auto w-full">
+                  <JobDetailedView
+                    job={dialogJob}
+                    portalJobId={detailDialogJobId}
+                    getPortalJobId={() => portalJobIdRef.current ?? detailDialogJobId}
+                    onBack={() => closeJobDetail()}
+                    onEdit={() => {
+                      setShowEditDialog(true);
+                    }}
+                    initialTab={selectedTab}
+                  />
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }

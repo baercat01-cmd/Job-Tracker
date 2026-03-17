@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X, Trash2, Users } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X, Trash2, Users, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { getLocalDateString } from '@/lib/utils';
 
@@ -41,6 +41,16 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
   const [endDate, setEndDate] = useState(getLocalDateString());
   const [reason, setReason] = useState('');
   const [showAllStaff, setShowAllStaff] = useState(true);
+  const [editingRange, setEditingRange] = useState<UnavailableDate | null>(null);
+  const [selectionStart, setSelectionStart] = useState<string | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<string | null>(null);
+  const isSelectingRef = useRef(false);
+  const selectionStartRef = useRef<string | null>(null);
+  const selectionEndRef = useRef<string | null>(null);
+  selectionStartRef.current = selectionStart;
+  selectionEndRef.current = selectionEnd;
+
+  const canSelectDays = true;
 
   useEffect(() => {
     loadUnavailableDates();
@@ -67,18 +77,13 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
   }
 
   function countWeekdays(start: string, end: string): number {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
+    const startDate = parseLocalDate(start);
+    const endDate = parseLocalDate(end);
     let count = 0;
-    
-    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(startDate.getTime()); d <= endDate; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
-      // Only count weekdays (Monday-Friday: 1-5)
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        count++;
-      }
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) count++;
     }
-    
     return count;
   }
 
@@ -88,7 +93,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
       return;
     }
 
-    if (new Date(endDate) < new Date(startDate)) {
+    if (parseLocalDate(endDate) < parseLocalDate(startDate)) {
       toast.error('End date must be after start date');
       return;
     }
@@ -127,6 +132,33 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     }
   }
 
+  async function updateUnavailableDate(id: string, updates: { start_date: string; end_date: string; reason: string | null }) {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('user_unavailable_dates')
+        .update({
+          start_date: updates.start_date,
+          end_date: updates.end_date,
+          reason: updates.reason || null,
+        })
+        .eq('id', id)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      toast.success('Time off updated');
+      setEditingRange(null);
+      setShowAddDialog(false);
+      loadUnavailableDates();
+    } catch (error: any) {
+      toast.error('Failed to update time off');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function deleteUnavailableDate(id: string) {
     if (!confirm('Remove this time off?')) return;
 
@@ -134,7 +166,8 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
       const { error } = await supabase
         .from('user_unavailable_dates')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', userId);
 
       if (error) throw error;
 
@@ -146,6 +179,22 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     }
   }
 
+  function openEditDialog(range: UnavailableDate) {
+    setStartDate(range.start_date);
+    setEndDate(range.end_date);
+    setReason(range.reason || '');
+    setEditingRange(range);
+    setShowAddDialog(true);
+  }
+
+  /** Parse YYYY-MM-DD (or ISO string) as local date (avoids UTC midnight shifting day-of-week). */
+  function parseLocalDate(dateStr: string): Date {
+    const datePart = typeof dateStr === 'string' && dateStr.length >= 10 ? dateStr.slice(0, 10) : dateStr;
+    const [y, m, d] = datePart.split('-').map(Number);
+    if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(d)) return new Date(NaN);
+    return new Date(y, m - 1, d);
+  }
+
   function getDaysInMonth(date: Date): number {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   }
@@ -155,7 +204,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
   }
 
   function isDateUnavailable(dateStr: string): boolean {
-    const date = new Date(dateStr);
+    const date = parseLocalDate(dateStr);
     const dayOfWeek = date.getDay();
     
     // Weekends are never marked as unavailable in the calendar
@@ -164,14 +213,14 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     }
     
     return unavailableDates.some(range => {
-      const start = new Date(range.start_date);
-      const end = new Date(range.end_date);
+      const start = parseLocalDate(range.start_date);
+      const end = parseLocalDate(range.end_date);
       return date >= start && date <= end;
     });
   }
 
   function getUnavailableInfo(dateStr: string): string | null {
-    const date = new Date(dateStr);
+    const date = parseLocalDate(dateStr);
     const dayOfWeek = date.getDay();
     
     // Weekends don't show unavailable info
@@ -180,8 +229,8 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     }
     
     const ranges = unavailableDates.filter(range => {
-      const start = new Date(range.start_date);
-      const end = new Date(range.end_date);
+      const start = parseLocalDate(range.start_date);
+      const end = parseLocalDate(range.end_date);
       return date >= start && date <= end;
     });
     
@@ -196,7 +245,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
   }
 
   function getUnavailableUsers(dateStr: string): string[] {
-    const date = new Date(dateStr);
+    const date = parseLocalDate(dateStr);
     const dayOfWeek = date.getDay();
     
     // Weekends don't show unavailable users
@@ -205,8 +254,8 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     }
     
     const ranges = unavailableDates.filter(range => {
-      const start = new Date(range.start_date);
-      const end = new Date(range.end_date);
+      const start = parseLocalDate(range.start_date);
+      const end = parseLocalDate(range.end_date);
       return date >= start && date <= end;
     });
     
@@ -224,6 +273,60 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
   function goToToday() {
     setCurrentDate(new Date());
   }
+
+  function getSelectionRange(): { start: string; end: string } | null {
+    if (!selectionStart || !selectionEnd) return null;
+    const a = selectionStart;
+    const b = selectionEnd;
+    return a <= b ? { start: a, end: b } : { start: b, end: a };
+  }
+
+  function isDateInSelection(dateStr: string): boolean {
+    const range = getSelectionRange();
+    if (!range) return false;
+    return dateStr >= range.start && dateStr <= range.end;
+  }
+
+  function handleSelectionStart(dateStr: string) {
+    if (!canSelectDays) return;
+    isSelectingRef.current = true;
+    setSelectionStart(dateStr);
+    setSelectionEnd(dateStr);
+  }
+
+  function handleSelectionUpdate(dateStr: string) {
+    if (!canSelectDays || !isSelectingRef.current) return;
+    setSelectionEnd(dateStr);
+  }
+
+  function openAddDialogForRange(range: { start: string; end: string }) {
+    setStartDate(range.start);
+    setEndDate(range.end);
+    setShowAddDialog(true);
+  }
+
+  const handleSelectionEnd = useCallback(() => {
+    if (!isSelectingRef.current) return;
+    isSelectingRef.current = false;
+    const s = selectionStartRef.current;
+    const e = selectionEndRef.current;
+    const range = s && e
+      ? (s <= e ? { start: s, end: e } : { start: e, end: s })
+      : null;
+    setSelectionStart(null);
+    setSelectionEnd(null);
+    if (range) openAddDialogForRange(range);
+  }, []);
+
+  useEffect(() => {
+    if (!canSelectDays) return;
+    window.addEventListener('mouseup', handleSelectionEnd);
+    window.addEventListener('touchend', handleSelectionEnd, { passive: true });
+    return () => {
+      window.removeEventListener('mouseup', handleSelectionEnd);
+      window.removeEventListener('touchend', handleSelectionEnd);
+    };
+  }, [canSelectDays, handleSelectionEnd]);
 
   const daysInMonth = getDaysInMonth(currentDate);
   const firstDay = getFirstDayOfMonth(currentDate);
@@ -292,7 +395,20 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
           </div>
 
           {/* Calendar Grid - Weekdays Only */}
-          <div className="grid grid-cols-5 gap-1">
+          {canSelectDays && (
+            <p className="text-xs text-muted-foreground">Click a day or drag across days to add time off</p>
+          )}
+          <div
+            className="grid grid-cols-5 gap-1"
+            onTouchMove={(e) => {
+              if (!canSelectDays || !isSelectingRef.current || !e.touches.length) return;
+              const touch = e.touches[0];
+              const el = document.elementFromPoint(touch.clientX, touch.clientY);
+              const cell = el?.closest?.('[data-date]');
+              const dateStr = cell?.getAttribute?.('data-date');
+              if (dateStr) handleSelectionUpdate(dateStr);
+            }}
+          >
             {/* Day headers - Monday to Friday */}
             {['M', 'T', 'W', 'T', 'F'].map((day, index) => (
               <div key={`header-${index}`} className="text-center font-semibold text-xs text-muted-foreground py-1">
@@ -303,39 +419,48 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
             {/* Calendar days - Weekdays only */}
             {calendarDays.map((day, index) => {
               if (!day) {
-                // Empty cell - but only render if it's a weekday position
                 const cellDayOfWeek = index % 7;
-                if (cellDayOfWeek === 0 || cellDayOfWeek === 6) return null; // Skip Sunday and Saturday
+                if (cellDayOfWeek === 0 || cellDayOfWeek === 6) return null;
                 return <div key={`empty-${index}`} className="h-12 border rounded bg-muted/30" />;
               }
 
               const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const date = new Date(dateStr);
+              const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
               const dayOfWeek = date.getDay();
               const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
               
-              // Skip rendering weekend days
               if (isWeekend) return null;
               
               const isUnavailable = isDateUnavailable(dateStr);
-              const isToday = dateStr === new Date().toISOString().split('T')[0];
+              const today = new Date();
+              const isToday = date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
               const unavailableInfo = getUnavailableInfo(dateStr);
               const unavailableUsers = showAllStaff ? getUnavailableUsers(dateStr) : [];
+              const inSelection = isDateInSelection(dateStr);
+              const isSelectable = canSelectDays;
 
               return (
                 <div
                   key={day}
-                  className={`h-12 border rounded flex flex-col items-start justify-start text-xs font-medium p-1 ${
+                  data-date={dateStr}
+                  className={`h-12 border rounded flex flex-col items-start justify-start text-xs font-medium p-1 select-none ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
                   } ${
-                    isUnavailable ? 'bg-muted/30' : 'hover:bg-muted/50'
-                  }`}
-                  title={unavailableInfo || undefined}
+                    inSelection ? 'bg-primary/20 ring-1 ring-primary border-primary' : ''
+                  } ${
+                    !inSelection && isUnavailable ? 'bg-muted/30' : ''
+                  } ${
+                    !inSelection && !isUnavailable ? 'hover:bg-muted/50' : ''
+                  } ${isSelectable ? 'cursor-pointer' : ''}`}
+                  title={unavailableInfo || (isSelectable ? 'Click or drag to select' : undefined)}
+                  onMouseDown={(e) => { e.preventDefault(); handleSelectionStart(dateStr); }}
+                  onMouseEnter={() => handleSelectionUpdate(dateStr)}
+                  onTouchStart={(e) => { if (canSelectDays) handleSelectionStart(dateStr); }}
                 >
                   <div className="font-bold">{day}</div>
                   {showAllStaff && unavailableUsers.length > 0 && (
                     <div className="text-[9px] leading-tight text-left truncate w-full text-muted-foreground mt-auto">
-                      {unavailableUsers.join(', ')}
+                      {[...new Set(unavailableUsers)].join(', ')}
                     </div>
                   )}
                 </div>
@@ -349,59 +474,77 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
               <p className="text-xs font-semibold text-muted-foreground mb-2">Scheduled Time Off</p>
               <div className="space-y-2 max-h-[150px] overflow-y-auto">
                 {unavailableDates
-                  .filter(range => new Date(range.end_date) >= new Date())
-                  .map(range => (
-                    <div
-                      key={range.id}
-                      className="bg-muted/50 border border-muted rounded p-2 text-xs"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          {showAllStaff && (
-                            <p className="font-semibold text-primary mb-1">
-                              {range.user_profiles?.username || 'Unknown User'}
+                  .filter(range => parseLocalDate(range.end_date) >= new Date())
+                  .map(range => {
+                    const isOwner = range.user_id === userId;
+                    return (
+                      <div
+                        key={range.id}
+                        className="bg-muted/50 border border-muted rounded p-2 text-xs"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            {showAllStaff && (
+                              <p className="font-semibold text-primary mb-1">
+                                {range.user_profiles?.username || 'Unknown User'}
+                              </p>
+                            )}
+                            <p className="font-bold text-foreground">
+                              {range.start_date === range.end_date
+                                ? parseLocalDate(range.start_date).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  })
+                                : `${parseLocalDate(range.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${parseLocalDate(range.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
                             </p>
-                          )}
-                          <p className="font-bold text-foreground">
-                            {new Date(range.start_date).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                            {' - '}
-                            {new Date(range.end_date).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })}
-                          </p>
-                          {range.reason && (
-                            <p className="text-muted-foreground mt-1">{range.reason}</p>
+                            {range.reason && (
+                              <p className="text-muted-foreground mt-1">{range.reason}</p>
+                            )}
+                          </div>
+                          {isOwner && (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEditDialog(range)}
+                                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                title="Edit"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteUnavailableDate(range.id)}
+                                className="h-6 w-6 text-destructive hover:text-destructive"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
                           )}
                         </div>
-                        {!showAllStaff && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteUnavailableDate(range.id)}
-                            className="h-6 w-6 text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Add Time Off Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      {/* Add / Edit Time Off Dialog */}
+      <Dialog
+        open={showAddDialog}
+        onOpenChange={(open) => {
+          setShowAddDialog(open);
+          if (!open) setEditingRange(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Time Off</DialogTitle>
+            <DialogTitle>{editingRange ? 'Edit Time Off' : 'Add Time Off'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -412,7 +555,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  min={getLocalDateString()}
+                  min={editingRange ? undefined : getLocalDateString()}
                   className="h-12"
                 />
               </div>
@@ -444,18 +587,21 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
             <div className="flex gap-2 pt-4">
               <Button
                 variant="outline"
-                onClick={() => setShowAddDialog(false)}
+                onClick={() => { setShowAddDialog(false); setEditingRange(null); }}
                 className="flex-1"
                 disabled={loading}
               >
                 Cancel
               </Button>
               <Button
-                onClick={addUnavailableDate}
+                onClick={() => editingRange
+                  ? updateUnavailableDate(editingRange.id, { start_date: startDate, end_date: endDate, reason: reason || null })
+                  : addUnavailableDate()
+                }
                 className="flex-1 gradient-primary"
                 disabled={loading}
               >
-                {loading ? 'Adding...' : 'Add Time Off'}
+                {loading ? (editingRange ? 'Updating...' : 'Adding...') : (editingRange ? 'Update Time Off' : 'Add Time Off')}
               </Button>
             </div>
           </div>

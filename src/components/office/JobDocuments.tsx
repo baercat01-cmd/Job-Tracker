@@ -48,6 +48,7 @@ import {
   Check,
   Globe
 } from 'lucide-react';
+import { PdfThumbnail } from './PdfThumbnail';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
 
@@ -769,6 +770,11 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       )}
 
       {/* Documents List */}
+      {isOffice && documents.length > 0 && (
+        <p className="text-sm text-muted-foreground mb-2">
+          Use &quot;Visible to customer portal&quot; on each document to control which files the customer sees in their portal.
+        </p>
+      )}
       {documents.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -788,13 +794,13 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
             return (
               <Card 
                 key={doc.id} 
-                className={`overflow-hidden hover:shadow-lg transition-shadow cursor-pointer ${
+                className={`overflow-hidden hover:shadow-lg transition-shadow cursor-pointer flex flex-row ${
                   doc.visible_to_crew ? 'border-l-4 border-l-green-500' : ''
                 }`}
                 onClick={() => doc.latest_file_url && setViewingDocument({ url: doc.latest_file_url, name: doc.name })}
               >
-                {/* Document Preview Thumbnail */}
-                <div className="relative h-32 bg-slate-100 border-b">
+                {/* Document Preview - left side */}
+                <div className="relative w-32 sm:w-36 shrink-0 h-32 sm:h-36 bg-slate-100 border-r overflow-hidden">
                   {doc.latest_file_url ? (
                     isImage ? (
                       <img
@@ -803,52 +809,47 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                         className="w-full h-full object-cover"
                       />
                     ) : isPDF ? (
-                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-red-50 to-red-100">
-                        <FileText className="w-12 h-12 text-red-600" />
-                      </div>
+                      <PdfThumbnail
+                        src={doc.latest_file_url}
+                        alt={doc.name}
+                        className="w-full h-full flex items-center justify-center bg-white"
+                        width={144}
+                        height={144}
+                        fallback={
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-red-50 to-red-100">
+                            <FileText className="w-10 h-10 text-red-600" />
+                          </div>
+                        }
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
-                        <FileText className="w-12 h-12 text-blue-600" />
+                        <FileText className="w-10 h-10 text-blue-600" />
                       </div>
                     )
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-slate-200">
-                      <FileText className="w-10 h-10 text-slate-400" />
+                      <FileText className="w-8 h-8 text-slate-400" />
                     </div>
                   )}
-                  {/* Overlay with badges */}
-                  <div className="absolute top-2 right-2 flex gap-2">
-                    <Badge className="text-xs bg-primary/95">
-                      v{doc.current_version}
-                    </Badge>
-                    {doc.visible_to_crew && (
-                      <Badge className="text-xs bg-green-500/95 text-white">
-                        <Eye className="w-3 h-3 mr-1" />
-                        Crew
-                      </Badge>
-                    )}
-                    {doc.visible_to_customer_portal && (
-                      <Badge className="text-xs bg-amber-500/95 text-white">
-                        <Globe className="w-3 h-3 mr-1" />
-                        Portal
-                      </Badge>
-                    )}
+                  <div className="absolute bottom-1 left-1">
+                    <Badge className="text-xs bg-primary/95">v{doc.current_version}</Badge>
                   </div>
                 </div>
-                
-                <CardHeader className="pb-3" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
+
+                {/* Info - right side */}
+                <div className="flex-1 min-w-0 flex flex-col p-4" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0 flex-1">
                       {isEditing ? (
-                        <div className="space-y-2 mb-2">
+                        <div className="space-y-2">
                           <Input
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
-                            className="text-base font-semibold"
+                            className="text-sm font-semibold"
                             placeholder="Document name"
                           />
                           <Select value={editCategory} onValueChange={setEditCategory}>
-                            <SelectTrigger className="w-full">
+                            <SelectTrigger className="w-full h-8">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -865,33 +866,23 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                           <CardTitle className="text-sm mb-1 truncate" title={doc.name}>
                             {doc.name}
                           </CardTitle>
-                          <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                             <Badge variant="outline" className="text-xs">
                               {doc.category}
                             </Badge>
-                            <span className="text-xs truncate">
-                              {new Date(doc.updated_at).toLocaleDateString()}
-                            </span>
+                            <span>{new Date(doc.updated_at).toLocaleDateString()}</span>
                           </div>
                         </>
                       )}
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0">
                       {isEditing ? (
                         <>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={() => saveDocumentEdits(doc.id)}
-                          >
+                          <Button variant="default" size="sm" onClick={() => saveDocumentEdits(doc.id)}>
                             <Check className="w-4 h-4 mr-1" />
                             Save
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEditingDocId(null)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => setEditingDocId(null)}>
                             <X className="w-4 h-4" />
                           </Button>
                         </>
@@ -900,10 +891,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openRevisionLog(doc.id);
-                            }}
+                            onClick={(e) => { e.stopPropagation(); openRevisionLog(doc.id); }}
                             title="View history"
                           >
                             <History className="w-4 h-4" />
@@ -913,10 +901,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEditDocument(doc);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); startEditDocument(doc); }}
                                 title="Edit name and category"
                               >
                                 <Edit2 className="w-4 h-4" />
@@ -924,26 +909,16 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                               <Button
                                 variant={doc.visible_to_crew ? "default" : "outline"}
                                 size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleCrewVisibility(doc.id, doc.visible_to_crew);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); toggleCrewVisibility(doc.id, doc.visible_to_crew); }}
                                 title={doc.visible_to_crew ? "Hide from crew" : "Show to crew"}
                               >
-                                {doc.visible_to_crew ? (
-                                  <Eye className="w-4 h-4" />
-                                ) : (
-                                  <EyeOff className="w-4 h-4" />
-                                )}
+                                {doc.visible_to_crew ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                               </Button>
                               <Button
                                 variant={doc.visible_to_customer_portal ? "default" : "outline"}
                                 size="sm"
                                 className={doc.visible_to_customer_portal ? "bg-amber-600 hover:bg-amber-700" : ""}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  togglePortalVisibility(doc.id, !!doc.visible_to_customer_portal);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); togglePortalVisibility(doc.id, !!doc.visible_to_customer_portal); }}
                                 title={doc.visible_to_customer_portal ? "Hide from customer portal" : "Show in customer portal"}
                               >
                                 <Globe className="w-4 h-4" />
@@ -951,10 +926,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeletingDoc(doc);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); setDeletingDoc(doc); }}
                                 className="text-destructive hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -965,7 +937,43 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                       )}
                     </div>
                   </div>
-                </CardHeader>
+                  {/* Visibility badges */}
+                  <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t">
+                    {doc.visible_to_crew && (
+                      <Badge className="text-xs bg-green-500/95 text-white">
+                        <Eye className="w-3 h-3 mr-1" />
+                        Crew
+                      </Badge>
+                    )}
+                    {doc.visible_to_customer_portal && (
+                      <Badge className="text-xs bg-amber-500/95 text-white">
+                        <Globe className="w-3 h-3 mr-1" />
+                        Portal
+                      </Badge>
+                    )}
+                  </div>
+                  {isOffice && (
+                    <div className="flex flex-col gap-2 mt-3 pt-3 border-t">
+                      <div className="flex items-center justify-between gap-4">
+                        <Label className="text-xs font-normal text-muted-foreground cursor-pointer">Visible to crew</Label>
+                        <Switch
+                          checked={!!doc.visible_to_crew}
+                          onCheckedChange={() => toggleCrewVisibility(doc.id, doc.visible_to_crew)}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <Label className="text-xs font-normal text-muted-foreground cursor-pointer flex items-center gap-1.5">
+                          <Globe className="w-3.5 h-3.5" />
+                          Visible to customer portal
+                        </Label>
+                        <Switch
+                          checked={!!doc.visible_to_customer_portal}
+                          onCheckedChange={() => togglePortalVisibility(doc.id, !!doc.visible_to_customer_portal)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </Card>
             );
           })}

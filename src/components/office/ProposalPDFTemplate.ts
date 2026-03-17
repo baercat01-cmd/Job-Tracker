@@ -526,15 +526,6 @@ export function generateProposalHTML(data: {
           ${introText}
         </p>
         
-        ${job.description && job.description.trim() ? `
-        <div class="intro-box" style="margin-top: 10px; margin-bottom: 15px;">
-          <div class="box-header">Building Description</div>
-          <div style="padding: 15px 10px 10px 10px;">
-            <div style="padding: 12px; background: #f9f9f9; border-left: 4px solid #2d5f3f; font-size: ${bodyFontSize}pt; line-height: 1.6;">${job.description}</div>
-          </div>
-        </div>
-        ` : ''}
-        
         <div class="intro-box" style="margin-top: 10px;">
           <div class="box-header">Work to be Completed</div>
           <div style="padding: 6px 10px 10px 10px;">

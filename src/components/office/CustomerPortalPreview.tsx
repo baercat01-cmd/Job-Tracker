@@ -32,9 +32,11 @@ interface CustomerPortalPreviewProps {
   jobs: any[];
   visibilitySettings: any;
   customMessage?: string | null;
+  /** When provided (office preview), line items are filtered by this so the preview matches the sidebar toggles. */
+  lineItemVisibleToCustomer?: Record<string, boolean>;
 }
 
-export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, customMessage }: CustomerPortalPreviewProps) {
+export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, customMessage, lineItemVisibleToCustomer }: CustomerPortalPreviewProps) {
   const [selectedJob, setSelectedJob] = useState<any>(null);
 
   // When previewing a single job (e.g. from Create dialog), open straight to its detail view
@@ -45,10 +47,11 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
 
   if (selectedJob) {
     return (
-      <JobDetailPreview 
-        jobData={selectedJob} 
+      <JobDetailPreview
+        jobData={selectedJob}
         onBack={() => setSelectedJob(null)}
         visibilitySettings={visibilitySettings}
+        lineItemVisibleToCustomer={lineItemVisibleToCustomer}
       />
     );
   }
@@ -170,7 +173,7 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
 }
 
 // Job Detail Preview Component - Shows individual job with all tabs
-function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
+function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisibleToCustomer }: any) {
   const [activeTab, setActiveTab] = useState('overview');
   const jobQuotes = jobData.jobQuotes || (jobData.quote ? [jobData.quote] : []);
   const proposalDataByQuoteId = jobData.proposalDataByQuoteId || {};
@@ -259,8 +262,8 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
                 </CardContent>
               </Card>
             )}
-            {/* Drawings & 3D Views (viewer links from Manage links) */}
-            {viewerLinks.length > 0 && (
+            {/* Drawings & 3D Views (viewer links) — only when Documents visibility is on */}
+            {visibilitySettings?.show_documents && viewerLinks.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -322,17 +325,11 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings }: any) {
                       }
                       if (section.type === 'custom') {
                         const row = section.data;
-                        const items = (row.custom_financial_row_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
                         const total = row._computedTotal ?? 0;
                         return (
                           <div key={row.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
                               <h3 className="font-bold text-lg">{row.description || row.category}</h3>
-                              {items.length > 0 && (
-                                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
-                                  {items.map((item: any) => <li key={item.id}>{item.description}</li>)}
-                                </ul>
-                              )}
                             </div>
                             {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                           </div>

@@ -22,20 +22,27 @@ interface ProposalAndMaterialsViewProps {
   userId?: string;
   viewMode?: ViewMode;
   onViewModeChange?: (mode: ViewMode) => void;
+  /** When set, proposal selection is controlled by parent (e.g. JobDetailedView) so it stays in sync with Subcontractors tab. */
+  controlledQuoteId?: string | null;
+  onQuoteChange?: (quoteId: string | null) => void;
 }
 
-export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: viewModeProp, onViewModeChange }: ProposalAndMaterialsViewProps) {
+export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: viewModeProp, onViewModeChange, controlledQuoteId, onQuoteChange }: ProposalAndMaterialsViewProps) {
   const { profile } = useAuth();
   const userId = userIdProp ?? profile?.id ?? '';
   const [internalViewMode, setInternalViewMode] = useState<ViewMode>('split');
   const viewMode = viewModeProp ?? internalViewMode;
   const setViewMode = onViewModeChange ?? setInternalViewMode;
-  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [internalQuoteId, setInternalQuoteId] = useState<string | null>(null);
   const [showDocumentsInPanel, setShowDocumentsInPanel] = useState(false);
 
-  // When job changes, set proposal to most recent only if we don't already have a valid selection for this job
-  // so that switching proposals and re-opening the tab doesn't reset the user's choice
+  const isControlled = controlledQuoteId !== undefined;
+  const selectedQuoteId = isControlled ? (controlledQuoteId ?? null) : internalQuoteId;
+  const setSelectedQuoteId = isControlled ? (onQuoteChange ?? (() => {})) : setInternalQuoteId;
+
+  // When uncontrolled and job changes, set proposal to most recent only if we don't already have a valid selection for this job
   useEffect(() => {
+    if (isControlled) return;
     let mounted = true;
     (async () => {
       const { data: quotes, error } = await supabase
@@ -45,23 +52,22 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
         .order('created_at', { ascending: false });
       if (!mounted) return;
       if (error || !quotes?.length) {
-        setSelectedQuoteId(null);
+        setInternalQuoteId(null);
         return;
       }
-      // Same order as JobFinancials: highest proposal number first (e.g. 26012-3 before 26012-2)
       const sorted = [...quotes].sort((a: any, b: any) => {
         const na = (a.proposal_number || a.quote_number || '').toString();
         const nb = (b.proposal_number || b.quote_number || '').toString();
         if (na === nb) return 0;
         return nb.localeCompare(na, undefined, { numeric: true });
       });
-      setSelectedQuoteId((prev) => {
+      setInternalQuoteId((prev) => {
         if (prev && sorted.some((q: any) => q.id === prev)) return prev;
         return sorted[0]?.id ?? null;
       });
     })();
     return () => { mounted = false; };
-  }, [job.id]);
+  }, [job.id, isControlled]);
 
   if (!userId) {
     return (

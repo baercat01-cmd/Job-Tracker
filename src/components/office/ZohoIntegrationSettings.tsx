@@ -147,29 +147,49 @@ export function ZohoIntegrationSettings() {
 
     setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke('zoho-sync', {
-        body: { action: 'sync_materials' }
-      });
+      await supabase.functions.invoke('zoho-sync', { body: { action: 'warm' } });
+      let page = 1;
+      let data: any = null;
+      let totalSynced = 0;
+      do {
+        const { data: pageData, error } = await supabase.functions.invoke('zoho-sync', {
+          body: { action: 'sync_materials', syncPage: page },
+        });
 
-      if (error) {
-        // Extract detailed error message
-        let errorMessage = error.message;
-        if (error instanceof FunctionsHttpError) {
-          try {
-            const statusCode = error.context?.status ?? 500;
-            const textContent = await error.context?.text();
-            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
-          } catch {
-            errorMessage = error.message || 'Failed to read response';
+        if (error) {
+          let errorMessage = error.message;
+          if (error instanceof FunctionsHttpError && error.context) {
+            try {
+              const raw = await error.context.text();
+              if (raw) {
+                try {
+                  const body = JSON.parse(raw);
+                  errorMessage = body?.details ?? body?.error ?? raw;
+                } catch {
+                  errorMessage = raw || error.message;
+                }
+              }
+            } catch {
+              /* keep message */
+            }
           }
+          throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
-      }
 
-      toast.success(data.message || 'Materials synced successfully');
-      await loadSettings(); // Reload to get updated sync status
+        data = pageData;
+        totalSynced += data?.itemsSynced ?? 0;
+        if (data?.hasMore && data?.nextPage) {
+          page = data.nextPage;
+          toast.loading(`Syncing materials... (page ${page})`, { id: 'zoho-sync-settings' });
+        }
+      } while (data?.hasMore && data?.nextPage);
+
+      toast.dismiss('zoho-sync-settings');
+      toast.success(data?.message || `Synced ${totalSynced} materials successfully`);
+      await loadSettings();
     } catch (error: any) {
       console.error('Error syncing materials:', error);
+      toast.dismiss('zoho-sync-settings');
       toast.error(`Sync failed: ${error.message}`);
     } finally {
       setSyncing(false);
