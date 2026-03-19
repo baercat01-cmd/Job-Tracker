@@ -1,10 +1,12 @@
 -- Job documents and revisions: create tables if missing and ensure RLS allows office/job access
 -- Run this if documents are not loading in a job (e.g. tables or policies missing).
+--
+-- job_id is uuid without FK when public.jobs does not exist yet (some projects create jobs outside migrations).
+-- FK is added only when public.jobs exists.
 
--- job_documents: one row per document per job
 CREATE TABLE IF NOT EXISTS public.job_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  job_id uuid NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  job_id uuid NOT NULL,
   name text NOT NULL,
   category text NOT NULL DEFAULT 'Other',
   current_version integer NOT NULL DEFAULT 1,
@@ -13,6 +15,24 @@ CREATE TABLE IF NOT EXISTS public.job_documents (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+
+DO $job_docs_fk$
+BEGIN
+  IF to_regclass('public.jobs') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+       JOIN pg_class t ON c.conrelid = t.oid
+       WHERE t.relname = 'job_documents' AND c.conname = 'job_documents_job_id_fkey'
+     )
+  THEN
+    ALTER TABLE public.job_documents
+      ADD CONSTRAINT job_documents_job_id_fkey
+      FOREIGN KEY (job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
+  END IF;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+  WHEN undefined_table THEN NULL;
+END $job_docs_fk$;
 
 CREATE INDEX IF NOT EXISTS idx_job_documents_job_id ON public.job_documents (job_id);
 

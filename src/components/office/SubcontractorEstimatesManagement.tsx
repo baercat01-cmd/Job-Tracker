@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
+import { useUndo } from '@/contexts/UndoContext';
 
 interface SubcontractorEstimate {
   id: string;
@@ -110,6 +111,7 @@ interface SubcontractorEstimatesManagementProps {
 
 export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onProposalChange }: SubcontractorEstimatesManagementProps) {
   const { profile } = useAuth();
+  const undoApi = useUndo();
   const [estimates, setEstimates] = useState<SubcontractorEstimate[]>([]);
   const [invoices, setInvoices] = useState<SubcontractorInvoice[]>([]);
   const [subcontractors, setSubcontractors] = useState<any[]>([]);
@@ -296,13 +298,31 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
   }
 
   async function removeFromProposal(estimateId: string) {
+    const quoteIdToRestore = proposalQuoteId;
+    const estimate = estimates.find((e) => e.id === estimateId);
+    const label = estimate?.company_name || estimate?.file_name || 'Subcontractor';
     try {
       const { error } = await supabase
         .from('subcontractor_estimates')
         .update({ quote_id: null })
         .eq('id', estimateId);
       if (error) throw error;
-      toast.success('Removed from proposal');
+      undoApi.push({
+        label: `Remove "${label}" from proposal`,
+        undo: async () => {
+          if (!quoteIdToRestore) return;
+          const { error: undoErr } = await supabase
+            .from('subcontractor_estimates')
+            .update({ quote_id: quoteIdToRestore })
+            .eq('id', estimateId);
+          if (undoErr) throw new Error(undoErr.message);
+          loadEstimates();
+          loadEstimatesNotOnProposal();
+        },
+      });
+      toast.success('Removed from proposal', {
+        action: { label: 'Undo', onClick: () => undoApi.undo() },
+      });
       loadEstimates();
       loadEstimatesNotOnProposal();
     } catch (error: any) {

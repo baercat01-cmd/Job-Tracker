@@ -4,11 +4,11 @@ import { supabase } from '@/lib/supabase';
 import type { Job } from '@/types';
 import { DocumentPanelContext } from '@/contexts/DocumentPanelContext';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
+import { JobFinancials } from './JobFinancials';
 
 export type ViewMode = 'split' | 'proposal' | 'materials';
 
-// Lazy-load heavy panels so the tab opens fast; they load when first needed
-const JobFinancials = lazy(() => import('./JobFinancials').then((m) => ({ default: m.JobFinancials })));
+// JobFinancials loaded statically so the proposal panel always loads (dynamic chunk was failing).
 const MaterialsManagement = lazy(() => import('./MaterialsManagement').then((m) => ({ default: m.MaterialsManagement })));
 
 const PanelFallback = () => (
@@ -95,13 +95,11 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
             } ${showProposal ? '' : 'hidden'}`}
           >
             <div className="w-full max-w-full mx-auto space-y-2 pt-0 pb-2 px-3">
-              <Suspense fallback={<PanelFallback />}>
-                <JobFinancials
-                  job={job}
-                  controlledQuoteId={selectedQuoteId ?? undefined}
-                  onQuoteChange={setSelectedQuoteId}
-                />
-              </Suspense>
+              <JobFinancials
+                job={job}
+                controlledQuoteId={selectedQuoteId ?? undefined}
+                onQuoteChange={setSelectedQuoteId}
+              />
             </div>
           </div>
 

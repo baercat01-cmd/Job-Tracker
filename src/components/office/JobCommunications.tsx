@@ -346,6 +346,15 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => loadEmails()}
+                title="Reload messages (e.g. new customer portal messages)"
+              >
+                <RefreshCw className="w-4 h-4 mr-1" />
+                Refresh
+              </Button>
               <Button onClick={handleSyncEmails} variant="outline" disabled={syncing}>
                 <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
                 Sync

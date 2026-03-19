@@ -881,7 +881,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       case 'ready_for_job':
         return 'bg-emerald-100 text-emerald-800 border-emerald-300';
       case 'at_job':
-        return 'bg-teal-100 text-teal-800 border-teal-300';
+        return 'bg-teal-100 text-teal-800 border-gray-200';
       default:
         return 'bg-slate-100 text-slate-800 border-slate-300';
     }

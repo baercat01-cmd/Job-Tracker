@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { X, FileText, Package, List, DollarSign, ArrowRight, Minus, Plus } from 'lucide-react';
+import { X, FileText, Package, List, DollarSign, ArrowRight, Minus, Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TAX_RATE = 0.07;
@@ -36,6 +36,7 @@ interface SheetSnapshot {
   sheet_name: string;
   description?: string | null;
   order_index: number;
+  materialsTotal: number;
   items: Array<{
     id: string;
     material_name: string;
@@ -56,6 +57,7 @@ interface CustomRowSnapshot {
   category: string;
   order_index: number;
   markup_percent: number;
+  totalPrice: number;
   lineItems: Array<{
     id: string;
     description: string;
@@ -73,6 +75,7 @@ interface SubcontractorSnapshot {
   sheet_id?: string | null;
   row_id?: string | null;
   markup_percent: number;
+  totalPrice: number;
   lineItems: Array<{
     description: string;
     total_price: number;
@@ -202,6 +205,7 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
         sheet_name: sheet.sheet_name || 'Sheet',
         description: sheet.description,
         order_index: sheet.order_index ?? 0,
+        materialsTotal: sheetPrice,
         items,
         labor,
         categoryMarkups,
@@ -253,6 +257,7 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
     let rowLabor = laborItems.reduce((s: number, i: any) => s + i.total_cost * (1 + (i.markup_percent || 0) / 100), 0);
     if (lineItems.length === 0 && row.category !== 'labor') rowMaterials = Number(row.total_cost) || 0;
     if (lineItems.length === 0 && row.category === 'labor') rowLabor = Number(row.total_cost) || 0;
+    const rowTotal = (rowMaterials + rowLabor) * markup;
     customMaterialsTotal += rowMaterials * markup;
     customLaborTotal += rowLabor * markup;
     customRows.push({
@@ -261,6 +266,7 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
       category: row.category || 'line_items',
       order_index: row.order_index ?? 0,
       markup_percent: Number(row.markup_percent) || 0,
+      totalPrice: rowTotal,
       lineItems,
     });
   });
@@ -279,6 +285,7 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
     const markup = 1 + (Number(est.markup_percent) || 0) / 100;
     const materials = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material');
     const labor = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor');
+    const includedTotal = lineItems.filter((li: any) => !li.excluded).reduce((s: number, i: any) => s + i.total_price, 0) * markup;
     subMaterialsTotal += materials.reduce((s: number, i: any) => s + i.total_price, 0) * markup;
     subLaborTotal += labor.reduce((s: number, i: any) => s + i.total_price, 0) * markup;
     subcontractors.push({
@@ -287,6 +294,7 @@ async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<Pr
       sheet_id: est.sheet_id,
       row_id: est.row_id,
       markup_percent: Number(est.markup_percent) || 0,
+      totalPrice: includedTotal,
       lineItems,
     });
   });
@@ -326,6 +334,170 @@ function formatMoney(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Section row for pricing comparison: label, value A, value B, and optional sublabel (e.g. sheet name). */
+interface PricingSectionRow {
+  key: string;
+  label: string;
+  sublabel?: string;
+  valueA: number;
+  valueB: number;
+  order: number;
+}
+
+function buildPricingSectionRows(snapshotA: ProposalSnapshot, snapshotB: ProposalSnapshot): PricingSectionRow[] {
+  const rows: PricingSectionRow[] = [];
+  const keyToRow = new Map<string, PricingSectionRow>();
+  let order = 0;
+
+  const add = (key: string, label: string, sublabel: string | undefined, valueA: number, valueB: number) => {
+    if (keyToRow.has(key)) {
+      const r = keyToRow.get(key)!;
+      r.valueA += valueA;
+      r.valueB += valueB;
+    } else {
+      const r = { key, label, sublabel, valueA, valueB, order: order++ };
+      keyToRow.set(key, r);
+      rows.push(r);
+    }
+  };
+
+  snapshotA.sheets.forEach((sh) => {
+    add(`materials|${sh.sheet_name}`, 'Materials', sh.sheet_name, sh.materialsTotal, 0);
+  });
+  snapshotB.sheets.forEach((sh) => {
+    add(`materials|${sh.sheet_name}`, 'Materials', sh.sheet_name, 0, sh.materialsTotal);
+  });
+
+  snapshotA.sheets.forEach((sh) => {
+    const labor = sh.labor?.total_labor_cost ?? 0;
+    if (labor !== 0 || snapshotB.sheets.some((b) => b.sheet_name === sh.sheet_name)) add(`labor|${sh.sheet_name}`, 'Labor', sh.sheet_name, labor, 0);
+  });
+  snapshotB.sheets.forEach((sh) => {
+    const labor = sh.labor?.total_labor_cost ?? 0;
+    if (labor !== 0 || snapshotA.sheets.some((a) => a.sheet_name === sh.sheet_name)) add(`labor|${sh.sheet_name}`, 'Labor', sh.sheet_name, 0, labor);
+  });
+
+  snapshotA.customRows.forEach((row) => {
+    add(`custom|${row.description}`, 'Custom', row.description, row.totalPrice, 0);
+  });
+  snapshotB.customRows.forEach((row) => {
+    add(`custom|${row.description}`, 'Custom', row.description, 0, row.totalPrice);
+  });
+
+  snapshotA.subcontractors.forEach((sub) => {
+    add(`sub|${sub.company_name}`, 'Subcontractor', sub.company_name, sub.totalPrice, 0);
+  });
+  snapshotB.subcontractors.forEach((sub) => {
+    add(`sub|${sub.company_name}`, 'Subcontractor', sub.company_name, 0, sub.totalPrice);
+  });
+
+  rows.sort((a, b) => {
+    const typeOrder = (k: string) => (k.startsWith('materials') ? 0 : k.startsWith('labor') ? 1 : k.startsWith('custom') ? 2 : 3);
+    if (typeOrder(a.key) !== typeOrder(b.key)) return typeOrder(a.key) - typeOrder(b.key);
+    return (a.sublabel ?? '').localeCompare(b.sublabel ?? '');
+  });
+
+  rows.push({
+    key: 'subtotal',
+    label: 'Subtotal',
+    valueA: snapshotA.totals.subtotal,
+    valueB: snapshotB.totals.subtotal,
+    order: 1000,
+  });
+  rows.push({
+    key: 'tax',
+    label: 'Tax (7%)',
+    valueA: snapshotA.totals.tax,
+    valueB: snapshotB.totals.tax,
+    order: 1001,
+  });
+  rows.push({
+    key: 'grand',
+    label: 'Grand total',
+    valueA: snapshotA.totals.grandTotal,
+    valueB: snapshotB.totals.grandTotal,
+    order: 1002,
+  });
+  return rows;
+}
+
+/** Detail row for expandable section (same shape as PricingSectionRow but no order). */
+interface PricingDetailRow {
+  key: string;
+  label: string;
+  sublabel?: string;
+  valueA: number;
+  valueB: number;
+}
+
+function getPricingDetailRows(
+  sectionKey: string,
+  snapshotA: ProposalSnapshot,
+  snapshotB: ProposalSnapshot
+): PricingDetailRow[] {
+  const out: PricingDetailRow[] = [];
+  if (sectionKey.startsWith('materials|')) {
+    const sheetName = sectionKey.replace('materials|', '');
+    const sheetA = snapshotA.sheets.find((s) => s.sheet_name === sheetName);
+    const sheetB = snapshotB.sheets.find((s) => s.sheet_name === sheetName);
+    const key = (name: string, cat: string) => `${name}|${cat}`;
+    const mapA = new Map<string, { extended_price: number }>();
+    const mapB = new Map<string, { extended_price: number }>();
+    (sheetA?.items ?? []).forEach((i) => {
+      const price = i.extended_price ?? (i.quantity || 0) * (i.price_per_unit ?? 0);
+      mapA.set(key(i.material_name, i.category), { extended_price: price });
+    });
+    (sheetB?.items ?? []).forEach((i) => {
+      const price = i.extended_price ?? (i.quantity || 0) * (i.price_per_unit ?? 0);
+      mapB.set(key(i.material_name, i.category), { extended_price: price });
+    });
+    const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
+    allKeys.forEach((k) => {
+      const [name, category] = k.split('|');
+      const a = mapA.get(k)?.extended_price ?? 0;
+      const b = mapB.get(k)?.extended_price ?? 0;
+      out.push({ key: `mat|${sheetName}|${k}`, label: 'Material', sublabel: `${name} (${category})`, valueA: a, valueB: b });
+    });
+    out.sort((x, y) => (x.sublabel ?? '').localeCompare(y.sublabel ?? ''));
+  } else if (sectionKey.startsWith('labor|')) {
+    const sheetName = sectionKey.replace('labor|', '');
+    const sheetA = snapshotA.sheets.find((s) => s.sheet_name === sheetName);
+    const sheetB = snapshotB.sheets.find((s) => s.sheet_name === sheetName);
+    const a = sheetA?.labor?.total_labor_cost ?? 0;
+    const b = sheetB?.labor?.total_labor_cost ?? 0;
+    out.push({ key: `labor|${sheetName}`, label: 'Labor', sublabel: sheetName, valueA: a, valueB: b });
+  } else if (sectionKey.startsWith('custom|')) {
+    const desc = sectionKey.replace('custom|', '');
+    const rowA = snapshotA.customRows.find((r) => r.description === desc);
+    const rowB = snapshotB.customRows.find((r) => r.description === desc);
+    const lineKeys = new Set<string>();
+    (rowA?.lineItems ?? []).forEach((li) => lineKeys.add(li.description));
+    (rowB?.lineItems ?? []).forEach((li) => lineKeys.add(li.description));
+    lineKeys.forEach((lineDesc) => {
+      const a = rowA?.lineItems?.find((li) => li.description === lineDesc)?.total_cost ?? 0;
+      const b = rowB?.lineItems?.find((li) => li.description === lineDesc)?.total_cost ?? 0;
+      out.push({ key: `custom|${desc}|${lineDesc}`, label: 'Line', sublabel: lineDesc, valueA: a, valueB: b });
+    });
+  } else if (sectionKey.startsWith('sub|')) {
+    const company = sectionKey.replace('sub|', '');
+    const subA = snapshotA.subcontractors.find((s) => s.company_name === company);
+    const subB = snapshotB.subcontractors.find((s) => s.company_name === company);
+    const lineKeys = new Set<string>();
+    (subA?.lineItems ?? []).forEach((li) => lineKeys.add(li.description));
+    (subB?.lineItems ?? []).forEach((li) => lineKeys.add(li.description));
+    lineKeys.forEach((lineDesc) => {
+      const a = subA?.lineItems?.find((li) => li.description === lineDesc)?.total_price ?? 0;
+      const b = subB?.lineItems?.find((li) => li.description === lineDesc)?.total_price ?? 0;
+      out.push({ key: `sub|${company}|${lineDesc}`, label: 'Line', sublabel: lineDesc, valueA: a, valueB: b });
+    });
+  }
+  return out;
+}
+
+function isExpandableSectionKey(key: string): boolean {
+  return (key.startsWith('materials|') || key.startsWith('labor|') || key.startsWith('custom|') || key.startsWith('sub|')) && key !== 'subtotal' && key !== 'tax' && key !== 'grand';
+}
+
 interface ProposalComparisonViewProps {
   job: { id: string; name?: string };
   quotes: QuoteOption[];
@@ -338,6 +510,7 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
   const [snapshotA, setSnapshotA] = useState<ProposalSnapshot | null>(null);
   const [snapshotB, setSnapshotB] = useState<ProposalSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expandedPricingSections, setExpandedPricingSections] = useState<Set<string>>(new Set());
 
   const loadBoth = useCallback(async () => {
     if (!quoteAId || !quoteBId || quoteAId === quoteBId) {
@@ -452,55 +625,107 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="w-5 h-5" /> Pricing comparison
+                  <DollarSign className="w-5 h-5" /> Pricing comparison by section
                 </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Section-level totals for each proposal so you can see where amounts differ.
+                </p>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
-                  <Table>
+                    <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[200px]">Line</TableHead>
+                        <TableHead className="w-10" />
+                        <TableHead className="w-[80px]">Section</TableHead>
+                        <TableHead className="w-[180px]">Line</TableHead>
                         <TableHead className="text-right">{hasComparison ? snapshotLabel(snapshotA) : 'Proposal A'}</TableHead>
                         <TableHead className="text-right">{hasComparison ? snapshotLabel(snapshotB) : 'Proposal B'}</TableHead>
                         <TableHead className="text-right">Difference</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell className="font-medium">Materials</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotA.totals.materialsTotal)}</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotB.totals.materialsTotal)}</TableCell>
-                        <DiffCell a={snapshotA.totals.materialsTotal} b={snapshotB.totals.materialsTotal} />
-                      </TableRow>
-                      <TableRow>
-                        <TableCell className="font-medium">Labor</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotA.totals.laborTotal)}</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotB.totals.laborTotal)}</TableCell>
-                        <DiffCell a={snapshotA.totals.laborTotal} b={snapshotB.totals.laborTotal} />
-                      </TableRow>
-                      <TableRow>
-                        <TableCell className="font-medium">Subtotal</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotA.totals.subtotal)}</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotB.totals.subtotal)}</TableCell>
-                        <DiffCell a={snapshotA.totals.subtotal} b={snapshotB.totals.subtotal} />
-                      </TableRow>
-                      <TableRow>
-                        <TableCell className="font-medium">Tax (7%)</TableCell>
-                        <TableCell className="text-right">
-                          {snapshotA.quote.tax_exempt ? 'Exempt' : `$${formatMoney(snapshotA.totals.tax)}`}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {snapshotB.quote.tax_exempt ? 'Exempt' : `$${formatMoney(snapshotB.totals.tax)}`}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">—</TableCell>
-                      </TableRow>
-                      <TableRow className="bg-slate-50 font-semibold">
-                        <TableCell className="font-semibold">Grand total</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotA.totals.grandTotal)}</TableCell>
-                        <TableCell className="text-right">${formatMoney(snapshotB.totals.grandTotal)}</TableCell>
-                        <DiffCell a={snapshotA.totals.grandTotal} b={snapshotB.totals.grandTotal} />
-                      </TableRow>
+                      {buildPricingSectionRows(snapshotA, snapshotB).map((row) => {
+                        const expandable = isExpandableSectionKey(row.key);
+                        const expanded = expandedPricingSections.has(row.key);
+                        const detailRows = expandable && snapshotA && snapshotB ? getPricingDetailRows(row.key, snapshotA, snapshotB) : [];
+                        return (
+                          <>
+                            <TableRow
+                              key={row.key}
+                              className={
+                                row.key === 'grand' ? 'bg-slate-100 font-semibold' : row.key === 'subtotal' ? 'bg-slate-50 font-medium' : expandable ? 'cursor-pointer hover:bg-slate-50/80' : ''
+                              }
+                              onClick={expandable ? () => setExpandedPricingSections((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(row.key)) next.delete(row.key);
+                                else next.add(row.key);
+                                return next;
+                              }) : undefined}
+                            >
+                              <TableCell className="text-muted-foreground text-xs font-medium w-10">
+                                {expandable && (
+                                  <span className="inline-flex items-center">
+                                    {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-xs font-medium">
+                                {row.label}
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {row.sublabel ? (
+                                  <span className="text-slate-800">{row.sublabel}</span>
+                                ) : (
+                                  <span className={row.key === 'grand' ? 'font-bold' : ''}>{row.label}</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {row.key === 'tax' && snapshotA.quote.tax_exempt
+                                  ? 'Exempt'
+                                  : `$${formatMoney(row.valueA)}`}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {row.key === 'tax' && snapshotB.quote.tax_exempt
+                                  ? 'Exempt'
+                                  : `$${formatMoney(row.valueB)}`}
+                              </TableCell>
+                              <TableCell
+                                className={
+                                  row.key === 'tax' && (snapshotA.quote.tax_exempt || snapshotB.quote.tax_exempt)
+                                    ? 'text-right text-muted-foreground'
+                                    : (() => {
+                                        const d = row.valueB - row.valueA;
+                                        return `text-right font-medium ${d > 0 ? 'text-green-700' : d < 0 ? 'text-red-700' : 'text-muted-foreground'}`;
+                                      })()
+                                }
+                              >
+                                {row.key === 'tax' && (snapshotA.quote.tax_exempt || snapshotB.quote.tax_exempt)
+                                  ? '—'
+                                  : (() => {
+                                      const d = row.valueB - row.valueA;
+                                      return d === 0 ? '—' : d > 0 ? `+$${formatMoney(d)}` : `-$${formatMoney(-d)}`;
+                                    })()}
+                              </TableCell>
+                            </TableRow>
+                            {expanded && detailRows.length > 0 && detailRows.map((dr) => {
+                              const d = dr.valueB - dr.valueA;
+                              return (
+                                <TableRow key={dr.key} className="bg-slate-50/50 hover:bg-slate-50">
+                                  <TableCell className="w-10" />
+                                  <TableCell className="text-muted-foreground text-xs pl-6">{dr.label}</TableCell>
+                                  <TableCell className="font-medium text-slate-700 text-sm pl-2">{dr.sublabel ?? '—'}</TableCell>
+                                  <TableCell className="text-right text-sm">${formatMoney(dr.valueA)}</TableCell>
+                                  <TableCell className="text-right text-sm">${formatMoney(dr.valueB)}</TableCell>
+                                  <TableCell className={`text-right text-sm font-medium ${d > 0 ? 'text-green-700' : d < 0 ? 'text-red-700' : 'text-muted-foreground'}`}>
+                                    {d === 0 ? '—' : d > 0 ? `+$${formatMoney(d)}` : `-$${formatMoney(-d)}`}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

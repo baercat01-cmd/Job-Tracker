@@ -1,9 +1,6 @@
--- create_proposal_version: Deep-copy clone for air-gap proposal versions
--- Run this in your Supabase SQL Editor (or apply migration 20250342000000_create_proposal_version_workbook_snapshot.sql).
--- When p_quote_id is set: locks old workbooks, saves a full workbook_snapshot on proposal_versions,
--- creates a new quote and duplicates material_workbooks/sheets/items/labor/markups,
--- custom_financial_rows/items, and subcontractor_estimates/line_items with NEW UUIDs.
--- When p_quote_id is null and p_job_id is set: creates a new (empty) quote for the job.
+-- Build JSON workbook snapshot for proposal_versions (matches app restore shape).
+-- Requires columns: material_sheets.sheet_type, change_order_seq, category_order, compare_to_sheet_id
+-- and material_items trim_saved_config_id, quantity_ready_for_job, is_optional (from prior migrations).
 
 CREATE OR REPLACE FUNCTION public.build_proposal_workbook_snapshot(p_quote_id uuid)
 RETURNS jsonb
@@ -80,6 +77,11 @@ BEGIN
   );
 END;
 $$;
+
+COMMENT ON FUNCTION public.build_proposal_workbook_snapshot(uuid) IS
+  'Serializes all material workbooks for a quote into proposal_versions.workbook_snapshot JSON.';
+
+-- Replace create_proposal_version: non-null workbook_snapshot + full sheet/item copy + compare_to_sheet_id remap.
 
 CREATE OR REPLACE FUNCTION public.create_proposal_version(
   p_quote_id uuid DEFAULT NULL,
@@ -353,5 +355,3 @@ BEGIN
   );
 END;
 $$;
-
--- Optional: GRANT EXECUTE ON FUNCTION public.create_proposal_version(uuid, uuid, uuid, text) TO authenticated;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,9 +28,11 @@ import {
   Copy,
   LayoutDashboard,
   Printer,
-  PenLine
+  PenLine,
+  ClipboardList
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { isFieldRequestSheetName } from '@/lib/materialWorkbook';
 import { loadViewerLinksForJob } from '@/lib/viewer-links';
 import { toast } from 'sonner';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
@@ -47,8 +49,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { generateProposalHTML } from '@/components/office/ProposalPDFTemplate';
+import { generateProposalHTML, generateChangeOrderDocumentHTML } from '@/components/office/ProposalPDFTemplate';
 import { computeProposalTotals } from '@/lib/proposalTotals';
+import { MartinBuilderContractSeal } from '@/components/customer/MartinBuilderContractSeal';
 
 interface Job {
   id: string;
@@ -76,7 +79,7 @@ interface JobSummary {
 
 // Full select; fallback used when show_line_item_prices column is missing (PGRST204 / migration not run)
 const CUSTOMER_PORTAL_ACCESS_SELECT =
-  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,custom_message';
+  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,show_section_prices,visibility_by_quote,custom_message';
 const CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
 
@@ -93,6 +96,18 @@ export default function CustomerPortal() {
   const [jobData, setJobData] = useState<any>(null);
   /** Why access was denied, so we can show a clearer message */
   const [accessDeniedReason, setAccessDeniedReason] = useState<'no_token' | 'expired' | 'invalid' | 'network' | null>(null);
+  /** Survives job data refresh so "Sign & use as contract" stays hidden after successful sign */
+  const [portalSignPendingByQuote, setPortalSignPendingByQuote] = useState<Record<string, { name: string }>>({});
+  const onPortalSignRecorded = useCallback((quoteId: string, name: string) => {
+    setPortalSignPendingByQuote((p) => ({ ...p, [quoteId]: { name } }));
+  }, []);
+  const onPortalSignClearForQuote = useCallback((quoteId: string) => {
+    setPortalSignPendingByQuote((p) => {
+      const n = { ...p };
+      delete n[quoteId];
+      return n;
+    });
+  }, []);
 
   // Refetch portal visibility (payments, schedule, documents, etc.) so customer sees latest office toggles
   async function refetchPortalVisibility(accessToken: string) {
@@ -119,11 +134,40 @@ export default function CustomerPortal() {
             show_photos: fresh.show_photos ?? prev.show_photos,
             show_financial_summary: fresh.show_financial_summary ?? prev.show_financial_summary,
             show_line_item_prices: fresh.show_line_item_prices ?? prev.show_line_item_prices,
+            show_section_prices: fresh.show_section_prices ?? prev.show_section_prices,
+            visibility_by_quote: fresh.visibility_by_quote ?? prev.visibility_by_quote,
           };
         });
       }
     } catch {
       // Non-fatal; keep existing customerInfo
+    }
+  }
+
+  /** Refresh quotes (includes customer_signed_at) — anon RLS often hides signature fields on direct SELECT */
+  async function refetchPortalQuotes(accessToken: string, jobId: string) {
+    if (!accessToken?.trim() || !jobId) return;
+    try {
+      const { data, error } = await supabase.rpc('get_quotes_for_customer_portal', {
+        p_access_token: accessToken.trim(),
+        p_job_id: jobId,
+      });
+      if (error || data == null) return;
+      let arr: any = data;
+      if (typeof arr === 'string') {
+        try {
+          arr = JSON.parse(arr);
+        } catch {
+          return;
+        }
+      }
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      setJobData((prev) => {
+        if (!prev?.job || prev.job.id !== jobId) return prev;
+        return { ...prev, jobQuotes: arr, quote: arr[0] ?? prev.quote };
+      });
+    } catch {
+      /* ignore */
     }
   }
 
@@ -147,11 +191,18 @@ export default function CustomerPortal() {
         : (typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY) : null);
     if (!t) return;
 
+    const jobId = customerInfo.job_id as string;
     const onVisibility = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') refetchPortalVisibility(t);
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refetchPortalVisibility(t);
+        if (jobId) refetchPortalQuotes(t, jobId);
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
-    const interval = setInterval(() => refetchPortalVisibility(t), 90_000);
+    const interval = setInterval(() => {
+      refetchPortalVisibility(t);
+      if (jobId) refetchPortalQuotes(t, jobId);
+    }, 90_000);
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
@@ -186,7 +237,7 @@ export default function CustomerPortal() {
           .eq('is_active', true)
           .maybeSingle();
 
-        if (accessError && (accessError?.code === 'PGRST204' || (accessError?.message && /show_line_item_prices|column.*exist/i.test(accessError.message)))) {
+        if (accessError && (accessError?.code === 'PGRST204' || (accessError?.message && /show_line_item_prices|show_section_prices|column.*exist/i.test(accessError.message)))) {
           select = CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK;
           const fallback = await supabase
             .from('customer_portal_access')
@@ -256,13 +307,37 @@ export default function CustomerPortal() {
       }
       const job = jobRow;
 
-      // Load all quotes (proposals) for this job so customer can switch if multiple
-      const { data: quotesData } = await supabase
-        .from('quotes')
-        .select('*')
-        .eq('job_id', job.id)
-        .order('created_at', { ascending: false });
-      const jobQuotes = quotesData || [];
+      const portalTok =
+        (portalToken && String(portalToken).trim()) ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY) : null);
+
+      // Load quotes: prefer RPC so customer_signed_at / status are visible to anon portal users
+      let jobQuotes: any[] = [];
+      if (portalTok?.trim()) {
+        const { data: rpcQuotes, error: rpcQuotesErr } = await supabase.rpc('get_quotes_for_customer_portal', {
+          p_access_token: portalTok.trim(),
+          p_job_id: job.id,
+        });
+        if (!rpcQuotesErr && rpcQuotes != null) {
+          let arr: any = rpcQuotes;
+          if (typeof arr === 'string') {
+            try {
+              arr = JSON.parse(arr);
+            } catch {
+              arr = null;
+            }
+          }
+          if (Array.isArray(arr) && arr.length > 0) jobQuotes = arr;
+        }
+      }
+      if (jobQuotes.length === 0) {
+        const { data: quotesData } = await supabase
+          .from('quotes')
+          .select('*')
+          .eq('job_id', job.id)
+          .order('created_at', { ascending: false });
+        jobQuotes = quotesData || [];
+      }
       const quoteData = jobQuotes[0] ?? null;
 
       // Load payments
@@ -274,7 +349,7 @@ export default function CustomerPortal() {
 
       // Load documents marked visible to customer portal (use RPC when token present so anon can see them despite RLS)
       let documentsData: any[] = [];
-      const t = portalToken ?? (typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY) : null);
+      const t = portalTok;
       if (t?.trim()) {
         const { data: rpcDocs, error: rpcErr } = await supabase.rpc('get_job_documents_for_customer_portal', {
           p_access_token: t.trim(),
@@ -416,19 +491,48 @@ export default function CustomerPortal() {
       customerInfo={customerInfo}
       searchParams={searchParams}
       onRefreshJobData={async () => { if (customerInfo) await loadCustomerData(customerInfo); }}
+      portalSignPendingByQuote={portalSignPendingByQuote}
+      onPortalSignRecorded={onPortalSignRecorded}
+      onPortalSignClearForQuote={onPortalSignClearForQuote}
     />
   );
 }
 
 // Job Detail View Component
-function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }: { jobData: any; customerInfo: any; searchParams?: URLSearchParams; onRefreshJobData?: () => Promise<void> }) {
+function JobDetailView({
+  jobData,
+  customerInfo,
+  searchParams,
+  onRefreshJobData,
+  portalSignPendingByQuote = {},
+  onPortalSignRecorded,
+  onPortalSignClearForQuote,
+}: {
+  jobData: any;
+  customerInfo: any;
+  searchParams?: URLSearchParams;
+  onRefreshJobData?: () => Promise<void>;
+  portalSignPendingByQuote?: Record<string, { name: string }>;
+  onPortalSignRecorded?: (quoteId: string, name: string) => void;
+  onPortalSignClearForQuote?: (quoteId: string) => void;
+}) {
   const { job, quote, jobQuotes = [], payments, documents, photos, scheduleEvents, emails, viewerLinks = [], totalPaid } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
 
+  /** Main contract proposals only — change order is its own quote and portal tab */
+  const proposalQuotes = useMemo(
+    () => (jobQuotes as any[]).filter((q: any) => !q.is_change_order_proposal),
+    [jobQuotes]
+  );
+  const changeOrderQuote = useMemo(
+    () => (jobQuotes as any[]).find((q: any) => q.is_change_order_proposal) ?? null,
+    [jobQuotes]
+  );
+
   // Default: signed/contract proposal first, then most recently sent, then highest proposal number
   const defaultQuoteId = (() => {
-    if (!jobQuotes.length) return quote?.id ?? null;
-    const list = jobQuotes as any[];
+    if (!proposalQuotes.length) return quote && !(quote as any).is_change_order_proposal ? quote.id : null;
+    const list = proposalQuotes as any[];
     const contractQuotes = list.filter((q: any) => q.status === 'signed' || q.status === 'accepted');
     if (contractQuotes.length > 0) {
       const bySent = [...contractQuotes].sort((a, b) =>
@@ -453,31 +557,52 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
       const bN = parseInt((b.proposal_number || b.quote_number || '0').toString().split('-').pop() || '0', 10);
       return bN - aN;
     });
-    return sorted[0]?.id ?? quote?.id ?? null;
+    return sorted[0]?.id ?? proposalQuotes[0]?.id ?? null;
   })();
 
-  // If URL has ?quote=uuid and it's a valid quote for this job, use it so portal matches office link
+  // If URL has ?quote=uuid and it's a main proposal for this job, use it (never the change-order quote here)
   const quoteIdFromUrl = searchParams?.get('quote') ?? null;
-  const initialQuoteId = quoteIdFromUrl && jobQuotes.some((q: any) => q.id === quoteIdFromUrl)
-    ? quoteIdFromUrl
-    : defaultQuoteId;
+  const coQuoteIdFromUrl = searchParams?.get('change_order') === '1';
+  const initialQuoteId =
+    quoteIdFromUrl && proposalQuotes.some((q: any) => q.id === quoteIdFromUrl)
+      ? quoteIdFromUrl
+      : defaultQuoteId;
 
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(initialQuoteId);
-  const selectedQuote = jobQuotes.find((q: any) => q.id === selectedQuoteId) ?? jobQuotes[0] ?? quote;
+  const selectedQuote =
+    proposalQuotes.find((q: any) => q.id === selectedQuoteId) ?? proposalQuotes[0] ?? null;
+
+  useEffect(() => {
+    if (searchParams?.get('change_order') === '1' && changeOrderQuote) {
+      setActiveTab('change-orders');
+    }
+  }, [searchParams, changeOrderQuote?.id]);
+
+  useEffect(() => {
+    if (!selectedQuoteId || !proposalQuotes.some((q: any) => q.id === selectedQuoteId)) {
+      const fallback = defaultQuoteId ?? proposalQuotes[0]?.id ?? null;
+      if (fallback && fallback !== selectedQuoteId) setSelectedQuoteId(fallback);
+    }
+  }, [proposalQuotes, selectedQuoteId]);
   const [proposalData, setProposalData] = useState<any>(null);
   const [proposalDataLoading, setProposalDataLoading] = useState(false);
   const proposalDataCacheRef = useRef<Record<string, any>>({});
   /** Totals from get_quote_proposal_totals RPC (written by JobFinancials) so Overview matches office exactly */
   const [quoteStoredTotals, setQuoteStoredTotals] = useState<{ subtotal: number; tax: number; grandTotal: number } | null>(null);
-  // Only show sections when explicitly true from portal settings (undefined/false = hide)
-  const showFinancial = customerInfo?.show_financial_summary === true;
-  /** When true, show $ on each line; when false (default), only show total / tax / grand total at bottom */
-  const showLineItemPrices = customerInfo?.show_line_item_prices === true;
-  const showProposal = customerInfo?.show_proposal === true;
-  const showPayments = customerInfo?.show_payments === true;
-  const showSchedule = customerInfo?.show_schedule === true;
-  const showDocuments = customerInfo?.show_documents === true;
-  const showPhotos = customerInfo?.show_photos === true;
+  // Visibility: use per-proposal overrides when customer is viewing a specific quote, else top-level
+  const perQuoteVis = selectedQuoteId && customerInfo?.visibility_by_quote && typeof customerInfo.visibility_by_quote === 'object' && !Array.isArray(customerInfo.visibility_by_quote)
+    ? (customerInfo.visibility_by_quote as Record<string, any>)[selectedQuoteId]
+    : null;
+  const vis = (perQuoteVis && typeof perQuoteVis === 'object') ? perQuoteVis : customerInfo;
+  const showFinancial = vis?.show_financial_summary === true;
+  const showLineItemPrices = vis?.show_line_item_prices === true;
+  const showSectionPrices: Record<string, boolean> | null = (typeof vis?.show_section_prices === 'object' && vis?.show_section_prices !== null && !Array.isArray(vis?.show_section_prices)) ? vis.show_section_prices : null;
+  const showPriceForSection = (sectionId: string) => showFinancial && showLineItemPrices && (showSectionPrices == null || showSectionPrices[sectionId] !== false);
+  const showProposal = vis?.show_proposal === true;
+  const showPayments = vis?.show_payments === true;
+  const showSchedule = vis?.show_schedule === true;
+  const showDocuments = vis?.show_documents === true;
+  const showPhotos = vis?.show_photos === true;
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [emailBody, setEmailBody] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -486,9 +611,87 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
   const [signerEmail, setSignerEmail] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [signing, setSigning] = useState(false);
-  const [revoking, setRevoking] = useState(false);
-  /** Optimistic: show "Signed" immediately after successful sign before refetch */
-  const [justSigned, setJustSigned] = useState<{ quoteId: string; name: string; email: string } | null>(null);
+
+  const changeOrderQuoteId = changeOrderQuote?.id ?? null;
+  const [changeOrderProposalData, setChangeOrderProposalData] = useState<any>(null);
+  const [changeOrderDataLoading, setChangeOrderDataLoading] = useState(false);
+  const [coQuoteStoredTotals, setCoQuoteStoredTotals] = useState<{
+    subtotal: number;
+    tax: number;
+    grandTotal: number;
+  } | null>(null);
+  const [coSignerName, setCoSignerName] = useState('');
+  const [coSignerEmail, setCoSignerEmail] = useState('');
+  const [coAgreeBySheet, setCoAgreeBySheet] = useState<Record<string, boolean>>({});
+  const [coSigningSheetId, setCoSigningSheetId] = useState<string | null>(null);
+
+  const coQuoteVis =
+    changeOrderQuoteId && customerInfo?.visibility_by_quote && typeof customerInfo.visibility_by_quote === 'object' && !Array.isArray(customerInfo.visibility_by_quote)
+      ? (customerInfo.visibility_by_quote as Record<string, any>)[changeOrderQuoteId]
+      : null;
+  const coVis = coQuoteVis && typeof coQuoteVis === 'object' ? coQuoteVis : customerInfo;
+  const showFinancialCo = coVis?.show_financial_summary === true;
+  const showLineItemPricesCo = coVis?.show_line_item_prices === true;
+  const showSectionPricesCo: Record<string, boolean> | null =
+    typeof coVis?.show_section_prices === 'object' && coVis?.show_section_prices !== null && !Array.isArray(coVis?.show_section_prices)
+      ? coVis.show_section_prices
+      : null;
+  const showPriceForCoSection = (sectionId: string) =>
+    showFinancialCo && showLineItemPricesCo && (showSectionPricesCo == null || showSectionPricesCo[sectionId] !== false);
+
+  useEffect(() => {
+    if (!job?.id || !changeOrderQuoteId) {
+      setChangeOrderProposalData(null);
+      setChangeOrderDataLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setChangeOrderDataLoading(true);
+    loadProposalDataForQuote(job.id, changeOrderQuoteId, !!(changeOrderQuote as any)?.tax_exempt, {
+      forChangeOrderDocument: true,
+    }).then((data) => {
+      if (cancelled) return;
+      setChangeOrderProposalData(data);
+      setChangeOrderDataLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id, changeOrderQuoteId, (changeOrderQuote as any)?.tax_exempt]);
+
+  useEffect(() => {
+    if (!changeOrderQuoteId) {
+      setCoQuoteStoredTotals(null);
+      return;
+    }
+    let cancelled = false;
+    supabase.rpc('get_quote_proposal_totals', { p_quote_id: changeOrderQuoteId }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data || !Array.isArray(data) || data.length === 0) {
+        setCoQuoteStoredTotals(null);
+        return;
+      }
+      const row = data[0] as { subtotal?: number | null; tax?: number | null; grand_total?: number | null };
+      const sub = row?.subtotal != null ? Number(row.subtotal) : NaN;
+      const tax = row?.tax != null ? Number(row.tax) : 0;
+      const grand = row?.grand_total != null ? Number(row.grand_total) : NaN;
+      if (Number.isFinite(sub) && Number.isFinite(grand)) {
+        setCoQuoteStoredTotals({ subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand });
+      } else {
+        setCoQuoteStoredTotals(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [changeOrderQuoteId]);
+
+  useEffect(() => {
+    if (customerInfo && changeOrderQuote && !(changeOrderQuote as any).customer_signed_at) {
+      setCoSignerName(customerInfo.customer_name ?? '');
+      setCoSignerEmail(customerInfo.customer_email ?? '');
+    }
+  }, [customerInfo?.customer_name, customerInfo?.customer_email, changeOrderQuote?.id, (changeOrderQuote as any)?.customer_signed_at]);
 
   const portalToken =
     searchParams?.get('token') ??
@@ -502,12 +705,27 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
     }
   }, [customerInfo?.customer_name, customerInfo?.customer_email, selectedQuote?.id]);
 
-  // Clear optimistic signed state once server data has customer_signed_at
+  /** Office "Set as Contract" sets signed_version — pre-check agreement so portal matches office contract state */
   useEffect(() => {
-    if ((selectedQuote as any)?.customer_signed_at && justSigned?.quoteId === selectedQuoteId) {
-      setJustSigned(null);
+    const q = selectedQuote as any;
+    if (!q || q.customer_signed_at) return;
+    const sv = q.signed_version;
+    const n = Number(sv);
+    const officeMarkedContract = sv != null && sv !== '' && Number.isFinite(n) && n > 0;
+    setAgreeToTerms(officeMarkedContract);
+  }, [selectedQuoteId, (selectedQuote as any)?.signed_version, (selectedQuote as any)?.customer_signed_at]);
+
+  const pendingSignForQuote = selectedQuoteId ? portalSignPendingByQuote[selectedQuoteId] : null;
+  useEffect(() => {
+    if (
+      (selectedQuote as any)?.customer_signed_at &&
+      selectedQuoteId &&
+      pendingSignForQuote &&
+      onPortalSignClearForQuote
+    ) {
+      onPortalSignClearForQuote(selectedQuoteId);
     }
-  }, [selectedQuote?.customer_signed_at, justSigned?.quoteId, selectedQuoteId]);
+  }, [(selectedQuote as any)?.customer_signed_at, selectedQuoteId, pendingSignForQuote, onPortalSignClearForQuote]);
 
   async function handleSignProposal(e?: React.MouseEvent) {
     e?.preventDefault();
@@ -524,7 +742,6 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
       return;
     }
     setSigning(true);
-    setJustSigned(null);
     try {
       const { data, error } = await supabase.rpc('customer_sign_proposal', {
         p_access_token: portalToken,
@@ -538,8 +755,8 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
         throw error;
       }
       if (result?.ok) {
-        setJustSigned({ quoteId: selectedQuoteId, name: signerName.trim(), email: signerEmail.trim() });
-        toast.success('Proposal signed. This proposal is now your contract.');
+        onPortalSignRecorded?.(selectedQuoteId, signerName.trim());
+        toast.success('Contract saved. This proposal is now your signed contract. The project team will see it in the job.');
         await onRefreshJobData?.();
       } else {
         const errMsg = result?.error ?? 'Could not sign proposal';
@@ -560,30 +777,115 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
     }
   }
 
-  async function handleRevokeSignature() {
-    if (!portalToken || !selectedQuoteId) return;
-    if (!confirm('Are you sure you want to revoke your signature? This proposal will no longer be used as your contract. You can sign again later if needed.')) return;
-    setRevoking(true);
+  async function handleSignChangeOrderSheet(sheetId: string, e?: React.MouseEvent) {
+    e?.preventDefault();
+    if (!portalToken) {
+      toast.error('Session missing. Please refresh the page.');
+      return;
+    }
+    if (!coSignerName.trim() || !coSignerEmail.trim()) {
+      toast.error('Please enter your full name and email.');
+      return;
+    }
+    if (!coAgreeBySheet[sheetId]) {
+      toast.error('Please check the agreement box for this change order.');
+      return;
+    }
+    setCoSigningSheetId(sheetId);
     try {
-      const { data, error } = await supabase.rpc('customer_revoke_proposal_signature', {
+      const { data, error } = await supabase.rpc('customer_sign_change_order_sheet', {
         p_access_token: portalToken,
-        p_quote_id: selectedQuoteId,
+        p_sheet_id: sheetId,
+        p_signer_name: coSignerName.trim(),
+        p_signer_email: coSignerEmail.trim(),
       });
       const result = data as { ok?: boolean; error?: string } | null;
       if (error) throw error;
-      if (result?.ok) {
-        setJustSigned(null);
-        toast.success('Signature revoked. You can sign again when ready.');
-        onRefreshJobData?.();
+        if (result?.ok) {
+        toast.success('Change order signed. Your contractor will proceed with this item.');
+        await onRefreshJobData?.();
       } else {
-        toast.error(result?.error ?? 'Could not revoke signature');
+        const err = result?.error ?? 'Could not sign';
+        const missing = /function.*does not exist|42883|PGRST202/i.test(String(err));
+        toast.error(
+          missing
+            ? 'Signing change orders requires a database update. Ask your administrator to run the latest Supabase migration (change_order_seq_and_sheet_signatures).'
+            : err,
+          { duration: missing ? 9000 : 5000 }
+        );
       }
     } catch (e: any) {
-      console.error('Revoke signature error:', e);
-      toast.error(e?.message ?? 'Failed to revoke signature');
+      toast.error(e?.message ?? 'Failed to sign');
     } finally {
-      setRevoking(false);
+      setCoSigningSheetId(null);
     }
+  }
+
+  function openChangeOrderDocument(sheet: any, coLabel: string) {
+    if (!job) return;
+    const raw = (changeOrderQuote as any)?.change_order_signatures;
+    const sigs =
+      raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, any>) : {};
+    const sig = sigs[sheet.id] as { signed_name?: string; signed_at?: string } | undefined;
+    const lineItems: Array<{ description: string; amount?: number; isLabor?: boolean }> = [];
+    (sheet.sheetLinkedItems || [])
+      .filter((item: any) => !item.hide_from_customer)
+      .forEach((item: any) => {
+        const isLabor = (item.item_type || 'material') === 'labor';
+        const amt =
+          (Number(item.total_cost) || 0) * (1 + (Number(item.markup_percent) || 0) / 100);
+        lineItems.push({
+          description: item.description || 'Line item',
+          amount: amt > 0 ? amt : undefined,
+          isLabor,
+        });
+      });
+    const sheetMat = sheet._computedMaterials ?? 0;
+    const sheetLab = sheet._computedLabor ?? 0;
+    const subtotal = sheetMat + sheetLab;
+    const taxExempt = !!(changeOrderQuote as any)?.tax_exempt;
+    const tax = taxExempt ? 0 : sheetMat * 0.07;
+    const grand = subtotal + tax;
+    const showPrices = showFinancialCo && showLineItemPricesCo;
+    const html = generateChangeOrderDocumentHTML({
+      changeOrderNumber: coLabel,
+      date: new Date().toLocaleDateString('en-US', { dateStyle: 'long' }),
+      job: {
+        client_name: job.client_name,
+        address: job.address || '',
+        name: job.name,
+      },
+      scopeTitle: sheet.sheet_name || 'Change order',
+      scopeDescription: sheet.description || '',
+      lineItems,
+      materialsTotal: sheetMat,
+      laborTotal: sheetLab,
+      subtotal,
+      tax,
+      grandTotal: grand,
+      showPrices,
+      taxExempt,
+      signedName: sig?.signed_name,
+      signedAt: sig?.signed_at ? new Date(sig.signed_at).toLocaleDateString('en-US', { dateStyle: 'medium' }) : undefined,
+    });
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank');
+    if (!win) {
+      URL.revokeObjectURL(blobUrl);
+      toast.error('Allow popups to view the document.');
+      return;
+    }
+    win.focus();
+    toast.info('Use Print or Save as PDF in your browser.');
+    setTimeout(() => {
+      try {
+        if (!win.closed) win.print();
+      } catch {
+        /* ignore */
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
+    }, 400);
   }
 
   async function sendEmailToJob() {
@@ -591,53 +893,41 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
       toast.error('Please enter a message');
       return;
     }
+    if (!portalToken) {
+      toast.error('Session expired or missing. Please refresh the page and use your portal link again.');
+      return;
+    }
+    if (!job?.id) {
+      toast.error('Project not found. Please refresh the page.');
+      return;
+    }
 
     setSendingEmail(true);
-
     try {
       const fromName = customerInfo?.customer_name || 'Customer';
       const defaultSubject = `Message from ${fromName}`;
       const body = emailBody.trim();
 
-      let error: any = null;
-      if (portalToken) {
-        const { data: rpcData, error: rpcError } = await supabase.rpc('create_job_email_from_customer_portal', {
-          p_access_token: portalToken,
-          p_job_id: job.id,
-          p_subject: defaultSubject,
-          p_body_text: body,
-        });
-        error = rpcError;
-        if (!error && rpcData) {
-          toast.success('Message sent to project team');
-          setEmailBody('');
-          setEmailSentInDialog(true);
-          await onRefreshJobData?.();
-          setSendingEmail(false);
-          return;
-        }
-      }
-      if (error || !portalToken) {
-        const direct = await supabase
-          .from('job_emails')
-          .insert({
-            job_id: job.id,
-            message_id: `customer-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-            subject: defaultSubject,
-            from_email: customerInfo.customer_email || '',
-            from_name: customerInfo.customer_name,
-            to_emails: ['office@company.com'],
-            body_text: body,
-            email_date: new Date().toISOString(),
-            direction: 'inbound',
-            is_read: false,
-          });
-        error = direct.error;
+      const { data: rpcData, error: rpcError } = await supabase.rpc('create_job_email_from_customer_portal', {
+        p_access_token: portalToken,
+        p_job_id: job.id,
+        p_subject: defaultSubject,
+        p_body_text: body,
+      });
+
+      if (rpcError) {
+        const msg = rpcError.message || 'Failed to send message';
+        const isMissingRpc = /function.*does not exist|42883|PGRST202/i.test(String(msg));
+        toast.error(isMissingRpc
+          ? 'Sending messages is not set up yet. Your project manager needs to run the database migration for portal messages.'
+          : msg,
+          { duration: isMissingRpc ? 8000 : 5000 }
+        );
+        return;
       }
 
-      if (error) throw error;
-
-      toast.success('Message sent to project team');
+      // RPC succeeded (saved to job_emails; office sees it in Email Communications for this job)
+      toast.success('Message sent. The office will see it under this job’s Email Communications (they may need to refresh that tab).');
       setEmailBody('');
       setEmailSentInDialog(true);
       await onRefreshJobData?.();
@@ -649,10 +939,26 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
     }
   }
 
-  async function loadProposalDataForQuote(jobId: string, quoteId: string | null, taxExempt: boolean) {
+  async function loadProposalDataForQuote(
+    jobId: string,
+    quoteId: string | null,
+    taxExempt: boolean,
+    opts?: { forChangeOrderDocument?: boolean }
+  ) {
     try {
+      const { data: coQuoteEarly } = await supabase
+        .from('quotes')
+        .select('id')
+        .eq('job_id', jobId)
+        .eq('is_change_order_proposal', true)
+        .limit(1)
+        .maybeSingle();
+      const changeOrderQuoteIdForJob = coQuoteEarly?.id ?? null;
+      const forChangeOrderDocument =
+        !!opts?.forChangeOrderDocument || (!!quoteId && quoteId === changeOrderQuoteIdForJob);
+
       // Prefer proposal totals stored on the quote (written by JobFinancials) so portal always matches office
-      let storedTotals: { subtotal: number; tax: number; grandTotal: number } | null = null;
+      let storedTotals: { subtotal: number; tax: number; grandTotal: number; materials?: number; labor?: number } | null = null;
       if (quoteId) {
         const { data: quoteRow } = await supabase
           .from('quotes')
@@ -727,18 +1033,11 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
           .order('order_index');
         let sheets = sheetsData || [];
 
-        // When we have a quote-specific workbook with sheets, always use it so sheet IDs match
-        // custom_financial_row_items (sheet-linked line items) and sheet descriptions. Do not fall
-        // back to another workbook just because material_items count is 0 (sections can be description + line items only).
-        let doFallback = sheets.length === 0;
-        if (!doFallback && sheets.length > 0 && !quoteId) {
-          const sheetIdList = sheets.map((s: any) => s.id);
-          const { count: itemCount } = await supabase
-            .from('material_items')
-            .select('id', { count: 'exact', head: true })
-            .in('sheet_id', sheetIdList);
-          if ((itemCount ?? 0) === 0) doFallback = true;
-        }
+        // When we have a quote-specific workbook with sheets, always use it. Do not fall back to
+        // another workbook just because material_items count is 0: sections can be description +
+        // line items only, and labor-only sheets (e.g. "Stain & Labor for ceiling") have no
+        // material_items and must still appear in the customer portal.
+        const doFallback = sheets.length === 0;
         if (doFallback) {
           const { data: allWbs } = await supabase
             .from('material_workbooks')
@@ -760,7 +1059,7 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                 .select('id', { count: 'exact', head: true })
                 .in('sheet_id', altSheetIds);
               if ((altCount ?? 0) > 0) {
-                sheets = altSheets!;
+                sheets = (altSheets || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
                 workbookData = wb;
                 break;
               }
@@ -776,6 +1075,7 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
             supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id),
           ]);
           (sheet as any).items = items || [];
+          (sheet as any).laborRows = laborRows || [];
           const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
           (sheet as any).laborTotal = laborTotal;
           const catMarkupMap: Record<string, number> = {};
@@ -805,16 +1105,10 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
         materialSheets = sheets;
       }
 
-      // Change order proposal: separate quote for this job with is_change_order_proposal = true; load its workbook/sheets for the Change orders card.
+      // Change order proposal workbook (main proposal view only — not when loading the CO document itself)
       let changeOrderSheets: any[] = [];
-      const { data: changeOrderQuoteRow } = await supabase
-        .from('quotes')
-        .select('id')
-        .eq('job_id', jobId)
-        .eq('is_change_order_proposal', true)
-        .limit(1)
-        .maybeSingle();
-      if (changeOrderQuoteRow?.id) {
+      const changeOrderQuoteRow = changeOrderQuoteIdForJob ? { id: changeOrderQuoteIdForJob } : null;
+      if (changeOrderQuoteRow?.id && !forChangeOrderDocument) {
         const { data: coWb } = await supabase
           .from('material_workbooks')
           .select('id')
@@ -828,7 +1122,7 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
             .select('*')
             .eq('workbook_id', coWb.id)
             .order('order_index');
-          const coSheetsList = coSheets || [];
+          const coSheetsList = (coSheets || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
           for (const sheet of coSheetsList) {
             const [{ data: items }, { data: laborRows }, { data: categoryMarkupRows }] = await Promise.all([
               supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
@@ -836,6 +1130,7 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
               supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id),
             ]);
             (sheet as any).items = items || [];
+            (sheet as any).laborRows = laborRows || [];
             const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
             (sheet as any).laborTotal = laborTotal;
             const catMarkupMap: Record<string, number> = {};
@@ -1018,9 +1313,13 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
         });
         const sheetDirectLabor = sheet.laborTotal ?? 0;
         let sheetLinkedLabor = 0;
+        let sheetLinkedMaterials = 0;
         (sheet.sheetLinkedItems || []).forEach((item: any) => {
+          const itemTotal = (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
           if ((item.item_type || 'material') === 'labor') {
-            sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
+            sheetLinkedLabor += itemTotal;
+          } else {
+            sheetLinkedMaterials += itemTotal;
           }
         });
         // Linked custom rows (row.sheet_id === sheet.id) and their linked subs
@@ -1047,9 +1346,14 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
           linkedSubsMatTaxable += matTax * m;
           linkedSubsLab += lab * m;
         });
-        const sheetTotal = sheetCatPrice + sheetDirectLabor + sheetLinkedLabor + linkedRowsMat + linkedRowsLab + linkedSubsMat + linkedSubsLab;
+        const sheetMaterialsPart = sheetCatPrice + sheetLinkedMaterials + linkedRowsMat + linkedSubsMat;
+        const sheetLaborPart = sheetDirectLabor + sheetLinkedLabor + linkedRowsLab + linkedSubsLab;
+        const sheetTotal = sheetMaterialsPart + sheetLaborPart;
         (sheet as any)._computedTotal = sheetTotal;
-        if (!isChangeOrder && !isOptional) {
+        (sheet as any)._computedMaterials = sheetMaterialsPart;
+        (sheet as any)._computedLabor = sheetLaborPart;
+        const countInProposalTotals = (!isChangeOrder || forChangeOrderDocument) && !isOptional;
+        if (countInProposalTotals) {
           sheetMaterialsTotal += sheetCatPrice + linkedRowsMat + linkedSubsMat;
           sheetLaborTotal += sheetDirectLabor + sheetLinkedLabor + linkedRowsLab + linkedSubsLab;
           // All sheet category materials taxable by default (match JobFinancials)
@@ -1109,8 +1413,10 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
       const computedTax = taxExempt ? 0 : materialsTaxableOnly * TAX_RATE;
       const computedGrandTotal = computedSubtotal + computedTax;
 
-      // Use stored totals from quote (written by JobFinancials) so portal matches office exactly
-      const totals = storedTotals ?? { subtotal: computedSubtotal, tax: computedTax, grandTotal: computedGrandTotal };
+      // Use stored totals from quote (written by JobFinancials) so portal matches office exactly; include materials/labor for header
+      const totals = storedTotals
+        ? { ...storedTotals, materials: storedTotals.materials ?? totalMaterials, labor: storedTotals.labor ?? totalLabor }
+        : { subtotal: computedSubtotal, tax: computedTax, grandTotal: computedGrandTotal, materials: totalMaterials, labor: totalLabor };
 
       return {
         materialSheets,
@@ -1126,7 +1432,7 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
         changeOrderSheets: [],
         customRows: [],
         subcontractorEstimates: [],
-        totals: { subtotal: 0, tax: 0, grandTotal: 0 },
+        totals: { subtotal: 0, tax: 0, grandTotal: 0, materials: 0, labor: 0 },
       };
     }
   }
@@ -1193,13 +1499,26 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
   function handlePrintProposal() {
     if (!proposalData || !job) return;
     const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
+    const proposalSheets = (proposalData.materialSheets || []).filter(
+      (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+    );
+    const customRows = proposalData.customRows || [];
+    const standaloneCustomRows = customRows.filter((row: any) => !row.sheet_id);
+    const sheetSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [];
+    proposalSheets.forEach((sheet: any) => {
+      const sheetOrder = sheet.order_index ?? 0;
+      sheetSections.push({ type: 'material' as const, id: sheet.id, orderIndex: sheetOrder * 1000, data: sheet });
+      customRows.filter((r: any) => r.sheet_id === sheet.id).sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)).forEach((row: any, idx: number) => {
+        sheetSections.push({ type: 'custom' as const, id: row.id, orderIndex: sheetOrder * 1000 + 100 + (row.order_index ?? idx), data: row });
+      });
+    });
     const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
-      ...(proposalData.materialSheets || []).map((sheet: any) => ({ type: 'material' as const, id: sheet.id, orderIndex: sheet.order_index ?? 0, data: sheet })),
-      ...(proposalData.customRows || []).filter((row: any) => !row.sheet_id).map((row: any) => ({ type: 'custom' as const, id: row.id, orderIndex: row.order_index ?? 0, data: row })),
-      ...(proposalData.subcontractorEstimates || []).filter((est: any) => !est.sheet_id && !est.row_id).map((est: any) => ({ type: 'subcontractor' as const, id: est.id, orderIndex: est.order_index ?? 0, data: est })),
+      ...sheetSections,
+      ...standaloneCustomRows.map((row: any) => ({ type: 'custom' as const, id: row.id, orderIndex: (row.order_index ?? 0) * 1000, data: row })),
+      ...(proposalData.subcontractorEstimates || []).filter((est: any) => !est.sheet_id && !est.row_id).map((est: any) => ({ type: 'subcontractor' as const, id: est.id, orderIndex: (est.order_index ?? 0) * 1000, data: est })),
     ].sort((a, b) => a.orderIndex - b.orderIndex);
 
-    // Sections visible in proposal; line items are not shown (section headers only).
+    // Sections visible in proposal (sheet-linked line items are part of the sheet total, not separate print lines).
     const sections = allSections.map((section) => {
       if (section.type === 'material') {
         const s = section.data;
@@ -1208,11 +1527,11 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
         if (s.description) parts.push(s.description);
         linkedSubs.forEach((est: any) => { if (est.scope_of_work) parts.push(est.scope_of_work); });
         const description = parts.join('\n');
-        return { name: s.sheet_name, description, price: showFinancial && showLineItemPrices ? (s._computedTotal ?? 0) : undefined, optional: false };
+        return { name: s.sheet_name, description, price: showPriceForSection(s.id) ? (s._computedTotal ?? 0) : undefined, optional: false };
       }
       if (section.type === 'custom') {
         const r = section.data;
-        return { name: r.description || r.category || 'Custom', description: '', price: showFinancial && showLineItemPrices ? (r._computedTotal ?? 0) : undefined, optional: false };
+        return { name: r.description || r.category || 'Custom', description: r.notes || '', price: showPriceForSection(r.id) ? (r._computedTotal ?? 0) : undefined, optional: false };
       }
       const e = section.data;
       return { name: e.company_name, description: e.scope_of_work || '', price: showFinancial && showLineItemPrices ? (e._computedTotal ?? 0) : undefined, optional: false };
@@ -1275,6 +1594,9 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
 
   const viewOptions = [
     { value: 'overview', label: 'Overview', icon: LayoutDashboard },
+    ...(showProposal && changeOrderQuote
+      ? [{ value: 'change-orders' as const, label: 'Change orders', icon: ClipboardList }]
+      : []),
     ...(showPayments ? [{ value: 'payments' as const, label: 'Payments', icon: DollarSign }] : []),
     ...(showSchedule ? [{ value: 'schedule' as const, label: 'Schedule', icon: Calendar }] : []),
     ...(showDocuments ? [{ value: 'documents' as const, label: 'Documents', icon: FileSpreadsheet }] : []),
@@ -1286,7 +1608,11 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
   useEffect(() => {
     const allowed = new Set(viewOptions.map((o) => o.value));
     if (!allowed.has(activeTab)) setActiveTab('overview');
-  }, [showPayments, showSchedule, showDocuments, showPhotos, activeTab]);
+  }, [showPayments, showSchedule, showDocuments, showPhotos, showProposal, changeOrderQuote?.id, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'change-orders' && !changeOrderQuote) setActiveTab('overview');
+  }, [activeTab, changeOrderQuote]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -1297,13 +1623,13 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-3xl font-bold text-amber-400">{job.name}</h1>
-                {jobQuotes.length > 1 ? (
+                {proposalQuotes.length > 1 ? (
                   <Select value={selectedQuoteId ?? ''} onValueChange={(v) => setSelectedQuoteId(v || null)}>
                     <SelectTrigger className="w-[180px] bg-amber-500/20 text-amber-300 border-amber-500/50">
                       <SelectValue placeholder="Select proposal" />
                     </SelectTrigger>
                     <SelectContent>
-                      {jobQuotes.map((q: any) => (
+                      {proposalQuotes.map((q: any) => (
                         <SelectItem key={q.id} value={q.id}>
                           #{q.proposal_number || q.quote_number || q.id.slice(0, 8)}
                         </SelectItem>
@@ -1455,32 +1781,52 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                       </div>
                     ) : proposalData ? (
                       <>
-                        {/* Proposal sections only (exclude change order sheets); change orders shown in separate card below */}
+                        {/* Summary line (Materials | Labor | Subtotal | Tax | GRAND TOTAL) is shown only in the office preview, not to the customer in the portal link. */}
+                        {/* Proposal sections only (exclude change order sheets); change orders shown in separate card below.
+                            Include every material sheet (including labor-only sheets with no material items) and both
+                            standalone and sheet-linked custom rows so section order matches the office proposal. */}
                         {(() => {
-                          const proposalSheets = (proposalData.materialSheets || []).filter((s: any) => s.sheet_type !== 'change_order');
-                          const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
-                            ...proposalSheets.map((sheet: any) => ({
+                          const proposalSheets = (proposalData.materialSheets || []).filter(
+                            (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+                          );
+                          const customRows = proposalData.customRows || [];
+                          const standaloneCustomRows = customRows.filter((row: any) => !row.sheet_id);
+                          // Build sections: each material sheet (sheet-linked line items are shown inside the sheet card), then linked custom rows, then standalone custom rows and subcontractors.
+                          const sheetSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [];
+                          proposalSheets.forEach((sheet: any) => {
+                            const sheetOrder = sheet.order_index ?? 0;
+                            sheetSections.push({
                               type: 'material' as const,
                               id: sheet.id,
-                              orderIndex: sheet.order_index ?? 0,
+                              orderIndex: sheetOrder * 1000,
                               data: sheet,
-                            })),
-                            // Only standalone custom rows (not linked to a sheet)
-                            ...(proposalData.customRows || [])
-                              .filter((row: any) => !row.sheet_id)
-                              .map((row: any) => ({
+                            });
+                            const linkedToSheet = customRows
+                              .filter((r: any) => r.sheet_id === sheet.id)
+                              .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                            linkedToSheet.forEach((row: any, idx: number) => {
+                              sheetSections.push({
                                 type: 'custom' as const,
                                 id: row.id,
-                                orderIndex: row.order_index ?? 0,
+                                orderIndex: sheetOrder * 1000 + 100 + (row.order_index ?? idx),
                                 data: row,
-                              })),
-                            // Only standalone subcontractors (not linked to a sheet or row)
+                              });
+                            });
+                          });
+                          const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
+                            ...sheetSections,
+                            ...standaloneCustomRows.map((row: any) => ({
+                              type: 'custom' as const,
+                              id: row.id,
+                              orderIndex: (row.order_index ?? 0) * 1000,
+                              data: row,
+                            })),
                             ...(proposalData.subcontractorEstimates || [])
                               .filter((est: any) => !est.sheet_id && !est.row_id)
                               .map((est: any) => ({
                                 type: 'subcontractor' as const,
                                 id: est.id,
-                                orderIndex: est.order_index ?? 0,
+                                orderIndex: (est.order_index ?? 0) * 1000,
                                 data: est,
                               })),
                           ].sort((a, b) => a.orderIndex - b.orderIndex);
@@ -1489,6 +1835,9 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                             if (section.type === 'material') {
                               const sheet = section.data;
                               const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === sheet.id);
+                              const sheetMaterials = sheet._computedMaterials ?? 0;
+                              const sheetLabor = sheet._computedLabor ?? 0;
+                              const showPrice = showPriceForSection(sheet.id);
                               return (
                                 <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
                                   <div className="min-w-0 flex-1">
@@ -1502,22 +1851,41 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                                       </div>
                                     ))}
                                   </div>
-                                  {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
-                                    <p className="text-base font-bold text-emerald-700 shrink-0">
-                                      ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </p>
+                                  {showPrice && (sheetMaterials > 0 || sheetLabor > 0) && (
+                                    <div className="w-[100px] flex-shrink-0 text-right">
+                                      {sheetMaterials > 0 && (
+                                        <>
+                                          <p className="text-sm text-slate-500">Materials</p>
+                                          <p className="text-base font-bold text-blue-700">${sheetMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                        </>
+                                      )}
+                                      {sheetLabor > 0 && (
+                                        <>
+                                          <p className="text-sm text-slate-500 mt-2">Labor</p>
+                                          <p className="text-base font-bold text-amber-700">${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                        </>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               );
                             }
                             if (section.type === 'custom') {
                               const row = section.data;
+                              const title = row.description || row.category || 'Custom';
+                              const descriptionParts: string[] = [];
+                              if (row.notes?.trim()) descriptionParts.push(row.notes.trim());
+                              if (row.description?.trim() && row.description.trim() !== title.trim()) descriptionParts.push(row.description.trim());
+                              const descriptionText = descriptionParts.join('\n\n');
                               return (
                                 <div key={row.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
                                   <div className="min-w-0 flex-1">
-                                    <h3 className="font-semibold text-base">{row.description || row.category}</h3>
+                                    <h3 className="font-semibold text-base">{title}</h3>
+                                    {descriptionText && (
+                                      <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{descriptionText}</p>
+                                    )}
                                   </div>
-                                  {showFinancial && showLineItemPrices && (row._computedTotal ?? 0) > 0 && (
+                                  {showPriceForSection(row.id) && (row._computedTotal ?? 0) > 0 && (
                                     <p className="text-base font-bold text-emerald-700 shrink-0">
                                       ${(row._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </p>
@@ -1535,7 +1903,7 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                                     <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
                                   )}
                                 </div>
-                                {showFinancial && showLineItemPrices && (est._computedTotal ?? 0) > 0 && (
+                                {showPriceForSection(est.id) && (est._computedTotal ?? 0) > 0 && (
                                   <p className="text-base font-bold text-emerald-700 shrink-0">
                                     ${(est._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </p>
@@ -1545,7 +1913,7 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                           });
                         })()}
 
-                        {/* Totals — only shown when showFinancial is enabled. Prefer proposalData.totals (same load as sections above) so total always matches the line items; fall back to RPC/quote when proposalData not yet loaded. */}
+                        {/* Totals — only shown when showFinancial is enabled. Prefer proposalData.totals; fall back to RPC/quote when proposalData not yet loaded. */}
                         {showFinancial && (() => {
                           const displayTotals =
                             (proposalData?.totals != null ? proposalData.totals : null) ??
@@ -1585,30 +1953,48 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                           );
                         })()}
 
-                        {/* Sign proposal to use as contract — show "Signed" when server has it or we just signed (optimistic) */}
-                        {((selectedQuote as any)?.customer_signed_at || (justSigned?.quoteId === selectedQuoteId)) ? (
-                          <div className="border-t-2 border-emerald-200 pt-4 mt-4 rounded-lg bg-emerald-50/80 p-4">
-                            <div className="flex items-center gap-2 text-emerald-800 font-medium">
-                              <CheckCircle className="w-5 h-5 shrink-0" />
-                              <span>Signed — used as contract</span>
-                            </div>
-                            <p className="text-sm text-emerald-700 mt-1">
-                              {(selectedQuote as any)?.customer_signed_at
-                                ? `Signed on ${(new Date((selectedQuote as any).customer_signed_at)).toLocaleDateString('en-US', { dateStyle: 'medium' })}${(selectedQuote as any).customer_signed_name ? ` by ${(selectedQuote as any).customer_signed_name}` : ''}.`
-                                : `Signed just now by ${justSigned?.name ?? signerName}.`}
+                        {/* Contract: seal replaces sign button once signed (customer e-sign, office “Set as Contract”, or pending confirm) */}
+                        {(selectedQuote as any)?.customer_signed_at ? (
+                          <div className="border-t-2 pt-4 mt-4 space-y-3">
+                            <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                              This proposal is your signed contract
+                            </h4>
+                            <p className="text-sm text-muted-foreground">
+                              {`Signed on ${(new Date((selectedQuote as any).customer_signed_at)).toLocaleDateString('en-US', { dateStyle: 'medium' })}${(selectedQuote as any).customer_signed_name ? ` by ${(selectedQuote as any).customer_signed_name}` : ''}.`}
                             </p>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="mt-3 border-amber-300 text-amber-800 hover:bg-amber-50"
-                              onClick={handleRevokeSignature}
-                              disabled={revoking}
-                            >
-                              {revoking ? 'Revoking…' : 'Revoke my signature'}
-                            </Button>
+                            <div className="space-y-2 pt-1">
+                              <MartinBuilderContractSeal />
+                            </div>
                           </div>
-                        ) : (selectedQuote as any)?.sent_at && (
+                        ) : selectedQuoteId && portalSignPendingByQuote[selectedQuoteId] ? (
+                          <div className="border-t-2 pt-4 mt-4 space-y-3">
+                            <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                              This proposal is your signed contract
+                            </h4>
+                            <p className="text-sm text-muted-foreground">
+                              Signed by {portalSignPendingByQuote[selectedQuoteId].name}. Your acceptance is on file.
+                            </p>
+                            <div className="space-y-2 pt-1">
+                              <MartinBuilderContractSeal />
+                            </div>
+                          </div>
+                        ) : (selectedQuote as any)?.sent_at &&
+                          Number((selectedQuote as any)?.signed_version) > 0 ? (
+                          <div className="border-t-2 pt-4 mt-4 space-y-3">
+                            <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                              This proposal is your signed contract
+                            </h4>
+                            <p className="text-sm text-muted-foreground">
+                              Martin Builder has recorded this proposal as your signed contract.
+                            </p>
+                            <div className="space-y-2 pt-1">
+                              <MartinBuilderContractSeal />
+                            </div>
+                          </div>
+                        ) : (selectedQuote as any)?.sent_at ? (
                           <div className="border-t-2 pt-4 mt-4 space-y-3">
                             <h4 className="font-semibold text-slate-800 flex items-center gap-2">
                               <PenLine className="w-4 h-4" />
@@ -1652,159 +2038,344 @@ function JobDetailView({ jobData, customerInfo, searchParams, onRefreshJobData }
                                 I agree to the terms and authorize the work as specified in this proposal.
                               </Label>
                             </div>
-                            <Button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleSignProposal(e);
-                              }}
-                              disabled={signing}
-                              className="bg-emerald-700 hover:bg-emerald-800 disabled:opacity-70 disabled:cursor-not-allowed"
-                            >
-                              {signing ? (
-                                <>
-                                  <span className="animate-spin mr-2 inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                                  Signing…
-                                </>
-                              ) : (
-                                <>
-                                  <PenLine className="w-4 h-4 mr-2" />
-                                  Sign & use as contract
-                                </>
+                            <div className="space-y-2">
+                              {!agreeToTerms && (
+                                <p className="text-xs text-amber-700">Check the agreement box above to enable signing.</p>
                               )}
-                            </Button>
-                            {(!signerEmail.trim() || !signerName.trim()) && (
-                              <p className="text-xs text-amber-700 mt-1">Enter your full name and email above to enable the sign button.</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* CHANGE ORDERS SECTION (separate from proposal total) */}
-                        {(() => {
-                          const changeOrderSheets = (proposalData.materialSheets || []).filter((sheet: any) => sheet.sheet_type === 'change_order');
-                          if (changeOrderSheets.length === 0) return null;
-                          
-                          return (
-                            <div className="border-t-4 border-orange-200 pt-6 mt-8">
-                              <h3 className="text-xl font-bold text-orange-900 mb-4 flex items-center gap-2">
-                                <FileSpreadsheet className="w-5 h-5" />
-                                Change Orders
-                              </h3>
-                              <p className="text-sm text-muted-foreground mb-4">
-                                Additional work not included in the main proposal total above.
-                              </p>
-                              <div className="space-y-3">
-                                {changeOrderSheets.map((sheet: any) => {
-                                  const linkedRows = (proposalData.customRows || []).filter((r: any) => r.sheet_id === sheet.id);
-                                  const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === sheet.id);
-                                  const sheetLineItems = sheet.sheetLinkedItems || [];
-                                  
-                                  return (
-                                    <div key={sheet.id} className="border-2 border-orange-200 bg-orange-50/30 rounded-lg px-4 py-3 flex items-start justify-between gap-4">
-                                      <div className="min-w-0 flex-1">
-                                        <h4 className="font-semibold text-base text-orange-900">{sheet.sheet_name}</h4>
-                                        {sheet.description && (
-                                          <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
-                                        )}
-                                        {(sheet.sheetLinkedItems || []).filter((i: any) => !i.hide_from_customer).length > 0 && (
-                                          <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
-                                            {(sheet.sheetLinkedItems || []).filter((i: any) => !i.hide_from_customer).map((item: any) => (
-                                              <li key={item.id}>{item.description}</li>
-                                            ))}
-                                          </ul>
-                                        )}
-                                        {linkedRows.map((row: any) => {
-                                          const items = (row.custom_financial_row_items || []).filter((i: any) => !i.hide_from_customer).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
-                                          return (
-                                            <div key={row.id} className="mt-2">
-                                              {row.description && <p className="text-sm font-medium text-slate-700">{row.description}</p>}
-                                              {items.length > 0 && (
-                                                <ul className="text-sm text-muted-foreground mt-0.5 space-y-0.5 list-disc list-inside">
-                                                  {items.map((i: any) => <li key={i.id}>{i.description}</li>)}
-                                                </ul>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                        {linkedSubs.map((est: any) => (
-                                          <div key={est.id} className="mt-2">
-                                            {est.scope_of_work && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{est.scope_of_work}</p>}
-                                          </div>
-                                        ))}
-                                      </div>
-                                      {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
-                                        <p className="text-base font-bold text-orange-700 shrink-0">
-                                          ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                              <Button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleSignProposal(e);
+                                }}
+                                disabled={signing || !agreeToTerms || !signerName.trim() || !signerEmail.trim()}
+                                className="bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {signing ? (
+                                  <>
+                                    <span className="animate-spin mr-2 inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                                    Signing…
+                                  </>
+                                ) : (
+                                  <>
+                                    <PenLine className="w-4 h-4 mr-2" />
+                                    Sign & use as contract
+                                  </>
+                                )}
+                              </Button>
+                              {agreeToTerms && (!signerEmail.trim() || !signerName.trim()) && (
+                                <p className="text-xs text-amber-700">Enter your full name and email above to sign.</p>
+                              )}
                             </div>
-                          );
-                        })()}
+                          </div>
+                        ) : null}
                       </>
                     ) : null}
                   </CardContent>
                 </Card>
-
-                {/* Change orders — from separate change order proposal (quote); not added to proposal total */}
-                {proposalData && (() => {
-                  const changeOrderSheets = proposalData.changeOrderSheets || [];
-                  if (changeOrderSheets.length === 0) return null;
-                  return (
-                    <Card className="mt-6 border-amber-200 bg-amber-50/30">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-amber-900">
-                          <FileSpreadsheet className="w-5 h-5" />
-                          Change Orders
-                        </CardTitle>
-                        <p className="text-sm text-muted-foreground font-normal">
-                          The following change orders are separate from the main proposal total.
-                        </p>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {changeOrderSheets.map((sheet: any) => (
-                          <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4 bg-white">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
-                              {sheet.description && (
-                                <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
-                              )}
-                              {(sheet.sheetLinkedItems || []).filter((i: any) => !i.hide_from_customer).length > 0 && (
-                                <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
-                                  {(sheet.sheetLinkedItems || []).filter((i: any) => !i.hide_from_customer).map((item: any) => (
-                                    <li key={item.id}>{item.description}</li>
-                                  ))}
-                                </ul>
-                              )}
-                              {!sheet.description && (sheet.sheetLinkedItems || []).filter((i: any) => !i.hide_from_customer).length === 0 && (sheet.items || []).length > 0 && (
-                                <ul className="text-sm text-muted-foreground mt-1.5 space-y-0.5 list-disc list-inside">
-                                  {(sheet.items || []).slice(0, 5).map((item: any) => (
-                                    <li key={item.id}>{[item.quantity, item.material_name].filter(Boolean).join(' - ')}</li>
-                                  ))}
-                                  {(sheet.items || []).length > 5 && <li>… and {(sheet.items || []).length - 5} more</li>}
-                                </ul>
-                              )}
-                            </div>
-                            {showFinancial && showLineItemPrices && (sheet._computedTotal ?? 0) > 0 && (
-                              <p className="text-base font-bold text-amber-700 shrink-0">
-                                ${(sheet._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  );
-                })()}
               </>
             )}
             </>
           )}
 
+          </TabsContent>
+
+          <TabsContent value="change-orders" className="space-y-6">
+            {changeOrderQuote ? (
+              !(changeOrderQuote as any)?.sent_at ? (
+                <Card className="border-orange-200 bg-orange-50/30">
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    <ClipboardList className="w-10 h-10 mx-auto mb-3 opacity-50 text-orange-700" />
+                    <p className="font-medium text-slate-700">No change order sent yet</p>
+                    <p className="text-sm mt-1">When your project manager sends a change order, it will appear here for you to review and sign.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-6">
+                  <Card className="border-orange-100 bg-orange-50/50">
+                    <CardContent className="pt-6 space-y-4">
+                      <p className="text-sm text-slate-700">
+                        <strong>Change orders</strong> are separate from your main proposal. Each one has its own number and printable document. Sign only the change orders you authorize.
+                      </p>
+                      {!showFinancialCo && (
+                        <p className="text-sm text-muted-foreground">Pricing appears when your contractor shares it.</p>
+                      )}
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="co-signer-name-all">Your full name (for signing) *</Label>
+                          <Input
+                            id="co-signer-name-all"
+                            value={coSignerName}
+                            onChange={(e) => setCoSignerName(e.target.value)}
+                            placeholder="Full name"
+                            className="bg-white"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="co-signer-email-all">Your email *</Label>
+                          <Input
+                            id="co-signer-email-all"
+                            type="email"
+                            value={coSignerEmail}
+                            onChange={(e) => setCoSignerEmail(e.target.value)}
+                            placeholder="email@example.com"
+                            className="bg-white"
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  {changeOrderDataLoading && !changeOrderProposalData ? (
+                    <div className="flex items-center justify-center py-8 text-muted-foreground">
+                      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                      Loading change orders…
+                    </div>
+                  ) : changeOrderProposalData ? (
+                    (() => {
+                      const coData = changeOrderProposalData;
+                      const rawSigs = (changeOrderQuote as any)?.change_order_signatures;
+                      const coSigs: Record<string, { signed_at?: string; signed_name?: string }> =
+                        rawSigs && typeof rawSigs === 'object' && !Array.isArray(rawSigs) ? rawSigs : {};
+                      let sheets = (coData.materialSheets || []).filter(
+                        (s: any) =>
+                          !isFieldRequestSheetName(s.sheet_name) &&
+                          (s.sheet_type === 'change_order' || s.sheet_type == null)
+                      );
+                      sheets = [...sheets].sort((a: any, b: any) => {
+                        const sa = Number(a.change_order_seq) || 0;
+                        const sb = Number(b.change_order_seq) || 0;
+                        if (sa !== sb) return sa - sb;
+                        return (a.order_index ?? 0) - (b.order_index ?? 0);
+                      });
+                      if (sheets.length === 0) {
+                        return (
+                          <p className="text-sm text-muted-foreground py-4 text-center">
+                            No change order line items yet.
+                          </p>
+                        );
+                      }
+                      const displayTotals =
+                        coData.totals ?? coQuoteStoredTotals ?? { subtotal: 0, tax: 0, grandTotal: 0 };
+                      return (
+                        <>
+                          {sheets.map((sheet: any, idx: number) => {
+                            const seq = Number(sheet.change_order_seq) || idx + 1;
+                            const coLabel = `CO-${String(seq).padStart(3, '0')}`;
+                            const sig = coSigs[sheet.id];
+                            const linkedSubs = (coData.subcontractorEstimates || []).filter(
+                              (e: any) => e.sheet_id === sheet.id
+                            );
+                            const linkedRows = (coData.customRows || [])
+                              .filter((r: any) => r.sheet_id === sheet.id)
+                              .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+                            const sheetMat = sheet._computedMaterials ?? 0;
+                            const sheetLab = sheet._computedLabor ?? 0;
+                            const taxEx = !!(changeOrderQuote as any)?.tax_exempt;
+                            const lineTax = taxEx ? 0 : sheetMat * 0.07;
+                            const lineGrand = sheetMat + sheetLab + lineTax;
+                            const signed = !!(sig?.signed_at);
+                            return (
+                              <Card key={sheet.id} className="border-orange-200 overflow-hidden">
+                                <CardHeader className="bg-orange-50/80 border-b border-orange-100 flex flex-row flex-wrap items-start justify-between gap-3">
+                                  <div className="space-y-1">
+                                    <Badge variant="outline" className="text-orange-900 border-orange-400 bg-white font-mono">
+                                      {coLabel}
+                                    </Badge>
+                                    <CardTitle className="text-lg text-orange-950 pt-1">{sheet.sheet_name}</CardTitle>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="shrink-0 border-orange-300"
+                                    onClick={() => openChangeOrderDocument(sheet, coLabel)}
+                                  >
+                                    <Printer className="w-4 h-4 mr-2" />
+                                    View document
+                                  </Button>
+                                </CardHeader>
+                                <CardContent className="space-y-4 pt-4">
+                                  {sheet.description && (
+                                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{sheet.description}</p>
+                                  )}
+                                  {(sheet.sheetLinkedItems || []).filter((x: any) => !x.hide_from_customer).length > 0 && (
+                                    <ul className="text-sm space-y-1 border-t border-orange-100 pt-3">
+                                      {(sheet.sheetLinkedItems || [])
+                                        .filter((item: any) => !item.hide_from_customer)
+                                        .map((item: any) => {
+                                          const isLabor = (item.item_type || 'material') === 'labor';
+                                          const lineTotal =
+                                            (Number(item.total_cost) || 0) *
+                                            (1 + (Number(item.markup_percent) || 0) / 100);
+                                          return (
+                                            <li key={item.id} className="flex justify-between gap-2">
+                                              <span>
+                                                {isLabor ? 'Labor: ' : ''}
+                                                {item.description || 'Line'}
+                                              </span>
+                                              {showPriceForCoSection(sheet.id) && lineTotal > 0 && (
+                                                <span className="font-medium tabular-nums">
+                                                  ${lineTotal.toLocaleString('en-US', {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                  })}
+                                                </span>
+                                              )}
+                                            </li>
+                                          );
+                                        })}
+                                    </ul>
+                                  )}
+                                  {linkedRows.map((row: any) => (
+                                    <div key={row.id} className="border-t border-orange-50 pt-2">
+                                      <p className="font-medium text-sm">{row.description || row.category}</p>
+                                      {row.notes?.trim() && (
+                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">{row.notes}</p>
+                                      )}
+                                      {showPriceForCoSection(row.id) && (row._computedTotal ?? 0) > 0 && (
+                                        <p className="text-sm font-semibold text-orange-800 mt-1">
+                                          $
+                                          {(row._computedTotal as number).toLocaleString('en-US', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {linkedSubs.map((est: any) => (
+                                    <div key={est.id} className="text-sm text-muted-foreground">
+                                      {est.scope_of_work && (
+                                        <p className="whitespace-pre-wrap">{est.scope_of_work}</p>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {showFinancialCo && showLineItemPricesCo && (
+                                    <div className="border-t pt-3 space-y-1 text-sm">
+                                      {sheetMat > 0 && (
+                                        <div className="flex justify-between">
+                                          <span>Materials</span>
+                                          <span className="font-semibold">
+                                            $
+                                            {sheetMat.toLocaleString('en-US', {
+                                              minimumFractionDigits: 2,
+                                              maximumFractionDigits: 2,
+                                            })}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {sheetLab > 0 && (
+                                        <div className="flex justify-between">
+                                          <span>Labor</span>
+                                          <span className="font-semibold">
+                                            $
+                                            {sheetLab.toLocaleString('en-US', {
+                                              minimumFractionDigits: 2,
+                                              maximumFractionDigits: 2,
+                                            })}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {!taxEx && lineTax > 0 && (
+                                        <div className="flex justify-between text-muted-foreground">
+                                          <span>Tax (est.)</span>
+                                          <span>
+                                            $
+                                            {lineTax.toLocaleString('en-US', {
+                                              minimumFractionDigits: 2,
+                                              maximumFractionDigits: 2,
+                                            })}
+                                          </span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between text-base font-bold text-orange-900 pt-1">
+                                        <span>Total ({coLabel})</span>
+                                        <span>
+                                          $
+                                          {lineGrand.toLocaleString('en-US', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {signed ? (
+                                    <div className="border-t pt-4 space-y-2">
+                                      <div className="flex items-center gap-2 text-emerald-800 font-medium">
+                                        <CheckCircle className="w-5 h-5 shrink-0" />
+                                        Signed — {coLabel}
+                                      </div>
+                                      <p className="text-sm text-muted-foreground">
+                                        {sig.signed_name ? `${sig.signed_name} · ` : ''}
+                                        {sig.signed_at
+                                          ? new Date(sig.signed_at).toLocaleDateString('en-US', {
+                                              dateStyle: 'medium',
+                                            })
+                                          : ''}
+                                      </p>
+                                      <MartinBuilderContractSeal />
+                                    </div>
+                                  ) : (
+                                    <div className="border-t pt-4 space-y-3">
+                                      <p className="text-sm font-medium text-slate-800">Sign to authorize {coLabel}</p>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          id={`co-agree-${sheet.id}`}
+                                          checked={!!coAgreeBySheet[sheet.id]}
+                                          onChange={(e) =>
+                                            setCoAgreeBySheet((p) => ({
+                                              ...p,
+                                              [sheet.id]: e.target.checked,
+                                            }))
+                                          }
+                                          className="rounded border-slate-300"
+                                        />
+                                        <Label htmlFor={`co-agree-${sheet.id}`} className="text-sm font-normal cursor-pointer">
+                                          I authorize this change order ({coLabel}) and agree to the price shown.
+                                        </Label>
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        onClick={(e) => handleSignChangeOrderSheet(sheet.id, e)}
+                                        disabled={
+                                          coSigningSheetId === sheet.id ||
+                                          !coAgreeBySheet[sheet.id] ||
+                                          !coSignerName.trim() ||
+                                          !coSignerEmail.trim()
+                                        }
+                                        className="bg-orange-700 hover:bg-orange-800"
+                                      >
+                                        {coSigningSheetId === sheet.id ? 'Signing…' : `Sign ${coLabel}`}
+                                      </Button>
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                          {showFinancialCo && (
+                            <Card className="border-slate-200 bg-slate-50/50">
+                              <CardContent className="pt-4 text-sm text-muted-foreground">
+                                <span className="font-medium text-slate-700">All change orders combined: </span>
+                                $
+                                {(displayTotals.grandTotal ?? 0).toLocaleString('en-US', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}{' '}
+                                (job total; each document above shows its own scope and price)
+                              </CardContent>
+                            </Card>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : null}
+                </div>
+              )
+            ) : null}
           </TabsContent>
 
           {/* Payments Tab */}

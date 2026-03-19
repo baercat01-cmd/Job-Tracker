@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -125,8 +126,32 @@ interface JobFinancialsProps {
   onQuoteChange?: (quoteId: string | null) => void;
 }
 
+/** Sent, signed, or office-locked proposals must never load materials from another workbook (would mix totals vs sections). */
+function isQuoteContractFrozen(q: {
+  locked_for_editing?: boolean | null;
+  sent_at?: string | null;
+  signed_version?: unknown;
+  customer_signed_at?: string | null;
+} | null | undefined): boolean {
+  if (!q) return false;
+  const sv = (q as any).signed_version;
+  const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
+  return !!(q.locked_for_editing || q.sent_at || hasSigned || (q as any).customer_signed_at);
+}
+
 // Sortable Row Component
-function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () => {}, ...props }: any) {
+function SortableRow({
+  item,
+  isReadOnly,
+  quote,
+  setOptionalCategoryOverlay = () => {},
+  onOpenCopyToChangeOrder,
+  changeOrderAlreadySent,
+  onSendChangeOrdersToCustomer,
+  sendingCoToCustomer,
+  jobHasContract,
+  ...props
+}: any) {
   const setOptCatOverlay = setOptionalCategoryOverlay;
   const {
     attributes,
@@ -239,6 +264,13 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
         const itemMarkup = item.markup_percent ?? 0;
         return sum + (item.total_cost * (1 + itemMarkup / 100));
       }, 0);
+
+      // Sheet-level material line items (Add Material Row from section) — include in section total
+      const sheetMaterialItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'material') || [];
+      const sheetMaterialLineItemsTotal = sheetMaterialItems.reduce((sum: number, item: any) => {
+        const itemMarkup = item.markup_percent ?? 0;
+        return sum + (item.total_cost * (1 + itemMarkup / 100));
+      }, 0);
       
       // Calculate total materials using actual selling price when available
       const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
@@ -249,8 +281,8 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
         return sum + (Number(cat.totalCost) || 0) * (1 + categoryMarkup / 100);
       }, 0) || 0;
       
-      // Final price = (materials with category markups) + (linked rows with their own markup) + (linked subs)
-      const sheetFinalPrice = categoryTotals + linkedRowsTotal + linkedSubsTaxableTotal;
+      // Final price = (materials with category markups) + (sheet material line items) + (linked rows) + (linked subs)
+      const sheetFinalPrice = categoryTotals + sheetMaterialLineItemsTotal + linkedRowsTotal + linkedSubsTaxableTotal;
       
       // Total labor for display (legacy sheet labor + sheet labor line items + non-taxable subcontractor)
       const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsNonTaxableTotal;
@@ -293,6 +325,11 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                 </div>
               ) : (
                 <div className="flex items-center gap-2 flex-wrap">
+                  {(sheet as any).sheetType === 'change_order' && (sheet as any).changeOrderSeq != null && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-semibold bg-orange-100 text-orange-900 border border-orange-300">
+                      CO-{String((sheet as any).changeOrderSeq).padStart(3, '0')}
+                    </span>
+                  )}
                   <h3 className="text-base font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
                   {(sheet as any).isOptional && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
@@ -317,11 +354,57 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                   <MoreVertical className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="min-w-[14rem]">
                 <DropdownMenuItem onClick={() => openSheetDescDialog(sheet.sheetId, sheet.sheetDescription)}>
                   <Edit className="w-3 h-3 mr-2" />
                   Edit Description
                 </DropdownMenuItem>
+                {(sheet as any).sheetType === 'change_order' && onSendChangeOrdersToCustomer && (
+                  <>
+                    {changeOrderAlreadySent ? (
+                      <DropdownMenuItem disabled className="opacity-80">
+                        <CheckCircle className="w-3 h-3 mr-2 text-green-600" />
+                        Change orders already sent to customer
+                      </DropdownMenuItem>
+                    ) : !jobHasContract ? (
+                      <DropdownMenuItem disabled className="opacity-80">
+                        <Lock className="w-3 h-3 mr-2 text-slate-500" />
+                        Set main proposal as contract before sending
+                      </DropdownMenuItem>
+                    ) : isReadOnly ? (
+                      <DropdownMenuItem disabled className="opacity-70">
+                        <Send className="w-3 h-3 mr-2 text-slate-400" />
+                        Send from live proposal (not historical view)
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void onSendChangeOrdersToCustomer();
+                        }}
+                        disabled={!!sendingCoToCustomer}
+                        className="text-orange-800 focus:text-orange-900 focus:bg-orange-50"
+                      >
+                        <Send className="w-3 h-3 mr-2 text-orange-600" />
+                        {sendingCoToCustomer ? 'Sending…' : 'Send change orders to customer'}
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
+                {onOpenCopyToChangeOrder &&
+                  !isReadOnly &&
+                  quote &&
+                  !(quote as any).is_change_order_proposal &&
+                  sheet.sheetType !== 'change_order' && (
+                    <DropdownMenuItem
+                      onClick={() => onOpenCopyToChangeOrder(sheet.sheetId, sheet.sheetName || 'Section')}
+                      className="text-orange-800 focus:text-orange-900 focus:bg-orange-50"
+                    >
+                      <Send className="w-3 h-3 mr-2 text-orange-600" />
+                      Add section to change orders (for customer)
+                    </DropdownMenuItem>
+                  )}
+                <DropdownMenuSeparator />
                 {!isReadOnly && (
                   (sheet as any).isOptional ? (
                     <>
@@ -359,7 +442,7 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                     </DropdownMenuItem>
                   )
                 )}
-                <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'materials')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'material')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material Row
                 </DropdownMenuItem>
@@ -750,7 +833,7 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                                     if (!Number.isFinite(raw) || raw < 0) return;
                                     const v = Math.round(raw * 100) / 100;
                                     if (Math.abs(v - itemCost) < 0.01) return;
-                                    updateLineItemCost(lineItem.id, v);
+                                    updateLineItemCost(lineItem.id, v, Number(lineItem.quantity) || 1);
                                   }}
                                   onClick={(e) => e.stopPropagation()}
                                   className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
@@ -764,11 +847,16 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                                   onChange={async (e) => {
                                     const newMarkup = parseFloat(e.target.value) || 0;
                                     try {
-                                      const { error } = await supabase
+                                      const { data, error } = await supabase
                                         .from('custom_financial_row_items')
                                         .update({ markup_percent: newMarkup })
-                                        .eq('id', lineItem.id);
+                                        .eq('id', lineItem.id)
+                                        .select('id');
                                       if (error) throw error;
+                                      if (!data?.length) {
+                                        toast.error('Could not update markup (permission or row missing).');
+                                        return;
+                                      }
                                       await loadCustomRows(quote?.id ?? null, !!isReadOnly);
                                       await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
                                     } catch (err: any) {
@@ -1360,7 +1448,7 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
               />
             </div>
 
-            {/* Pricing column (narrow) */}
+            {/* Pricing column */}
             <div className="w-[120px] flex-shrink-0 text-right">
               {/* Only show row-level markup if NO line items exist */}
               {lineItems.length === 0 && (
@@ -1453,7 +1541,7 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                                     if (!Number.isFinite(raw) || raw < 0) return;
                                     const v = Math.round(raw * 100) / 100;
                                     if (Math.abs(v - itemCost) < 0.01) return;
-                                    updateLineItemCost(lineItem.id, v);
+                                    updateLineItemCost(lineItem.id, v, Number(lineItem.quantity) || 1);
                                   }}
                                   onClick={(e) => e.stopPropagation()}
                                   className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
@@ -1467,11 +1555,16 @@ function SortableRow({ item, isReadOnly, quote, setOptionalCategoryOverlay = () 
                                   onChange={async (e) => {
                                     const newMarkup = parseFloat(e.target.value) || 0;
                                     try {
-                                      const { error } = await supabase
+                                      const { data, error } = await supabase
                                         .from('custom_financial_row_items')
                                         .update({ markup_percent: newMarkup })
-                                        .eq('id', lineItem.id);
+                                        .eq('id', lineItem.id)
+                                        .select('id');
                                       if (error) throw error;
+                                      if (!data?.length) {
+                                        toast.error('Could not update markup (permission or row missing).');
+                                        return;
+                                      }
                                       await loadCustomRows(quote?.id ?? null, !!isReadOnly);
                                       await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
                                     } catch (error: any) {
@@ -2070,6 +2163,13 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const quoteIdForSubsRef = useRef<string | null>(null);
 
   // Subcontractor dialog state
+  const [copyCoDialogOpen, setCopyCoDialogOpen] = useState(false);
+  const [copyCoSheetId, setCopyCoSheetId] = useState<string | null>(null);
+  const [copyCoSheetName, setCopyCoSheetName] = useState('');
+  const [copyCoRemoveFromProposal, setCopyCoRemoveFromProposal] = useState(true);
+  const [copyCoRunning, setCopyCoRunning] = useState(false);
+  const [sendingCoToCustomer, setSendingCoToCustomer] = useState(false);
+
   const [showSubcontractorDialog, setShowSubcontractorDialog] = useState(false);
   const [subcontractorParentId, setSubcontractorParentId] = useState<string | null>(null);
   const [subcontractorParentType, setSubcontractorParentType] = useState<'sheet' | 'row' | null>(null);
@@ -2123,6 +2223,18 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   // Proposal/Quote state
   const [quote, setQuote] = useState<any>(null);
   const [allJobQuotes, setAllJobQuotes] = useState<any[]>([]); // All quotes for this job
+
+  /** Change orders may only be created/sent after a main proposal is the contract (office or customer sign). */
+  const jobHasContract = useMemo(
+    () =>
+      allJobQuotes.some((q: any) => {
+        if (q.is_change_order_proposal) return false;
+        const sv = q.signed_version;
+        const hasSignedVersion = sv != null && sv !== '' && Number(sv) > 0;
+        return hasSignedVersion || !!q.customer_signed_at;
+      }),
+    [allJobQuotes]
+  );
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
@@ -2178,6 +2290,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   // Clear unlock when switching to a different proposal so each historical proposal starts locked
   useEffect(() => {
     if (quote?.id && quote.id !== historicalUnlockedQuoteId) setHistoricalUnlockedQuoteId(null);
+  }, [quote?.id]);
+
+  // Optional-category overlay is per workbook/sheet keys — must not carry over to another proposal
+  useEffect(() => {
+    setOptionalCategoryOverlay({});
   }, [quote?.id]);
 
   // Default locked: historical (not first), marked as sent, or locked for editing (persisted in DB for all users)
@@ -2312,7 +2429,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   }, [quote?.id, onQuoteChange]);
 
   // When parent controls quote (e.g. user switched proposal in Materials panel), sync our quote.
-  // Guard with lastSyncedControlledIdRef so we only reload when the parent *changes* the selection,
+  // Guard with lastSyncedControlledIdRef so we only full-reload when the parent *changes* the selection,
   // not when allJobQuotes first populates after mount (which would double-load on every open).
   useEffect(() => {
     if (controlledQuoteId === undefined) return;
@@ -2321,23 +2438,29 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       lastSyncedControlledIdRef.current = controlledQuoteId;
       return;
     }
-    // Skip if this is the same ID we already synced
-    if (controlledQuoteId === lastSyncedControlledIdRef.current) return;
-    const match = allJobQuotes.find(q => q.id === controlledQuoteId);
+    const match = allJobQuotes.find((q) => q.id === controlledQuoteId);
+
+    // Same proposal id as last parent sync: normally skip, but recover if local quote state desynced
+    if (controlledQuoteId === lastSyncedControlledIdRef.current) {
+      if (match && quote?.id !== match.id) {
+        userSelectedQuoteIdRef.current = match.id;
+        setQuote(match);
+        void loadData(false, match);
+      }
+      return;
+    }
+
     if (match && quote?.id !== match.id) {
       lastSyncedControlledIdRef.current = controlledQuoteId;
       userSelectedQuoteIdRef.current = match.id;
       setQuote(match);
-      loadData(false, match);
+      void loadData(false, match);
     } else if (match && quote?.id === match.id) {
-      // Quote already matches — just mark as synced so we don't re-fire
       lastSyncedControlledIdRef.current = controlledQuoteId;
     } else if (allJobQuotes.length === 0) {
-      // Quotes not loaded yet — store for loadQuoteData to pick up; mark synced so we don't double-load when list populates
       userSelectedQuoteIdRef.current = controlledQuoteId;
       lastSyncedControlledIdRef.current = controlledQuoteId;
     } else {
-      // controlledQuoteId set (e.g. 3rd proposal) but not in allJobQuotes — fetch by id and load so proposal data is always shown
       lastSyncedControlledIdRef.current = controlledQuoteId;
       userSelectedQuoteIdRef.current = controlledQuoteId;
       let cancelled = false;
@@ -2354,11 +2477,13 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
             return [fetched, ...prev];
           });
           setQuote(fetched);
-          loadData(false, fetched);
+          void loadData(false, fetched);
         });
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [controlledQuoteId, allJobQuotes.length, quote?.id, job.id]);
+  }, [controlledQuoteId, allJobQuotes.length, job.id]);
 
   // When the materials workbook saves a change, refresh materials (and thus proposal totals) in real time.
   // Registered once (dep = job.id only); reads fresh values from workbookUpdateCtxRef to avoid stale closures.
@@ -2508,23 +2633,150 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }
 
-  /** Set the active (current) proposal as contract. Creates a version first if none exist. */
+  /** Build workbook + financial + sub snapshots from live DB for a quote (for proposal_versions rows). */
+  async function buildLiveProposalSnapshotsForQuote(quoteId: string): Promise<{
+    workbook_snapshot: Record<string, unknown> | null;
+    financial_rows_snapshot: any[] | null;
+    subcontractor_snapshot: any[] | null;
+  }> {
+    const wbSelect = `
+      id,
+      material_sheets (
+        id, sheet_name, order_index, is_option, description, sheet_type, change_order_seq, category_order, compare_to_sheet_id,
+        material_items (*),
+        material_sheet_labor (*),
+        material_category_markups (*)
+      )
+    `;
+    const { data: workbooksFull, error: wbFetchErr } = await supabase
+      .from('material_workbooks')
+      .select(wbSelect)
+      .eq('quote_id', quoteId);
+    if (wbFetchErr) {
+      console.warn('buildLiveProposalSnapshotsForQuote: workbook fetch', wbFetchErr);
+    }
+    const snapshotSheets: any[] = [];
+    const snapshotCategoryMarkups: Record<string, number> = {};
+    const snapshotSheetLabor: any[] = [];
+    for (const wb of workbooksFull || []) {
+      const oldSheets = ((wb as any).material_sheets || [])
+        .slice()
+        .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      for (const sheet of oldSheets) {
+        const items = (sheet.material_items || [])
+          .slice()
+          .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        snapshotSheets.push({
+          id: sheet.id,
+          sheet_name: sheet.sheet_name,
+          order_index: sheet.order_index,
+          is_option: sheet.is_option,
+          description: sheet.description,
+          sheet_type: sheet.sheet_type ?? 'proposal',
+          change_order_seq: sheet.change_order_seq ?? null,
+          category_order: sheet.category_order ?? null,
+          compare_to_sheet_id: sheet.compare_to_sheet_id ?? null,
+          items,
+        });
+        (sheet.material_category_markups || []).forEach((m: any) => {
+          snapshotCategoryMarkups[`${sheet.id}_${m.category_name}`] = m.markup_percent;
+        });
+        const labor = sheet.material_sheet_labor || [];
+        labor.forEach((l: any) => snapshotSheetLabor.push({ ...l, sheet_id: sheet.id }));
+      }
+    }
+    const workbook_snapshot =
+      snapshotSheets.length > 0
+        ? { sheets: snapshotSheets, category_markups: snapshotCategoryMarkups, sheet_labor: snapshotSheetLabor }
+        : null;
+
+    const { data: oldRows } = await supabase
+      .from('custom_financial_rows')
+      .select('*')
+      .eq('quote_id', quoteId)
+      .order('order_index');
+    const snapshotFinancialRows: any[] = [];
+    for (const row of oldRows || []) {
+      const { data: rItems } = await supabase
+        .from('custom_financial_row_items')
+        .select('*')
+        .eq('row_id', row.id)
+        .order('order_index');
+      snapshotFinancialRows.push({ ...row, line_items: rItems || [] });
+    }
+    const financial_rows_snapshot = snapshotFinancialRows.length > 0 ? snapshotFinancialRows : null;
+
+    const { data: oldEstimates } = await supabase
+      .from('subcontractor_estimates')
+      .select('*')
+      .eq('quote_id', quoteId)
+      .order('order_index');
+    const snapshotSubcontractors: any[] = [];
+    for (const est of oldEstimates || []) {
+      const { data: sItems } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .select('*')
+        .eq('estimate_id', est.id)
+        .order('order_index');
+      const { id: _eid, job_id: _jid, quote_id: _qid, created_at: _ca, updated_at: _ua, ...estRest } = est as any;
+      snapshotSubcontractors.push({ ...estRest, id: est.id, line_items: sItems || [] });
+    }
+    const subcontractor_snapshot = snapshotSubcontractors.length > 0 ? snapshotSubcontractors : null;
+
+    return { workbook_snapshot, financial_rows_snapshot, subcontractor_snapshot };
+  }
+
+  /** Set the active (current) proposal as contract. Creates a lightweight version row if none exist. */
   async function setActiveProposalAsContract() {
     if (!quote || (quote as any).signed_version) return;
     if (!confirm('Set this proposal as the contract? This will create a signed version that cannot be changed.')) return;
     try {
-      let versionToSign: any = proposalVersions.find((v: any) => v.version_number === (quote as any).current_version) ?? proposalVersions[0];
-      if (!versionToSign && proposalVersions.length === 0) {
-        const { error } = await supabase.rpc('create_proposal_version', {
-          p_quote_id: quote.id,
-          p_job_id: null,
-          p_user_id: profile?.id || null,
-          p_change_notes: 'Set as contract',
+      // Always read from DB — UI list can be empty after load errors; avoids misusing create_proposal_version
+      // (that RPC clones the whole proposal to a new quote and often times out → "Failed to fetch").
+      const { data: dbVersions, error: verLoadErr } = await supabase
+        .from('proposal_versions')
+        .select('*')
+        .eq('quote_id', quote.id)
+        .order('version_number', { ascending: false });
+      if (verLoadErr) throw verLoadErr;
+      const versions = dbVersions || [];
+
+      let versionToSign: any =
+        versions.find((v: any) => v.version_number === (quote as any).current_version) ?? versions[0];
+
+      if (!versionToSign) {
+        const maxVer = versions.reduce((m, v) => Math.max(m, Number((v as any).version_number) || 0), 0);
+        const nextVer = maxVer + 1;
+        const q = quote as any;
+        const snaps = await buildLiveProposalSnapshotsForQuote(quote.id);
+        const { error: insErr } = await supabase.from('proposal_versions').insert({
+          quote_id: quote.id,
+          version_number: nextVer,
+          customer_name: q.customer_name ?? null,
+          customer_address: q.customer_address ?? null,
+          customer_email: q.customer_email ?? null,
+          customer_phone: q.customer_phone ?? null,
+          project_name: q.project_name ?? null,
+          width: q.width ?? 0,
+          length: q.length ?? 0,
+          estimated_price: q.estimated_price ?? null,
+          workbook_snapshot: snaps.workbook_snapshot,
+          financial_rows_snapshot: snaps.financial_rows_snapshot,
+          subcontractor_snapshot: snaps.subcontractor_snapshot,
+          change_notes: 'Set as contract',
+          created_by: profile?.id ?? null,
         });
-        if (error) throw error;
-        const { data: freshVersions } = await supabase.from('proposal_versions').select('*').eq('quote_id', quote.id).order('version_number', { ascending: false });
-        versionToSign = (freshVersions || [])[0];
+        if (insErr) throw insErr;
+        const { data: created, error: fetchErr } = await supabase
+          .from('proposal_versions')
+          .select('*')
+          .eq('quote_id', quote.id)
+          .eq('version_number', nextVer)
+          .maybeSingle();
+        if (fetchErr) throw fetchErr;
+        versionToSign = created;
       }
+
       if (!versionToSign) {
         toast.error('No version to sign');
         return;
@@ -2534,13 +2786,36 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         .update({ is_signed: true, signed_at: new Date().toISOString(), signed_by: profile?.id })
         .eq('id', versionToSign.id);
       if (signErr) throw signErr;
-      await supabase.from('quotes').update({ signed_version: versionToSign.version_number }).eq('id', quote.id);
+      const { error: quoteErr } = await supabase
+        .from('quotes')
+        .update({ signed_version: versionToSign.version_number })
+        .eq('id', quote.id);
+      if (quoteErr) throw quoteErr;
+      // Freeze materials workbook for this quote (status only — no sheet/item rows modified)
+      const { error: wbLockErr } = await supabase
+        .from('material_workbooks')
+        .update({ status: 'locked', updated_at: new Date().toISOString() })
+        .eq('quote_id', quote.id)
+        .eq('status', 'working');
+      if (wbLockErr) console.warn('Could not lock workbook after contract:', wbLockErr);
+      if (job?.id) {
+        window.dispatchEvent(
+          new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id, quoteId: quote.id } })
+        );
+      }
       toast.success('Version signed and locked!');
       await loadProposalVersions();
       await loadQuoteData();
     } catch (error: any) {
       console.error('Error setting as contract:', error);
-      toast.error(error?.message ?? 'Failed to set as contract');
+      const msg = error?.message ?? String(error);
+      if (msg === 'Failed to fetch' || /failed to fetch/i.test(msg) || error?.name === 'TypeError') {
+        toast.error(
+          'Could not reach the server (network timeout or offline). If you use “Create version” elsewhere, try creating a version first, then set as contract again.'
+        );
+      } else {
+        toast.error(msg || 'Failed to set as contract');
+      }
     }
   }
 
@@ -2573,13 +2848,20 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   async function markProposalAsSent() {
     if (!quote || !profile) return;
     if ((quote as any).sent_at) {
-      toast.info('This proposal is already marked as sent.');
+      toast.info((quote as any).is_change_order_proposal ? 'This change order is already marked as sent.' : 'This proposal is already marked as sent.');
       return;
     }
-    if (!confirm('Record that this proposal was sent to the customer? The current date and time will be saved so you can see when it was sent and how long it was worked on. The proposal and materials workbook will be locked.')) return;
+    const isCo = !!(quote as any).is_change_order_proposal;
+    if (isCo && !jobHasContract) {
+      toast.error('Set the main proposal as contract (Set as Contract) before sending change orders to the customer.');
+      return;
+    }
+    if (!confirm(isCo
+      ? 'Send this change order to the customer? The change order workbook will lock. They can review and sign it under the Change orders tab in the customer portal (separate from the main proposal).'
+      : 'Record that this proposal was sent to the customer? The current date and time will be saved so you can see when it was sent and how long it was worked on. The proposal and materials workbook will be locked.')) return;
 
     const onSuccess = async () => {
-      toast.success('Proposal marked as sent. Date and time recorded.');
+      toast.success(isCo ? 'Change order marked as sent. Customer can sign under Change orders in the portal.' : 'Proposal marked as sent. Date and time recorded.');
       await loadQuoteData();
       await loadData(true);
     };
@@ -2616,6 +2898,84 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       setMarkAsSentManualSql(manualSql);
       setShowMarkAsSentManualDialog(true);
       toast.error(error?.message || 'Mark as sent failed. Use the dialog to run the SQL manually.');
+    }
+  }
+
+  /** Lock CO workbook + set sent_at on the change-order quote (same as toolbar “Send change order”). */
+  async function sendChangeOrderProposalToCustomer() {
+    if (!profile?.id) {
+      toast.error('You must be signed in.');
+      return;
+    }
+    if (isReadOnly) {
+      toast.error('Open the current proposal view to send change orders.');
+      return;
+    }
+    if (!jobHasContract) {
+      toast.error('Set the main proposal as contract before sending change orders to the customer.');
+      return;
+    }
+    const coQuote = allJobQuotes.find((q: any) => q.is_change_order_proposal);
+    if (!coQuote) {
+      toast.error('No change order proposal exists for this job yet.');
+      return;
+    }
+    if (coQuote.sent_at) {
+      toast.info('Change orders were already sent to the customer.');
+      return;
+    }
+    if (
+      !confirm(
+        'Send all change orders to the customer now? The change order workbook will lock. They can review and sign each section under Change orders in the customer portal.'
+      )
+    ) {
+      return;
+    }
+
+    const coQuoteId = coQuote.id;
+    setSendingCoToCustomer(true);
+    const onSuccess = async () => {
+      toast.success('Change orders sent to the customer. They can sign in the portal under Change orders.');
+      userSelectedQuoteIdRef.current = coQuoteId;
+      onQuoteChange?.(coQuoteId);
+      await loadQuoteData();
+      await loadData(true);
+    };
+
+    try {
+      const { error: lockErr } = await supabase
+        .from('material_workbooks')
+        .update({ status: 'locked', updated_at: new Date().toISOString() })
+        .eq('quote_id', coQuoteId);
+
+      const { error: quoteErr } = await supabase
+        .from('quotes')
+        .update({ sent_at: new Date().toISOString(), sent_by: profile.id })
+        .eq('id', coQuoteId);
+
+      if (!lockErr && !quoteErr) {
+        await onSuccess();
+        return;
+      }
+
+      const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${coQuoteId}';
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuoteId}';`;
+      setMarkAsSentManualSql(manualSql);
+      setShowMarkAsSentManualDialog(true);
+      toast.error('Update failed. Copy the SQL from the dialog and run it in Supabase SQL Editor, then refresh.');
+    } catch (error: any) {
+      console.error('Error sending change orders:', error);
+      const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${coQuoteId}';
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuoteId}';`;
+      setMarkAsSentManualSql(manualSql);
+      setShowMarkAsSentManualDialog(true);
+      toast.error(error?.message || 'Send failed. Use the dialog to run the SQL manually.');
+    } finally {
+      setSendingCoToCustomer(false);
     }
   }
 
@@ -2676,14 +3036,28 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       const sheets = (wbSnapshot.sheets || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
       for (const sh of sheets) {
         const { data: newSheet, error: shErr } = await supabase.from('material_sheets').insert({
-          workbook_id: newWb.id, sheet_name: sh.sheet_name ?? 'Sheet', order_index: sh.order_index ?? 0,
-          is_option: sh.is_option ?? false, description: sh.description ?? null,
+          workbook_id: newWb.id,
+          sheet_name: sh.sheet_name ?? 'Sheet',
+          order_index: sh.order_index ?? 0,
+          is_option: sh.is_option ?? false,
+          description: sh.description ?? null,
+          sheet_type: sh.sheet_type ?? 'proposal',
+          change_order_seq: sh.change_order_seq ?? null,
+          category_order: sh.category_order ?? null,
+          compare_to_sheet_id: null,
         }).select('id').single();
         if (shErr || !newSheet) continue;
         sheetIdMap[sh.id] = newSheet.id;
         const items = (sh.items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
         if (items.length) {
           await supabase.from('material_items').insert(items.map(({ id: _i, sheet_id: _s, created_at: _c, updated_at: _u, ...r }: any) => ({ ...r, sheet_id: newSheet.id })));
+        }
+      }
+      for (const sh of sheets) {
+        const newSid = sheetIdMap[sh.id];
+        const oldCmp = sh.compare_to_sheet_id;
+        if (newSid && oldCmp && sheetIdMap[oldCmp]) {
+          await supabase.from('material_sheets').update({ compare_to_sheet_id: sheetIdMap[oldCmp] }).eq('id', newSid);
         }
       }
       const catMarkups = wbSnapshot.category_markups || {};
@@ -2792,13 +3166,27 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         const sheets = (wbSnapshot.sheets || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
         for (const sh of sheets) {
           const { data: newSheet, error: shErr } = await supabase.from('material_sheets').insert({
-            workbook_id: newWb.id, sheet_name: sh.sheet_name ?? 'Sheet', order_index: sh.order_index ?? 0,
-            is_option: sh.is_option ?? false, description: sh.description ?? null,
+            workbook_id: newWb.id,
+            sheet_name: sh.sheet_name ?? 'Sheet',
+            order_index: sh.order_index ?? 0,
+            is_option: sh.is_option ?? false,
+            description: sh.description ?? null,
+            sheet_type: sh.sheet_type ?? 'proposal',
+            change_order_seq: sh.change_order_seq ?? null,
+            category_order: sh.category_order ?? null,
+            compare_to_sheet_id: null,
           }).select('id').single();
           if (shErr || !newSheet) continue;
           sheetIdMap[sh.id] = newSheet.id;
           const items = (sh.items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
           if (items.length) await supabase.from('material_items').insert(items.map(({ id: _i, sheet_id: _s, created_at: _c, updated_at: _u, ...r }: any) => ({ ...r, sheet_id: newSheet.id })));
+        }
+        for (const sh of sheets) {
+          const newSid = sheetIdMap[sh.id];
+          const oldCmp = sh.compare_to_sheet_id;
+          if (newSid && oldCmp && sheetIdMap[oldCmp]) {
+            await supabase.from('material_sheets').update({ compare_to_sheet_id: sheetIdMap[oldCmp] }).eq('id', newSid);
+          }
         }
         const catMarkups = wbSnapshot.category_markups || {};
         for (const [key, pct] of Object.entries(catMarkups)) {
@@ -3157,6 +3545,338 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     toast.success('Materials and proposal data restored from Proposal #26019-1.');
   }
 
+  /** Dedicated change-order quote + working workbook (same logic as MaterialsManagement). */
+  async function getOrCreateChangeOrderWorkbookLocal(): Promise<{
+    quoteId: string;
+    workbookId: string;
+    quote: { sent_at: string | null; locked_for_editing: boolean | null };
+  }> {
+    const userId = profile?.id;
+    if (!userId) throw new Error('Not signed in');
+    const { data: changeOrderQuotes } = await supabase
+      .from('quotes')
+      .select('id, sent_at, locked_for_editing')
+      .eq('job_id', job.id)
+      .eq('is_change_order_proposal', true)
+      .limit(1);
+    let quoteId: string;
+    let q: { sent_at: string | null; locked_for_editing: boolean | null };
+    if (changeOrderQuotes?.length) {
+      quoteId = changeOrderQuotes[0].id;
+      q = {
+        sent_at: changeOrderQuotes[0].sent_at ?? null,
+        locked_for_editing: changeOrderQuotes[0].locked_for_editing ?? null,
+      };
+    } else {
+      const { data: newQuote, error: quoteErr } = await supabase
+        .from('quotes')
+        .insert({
+          job_id: job.id,
+          is_change_order_proposal: true,
+          created_by: userId,
+        } as Record<string, unknown>)
+        .select('id, sent_at, locked_for_editing')
+        .single();
+      if (quoteErr || !newQuote) throw new Error(quoteErr?.message ?? 'Failed to create change order proposal');
+      quoteId = newQuote.id;
+      q = { sent_at: newQuote.sent_at ?? null, locked_for_editing: newQuote.locked_for_editing ?? null };
+    }
+    const { data: workbooks } = await supabase
+      .from('material_workbooks')
+      .select('id')
+      .eq('quote_id', quoteId)
+      .eq('status', 'working')
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    let workbookId: string;
+    if (workbooks?.length) {
+      workbookId = workbooks[0].id;
+    } else {
+      const { data: maxWb } = await supabase
+        .from('material_workbooks')
+        .select('version_number')
+        .eq('job_id', job.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextVer = (maxWb?.version_number ?? 0) + 1;
+      const { data: newWb, error: wbErr } = await supabase
+        .from('material_workbooks')
+        .insert({
+          job_id: job.id,
+          quote_id: quoteId,
+          version_number: nextVer,
+          status: 'working',
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+      if (wbErr || !newWb) throw new Error(wbErr?.message ?? 'Failed to create change order workbook');
+      workbookId = newWb.id;
+    }
+    return { quoteId, workbookId, quote: q };
+  }
+
+  async function deleteSourceMaterialSheetAfterCopy(sheetId: string, mainQuoteId: string) {
+    const { data: rowIdsRows } = await supabase
+      .from('custom_financial_rows')
+      .select('id')
+      .eq('quote_id', mainQuoteId)
+      .eq('sheet_id', sheetId);
+    const rowIds = (rowIdsRows || []).map((r: { id: string }) => r.id);
+    for (const rid of rowIds) {
+      const { data: estByRow } = await supabase.from('subcontractor_estimates').select('id').eq('row_id', rid);
+      for (const e of estByRow || []) {
+        await supabase.from('subcontractor_estimate_line_items').delete().eq('estimate_id', e.id);
+        await supabase.from('subcontractor_estimates').delete().eq('id', e.id);
+      }
+      await supabase.from('custom_financial_row_items').delete().eq('row_id', rid);
+      await supabase.from('custom_financial_rows').delete().eq('id', rid);
+    }
+    const { data: estSheet } = await supabase.from('subcontractor_estimates').select('id').eq('quote_id', mainQuoteId).eq('sheet_id', sheetId);
+    for (const e of estSheet || []) {
+      await supabase.from('subcontractor_estimate_line_items').delete().eq('estimate_id', e.id);
+      await supabase.from('subcontractor_estimates').delete().eq('id', e.id);
+    }
+    await supabase.from('custom_financial_row_items').delete().eq('sheet_id', sheetId).is('row_id', null);
+    await supabase.from('material_category_options').delete().eq('sheet_id', sheetId);
+    await supabase.from('material_items').delete().eq('sheet_id', sheetId);
+    await supabase.from('material_sheet_labor').delete().eq('sheet_id', sheetId);
+    await supabase.from('material_category_markups').delete().eq('sheet_id', sheetId);
+    await supabase.from('material_sheets').delete().eq('id', sheetId);
+  }
+
+  async function runCopySheetToCustomerChangeOrder(sourceSheetId: string, removeFromSource: boolean) {
+      const mainQuoteId = quote?.id;
+      if (!job?.id || !profile?.id || !mainQuoteId) {
+        toast.error('Missing job or proposal.');
+        return;
+      }
+      if ((quote as any)?.is_change_order_proposal) {
+        toast.info('Switch to the main proposal to send a section as a change order.');
+        return;
+      }
+      if (!jobHasContract) {
+        toast.error('Set the main proposal as contract before adding work as a change order.');
+        return;
+      }
+      setCopyCoRunning(true);
+      try {
+        const { data: srcSheet, error: srcErr } = await supabase
+          .from('material_sheets')
+          .select('*')
+          .eq('id', sourceSheetId)
+          .single();
+        if (srcErr || !srcSheet) {
+          toast.error('Section not found.');
+          return;
+        }
+        const { data: wbRow } = await supabase
+          .from('material_workbooks')
+          .select('quote_id')
+          .eq('id', (srcSheet as any).workbook_id)
+          .maybeSingle();
+        if (!wbRow || wbRow.quote_id !== mainQuoteId) {
+          toast.error('This section belongs to another proposal.');
+          return;
+        }
+        if ((srcSheet as any).sheet_type === 'change_order') {
+          toast.info('This section is already a change order sheet.');
+          return;
+        }
+
+        const co = await getOrCreateChangeOrderWorkbookLocal();
+        if (co.quote.sent_at || co.quote.locked_for_editing) {
+          toast.error(
+            'Change orders are locked or already sent. Unlock the change order proposal in the office before adding new change order sections.'
+          );
+          return;
+        }
+
+        const { data: coSheets } = await supabase
+          .from('material_sheets')
+          .select('order_index, change_order_seq')
+          .eq('workbook_id', co.workbookId);
+        const maxOrder = Math.max(-1, ...(coSheets || []).map((s: any) => Number(s.order_index) || 0));
+        const maxSeq = Math.max(
+          0,
+          ...(coSheets || []).map((s: any) => Number(s.change_order_seq) || 0)
+        );
+        const nextSeq = maxSeq + 1;
+        const nextOrder = maxOrder + 1;
+
+        const { data: newSheet, error: insShErr } = await supabase
+          .from('material_sheets')
+          .insert({
+            workbook_id: co.workbookId,
+            sheet_name: (srcSheet as any).sheet_name,
+            description: (srcSheet as any).description ?? null,
+            order_index: nextOrder,
+            is_option: false,
+            sheet_type: 'change_order',
+            change_order_seq: nextSeq,
+            compare_to_sheet_id: null,
+          })
+          .select('id')
+          .single();
+        if (insShErr || !newSheet) {
+          toast.error(insShErr?.message ?? 'Failed to create change order section');
+          return;
+        }
+        const newSheetId = newSheet.id;
+        const rowIdMap: Record<string, string> = {};
+
+        const { data: items } = await supabase.from('material_items').select('*').eq('sheet_id', sourceSheetId).order('order_index');
+        if (items?.length) {
+          await supabase.from('material_items').insert(
+            items.map(({ id: _i, sheet_id: _s, created_at: _c, updated_at: _u, ...r }: any) => ({
+              ...r,
+              sheet_id: newSheetId,
+            }))
+          );
+        }
+        const { data: labor } = await supabase.from('material_sheet_labor').select('*').eq('sheet_id', sourceSheetId);
+        if (labor?.length) {
+          await supabase.from('material_sheet_labor').insert(
+            labor.map(({ id: _i, sheet_id: _s, created_at: _c, updated_at: _u, ...r }: any) => ({
+              ...r,
+              sheet_id: newSheetId,
+            }))
+          );
+        }
+        const { data: markups } = await supabase.from('material_category_markups').select('*').eq('sheet_id', sourceSheetId);
+        if (markups?.length) {
+          await supabase.from('material_category_markups').insert(
+            markups.map(({ id: _i, sheet_id: _s, created_at: _c, updated_at: _u, ...r }: any) => ({
+              ...r,
+              sheet_id: newSheetId,
+            }))
+          );
+        }
+        const { data: catOpts } = await supabase.from('material_category_options').select('*').eq('sheet_id', sourceSheetId);
+        if (catOpts?.length) {
+          await supabase.from('material_category_options').insert(
+            catOpts.map(({ sheet_id: _s, ...r }: any) => ({ ...r, sheet_id: newSheetId }))
+          );
+        }
+
+        const { data: sheetRows } = await supabase
+          .from('custom_financial_rows')
+          .select('*')
+          .eq('quote_id', mainQuoteId)
+          .eq('sheet_id', sourceSheetId)
+          .order('order_index');
+        for (const row of sheetRows || []) {
+          const { id: _rid, created_at: _c, updated_at: _u, quote_id: _q, sheet_id: _sid, ...rrest } = row as any;
+          const { data: newRow, error: rErr } = await supabase
+            .from('custom_financial_rows')
+            .insert({
+              ...rrest,
+              job_id: job.id,
+              quote_id: co.quoteId,
+              sheet_id: newSheetId,
+            })
+            .select('id')
+            .single();
+          if (rErr || !newRow) continue;
+          rowIdMap[row.id] = newRow.id;
+          const { data: rItems } = await supabase.from('custom_financial_row_items').select('*').eq('row_id', row.id).order('order_index');
+          if (rItems?.length) {
+            await supabase.from('custom_financial_row_items').insert(
+              rItems.map(({ id: _i, row_id: _r, sheet_id: _s, created_at: _c2, updated_at: _u2, ...r }: any) => ({
+                ...r,
+                row_id: newRow.id,
+                sheet_id: newSheetId,
+              }))
+            );
+          }
+        }
+        const { data: sOnlyItems } = await supabase
+          .from('custom_financial_row_items')
+          .select('*')
+          .eq('sheet_id', sourceSheetId)
+          .is('row_id', null)
+          .order('order_index');
+        if (sOnlyItems?.length) {
+          await supabase.from('custom_financial_row_items').insert(
+            sOnlyItems.map(({ id: _i, row_id: _r, sheet_id: _s, created_at: _c, updated_at: _u, ...r }: any) => ({
+              ...r,
+              row_id: null,
+              sheet_id: newSheetId,
+            }))
+          );
+        }
+
+        const sheetRowIds = (sheetRows || []).map((r: any) => r.id);
+        const { data: estBySheet } = await supabase
+          .from('subcontractor_estimates')
+          .select('*')
+          .eq('quote_id', mainQuoteId)
+          .eq('sheet_id', sourceSheetId)
+          .order('order_index');
+        const { data: estByRow } =
+          sheetRowIds.length > 0
+            ? await supabase
+                .from('subcontractor_estimates')
+                .select('*')
+                .eq('quote_id', mainQuoteId)
+                .in('row_id', sheetRowIds)
+                .order('order_index')
+            : { data: [] as any[] };
+        const seenEst = new Set<string>();
+        const allEsts = [...(estBySheet || []), ...(estByRow || [])].filter((e: any) => {
+          if (seenEst.has(e.id)) return false;
+          seenEst.add(e.id);
+          return true;
+        });
+        for (const est of allEsts) {
+          const { id: _eid, job_id: _j, quote_id: _q, sheet_id: _s, row_id: er, created_at: _c, updated_at: _u, ...erest } = est as any;
+          const { data: newEst, error: eErr } = await supabase.from('subcontractor_estimates').insert({
+            ...erest,
+            job_id: job.id,
+            quote_id: co.quoteId,
+            sheet_id: newSheetId,
+            row_id: er ? (rowIdMap[er] ?? null) : null,
+          }).select('id').single();
+          if (eErr || !newEst) continue;
+          const { data: slItems } = await supabase
+            .from('subcontractor_estimate_line_items')
+            .select('*')
+            .eq('estimate_id', est.id)
+            .order('order_index');
+          if (slItems?.length) {
+            await supabase.from('subcontractor_estimate_line_items').insert(
+              slItems.map(({ id: _i2, estimate_id: _e, created_at: _c2, updated_at: _u2, ...r }: any) => ({
+                ...r,
+                estimate_id: newEst.id,
+              }))
+            );
+          }
+        }
+
+        if (removeFromSource) {
+          await deleteSourceMaterialSheetAfterCopy(sourceSheetId, mainQuoteId);
+        }
+
+        setCopyCoDialogOpen(false);
+        setCopyCoSheetId(null);
+        toast.success(
+          removeFromSource
+            ? `Moved to change orders as CO-${String(nextSeq).padStart(3, '0')}. Send from the Change order proposal when ready.`
+            : `Copied to change orders as CO-${String(nextSeq).padStart(3, '0')}. Send from the Change order proposal when ready.`
+        );
+        await loadMaterialsData(mainQuoteId, !!isReadOnly);
+        await loadCustomRows(mainQuoteId, !!isReadOnly);
+        await loadSubcontractorEstimates(mainQuoteId, !!isReadOnly);
+        window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id } }));
+      } catch (e: any) {
+        console.error(e);
+        toast.error(e?.message || 'Failed to copy section to change orders');
+      } finally {
+        setCopyCoRunning(false);
+      }
+  }
+
   async function loadQuoteData(): Promise<any> {
     try {
       let quoteData: any = null;
@@ -3385,7 +4105,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       const wbSelect = `
         id,
         material_sheets (
-          id, sheet_name, order_index, is_option, description,
+          id, sheet_name, order_index, is_option, description, sheet_type, change_order_seq, category_order, compare_to_sheet_id,
           material_items (*),
           material_sheet_labor (*),
           material_category_markups (*)
@@ -3417,8 +4137,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         for (const sheet of oldSheets) {
           const { data: newSheet, error: shErr } = await supabase
             .from('material_sheets')
-            .insert({ workbook_id: newWb.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index, is_option: sheet.is_option, description: sheet.description, sheet_type: sheet.sheet_type ?? 'proposal' })
-            .select('id').single();
+            .insert({
+              workbook_id: newWb.id,
+              sheet_name: sheet.sheet_name,
+              order_index: sheet.order_index,
+              is_option: sheet.is_option,
+              description: sheet.description,
+              sheet_type: sheet.sheet_type ?? 'proposal',
+              change_order_seq: sheet.change_order_seq ?? null,
+              category_order: sheet.category_order ?? null,
+              compare_to_sheet_id: null,
+            })
+            .select('id')
+            .single();
           if (shErr) throw new Error(`Step 2 (insert sheet): ${shErr.message}`);
           sheetIdMap[sheet.id] = newSheet.id;
 
@@ -3449,10 +4180,31 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           }
 
           snapshotSheets.push({
-            id: sheet.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index,
-            is_option: sheet.is_option, description: sheet.description, sheet_type: sheet.sheet_type ?? 'proposal',
+            id: sheet.id,
+            sheet_name: sheet.sheet_name,
+            order_index: sheet.order_index,
+            is_option: sheet.is_option,
+            description: sheet.description,
+            sheet_type: sheet.sheet_type ?? 'proposal',
+            change_order_seq: sheet.change_order_seq ?? null,
+            category_order: sheet.category_order ?? null,
+            compare_to_sheet_id: sheet.compare_to_sheet_id ?? null,
             items,
           });
+        }
+      }
+      for (const wb of (oldWorkbooksFull || [])) {
+        const oldSheets = ((wb as any).material_sheets || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        for (const sheet of oldSheets) {
+          const newSid = sheetIdMap[sheet.id];
+          const oldCmp = sheet.compare_to_sheet_id;
+          if (newSid && oldCmp && sheetIdMap[oldCmp]) {
+            const { error: cmpErr } = await supabase
+              .from('material_sheets')
+              .update({ compare_to_sheet_id: sheetIdMap[oldCmp] })
+              .eq('id', newSid);
+            if (cmpErr) console.warn('Step 2 (compare_to_sheet_id):', cmpErr.message);
+          }
         }
       }
       console.log(`✅ Step 2 — copied ${Object.keys(sheetIdMap).length} sheets`);
@@ -3754,8 +4506,58 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     await loadData(false, selectedQuote);
   }
 
+  /**
+   * Align material_workbooks with office lock for simple (single-workbook) proposals only.
+   * When a signed/sent job already has a locked contract snapshot + working copy, mass-updating
+   * statuses would create extra locked rows and JobFinancials would load the wrong workbook after
+   * switching proposals — signed totals would appear to change. Skip in those cases.
+   */
+  async function syncMaterialWorkbookLockForQuote(quoteId: string, workbookLocked: boolean) {
+    const { data: wbs, error: listErr } = await supabase
+      .from('material_workbooks')
+      .select('id, status')
+      .eq('quote_id', quoteId);
+    if (listErr) {
+      console.warn('syncMaterialWorkbookLockForQuote list:', listErr);
+      return;
+    }
+    const list = wbs || [];
+    const hasLocked = list.some((w: { status: string }) => w.status === 'locked');
+    const hasWorking = list.some((w: { status: string }) => w.status === 'working');
+
+    if (workbookLocked) {
+      if (hasLocked) {
+        // Contract snapshot already exists — keep working copy writable for shop/crew; quote.locked_for_editing still drives UI read-only.
+        return;
+      }
+    } else {
+      if (hasLocked && hasWorking) {
+        // Do not convert contract snapshots to working when an ops copy already exists (would corrupt signed totals).
+        return;
+      }
+    }
+
+    const targetStatus = workbookLocked ? 'locked' : 'working';
+    const fromStatus = workbookLocked ? 'working' : 'locked';
+    const { error } = await supabase
+      .from('material_workbooks')
+      .update({ status: targetStatus, updated_at: new Date().toISOString() })
+      .eq('quote_id', quoteId)
+      .eq('status', fromStatus);
+    if (error) {
+      console.warn('syncMaterialWorkbookLockForQuote:', error);
+      return;
+    }
+    if (job?.id) {
+      window.dispatchEvent(
+        new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id, quoteId } })
+      );
+    }
+  }
+
   async function unlockHistoricalForEditing() {
     if (!quote || !isDefaultLocked) return;
+    await syncMaterialWorkbookLockForQuote(quote.id, false);
     setHistoricalUnlockedQuoteId(quote.id);
     await loadData(false, quote, { forceLive: true });
     toast.success('Editing enabled for this proposal. Changes save to this proposal.');
@@ -3802,7 +4604,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       toast.error('Failed to lock. If the column is missing, run in Supabase SQL Editor: ALTER TABLE quotes ADD COLUMN IF NOT EXISTS locked_for_editing boolean DEFAULT false;');
       return;
     }
-    await loadQuoteData();
+    await syncMaterialWorkbookLockForQuote(quote.id, true);
+    const refreshed = await loadQuoteData();
+    await loadData(false, refreshed ?? quote);
     toast.success('Proposal locked for all users. Click Unlock to allow editing again.');
   }
 
@@ -3817,7 +4621,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       toast.error('Failed to unlock.');
       return;
     }
-    await loadQuoteData();
+    await syncMaterialWorkbookLockForQuote(quote.id, false);
+    const refreshed = await loadQuoteData();
+    await loadData(false, refreshed ?? quote);
     toast.success('Proposal unlocked. Edits are allowed for all users.');
   }
 
@@ -3931,14 +4737,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       // uploaded by another user or without a proposal selected appear in the proposal
       let rawData: any[] = [];
       if (targetQuoteId) {
-        const [forQuote, forJob] = await Promise.all([
+        const [forQuote, forJob, removed] = await Promise.all([
           supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('quote_id', targetQuoteId).order('order_index'),
           supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', job.id).is('quote_id', null).order('order_index'),
+          supabase.from('quote_removed_sections').select('section_id').eq('quote_id', targetQuoteId).eq('section_type', 'subcontractor_estimate'),
         ]);
         if (forQuote.error) throw forQuote.error;
         if (forJob.error) throw forJob.error;
+        const removedEstIds = new Set((removed.data || []).map((r: any) => r.section_id));
         const quoteIds = new Set((forQuote.data || []).map((e: any) => e.id));
-        const jobOnly = (forJob.data || []).filter((e: any) => !quoteIds.has(e.id));
+        const jobOnly = (forJob.data || []).filter((e: any) => !quoteIds.has(e.id) && !removedEstIds.has(e.id));
         rawData = [...(forQuote.data || []), ...jobOnly];
       } else {
         const { data, error } = await supabase
@@ -4227,6 +5035,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             isOptional: sheet.is_option ?? false,
             compareToSheetId: sheet.compare_to_sheet_id ?? null,
             sheetType: sheet.sheet_type ?? 'proposal',
+            changeOrderSeq: sheet.change_order_seq ?? null,
             categories,
             totalCost: sheetTotalCost,
             totalPrice: sheetTotalPrice,
@@ -4265,6 +5074,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       const hasQuote = targetQuoteId != null && targetQuoteId !== '';
       let workbookData: any = null;
       let workbookError: any = null;
+      let usedFallbackWorkbook = false;
+      let proposalWorkbookIdForLabor: string | null = null;
 
       if (hasQuote) {
         const wbSelect = `
@@ -4276,60 +5087,156 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             material_category_markups (*)
           )
         `;
-        // For historical (locked) proposals when loading live (no snapshot), fetch workbook without status filter so we get the locked workbook and its labor
+        const { data: quoteRowForMaterials } = await supabase
+          .from('quotes')
+          .select('locked_for_editing, sent_at, signed_version, customer_signed_at')
+          .eq('id', targetQuoteId)
+          .maybeSingle();
+        const contractFrozen = isQuoteContractFrozen(quoteRowForMaterials as any);
+
+        // Non–first-proposal tab: same workbook priority as MaterialsManagement (workingList[0] ?? lockedList[0]),
+        // both sorted by version_number desc — NOT updated_at alone, or locking the working copy can surface an
+        // older locked snapshot and change materials totals on the left panel.
         if (wasHistoricalRequest) {
-          const { data, error } = await supabase
-            .from('material_workbooks')
-            .select(wbSelect)
-            .eq('quote_id', targetQuoteId)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          workbookData = data;
-          workbookError = error;
-        } else {
-          // Use newest working workbook for this quote (so re-uploaded workbook wins over copied-from-template)
           let { data, error } = await supabase
             .from('material_workbooks')
             .select(wbSelect)
             .eq('quote_id', targetQuoteId)
             .eq('status', 'working')
-            .order('updated_at', { ascending: false })
+            .order('version_number', { ascending: false })
             .limit(1)
             .maybeSingle();
           workbookData = data;
           workbookError = error;
           if (!workbookData && !workbookError) {
+            const lockedFb = await supabase
+              .from('material_workbooks')
+              .select(wbSelect)
+              .eq('quote_id', targetQuoteId)
+              .eq('status', 'locked')
+              .order('version_number', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            workbookData = lockedFb.data;
+            workbookError = lockedFb.error;
+          }
+          if (!workbookData && !workbookError) {
+            const anyFb = await supabase
+              .from('material_workbooks')
+              .select(wbSelect)
+              .eq('quote_id', targetQuoteId)
+              .order('version_number', { ascending: false })
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            workbookData = anyFb.data;
+            workbookError = anyFb.error;
+          }
+        } else if (contractFrozen) {
+          // Sent/signed/office-locked: proposal financials MUST follow the locked contract workbook only.
+          // The working copy is for shop/crew/ops and must not change materials totals or section pricing on the left panel.
+          const { data: lockedRows, error: lockedErr } = await supabase
+            .from('material_workbooks')
+            .select(wbSelect)
+            .eq('quote_id', targetQuoteId)
+            .eq('status', 'locked')
+            .order('version_number', { ascending: false });
+          workbookError = lockedErr;
+          workbookData =
+            Array.isArray(lockedRows) && lockedRows.length > 0 ? lockedRows[0] : null;
+          usedFallbackWorkbook = false;
+          proposalWorkbookIdForLabor = null;
+          if (!workbookData && !workbookError) {
+            // No locked row yet (edge case) — fall back to working / any for this quote
+            let { data, error } = await supabase
+              .from('material_workbooks')
+              .select(wbSelect)
+              .eq('quote_id', targetQuoteId)
+              .eq('status', 'working')
+              .order('version_number', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            workbookData = data;
+            workbookError = error;
+            if (!workbookData && !workbookError) {
+              const fallback = await supabase
+                .from('material_workbooks')
+                .select(wbSelect)
+                .eq('quote_id', targetQuoteId)
+                .order('version_number', { ascending: false })
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              workbookData = fallback.data;
+            }
+          }
+        } else {
+          // Draft / editable proposal: match MaterialsManagement — highest-version working, then highest-version locked
+          // (e.g. after "Lock workbook" there is no working row; must not pick an older locked copy by updated_at).
+          let { data, error } = await supabase
+            .from('material_workbooks')
+            .select(wbSelect)
+            .eq('quote_id', targetQuoteId)
+            .eq('status', 'working')
+            .order('version_number', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          workbookData = data;
+          workbookError = error;
+          if (!workbookData && !workbookError) {
+            const lockedFb = await supabase
+              .from('material_workbooks')
+              .select(wbSelect)
+              .eq('quote_id', targetQuoteId)
+              .eq('status', 'locked')
+              .order('version_number', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            workbookData = lockedFb.data;
+            workbookError = lockedFb.error;
+          }
+          if (!workbookData && !workbookError) {
             const fallback = await supabase
               .from('material_workbooks')
               .select(wbSelect)
               .eq('quote_id', targetQuoteId)
+              .order('version_number', { ascending: false })
               .order('updated_at', { ascending: false })
               .limit(1)
               .maybeSingle();
             workbookData = fallback.data;
           }
         }
+
         if (!workbookData) {
           const copied = await copyJobWorkbookToQuote(job.id, targetQuoteId);
           if (copied) workbookData = copied;
         }
-        // If proposal workbook is empty (no sheets/items), use a job workbook that has content so material prices are in the proposal
+        // If proposal workbook is empty (no sheets/items), use another job workbook so draft proposals still show prices.
+        // NEVER do this for sent/signed/office-locked quotes — that would show another workbook's section names, descriptions,
+        // and labor while header totals may still reflect the contract (misleading and breaks trust in signed data).
         const sheetsFromWb = workbookData?.material_sheets || [];
         const itemCount = sheetsFromWb.reduce((n: number, s: any) => n + ((s.material_items || []).length), 0);
         if (workbookData && (sheetsFromWb.length === 0 || itemCount === 0)) {
-          const { data: allJobWbs } = await supabase
-            .from('material_workbooks')
-            .select(wbSelect)
-            .eq('job_id', job.id)
-            .order('updated_at', { ascending: false });
-          const list = allJobWbs || [];
-          for (const wb of list) {
-            const wbSheets = wb?.material_sheets || [];
-            const wbItemCount = wbSheets.reduce((n: number, s: any) => n + ((s.material_items || []).length), 0);
-            if (wbItemCount > 0) {
-              workbookData = wb;
-              break;
+          if (contractFrozen) {
+            usedFallbackWorkbook = false;
+            proposalWorkbookIdForLabor = null;
+          } else {
+            proposalWorkbookIdForLabor = workbookData.id;
+            const { data: allJobWbs } = await supabase
+              .from('material_workbooks')
+              .select(wbSelect)
+              .eq('job_id', job.id)
+              .order('updated_at', { ascending: false });
+            const list = allJobWbs || [];
+            for (const wb of list) {
+              const wbSheets = wb?.material_sheets || [];
+              const wbItemCount = wbSheets.reduce((n: number, s: any) => n + ((s.material_items || []).length), 0);
+              if (wbItemCount > 0) {
+                workbookData = wb;
+                usedFallbackWorkbook = true;
+                break;
+              }
             }
           }
         }
@@ -4394,6 +5301,36 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
           laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
         });
+      }
+      // When we displayed a fallback workbook (proposal had no sheets/items), labor was on the proposal's workbook;
+      // fetch that labor and merge by sheet name so labor still shows on the right sections
+      if (usedFallbackWorkbook && proposalWorkbookIdForLabor && hasQuote) {
+        const { data: proposalSheets } = await supabase
+          .from('material_sheets')
+          .select('id, sheet_name')
+          .eq('workbook_id', proposalWorkbookIdForLabor);
+        const proposalSheetIds = (proposalSheets || []).map((s: any) => s.id);
+        if (proposalSheetIds.length > 0) {
+          const { data: proposalLaborRows } = await supabase
+            .from('material_sheet_labor')
+            .select('*')
+            .in('sheet_id', proposalSheetIds);
+          const laborBySheetName = new Map<string, any>();
+          (proposalSheets || []).forEach((s: any) => {
+            const labor = (proposalLaborRows || []).find((l: any) => l.sheet_id === s.id);
+            if (labor) {
+              const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
+              laborBySheetName.set(s.sheet_name || '', { ...labor, total_labor_cost: total });
+            }
+          });
+          sheetsData.forEach((sheet: any) => {
+            const name = sheet.sheet_name || '';
+            if (laborBySheetName.has(name) && !laborMap[sheet.id]) {
+              const labor = laborBySheetName.get(name)!;
+              laborMap[sheet.id] = { ...labor, sheet_id: sheet.id, total_labor_cost: labor.total_labor_cost };
+            }
+          });
+        }
       }
       // Merge in any existing sheet labor not in fetch (e.g. just-saved row not yet visible) so it doesn't glitch away
       setSheetLabor(prev => {
@@ -4502,6 +5439,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           isOptional: sheet.is_option ?? false,
           compareToSheetId: sheet.compare_to_sheet_id ?? null,
           sheetType: sheet.sheet_type ?? 'proposal',
+          changeOrderSeq: sheet.change_order_seq ?? null,
           categories,
           totalCost: sheetTotalCost,
           totalPrice: sheetTotalPrice,
@@ -4567,27 +5505,6 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     return Array.from(byDesc.values()).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
   }
 
-  // Dedupe line items by (parentId, description) so the same description can exist in different sections.
-  function dedupeLineItemsByParentAndDescription(
-    items: CustomRowLineItem[],
-    getEffectiveParentId: (item: CustomRowLineItem) => string | null
-  ): CustomRowLineItem[] {
-    const byKey = new Map<string, CustomRowLineItem>();
-    items.forEach(item => {
-      const parentId = getEffectiveParentId(item);
-      if (parentId == null) return;
-      const desc = (item.description ?? '').trim();
-      const key = `${parentId}_${desc}`;
-      const existing = byKey.get(key);
-      const itemCreated = item.created_at ?? '';
-      const existingCreated = existing?.created_at ?? '';
-      if (!existing || itemCreated < existingCreated || (itemCreated === existingCreated && (item.id ?? '') < (existing.id ?? ''))) {
-        byKey.set(key, item);
-      }
-    });
-    return Array.from(byKey.values());
-  }
-
   async function loadCustomRows(targetQuoteId: string | null = null, isHistorical: boolean = false) {
     // Locked/historical proposals: always load live data so labor and custom rows always show
     if (isHistorical && targetQuoteId) {
@@ -4642,14 +5559,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         if (item.row_id) return duplicateToSurviving[item.row_id] ?? item.row_id;
         return item.sheet_id ?? null;
       };
-      const dedupedLineItems = dedupeLineItemsByParentAndDescription(allLineItems, getEffectiveParentId);
       const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
-      dedupedLineItems.forEach(item => {
+      allLineItems.forEach(item => {
         const parentId = getEffectiveParentId(item);
         if (parentId) {
           if (!lineItemsMap[parentId]) lineItemsMap[parentId] = [];
           lineItemsMap[parentId].push(item);
         }
+      });
+      Object.keys(lineItemsMap).forEach(k => {
+        lineItemsMap[k].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
       });
 
       const asCustomRows: CustomFinancialRow[] = dedupedRows.map((r: any) => ({
@@ -4681,9 +5600,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     // user or without a proposal selected appear in the proposal.
     let rawRows: any[] = [];
     if (targetQuoteId) {
-      const [forQuote, forJob] = await Promise.all([
+      const [forQuote, forJob, removed] = await Promise.all([
         supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('quote_id', targetQuoteId).order('order_index'),
         supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', job.id).is('quote_id', null).order('order_index'),
+        supabase.from('quote_removed_sections').select('section_id').eq('quote_id', targetQuoteId).eq('section_type', 'custom_row'),
       ]);
       if (forQuote.error) {
         console.error('Error loading custom rows (quote):', forQuote.error);
@@ -4693,8 +5613,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
         console.error('Error loading custom rows (job):', forJob.error);
         return;
       }
+      const removedRowIds = new Set((removed.data || []).map((r: any) => r.section_id));
       const quoteIds = new Set((forQuote.data || []).map((r: any) => r.id));
-      const jobOnly = (forJob.data || []).filter((r: any) => !quoteIds.has(r.id));
+      const jobOnly = (forJob.data || []).filter((r: any) => !quoteIds.has(r.id) && !removedRowIds.has(r.id));
       rawRows = [...(forQuote.data || []), ...jobOnly];
     } else {
       const { data, error } = await supabase
@@ -4846,29 +5767,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       if (item.row_id) return duplicateToSurviving[item.row_id] ?? item.row_id;
       return item.sheet_id ?? null;
     };
-    const dedupedLineItems = dedupeLineItemsByParentAndDescription(allLineItems, getEffectiveParentId);
     const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
-    dedupedLineItems.forEach(item => {
+    allLineItems.forEach(item => {
       const parentId = getEffectiveParentId(item);
       if (parentId) {
         if (!lineItemsMap[parentId]) lineItemsMap[parentId] = [];
         lineItemsMap[parentId].push(item);
       }
     });
-    // Merge with previous state so just-saved line items (e.g. Add Labor) are not lost if fetch is stale
-    setCustomRowLineItems(prev => {
-      const next: Record<string, CustomRowLineItem[]> = { ...lineItemsMap };
-      if (prev && typeof prev === 'object') {
-        for (const parentId of Object.keys(prev)) {
-          const prevList = prev[parentId] || [];
-          const baseList = next[parentId] || [];
-          const baseIds = new Set(baseList.map((i: any) => i.id));
-          const missing = prevList.filter((i: any) => i.id && !baseIds.has(i.id));
-          if (missing.length) next[parentId] = [...baseList, ...missing];
-        }
-      }
-      return next;
+    Object.keys(lineItemsMap).forEach(k => {
+      lineItemsMap[k].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     });
+    setCustomRowLineItems(lineItemsMap);
   }
 
   async function loadLaborPricing() {
@@ -5360,18 +6270,45 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     if (!confirm('Delete this financial row?')) return;
 
     try {
-      const { error } = await supabase
+      const { data: row, error: fetchErr } = await supabase
         .from('custom_financial_rows')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      toast.success('Row deleted');
+        .select('id, quote_id')
+        .eq('id', id)
+        .maybeSingle();
+      if (fetchErr || !row) {
+        toast.error('Row not found');
+        return;
+      }
+      const isJobLevel = row.quote_id == null;
+      const isCurrentProposal = quote?.id && row.quote_id === quote.id;
+      if (isJobLevel && quote?.id) {
+        try {
+          const { error: insertErr } = await supabase
+            .from('quote_removed_sections')
+            .upsert({ quote_id: quote.id, section_type: 'custom_row', section_id: id }, { onConflict: 'quote_id,section_type,section_id' });
+          if (insertErr) throw insertErr;
+          toast.success('Section removed from this proposal. It will still appear on previously sent proposals.');
+        } catch (_) {
+          const { error: delErr } = await supabase.from('custom_financial_rows').delete().eq('id', id);
+          if (delErr) throw delErr;
+          toast.success('Section removed. Run the migration "quote_removed_sections" to remove from this proposal only (keep on sent proposals) next time.');
+        }
+      } else if (isCurrentProposal || !isJobLevel) {
+        const { error } = await supabase
+          .from('custom_financial_rows')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        toast.success('Row deleted');
+      } else {
+        toast.error('Cannot delete this row from the current proposal');
+        return;
+      }
       await loadCustomRows(quote?.id ?? null, !!isReadOnly);
       await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
     } catch (error: any) {
       console.error('Error deleting row:', error);
-      toast.error('Failed to delete row');
+      toast.error(error?.message ?? 'Failed to delete row');
     }
   }
 
@@ -5644,12 +6581,27 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     if (!confirm('Delete this line item?')) return;
 
     try {
-      const { error } = await supabase
+      const { data: deleted, error } = await supabase
         .from('custom_financial_row_items')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
       if (error) throw error;
+      if (!deleted?.length) {
+        toast.error(
+          'Could not delete this line (nothing removed). Check Supabase RLS on custom_financial_row_items or refresh the page.'
+        );
+        return;
+      }
+      setCustomRowLineItems(prev => {
+        const next: Record<string, CustomRowLineItem[]> = {};
+        for (const k of Object.keys(prev)) {
+          const filtered = (prev[k] || []).filter((it: any) => it.id !== id);
+          if (filtered.length) next[k] = filtered;
+        }
+        return next;
+      });
       toast.success('Line item deleted');
       await loadCustomRows(quote?.id ?? null, !!isReadOnly);
       await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
@@ -5727,13 +6679,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       toast.error('Enter a description');
       return;
     }
-    const qty = parseFloat(subLineItemQuantity) || 0;
-    const unitPrice = parseFloat(subLineItemUnitPrice) || 0;
-    const totalPrice = qty * unitPrice;
-    if (qty <= 0 || unitPrice < 0) {
-      toast.error('Enter valid quantity and unit price');
+    const qty = parseFloat(subLineItemQuantity);
+    const unitRaw = subLineItemUnitPrice.trim();
+    const unitPrice = unitRaw === '' ? NaN : parseFloat(unitRaw);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error('Enter a valid quantity greater than zero');
       return;
     }
+    if (!Number.isFinite(unitPrice)) {
+      toast.error('Enter a valid unit price (use a negative amount for a discount)');
+      return;
+    }
+    const totalPrice = qty * unitPrice;
     try {
       const existing = subcontractorLineItems[addSubcontractorLineItemEstimateId] || [];
       const maxOrder = existing.length > 0
@@ -5779,13 +6736,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       toast.error('Enter a description');
       return;
     }
-    const qty = parseFloat(subLineItemQuantity) || 0;
-    const unitPrice = parseFloat(subLineItemUnitPrice) || 0;
-    const totalPrice = qty * unitPrice;
-    if (qty <= 0 || unitPrice < 0) {
-      toast.error('Enter valid quantity and unit price');
+    const qty = parseFloat(subLineItemQuantity);
+    const unitRaw = subLineItemUnitPrice.trim();
+    const unitPrice = unitRaw === '' ? NaN : parseFloat(unitRaw);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error('Enter a valid quantity greater than zero');
       return;
     }
+    if (!Number.isFinite(unitPrice)) {
+      toast.error('Enter a valid unit price (use a negative amount for a discount)');
+      return;
+    }
+    const totalPrice = qty * unitPrice;
     try {
       const { error } = await supabase
         .from('subcontractor_estimate_line_items')
@@ -5871,6 +6833,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     const est = subcontractorEstimates.find((e: any) => e.id === estimateId);
     const lineItems = (subcontractorLineItems[estimateId] || []).map((li: any) => ({ ...li }));
     const sectionLabel = est?.company_name || 'Subcontractor section';
+    const isJobLevel = est?.quote_id == null;
+    const isCurrentProposal = quote?.id && est?.quote_id === quote?.id;
 
     setSubcontractorEstimates((prev) => prev.filter((e: any) => e.id !== estimateId));
     setSubcontractorLineItems((prev) => {
@@ -5878,9 +6842,37 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       delete next[estimateId];
       return next;
     });
-    toast.success('Subcontractor section removed');
+    if (!(isJobLevel && quote?.id)) toast.success('Subcontractor section removed');
 
     try {
+      if (isJobLevel && quote?.id) {
+        try {
+          const { error: insertErr } = await supabase
+            .from('quote_removed_sections')
+            .upsert({ quote_id: quote.id, section_type: 'subcontractor_estimate', section_id: estimateId }, { onConflict: 'quote_id,section_type,section_id' });
+          if (insertErr) throw insertErr;
+          toast.success('Section removed from this proposal. It will still appear on previously sent proposals.');
+          await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+          window.dispatchEvent(new CustomEvent('proposal-updated', { detail: { quoteId: quote?.id, jobId: job.id } }));
+          return;
+        } catch (_) {
+          const { error: lineErr } = await supabase.from('subcontractor_estimate_line_items').delete().eq('estimate_id', estimateId);
+          if (lineErr) throw lineErr;
+          const { error: delErr } = await supabase.from('subcontractor_estimates').delete().eq('id', estimateId);
+          if (delErr) throw delErr;
+          toast.success('Section removed. Run the migration "quote_removed_sections" to remove from this proposal only next time.');
+          await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+          window.dispatchEvent(new CustomEvent('proposal-updated', { detail: { quoteId: quote?.id, jobId: job.id } }));
+          return;
+        }
+      }
+      if (!isCurrentProposal && !isJobLevel) {
+        toast.error('Cannot delete this section from the current proposal');
+        setSubcontractorEstimates((prev) => (est ? [...prev, est].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)) : prev));
+        setSubcontractorLineItems((prev) => (lineItems.length > 0 ? { ...prev, [estimateId]: lineItems } : prev));
+        return;
+      }
+
       const { error: lineErr } = await supabase
         .from('subcontractor_estimate_line_items')
         .delete()
@@ -5996,20 +6988,27 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     }
   }
 
-  async function updateLineItemCost(lineItemId: string, newTotalCost: number) {
+  async function updateLineItemCost(lineItemId: string, newTotalCost: number, quantity: number = 1) {
     if (isReadOnly) return;
     const value = Math.max(0, newTotalCost);
+    const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    const unit = Math.round((value / qty) * 10000) / 10000;
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('custom_financial_row_items')
         .update({
           total_cost: value,
-          quantity: 1,
-          unit_cost: value,
+          quantity: qty,
+          unit_cost: unit,
         })
-        .eq('id', lineItemId);
+        .eq('id', lineItemId)
+        .select('id');
 
       if (error) throw error;
+      if (!data?.length) {
+        toast.error('Could not update cost (permission or row missing).');
+        return;
+      }
       await loadCustomRows(quote?.id ?? null, !!isReadOnly);
       await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
     } catch (error: any) {
@@ -6684,6 +7683,21 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       linkedSubsMaterialsTotal += materialsTotal * (1 + estMarkup / 100);
       linkedSubsMaterialsTaxableOnly += materialsTaxableOnly * (1 + estMarkup / 100);
     });
+
+    // Sheet-level material line items (row_id null, sheet_id set) — same as section header total
+    const sheetMatLineItems = (customRowLineItems[sheet.sheetId] || []).filter(
+      (item: any) => (item.item_type || 'material') === 'material'
+    );
+    const sheetMatLinePrice = sheetMatLineItems.reduce((sum: number, item: any) => {
+      const m = item.markup_percent ?? 0;
+      return sum + item.total_cost * (1 + m / 100);
+    }, 0);
+    const sheetMatLineTaxable = sheetMatLineItems
+      .filter((item: any) => item.taxable)
+      .reduce((sum: number, item: any) => {
+        const m = item.markup_percent ?? 0;
+        return sum + item.total_cost * (1 + m / 100);
+      }, 0);
     
     // Use actual selling price (totalPrice) from workbook so manual price edits in materials table flow to proposal
     const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
@@ -6705,11 +7719,146 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       return sum + cost * (1 + categoryMarkup / 100);
     }, 0) || 0;
     
-    // Final = (materials with category markups) + (linked rows with their own markup) + (linked subs)
-    materialSheetsPrice += categoryTotals + linkedRowsMaterialsTotal + linkedSubsMaterialsTotal;
-    materialSheetsTaxableOnly += categoryTaxableOnly + linkedRowsMaterialsTaxableOnly + linkedSubsMaterialsTaxableOnly;
+    // Final = categories + sheet material line items + linked custom rows + linked subs
+    materialSheetsPrice +=
+      categoryTotals + sheetMatLinePrice + linkedRowsMaterialsTotal + linkedSubsMaterialsTotal;
+    materialSheetsTaxableOnly +=
+      categoryTaxableOnly + sheetMatLineTaxable + linkedRowsMaterialsTaxableOnly + linkedSubsMaterialsTaxableOnly;
   });
-  
+
+  // Optional sections with a comparison: add the price difference (add-on cost) to proposal total
+  // so the "Difference" amount shown in the section is included in the section/proposal total
+  let optionalDifferenceTotal = 0;
+  materialsBreakdown.sheetBreakdowns.forEach((sheet: any) => {
+    if (!sheet.isOptional || !sheet.compareToSheetId) return;
+    const baseSheet = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === sheet.compareToSheetId);
+    if (!baseSheet) return;
+    // Base sheet total (materials + labor) — same formula as comparison panel
+    const baseLinkedRows = customRows.filter((r: any) => r.sheet_id === baseSheet.sheetId);
+    const baseLinkedRowsTotal = baseLinkedRows.reduce((rowSum: number, row: any) => {
+      const lineItems = customRowLineItems[row.id] || [];
+      const baseCost = lineItems.length > 0 ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0) : row.total_cost;
+      return rowSum + (baseCost * (1 + row.markup_percent / 100));
+    }, 0);
+    const baseLinkedSubs = linkedSubcontractors[baseSheet.sheetId] || [];
+    const baseLinkedSubsTaxableTotal = baseLinkedSubs.reduce((sum: number, sub: any) => {
+      const lineItems = subcontractorLineItems[sub.id] || [];
+      const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((s: number, item: any) => s + item.total_price, 0);
+      return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
+    }, 0);
+    const baseCategoryTotals = (baseSheet.categories || []).reduce((sum: number, cat: any) => {
+      const sellingPrice = Number(cat.totalPrice);
+      if (sellingPrice > 0) return sum + sellingPrice;
+      const categoryKey = `${baseSheet.sheetId}_${cat.name}`;
+      const markup = categoryMarkups[categoryKey] ?? 10;
+      return sum + (Number(cat.totalCost) || 0) * (1 + markup / 100);
+    }, 0);
+    const baseSheetMatLines = (customRowLineItems[baseSheet.sheetId] || [])
+      .filter((it: any) => (it.item_type || 'material') === 'material')
+      .reduce((s: number, it: any) => s + it.total_cost * (1 + (it.markup_percent ?? 0) / 100), 0);
+    const baseFinalPrice =
+      baseCategoryTotals + baseSheetMatLines + baseLinkedRowsTotal + baseLinkedSubsTaxableTotal;
+    const baseSheetLaborData = sheetLabor[baseSheet.sheetId];
+    const baseSheetLaborTotal = baseSheetLaborData ? baseSheetLaborData.total_labor_cost : 0;
+    const baseSheetLaborLineItems = customRowLineItems[baseSheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
+    const baseSheetLaborLineItemsTotal = baseSheetLaborLineItems.reduce((s: number, it: any) => s + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
+    const baseLinkedSubsNonTax = baseLinkedSubs.reduce((s: number, sub: any) => {
+      const li = subcontractorLineItems[sub.id] || [];
+      const nt = li.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
+      return s + (nt * (1 + (sub.markup_percent || 0) / 100));
+    }, 0);
+    const baseLaborCost = baseSheetLaborTotal + baseSheetLaborLineItemsTotal + baseLinkedSubsNonTax;
+    const baseTotal = baseFinalPrice + baseLaborCost;
+    // Option sheet total (must match SortableRow: sheetFinalPrice + totalLaborCost for this sheet)
+    const optCategoryTotals = (sheet.categories || []).reduce((sum: number, cat: any) => {
+      const sellingPrice = Number(cat.totalPrice);
+      if (sellingPrice > 0) return sum + sellingPrice;
+      const categoryKey = `${sheet.sheetId}_${cat.name}`;
+      const markup = categoryMarkups[categoryKey] ?? 10;
+      return sum + (Number(cat.totalCost) || 0) * (1 + markup / 100);
+    }, 0);
+    const optLinkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
+    const optLinkedRowsTotal = optLinkedRows.reduce((rowSum: number, row: any) => {
+      const lineItems = customRowLineItems[row.id] || [];
+      const baseCost = lineItems.length > 0 ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0) : row.total_cost;
+      return rowSum + (baseCost * (1 + row.markup_percent / 100));
+    }, 0);
+    const optLinkedSubs = linkedSubcontractors[sheet.sheetId] || [];
+    const optLinkedSubsTaxableTotal = optLinkedSubs.reduce((sum: number, sub: any) => {
+      const lineItems = subcontractorLineItems[sub.id] || [];
+      const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((s: number, item: any) => s + item.total_price, 0);
+      return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
+    }, 0);
+    const optSheetLaborData = sheetLabor[sheet.sheetId];
+    const optSheetLaborTotal = optSheetLaborData ? optSheetLaborData.total_labor_cost : 0;
+    const optSheetLaborLineItems = customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
+    const optSheetLaborLineItemsTotal = optSheetLaborLineItems.reduce((s: number, it: any) => s + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
+    const optLinkedSubsNonTax = optLinkedSubs.reduce((s: number, sub: any) => {
+      const li = subcontractorLineItems[sub.id] || [];
+      const nt = li.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
+      return s + (nt * (1 + (sub.markup_percent || 0) / 100));
+    }, 0);
+    const optLaborCost = optSheetLaborTotal + optSheetLaborLineItemsTotal + optLinkedSubsNonTax;
+    const optSheetMatLines = (customRowLineItems[sheet.sheetId] || [])
+      .filter((it: any) => (it.item_type || 'material') === 'material')
+      .reduce((s: number, it: any) => s + it.total_cost * (1 + (it.markup_percent ?? 0) / 100), 0);
+    const optionTotal =
+      optCategoryTotals +
+      optSheetMatLines +
+      optLinkedRowsTotal +
+      optLinkedSubsTaxableTotal +
+      optLaborCost;
+    const priceDiff = optionTotal - baseTotal;
+    optionalDifferenceTotal += priceDiff;
+  });
+
+  // Optional sections WITHOUT a comparison: add the full section total so the displayed price is in the grand total
+  materialsBreakdown.sheetBreakdowns.forEach((sheet: any) => {
+    if (!sheet.isOptional || sheet.compareToSheetId) return;
+    const optCategoryTotals = (sheet.categories || []).reduce((sum: number, cat: any) => {
+      const sellingPrice = Number(cat.totalPrice);
+      if (sellingPrice > 0) return sum + sellingPrice;
+      const categoryKey = `${sheet.sheetId}_${cat.name}`;
+      const markup = categoryMarkups[categoryKey] ?? 10;
+      return sum + (Number(cat.totalCost) || 0) * (1 + markup / 100);
+    }, 0);
+    const optLinkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
+    const optLinkedRowsTotal = optLinkedRows.reduce((rowSum: number, row: any) => {
+      const lineItems = customRowLineItems[row.id] || [];
+      const baseCost = lineItems.length > 0 ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0) : row.total_cost;
+      return rowSum + (baseCost * (1 + row.markup_percent / 100));
+    }, 0);
+    const optLinkedSubs = linkedSubcontractors[sheet.sheetId] || [];
+    const optLinkedSubsTaxableTotal = optLinkedSubs.reduce((sum: number, sub: any) => {
+      const lineItems = subcontractorLineItems[sub.id] || [];
+      const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((s: number, item: any) => s + item.total_price, 0);
+      return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
+    }, 0);
+    const optSheetLaborData = sheetLabor[sheet.sheetId];
+    const optSheetLaborTotal = optSheetLaborData ? optSheetLaborData.total_labor_cost : 0;
+    const optSheetLaborLineItems = customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
+    const optSheetLaborLineItemsTotal = optSheetLaborLineItems.reduce((s: number, it: any) => s + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
+    const optLinkedSubsNonTax = optLinkedSubs.reduce((s: number, sub: any) => {
+      const li = subcontractorLineItems[sub.id] || [];
+      const nt = li.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
+      return s + (nt * (1 + (sub.markup_percent || 0) / 100));
+    }, 0);
+    const optLaborCost = optSheetLaborTotal + optSheetLaborLineItemsTotal + optLinkedSubsNonTax;
+    const optOnlySheetMatLines = (customRowLineItems[sheet.sheetId] || [])
+      .filter((it: any) => (it.item_type || 'material') === 'material')
+      .reduce((s: number, it: any) => s + it.total_cost * (1 + (it.markup_percent ?? 0) / 100), 0);
+    const optionTotalOnly =
+      optCategoryTotals +
+      optOnlySheetMatLines +
+      optLinkedRowsTotal +
+      optLinkedSubsTaxableTotal +
+      optLaborCost;
+    optionalDifferenceTotal += optionTotalOnly;
+  });
+
+  materialSheetsPrice += optionalDifferenceTotal;
+  materialSheetsTaxableOnly += optionalDifferenceTotal;
+
   const proposalMaterialsPrice = materialSheetsPrice + customRowsMaterialsTotal;
   const proposalMaterialsTaxableOnly = materialSheetsTaxableOnly + customRowsMaterialsTaxableOnly;
   
@@ -6854,25 +8003,28 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     other: 'Miscellaneous project costs and expenses',
   };
 
-  // Create unified list of all proposal items sorted by order_index (only standalone subs)
+  // Create unified list: proposal workbook sections vs change orders (separate category; not mixed into contract scope)
   const FIELD_REQUEST_NAMES = ['Field Request', 'Field Requests', 'Crew Orders'];
+  const isProposalSheet = (sheet: { sheetName: string; sheetType?: string }) =>
+    !FIELD_REQUEST_NAMES.includes(sheet.sheetName) && (sheet as any).sheetType !== 'change_order';
+  const isChangeOrderSheet = (sheet: { sheetType?: string }) => (sheet as any).sheetType === 'change_order';
+
+  const proposalSheetBreakdowns = materialsBreakdown.sheetBreakdowns.filter(isProposalSheet);
+  const changeOrderSheetBreakdowns = materialsBreakdown.sheetBreakdowns.filter(isChangeOrderSheet);
+
   const allItemsUnsorted = [
-    ...materialsBreakdown.sheetBreakdowns
-      .filter(sheet => !FIELD_REQUEST_NAMES.includes(sheet.sheetName))
-      .map(sheet => ({
-        type: 'material' as const,
-        id: sheet.sheetId,
-        orderIndex: sheet.orderIndex,
-        data: sheet,
-      })),
-    // Only include custom rows that are NOT linked to sheets
+    ...proposalSheetBreakdowns.map(sheet => ({
+      type: 'material' as const,
+      id: sheet.sheetId,
+      orderIndex: sheet.orderIndex,
+      data: sheet,
+    })),
     ...customRows.filter(row => !(row as any).sheet_id).map(row => ({
       type: 'custom' as const,
       id: row.id,
       orderIndex: row.order_index,
       data: row,
     })),
-    // Only include standalone subcontractors (not linked to sheets/rows)
     ...subcontractorEstimates.filter(est => !est.sheet_id && !est.row_id).map(est => ({
       type: 'subcontractor' as const,
       id: est.id,
@@ -6880,6 +8032,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       data: est,
     })),
   ].sort((a, b) => a.orderIndex - b.orderIndex);
+
+  const changeOrderItemsUnsorted = changeOrderSheetBreakdowns.map(sheet => ({
+    type: 'material' as const,
+    id: sheet.sheetId,
+    orderIndex: sheet.orderIndex,
+    data: sheet,
+  })).sort((a, b) => a.orderIndex - b.orderIndex);
 
   // Split into required (included in total) and optional (excluded from total) for separate rendering
   const allItems = allItemsUnsorted.filter(item => !(item.type === 'material' && (item.data as any).isOptional));
@@ -6918,6 +8077,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       return;
     }
 
+    const inMain = allItemsUnsorted.some(i => i.id === active.id);
+    const inCo = changeOrderItemsUnsorted.some(i => i.id === active.id);
+    if (inCo) {
+      toast.error('Reorder change orders in the Change orders section below.');
+      return;
+    }
     const oldIndex = allItemsUnsorted.findIndex(item => item.id === active.id);
     const newIndex = allItemsUnsorted.findIndex(item => item.id === over.id);
 
@@ -6953,6 +8118,33 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       await loadData(true);
     } catch (error: any) {
       console.error('Error updating order:', error);
+      toast.error('Failed to update order');
+    }
+  }
+
+  async function handleDragEndChangeOrders(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    if (isReadOnly) {
+      toast.error('Cannot reorder in historical view');
+      return;
+    }
+    const sorted = [...changeOrderItemsUnsorted].sort((a, b) => a.orderIndex - b.orderIndex);
+    const oldIndex = sorted.findIndex((item) => item.id === active.id);
+    const newIndex = sorted.findIndex((item) => item.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(sorted, oldIndex, newIndex);
+    const orderValues = sorted.map((s) => s.orderIndex).slice().sort((a, b) => a - b);
+    try {
+      await Promise.all(
+        reordered.map((item, i) =>
+          supabase.from('material_sheets').update({ order_index: orderValues[i] ?? i }).eq('id', item.id)
+        )
+      );
+      toast.success('Change order order updated');
+      await loadData(true);
+    } catch (error: any) {
+      console.error('Error updating change order order:', error);
       toast.error('Failed to update order');
     }
   }
@@ -6993,8 +8185,21 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
               <CheckCircle className="w-2.5 h-2.5 mr-0.5" />Sent
             </Button>
           ) : (
-            <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Record when this proposal was sent to the customer (saves date/time and locks workbook)">
-              <Send className="w-2.5 h-2.5 mr-0.5" />Mark as Sent
+            <Button
+              size="sm"
+              onClick={markProposalAsSent}
+              disabled={isReadOnly || ((quote as any).is_change_order_proposal && !jobHasContract)}
+              className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2"
+              title={
+                (quote as any).is_change_order_proposal
+                  ? jobHasContract
+                    ? 'Send change order to customer for portal signing'
+                    : 'Set the main proposal as contract first'
+                  : 'Record when this proposal was sent to the customer (saves date/time and locks workbook)'
+              }
+            >
+              <Send className="w-2.5 h-2.5 mr-0.5" />
+              {(quote as any).is_change_order_proposal ? 'Send change order' : 'Mark as Sent'}
             </Button>
           )
         )}
@@ -7015,7 +8220,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       </div>
     );
     return () => { setProposalToolbar(null); };
-  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version, (quote as any)?.customer_signed_at]);
+  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version, (quote as any)?.customer_signed_at, jobHasContract, (quote as any)?.is_change_order_proposal]);
 
   // Sync proposal summary to green header bar (Proposal #, Materials, Labor, Grand Total)
   useEffect(() => {
@@ -7277,8 +8482,22 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                     <CheckCircle className="w-3 h-3 mr-2" />Sent
                   </Button>
                 ) : (
-                  <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} variant="outline" className="border-slate-400">
-                    <Send className="w-3 h-3 mr-2" />Mark as Sent
+                  <Button
+                    size="sm"
+                    onClick={markProposalAsSent}
+                    disabled={isReadOnly || ((quote as any).is_change_order_proposal && !jobHasContract)}
+                    variant="outline"
+                    className="border-slate-400"
+                    title={
+                      (quote as any).is_change_order_proposal
+                        ? jobHasContract
+                          ? 'Send change order to customer for portal signing'
+                          : 'Set the main proposal as contract first'
+                        : undefined
+                    }
+                  >
+                    <Send className="w-3 h-3 mr-2" />
+                    {(quote as any).is_change_order_proposal ? 'Send change order' : 'Mark as Sent'}
                   </Button>
                 )
               )}
@@ -7393,6 +8612,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                         setExpandedComparisons={setExpandedComparisons}
                         materialsBreakdown={materialsBreakdown}
                         setOptionalCategoryOverlay={setOptionalCategoryOverlay}
+                        onOpenCopyToChangeOrder={
+                          !isReadOnly && quote && !(quote as any).is_change_order_proposal && jobHasContract
+                            ? (sheetId: string, sheetName: string) => {
+                                setCopyCoSheetId(sheetId);
+                                setCopyCoSheetName(sheetName);
+                                setCopyCoRemoveFromProposal(true);
+                                setCopyCoDialogOpen(true);
+                              }
+                            : undefined
+                        }
                       />
                     ))}
                   </SortableContext>
@@ -7496,10 +8725,123 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                         setExpandedComparisons={setExpandedComparisons}
                         materialsBreakdown={materialsBreakdown}
                         setOptionalCategoryOverlay={setOptionalCategoryOverlay}
+                        onOpenCopyToChangeOrder={
+                          !isReadOnly && quote && !(quote as any).is_change_order_proposal && jobHasContract
+                            ? (sheetId: string, sheetName: string) => {
+                                setCopyCoSheetId(sheetId);
+                                setCopyCoSheetName(sheetName);
+                                setCopyCoRemoveFromProposal(true);
+                                setCopyCoDialogOpen(true);
+                              }
+                            : undefined
+                        }
                       />
                             ))}
                           </SortableContext>
                         </DndContext>
+                    </div>
+                  </div>
+                )}
+
+                {!jobHasContract && (
+                  <div className="mt-4 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2.5 text-sm text-slate-800">
+                    <strong className="text-slate-900">Change orders</strong> can only be{' '}
+                    <strong>created</strong> and <strong>sent</strong> after the main proposal is the contract. On the
+                    primary proposal, use toolbar <strong>Set as Contract</strong> (or the customer signs in the portal),
+                    then add change orders and send them.
+                  </div>
+                )}
+
+                {changeOrderItemsUnsorted.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex flex-wrap items-center gap-2 py-2 px-3 mb-2 rounded-lg bg-orange-50 border border-orange-200">
+                      <span className="text-sm font-semibold text-orange-900 uppercase tracking-wide">Change orders</span>
+                      <span className="text-xs text-orange-700 font-normal">
+                        {jobHasContract
+                          ? (
+                            <>
+                              Separate from the main contract. Use <strong className="font-semibold">⋮ → Send change orders to customer</strong> below, or{' '}
+                              <strong className="font-semibold">Send change order</strong> in the toolbar on the Change order proposal.
+                            </>
+                          ) : (
+                            <>Available after the main proposal is set as contract.</>
+                          )}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEndChangeOrders}
+                      >
+                        <SortableContext
+                          items={changeOrderItemsUnsorted.map((item) => item.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {changeOrderItemsUnsorted.map((item) => (
+                            <SortableRow
+                              key={item.id}
+                              item={item}
+                              changeOrderAlreadySent={!!allJobQuotes.find((q: any) => q.is_change_order_proposal)?.sent_at}
+                              onSendChangeOrdersToCustomer={sendChangeOrderProposalToCustomer}
+                              sendingCoToCustomer={sendingCoToCustomer}
+                              jobHasContract={jobHasContract}
+                              sheetMarkups={sheetMarkups}
+                              setSheetMarkups={setSheetMarkups}
+                              categoryMarkups={categoryMarkups}
+                              setCategoryMarkups={setCategoryMarkups}
+                              customRowLineItems={customRowLineItems}
+                              sheetLabor={sheetLabor}
+                              customRowLabor={customRowLabor}
+                              subcontractorLineItems={subcontractorLineItems}
+                              linkedSubcontractors={linkedSubcontractors}
+                              editingRowName={editingRowName}
+                              editingRowNameType={editingRowNameType}
+                              tempRowName={tempRowName}
+                              setTempRowName={setTempRowName}
+                              startEditingRowName={startEditingRowName}
+                              saveRowName={saveRowName}
+                              cancelEditingRowName={cancelEditingRowName}
+                              openSheetDescDialog={openSheetDescDialog}
+                              openLaborDialog={openLaborDialog}
+                              openAddDialog={openAddDialog}
+                              openLineItemDialog={openLineItemDialog}
+                              openSubcontractorDialog={openSubcontractorDialog}
+                              openAddSubcontractorLineItemDialog={openAddSubcontractorLineItemDialog}
+                              openEditSubcontractorLineItemDialog={openEditSubcontractorLineItemDialog}
+                              deleteRow={deleteRow}
+                              deleteSheetLabor={deleteSheetLabor}
+                              toggleSubcontractorLineItem={toggleSubcontractorLineItem}
+                              toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
+                              toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
+                              unlinkSubcontractor={unlinkSubcontractor}
+                              deleteSubcontractorSection={deleteSubcontractorSection}
+                              updateSubcontractorMarkup={updateSubcontractorMarkup}
+                              updateCustomRowMarkup={updateCustomRowMarkup}
+                              updateCustomRowBaseCost={updateCustomRowBaseCost}
+                              updateLineItemCost={updateLineItemCost}
+                              deleteLineItem={deleteLineItem}
+                              loadMaterialsData={loadMaterialsData}
+                              loadCustomRows={loadCustomRows}
+                              loadSubcontractorEstimates={loadSubcontractorEstimates}
+                              customRows={customRows}
+                              savingMarkupsRef={savingMarkupsRef}
+                              emptyNotesById={emptyNotesById}
+                              setEmptyNotesById={setEmptyNotesById}
+                              emptyScopeById={emptyScopeById}
+                              setEmptyScopeById={setEmptyScopeById}
+                              isReadOnly={isReadOnly}
+                              quote={quote}
+                              setComparePickerSheetId={setComparePickerSheetId}
+                              setShowComparePickerDialog={setShowComparePickerDialog}
+                              expandedComparisons={expandedComparisons}
+                              setExpandedComparisons={setExpandedComparisons}
+                              materialsBreakdown={materialsBreakdown}
+                              setOptionalCategoryOverlay={setOptionalCategoryOverlay}
+                            />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
                     </div>
                   </div>
                 )}
@@ -7618,7 +8960,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           <DialogHeader>
             <DialogTitle>Add line item to subcontractor</DialogTitle>
             <DialogDescription>
-              Add a custom material or labor line item to this subcontract section.
+              Add a custom material or labor line item. Use a negative unit price for a discount (e.g. quantity 1, unit price -500).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -7645,11 +8987,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 <Label>Unit price ($)</Label>
                 <Input
                   type="number"
-                  min="0"
                   step="0.01"
                   value={subLineItemUnitPrice}
                   onChange={(e) => setSubLineItemUnitPrice(e.target.value)}
-                  placeholder="0.00"
+                  placeholder="0.00 or negative for discount"
                 />
               </div>
             </div>
@@ -7685,7 +9026,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
           <DialogHeader>
             <DialogTitle>Edit line item</DialogTitle>
             <DialogDescription>
-              Change description, quantity, unit price, or type for this subcontractor line item.
+              Change description, quantity, or unit price. Negative unit prices are allowed for discounts.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -7712,11 +9053,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
                 <Label>Unit price ($)</Label>
                 <Input
                   type="number"
-                  min="0"
                   step="0.01"
                   value={subLineItemUnitPrice}
                   onChange={(e) => setSubLineItemUnitPrice(e.target.value)}
-                  placeholder="0.00"
+                  placeholder="0.00 or negative for discount"
                 />
               </div>
             </div>
@@ -8501,6 +9841,48 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-slate-500">Loading proposal...</div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={copyCoDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && copyCoRunning) return;
+          setCopyCoDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send section as change order</DialogTitle>
+            <DialogDescription>
+              &quot;{copyCoSheetName}&quot; will be added to the change order workbook. Customers see it only under{' '}
+              <strong>Change orders</strong> in the portal. Send the change order proposal from the office when you are
+              ready.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start gap-2 py-2">
+            <Checkbox
+              id="copy-co-remove"
+              checked={copyCoRemoveFromProposal}
+              onCheckedChange={(c) => setCopyCoRemoveFromProposal(!!c)}
+              disabled={copyCoRunning}
+            />
+            <Label htmlFor="copy-co-remove" className="text-sm font-normal leading-snug cursor-pointer">
+              Remove this section from the main proposal after copying (recommended so it is not double-counted)
+            </Label>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setCopyCoDialogOpen(false)} disabled={copyCoRunning}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={!copyCoSheetId || copyCoRunning}
+              onClick={() => copyCoSheetId && runCopySheetToCustomerChangeOrder(copyCoSheetId, copyCoRemoveFromProposal)}
+            >
+              {copyCoRunning ? 'Working…' : 'Copy to change orders'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

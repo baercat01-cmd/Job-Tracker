@@ -7,14 +7,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, EyeOff, Building2, Calendar, DollarSign, FileText, Image, Settings } from 'lucide-react';
+import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, Building2, Calendar, DollarSign, FileText, Image, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import {
+  insertCustomerPortalAccessRow,
+  portalSaveErrorMessage,
+  updateCustomerPortalAccessRow,
+  updateCustomerPortalAccessRowMinimal,
+} from '@/lib/customerPortalAccessDb';
 import { loadViewerLinksForJob } from '@/lib/viewer-links';
 import { toast } from 'sonner';
 import { computeProposalTotals } from '@/lib/proposalTotals';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CustomerPortalPreview } from './CustomerPortalPreview';
 
 interface CustomerPortalLink {
@@ -36,15 +43,42 @@ interface CustomerPortalLink {
   show_photos: boolean;
   show_financial_summary: boolean;
   show_line_item_prices?: boolean;
+  /** Per-section price visibility: { [sectionId]: true | false }. Omitted key = use global show_line_item_prices. */
+  show_section_prices?: Record<string, boolean> | null;
+  /** Per-proposal visibility overrides: { [quoteId]: { show_proposal?, show_section_prices?, ... } }. Customer sees these when viewing that proposal. */
+  visibility_by_quote?: Record<string, {
+    show_proposal?: boolean;
+    show_payments?: boolean;
+    show_schedule?: boolean;
+    show_documents?: boolean;
+    show_photos?: boolean;
+    show_financial_summary?: boolean;
+    show_line_item_prices?: boolean;
+    show_section_prices?: Record<string, boolean>;
+  }> | null;
   custom_message: string | null;
 }
 
-// Full select including show_line_item_prices (use fallback if column not in schema yet)
+// Full select including show_line_item_prices and show_section_prices (use fallback if columns not in schema yet)
 const CUSTOMER_PORTAL_ACCESS_SELECT =
-  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,custom_message';
+  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,show_section_prices,visibility_by_quote,custom_message';
 // Fallback when show_line_item_prices column is missing (PGRST204 / migration not run)
 const CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
+
+/** RPC/jsonb NOT NULL: never pass null for show_section_prices (some DBs use NOT NULL jsonb). */
+function sectionPricesJsonForRpc(
+  primary: Record<string, boolean> | null | undefined,
+  preserveWhenPerQuote?: Record<string, boolean> | null | undefined
+): Record<string, boolean> {
+  if (primary && typeof primary === 'object' && !Array.isArray(primary) && Object.keys(primary).length > 0) {
+    return { ...primary };
+  }
+  if (preserveWhenPerQuote && typeof preserveWhenPerQuote === 'object' && !Array.isArray(preserveWhenPerQuote)) {
+    return { ...preserveWhenPerQuote };
+  }
+  return {};
+}
 
 interface CustomerPortalManagementProps {
   job: Job;
@@ -85,6 +119,8 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
   const [showPhotos, setShowPhotos] = useState(true);
   const [showFinancialSummary, setShowFinancialSummary] = useState(true);
   const [showLineItemPrices, setShowLineItemPrices] = useState(false);
+  /** Per-section price visibility. When undefined for a section, fall back to showLineItemPrices. */
+  const [showSectionPrices, setShowSectionPrices] = useState<Record<string, boolean>>({});
   const [customMessage, setCustomMessage] = useState('');
 
   // Preview state
@@ -93,9 +129,13 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewSettings, setPreviewSettings] = useState<any>(null);
 
-  // Proposal line items visibility (for "Hide from customer portal" toggles)
-  const [proposalLineItems, setProposalLineItems] = useState<{ rows: Array<{ id: string; description?: string; category?: string; sheet_id?: string; items: Array<{ id: string; description?: string; hide_from_customer?: boolean }> }> }>({ rows: [] });
-  const [proposalLineItemsLoading, setProposalLineItemsLoading] = useState(false);
+  // Section list for per-section price visibility (material sheets, custom rows, subcontractors)
+  const [sectionList, setSectionList] = useState<Array<{ id: string; name: string; type: 'material' | 'custom' | 'subcontractor' }>>([]);
+  const [sectionListLoading, setSectionListLoading] = useState(false);
+  // Proposals (quotes) for this job — used so visibility can be set per proposal
+  const [jobQuotes, setJobQuotes] = useState<Array<{ id: string; proposal_number?: string; quote_number?: string }>>([]);
+  /** Which proposal's visibility we're editing. When set, section list and form sync from visibility_by_quote[this]. */
+  const [selectedQuoteIdForVisibility, setSelectedQuoteIdForVisibility] = useState<string | null>(null);
 
   // Mount once — jobId is frozen, so these never need to re-run
   useEffect(() => {
@@ -110,85 +150,142 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     loadPreviewData(false);
   }, [loading, customerName]);
 
-  // When a saved link is found, sync the form from it
+  // Load job quotes when we have a link so we can offer per-proposal visibility
+  useEffect(() => {
+    if (!jobId || !portalLinks.some(l => l.job_id === jobId)) return;
+    (async () => {
+      const { data } = await supabase.from('quotes').select('id, proposal_number, quote_number').eq('job_id', jobId).order('created_at', { ascending: false });
+      const list = (data || []).map((q: any) => ({ id: q.id, proposal_number: q.proposal_number, quote_number: q.quote_number }));
+      setJobQuotes(list);
+      setSelectedQuoteIdForVisibility((prev) => (prev && list.some((q: any) => q.id === prev)) ? prev : (list[0]?.id ?? null));
+    })();
+  }, [jobId, portalLinks]);
+
+  // When a saved link is found, sync the form from it (use per-quote visibility if editing that proposal)
   useEffect(() => {
     const link = portalLinks.find(l => l.job_id === jobId);
     if (!link) return;
     setCustomerName(link.customer_name ?? '');
     setCustomerEmail(link.customer_email || '');
     setCustomerPhone(link.customer_phone || '');
-    setShowProposal(link.show_proposal === true);
-    setShowPayments(link.show_payments === true);
-    setShowSchedule(link.show_schedule === true);
-    setShowDocuments(link.show_documents === true);
-    setShowPhotos(link.show_photos === true);
-    setShowFinancialSummary(link.show_financial_summary === true);
-    setShowLineItemPrices(link.show_line_item_prices === true);
-    setCustomMessage(link.custom_message || '');
     setExpiresInDays(link.expires_at ? '' : '');
-  }, [portalLinks]);
+    setCustomMessage(link.custom_message || '');
+    const perQuote = selectedQuoteIdForVisibility && link.visibility_by_quote && typeof link.visibility_by_quote === 'object' && !Array.isArray(link.visibility_by_quote)
+      ? (link.visibility_by_quote as Record<string, any>)[selectedQuoteIdForVisibility]
+      : null;
+    if (perQuote && typeof perQuote === 'object') {
+      setShowProposal(perQuote.show_proposal === true);
+      setShowPayments(perQuote.show_payments === true);
+      setShowSchedule(perQuote.show_schedule === true);
+      setShowDocuments(perQuote.show_documents === true);
+      setShowPhotos(perQuote.show_photos === true);
+      setShowFinancialSummary(perQuote.show_financial_summary === true);
+      setShowLineItemPrices(perQuote.show_line_item_prices === true);
+      const raw = perQuote.show_section_prices;
+      setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
+    } else {
+      setShowProposal(link.show_proposal === true);
+      setShowPayments(link.show_payments === true);
+      setShowSchedule(link.show_schedule === true);
+      setShowDocuments(link.show_documents === true);
+      setShowPhotos(link.show_photos === true);
+      setShowFinancialSummary(link.show_financial_summary === true);
+      setShowLineItemPrices(link.show_line_item_prices === true);
+      const raw = link.show_section_prices;
+      setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
+    }
+  }, [portalLinks, selectedQuoteIdForVisibility]);
 
   useEffect(() => {
-    loadProposalLineItems();
-  }, []);
+    if (!jobId || !portalLinks.some(l => l.job_id === jobId)) return;
+    const quoteId = selectedQuoteIdForVisibility ?? jobQuotes[0]?.id ?? null;
+    loadSectionList(quoteId);
+  }, [jobId, portalLinks, selectedQuoteIdForVisibility, jobQuotes]);
 
-  async function loadProposalLineItems() {
-    setProposalLineItemsLoading(true);
+  /** Load section list to match the proposal: same quote, same workbook resolution and merge/dedupe as customer portal. */
+  async function loadSectionList(quoteIdOverride?: string | null) {
+    setSectionListLoading(true);
     try {
-      const { data: quotes } = await supabase
-        .from('quotes')
-        .select('id')
-        .eq('job_id', jobId)
-        .order('created_at', { ascending: false });
-      const quoteId = (quotes && quotes[0]) ? quotes[0].id : null;
-      if (!quoteId) {
-        setProposalLineItems({ rows: [] });
-        return;
+      const sections: Array<{ id: string; name: string; type: 'material' | 'custom' | 'subcontractor' }> = [];
+      let quoteId = quoteIdOverride ?? null;
+      if (quoteId == null) {
+        const { data: quotes } = await supabase.from('quotes').select('id').eq('job_id', jobId).order('created_at', { ascending: false });
+        quoteId = (quotes && quotes[0]) ? quotes[0].id : null;
       }
-      const [quoteRows, jobRows] = await Promise.all([
-        supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('quote_id', quoteId).order('order_index'),
-        supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
-      ]);
-      const quoteRowIds = new Set((quoteRows.data || []).map((r: any) => r.id));
-      const jobOnlyRows = (jobRows.data || []).filter((r: any) => !quoteRowIds.has(r.id));
-      const allRows = [...(quoteRows.data || []), ...jobOnlyRows].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
-      const rowsWithItems = allRows.map((row: any) => ({
-        id: row.id,
-        description: row.description || row.category,
-        category: row.category,
-        sheet_id: row.sheet_id,
-        items: ((row.custom_financial_row_items || []) as any[])
-          .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
-          .map((i: any) => ({ id: i.id, description: i.description, hide_from_customer: !!i.hide_from_customer })),
-      }));
-      setProposalLineItems({ rows: rowsWithItems });
-    } catch (e) {
-      console.error('Load proposal line items:', e);
-      setProposalLineItems({ rows: [] });
-    } finally {
-      setProposalLineItemsLoading(false);
-    }
-  }
 
-  async function setLineItemVisibleToCustomer(lineItemId: string, visible: boolean) {
-    try {
-      const { error } = await supabase
-        .from('custom_financial_row_items')
-        .update({ hide_from_customer: !visible })
-        .eq('id', lineItemId);
-      if (error) throw error;
-      setProposalLineItems((prev) => ({
-        rows: prev.rows.map((row) => ({
-          ...row,
-          items: row.items.map((it) =>
-            it.id === lineItemId ? { ...it, hide_from_customer: !visible } : it
-          ),
-        })),
-      }));
-      toast.success(visible ? 'Line item will show in portal' : 'Line item hidden from portal');
-    } catch (e: any) {
-      console.error('Update line item visibility:', e);
-      toast.error(e?.message || 'Failed to update');
+      // Material sheets: use same workbook resolution as proposal (working → any status → null-quote → any job workbook)
+      let workbookData: { id: string } | null = null;
+      if (quoteId) {
+        const { data: wb } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).eq('quote_id', quoteId).eq('status', 'working').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        workbookData = wb ?? null;
+        if (!workbookData) {
+          const { data: wb2 } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).eq('quote_id', quoteId).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+          workbookData = wb2 ?? null;
+        }
+      }
+      if (!workbookData) {
+        const { data: wb } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).is('quote_id', null).eq('status', 'working').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        workbookData = wb ?? null;
+      }
+      if (!workbookData) {
+        const { data: allWbs } = await supabase.from('material_workbooks').select('id').eq('job_id', jobId).order('status', { ascending: false }).order('updated_at', { ascending: false });
+        workbookData = (allWbs || [])[0] ?? null;
+      }
+      if (workbookData) {
+        const { data: sheets } = await supabase.from('material_sheets').select('id, sheet_name, order_index').eq('workbook_id', workbookData.id).order('order_index');
+        (sheets || []).forEach((s: any) => sections.push({ id: s.id, name: s.sheet_name || 'Section', type: 'material' }));
+      }
+
+      // Linked custom rows (sheet_id set) — e.g. "Stain & Labor for ceiling" — so office can hide/show price per section
+      if (quoteId) {
+        const [quoteLinked, jobLinked] = await Promise.all([
+          supabase.from('custom_financial_rows').select('id, description, category, order_index, sheet_id').eq('quote_id', quoteId).not('sheet_id', 'is', null).order('order_index'),
+          supabase.from('custom_financial_rows').select('id, description, category, order_index, sheet_id').eq('job_id', jobId).is('quote_id', null).not('sheet_id', 'is', null).order('order_index'),
+        ]);
+        const quoteLinkedIds = new Set((quoteLinked.data || []).map((r: any) => r.id));
+        const jobOnlyLinked = (jobLinked.data || []).filter((r: any) => !quoteLinkedIds.has(r.id));
+        const linkedRows = [...(quoteLinked.data || []), ...jobOnlyLinked].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        linkedRows.forEach((r: any) => sections.push({ id: r.id, name: r.description || r.category || 'Custom row', type: 'custom' }));
+      } else {
+        const { data: linkedRows } = await supabase.from('custom_financial_rows').select('id, description, category, order_index').eq('job_id', jobId).not('sheet_id', 'is', null).order('order_index');
+        (linkedRows || []).forEach((r: any) => sections.push({ id: r.id, name: r.description || r.category || 'Custom row', type: 'custom' }));
+      }
+
+      // Standalone custom rows (no sheet_id)
+      if (quoteId) {
+        const [quoteRows, jobRows] = await Promise.all([
+          supabase.from('custom_financial_rows').select('id, description, category, order_index').eq('quote_id', quoteId).is('sheet_id', null).order('order_index'),
+          supabase.from('custom_financial_rows').select('id, description, category, order_index').eq('job_id', jobId).is('quote_id', null).is('sheet_id', null).order('order_index'),
+        ]);
+        const quoteIds = new Set((quoteRows.data || []).map((r: any) => r.id));
+        const jobOnly = (jobRows.data || []).filter((r: any) => !quoteIds.has(r.id));
+        const customRows = [...(quoteRows.data || []), ...jobOnly].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        customRows.forEach((r: any) => sections.push({ id: r.id, name: r.description || r.category || 'Custom row', type: 'custom' }));
+      } else {
+        const { data: customRows } = await supabase.from('custom_financial_rows').select('id, description, category, order_index').eq('job_id', jobId).is('sheet_id', null).order('order_index');
+        (customRows || []).forEach((r: any) => sections.push({ id: r.id, name: r.description || r.category || 'Custom row', type: 'custom' }));
+      }
+
+      // Subcontractors: quote + job-only, deduped by id, standalone only (same as proposal)
+      if (quoteId) {
+        const [quoteSubs, jobSubs] = await Promise.all([
+          supabase.from('subcontractor_estimates').select('id, company_name, order_index').eq('quote_id', quoteId).is('sheet_id', null).is('row_id', null).order('order_index'),
+          supabase.from('subcontractor_estimates').select('id, company_name, order_index').eq('job_id', jobId).is('quote_id', null).is('sheet_id', null).is('row_id', null).order('order_index'),
+        ]);
+        const quoteSubIds = new Set((quoteSubs.data || []).map((r: any) => r.id));
+        const jobOnlySubs = (jobSubs.data || []).filter((r: any) => !quoteSubIds.has(r.id));
+        const subs = [...(quoteSubs.data || []), ...jobOnlySubs].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        subs.forEach((s: any) => sections.push({ id: s.id, name: s.company_name || 'Subcontractor', type: 'subcontractor' }));
+      } else {
+        const { data: subs } = await supabase.from('subcontractor_estimates').select('id, company_name, order_index').eq('job_id', jobId).is('sheet_id', null).is('row_id', null).order('order_index');
+        (subs || []).forEach((s: any) => sections.push({ id: s.id, name: s.company_name || 'Subcontractor', type: 'subcontractor' }));
+      }
+
+      setSectionList(sections);
+    } catch {
+      setSectionList([]);
+    } finally {
+      setSectionListLoading(false);
     }
   }
 
@@ -398,6 +495,27 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         console.log('  No expiration (permanent link)');
       }
 
+      // Which proposal's visibility row to write. Single-quote jobs often have selectedQuoteId still null before effects run — resolve so Save persists.
+      let quoteForSave = selectedQuoteIdForVisibility ?? null;
+      if (!quoteForSave && jobQuotes.length === 1) quoteForSave = jobQuotes[0].id;
+      if (!quoteForSave && isUpdate) {
+        const { data: qr } = await supabase
+          .from('quotes')
+          .select('id')
+          .eq('job_id', jobIdToUse)
+          .order('created_at', { ascending: false })
+          .limit(2);
+        if (qr?.length === 1) quoteForSave = qr[0].id;
+      }
+      /** When set on UPDATE, we PATCH visibility_by_quote. When undefined, omit / RPC null so DB is not wiped with {}. */
+      const visibilityPatch: Record<string, unknown> | undefined =
+        isUpdate && quoteForSave
+          ? (mergeVisibilityForQuote(quoteForSave, {}) as Record<string, unknown>)
+          : isUpdate
+            ? undefined
+            : quoteForSave
+              ? (mergeVisibilityForQuote(quoteForSave, {}) as Record<string, unknown>)
+              : {};
       const portalData = {
         job_id: jobIdToUse,
         customer_identifier: customerEmail.trim().toLowerCase(),
@@ -415,6 +533,13 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
         show_line_item_prices: showLineItemPrices,
+        show_section_prices: sectionPricesJsonForRpc(showSectionPrices),
+        visibility_by_quote:
+          visibilityPatch !== undefined
+            ? visibilityPatch
+            : isUpdate
+              ? ((existingLink!.visibility_by_quote as Record<string, unknown>) ?? {})
+              : {},
         custom_message: customMessage?.trim() || null,
         updated_at: new Date().toISOString(),
       };
@@ -425,12 +550,9 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       let data: any;
       let error: any;
 
-      const isColumnError = (e: any) =>
-        e?.code === 'PGRST204' || (e?.message && /show_line_item_prices|column.*exist|schema cache/i.test(String(e.message)));
-
-      // Try direct table access first (no RPC/schema cache). If blocked by RLS (42501), try RPC.
+      // Direct REST on customer_portal_access only (no RPC — avoids PostgREST schema cache on functions).
       if (isUpdate) {
-        const updatePayload = {
+        const updatePayload: Record<string, unknown> = {
           customer_identifier: portalData.customer_identifier,
           customer_name: portalData.customer_name,
           customer_email: portalData.customer_email,
@@ -444,143 +566,50 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           show_photos: portalData.show_photos,
           show_financial_summary: portalData.show_financial_summary,
           show_line_item_prices: portalData.show_line_item_prices,
+          show_section_prices: sectionPricesJsonForRpc(portalData.show_section_prices as Record<string, boolean> | null),
           custom_message: portalData.custom_message,
-          updated_at: portalData.updated_at,
         };
-        let direct = await supabase
-          .from('customer_portal_access')
-          .update(updatePayload)
-          .eq('id', existingLink!.id)
-          .select(CUSTOMER_PORTAL_ACCESS_SELECT)
-          .single();
-        data = direct.data;
-        error = direct.error;
-        if (error && isColumnError(error)) {
-          const { show_line_item_prices: _dropped, ...payloadWithout } = updatePayload as any;
-          direct = await supabase
-            .from('customer_portal_access')
-            .update(payloadWithout)
-            .eq('id', existingLink!.id)
-            .select(CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK)
-            .single();
-          data = direct.data;
-          error = direct.error;
-          if (!error && data) (data as any).show_line_item_prices = false;
+        if (visibilityPatch !== undefined) {
+          updatePayload.visibility_by_quote = visibilityPatch;
         }
-        if (error?.code === '42501' || error?.code === 'PGRST116') {
-          let rpcResult = await supabase.rpc('update_customer_portal_link', {
-            p_id: existingLink!.id,
-            p_customer_identifier: portalData.customer_identifier,
-            p_customer_name: portalData.customer_name,
-            p_customer_email: portalData.customer_email,
-            p_customer_phone: portalData.customer_phone,
-            p_is_active: portalData.is_active,
-            p_expires_at: portalData.expires_at,
-            p_show_proposal: portalData.show_proposal,
-            p_show_payments: portalData.show_payments,
-            p_show_schedule: portalData.show_schedule,
-            p_show_documents: portalData.show_documents,
-            p_show_photos: portalData.show_photos,
-            p_show_financial_summary: portalData.show_financial_summary,
-            p_show_line_item_prices: portalData.show_line_item_prices,
-            p_custom_message: portalData.custom_message,
-          });
-          if (rpcResult.error && (rpcResult.error?.code === '42883' || /unknown function|argument|does not exist/i.test(String(rpcResult.error?.message)))) {
-            rpcResult = await supabase.rpc('update_customer_portal_link', {
-              p_id: existingLink!.id,
-              p_customer_identifier: portalData.customer_identifier,
-              p_customer_name: portalData.customer_name,
-              p_customer_email: portalData.customer_email,
-              p_customer_phone: portalData.customer_phone,
-              p_is_active: portalData.is_active,
-              p_expires_at: portalData.expires_at,
-              p_show_proposal: portalData.show_proposal,
-              p_show_payments: portalData.show_payments,
-              p_show_schedule: portalData.show_schedule,
-              p_show_documents: portalData.show_documents,
-              p_show_photos: portalData.show_photos,
-              p_show_financial_summary: portalData.show_financial_summary,
-              p_custom_message: portalData.custom_message,
-            });
-          }
-          if (!rpcResult.error) {
-            data = rpcResult.data;
-            error = null;
-          } else {
-            data = rpcResult.data;
-            error = rpcResult.error;
-          }
+        const up = await updateCustomerPortalAccessRow(
+          existingLink!.id,
+          updatePayload,
+          CUSTOMER_PORTAL_ACCESS_SELECT,
+          CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK
+        );
+        data = up.data;
+        error = up.error;
+        if (up.error && String((up.error as any)?.code) === '23502') {
+          const retryPayload = {
+            ...updatePayload,
+            show_section_prices: sectionPricesJsonForRpc(
+              portalData.show_section_prices as Record<string, boolean> | null,
+              existingLink?.show_section_prices as Record<string, boolean> | null
+            ),
+            visibility_by_quote:
+              visibilityPatch !== undefined
+                ? visibilityPatch
+                : ((existingLink!.visibility_by_quote as Record<string, unknown>) ?? {}),
+          };
+          const up2 = await updateCustomerPortalAccessRow(
+            existingLink!.id,
+            retryPayload,
+            CUSTOMER_PORTAL_ACCESS_SELECT,
+            CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK
+          );
+          data = up2.data;
+          error = up2.error;
         }
       } else {
         const insertPayload = { ...portalData, created_by: profile?.id };
-        let direct = await supabase
-          .from('customer_portal_access')
-          .insert([insertPayload])
-          .select(CUSTOMER_PORTAL_ACCESS_SELECT)
-          .single();
-        data = direct.data;
-        error = direct.error;
-        if (error && isColumnError(error)) {
-          const { show_line_item_prices: _dropped, ...payloadWithout } = insertPayload as any;
-          direct = await supabase
-            .from('customer_portal_access')
-            .insert([payloadWithout])
-            .select(CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK)
-            .single();
-          data = direct.data;
-          error = direct.error;
-          if (!error && data) (data as any).show_line_item_prices = false;
-        }
-        if (error?.code === '42501' || error?.code === 'PGRST116') {
-          let rpcResult = await supabase.rpc('create_customer_portal_link', {
-            p_job_id: portalData.job_id,
-            p_customer_identifier: portalData.customer_identifier,
-            p_access_token: portalData.access_token,
-            p_customer_name: portalData.customer_name,
-            p_customer_email: portalData.customer_email,
-            p_customer_phone: portalData.customer_phone,
-            p_is_active: portalData.is_active,
-            p_expires_at: portalData.expires_at,
-            p_created_by: profile?.id,
-            p_show_proposal: portalData.show_proposal,
-            p_show_payments: portalData.show_payments,
-            p_show_schedule: portalData.show_schedule,
-            p_show_documents: portalData.show_documents,
-            p_show_photos: portalData.show_photos,
-            p_show_financial_summary: portalData.show_financial_summary,
-            p_show_line_item_prices: portalData.show_line_item_prices,
-            p_custom_message: portalData.custom_message,
-          });
-          if (rpcResult.error && (rpcResult.error?.code === '42883' || /unknown function|argument|does not exist/i.test(String(rpcResult.error?.message)))) {
-            const createParams: Record<string, unknown> = {
-              p_job_id: portalData.job_id,
-              p_customer_identifier: portalData.customer_identifier,
-              p_access_token: portalData.access_token,
-              p_customer_name: portalData.customer_name,
-              p_customer_email: portalData.customer_email,
-              p_customer_phone: portalData.customer_phone,
-              p_is_active: portalData.is_active,
-              p_expires_at: portalData.expires_at,
-              p_created_by: profile?.id,
-              p_show_proposal: portalData.show_proposal,
-              p_show_payments: portalData.show_payments,
-              p_show_schedule: portalData.show_schedule,
-              p_show_documents: portalData.show_documents,
-              p_show_photos: portalData.show_photos,
-              p_show_financial_summary: portalData.show_financial_summary,
-              p_custom_message: portalData.custom_message,
-            };
-            delete createParams.p_show_line_item_prices;
-            rpcResult = await supabase.rpc('create_customer_portal_link', createParams as any);
-          }
-          if (!rpcResult.error) {
-            data = rpcResult.data;
-            error = null;
-          } else {
-            data = rpcResult.data;
-            error = rpcResult.error;
-          }
-        }
+        const ins = await insertCustomerPortalAccessRow(
+          insertPayload,
+          CUSTOMER_PORTAL_ACCESS_SELECT,
+          CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK
+        );
+        data = ins.data;
+        error = ins.error;
       }
 
       if (error) {
@@ -603,15 +632,17 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
             '❌ Invalid job or user reference\n\nPlease refresh the page and try again.',
             { duration: 6000 }
           );
-        } else if (error.code === '42501') {
+        } else if (error.code === '42501' || String(error.code) === 'PORTAL_UPDATE_0_ROWS') {
+          toast.error(portalSaveErrorMessage(error), { duration: 10000 });
+        } else if (
+          error.code === 'PGRST202' ||
+          error.code === '42883' ||
+          (/could not find the function|function public\.(update|create)_customer_portal/i.test(String(error.message || '')) &&
+            !/column/i.test(String(error.message || '')))
+        ) {
           toast.error(
-            '❌ Database is blocking this action.\n\nRun scripts/fix-customer-portal-access-rls.sql in the Supabase SQL Editor (same project as this app) to allow portal links. If that does not fix it, also run scripts/create-portal-link-rpc.sql.',
-            { duration: 8000 }
-          );
-        } else if (error.code === 'PGRST202' || error.code === '42883' || (error.message && error.message.includes('does not exist'))) {
-          toast.error(
-            '❌ API can\'t see the portal link function.\n\n1. Run scripts/create-portal-link-rpc.sql in Supabase SQL Editor (same project as this app).\n2. Go to Project Settings → General → click "Restart project".\n3. Wait for the project to finish restarting, then try again.',
-            { duration: 10000 }
+            '❌ API can\'t see the portal link function.\n\n1. In Supabase → SQL Editor, run supabase/migrations/20250335000000_customer_portal_create_update_link_rpcs.sql (or scripts/create-portal-link-rpc.sql).\n2. Project Settings → General → Restart project, wait 1–2 minutes.\n3. Confirm your app .env VITE_SUPABASE_URL matches that project.\n4. Try Save again.',
+            { duration: 16000 }
           );
         } else if (error.code === 'PGRST204' || (error.message && /show_line_item_prices|schema cache/i.test(String(error.message)))) {
           toast.error(
@@ -642,9 +673,13 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         toast.success(`✅ Customer portal link created for ${job.name}`, { duration: 3000 });
       }
 
-      // Optimistically set the link from the create response so the UI shows it even if loadPortalLinks RPC returns a different shape
+      // Optimistically set the link from the create/update response so the UI shows it even if loadPortalLinks RPC returns a different shape. Preserve visibility so form doesn't flash wrong values.
       if (data && typeof data === 'object' && (data.job_id != null || data.id != null)) {
-        const newLink = { ...data, show_line_item_prices: (data as any).show_line_item_prices ?? false } as CustomerPortalLink;
+        const newLink = {
+          ...data,
+          show_line_item_prices: (data as any).show_line_item_prices ?? false,
+          visibility_by_quote: (data as any).visibility_by_quote ?? (portalData as any).visibility_by_quote ?? (existingLink as any)?.visibility_by_quote,
+        } as CustomerPortalLink;
         setPortalLinks((prev) => {
           const rest = prev.filter((l) => l.job_id !== jobIdToUse);
           return [newLink, ...rest];
@@ -652,16 +687,43 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       }
 
       setShowCreateDialog(false);
-      resetForm();
+      // Only reset form when creating a new link; when updating, keep current visibility toggles so they match what was just saved
+      if (!isUpdate) resetForm();
       await loadPortalLinks();
 
-      // Use token from the row we just saved so we never copy a wrong-job link
-      const tokenToCopy = data?.access_token ?? token;
-      const portalUrl = `${window.location.origin}/customer-portal?token=${tokenToCopy}`;
-      await navigator.clipboard.writeText(portalUrl);
-      toast.success(isUpdate ? 'Portal URL copied (unchanged).' : '🔗 Portal link copied to clipboard!', { duration: 3000 });
+      if (isUpdate) {
+        if (quoteForSave) {
+          setSelectedQuoteIdForVisibility((prev) => prev || quoteForSave);
+        }
+        setPortalLinks((prev) =>
+          prev.map((l) =>
+            l.job_id === jobIdToUse
+              ? ({
+                  ...l,
+                  show_proposal: portalData.show_proposal,
+                  show_payments: portalData.show_payments,
+                  show_schedule: portalData.show_schedule,
+                  show_documents: portalData.show_documents,
+                  show_photos: portalData.show_photos,
+                  show_financial_summary: portalData.show_financial_summary,
+                  show_line_item_prices: portalData.show_line_item_prices,
+                  show_section_prices: portalData.show_section_prices,
+                  visibility_by_quote:
+                    visibilityPatch !== undefined ? visibilityPatch : l.visibility_by_quote,
+                } as CustomerPortalLink)
+              : l
+          )
+        );
+      }
 
-      console.log('[PortalMgmt] Copied URL for job_id=', jobIdToUse, 'token=', tokenToCopy?.slice(0, 8) + '...');
+      // Copy URL only when creating a new link — on update, copying + "unchanged" looked like saves were ignored
+      if (!isUpdate) {
+        const tokenToCopy = data?.access_token ?? token;
+        const portalUrl = `${window.location.origin}/customer-portal?token=${tokenToCopy}`;
+        await navigator.clipboard.writeText(portalUrl);
+        toast.success('🔗 Portal link copied to clipboard!', { duration: 3000 });
+        console.log('[PortalMgmt] Copied URL for job_id=', jobIdToUse, 'token=', tokenToCopy?.slice(0, 8) + '...');
+      }
     } catch (error: any) {
       console.error('❌ Unexpected error creating portal link:', error);
       console.error('  Error type:', error.constructor.name);
@@ -677,11 +739,16 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
   async function updatePortalSettings() {
     if (!selectedLink) return;
 
-    const isColumnError = (e: any) =>
-      e?.code === 'PGRST204' || (e?.message && /show_line_item_prices|column.*exist|schema cache/i.test(String(e.message)));
-
     try {
-      const updatePayload = {
+      const sectionPricesSafe = sectionPricesJsonForRpc(
+        showSectionPrices as Record<string, boolean> | null,
+        selectedLink.show_section_prices as Record<string, boolean> | null
+      );
+      const visibilitySafe =
+        selectedLink.visibility_by_quote && typeof selectedLink.visibility_by_quote === 'object'
+          ? selectedLink.visibility_by_quote
+          : {};
+      const updatePayload: Record<string, unknown> = {
         show_proposal: showProposal,
         show_payments: showPayments,
         show_schedule: showSchedule,
@@ -689,59 +756,20 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
         show_line_item_prices: showLineItemPrices,
+        show_section_prices: sectionPricesSafe,
+        visibility_by_quote: visibilitySafe,
         custom_message: customMessage || null,
       };
-      let result = await supabase
-        .from('customer_portal_access')
-        .update(updatePayload)
-        .eq('id', selectedLink.id);
-      if (result.error && isColumnError(result.error)) {
-        const { show_line_item_prices: _dropped, ...payloadWithout } = updatePayload as any;
-        result = await supabase
-          .from('customer_portal_access')
-          .update(payloadWithout)
-          .eq('id', selectedLink.id);
-      }
-      if (result.error?.code === '42501') {
-        result = await supabase.rpc('update_customer_portal_link', {
-          p_id: selectedLink.id,
-          p_customer_identifier: selectedLink.customer_identifier,
-          p_customer_name: selectedLink.customer_name,
-          p_customer_email: selectedLink.customer_email ?? '',
-          p_customer_phone: selectedLink.customer_phone,
-          p_is_active: selectedLink.is_active,
-          p_expires_at: selectedLink.expires_at,
-          p_show_proposal: showProposal,
-          p_show_payments: showPayments,
-          p_show_schedule: showSchedule,
-          p_show_documents: showDocuments,
-          p_show_photos: showPhotos,
-          p_show_financial_summary: showFinancialSummary,
-          p_show_line_item_prices: showLineItemPrices,
-          p_custom_message: customMessage || null,
+      let { error } = await updateCustomerPortalAccessRowMinimal(selectedLink.id, updatePayload);
+      if (error && String((error as any)?.code) === '23502') {
+        const r2 = await updateCustomerPortalAccessRowMinimal(selectedLink.id, {
+          ...updatePayload,
+          show_section_prices: sectionPricesSafe,
+          visibility_by_quote: visibilitySafe,
         });
-        if (result.error && (result.error?.code === '42883' || /unknown function|argument|does not exist/i.test(String(result?.error?.message)))) {
-          const rpcPayload: Record<string, unknown> = {
-            p_id: selectedLink.id,
-            p_customer_identifier: selectedLink.customer_identifier,
-            p_customer_name: selectedLink.customer_name,
-            p_customer_email: selectedLink.customer_email ?? '',
-            p_customer_phone: selectedLink.customer_phone,
-            p_is_active: selectedLink.is_active,
-            p_expires_at: selectedLink.expires_at,
-            p_show_proposal: showProposal,
-            p_show_payments: showPayments,
-            p_show_schedule: showSchedule,
-            p_show_documents: showDocuments,
-            p_show_photos: showPhotos,
-            p_show_financial_summary: showFinancialSummary,
-            p_custom_message: customMessage || null,
-          };
-          delete rpcPayload.p_show_line_item_prices;
-          result = await supabase.rpc('update_customer_portal_link', rpcPayload as any);
-        }
+        error = r2.error;
       }
-      if (result.error) throw result.error;
+      if (error) throw Object.assign(new Error(portalSaveErrorMessage(error)), { cause: error });
 
       toast.success('Portal settings updated');
       setShowSettingsDialog(false);
@@ -752,90 +780,172 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     }
   }
 
+  /**
+   * Build visibility_by_quote for the selected proposal. Uses current form state as source of truth
+   * (then applies overrides). Do NOT use `base.field ?? form` — stored `false` is not nullish, so that
+   * pattern ignored toggles from true→false or false→true and made "Save changes" appear to revert.
+   */
+  function mergeVisibilityForQuote(
+    quoteId: string,
+    overrides: Partial<{ show_proposal: boolean; show_payments: boolean; show_schedule: boolean; show_documents: boolean; show_photos: boolean; show_financial_summary: boolean; show_line_item_prices: boolean; show_section_prices: Record<string, boolean> }>
+  ) {
+    const link = portalLinks.find((l: any) => l.job_id === jobId);
+    const prev =
+      link?.visibility_by_quote && typeof link.visibility_by_quote === 'object' && !Array.isArray(link.visibility_by_quote)
+        ? { ...(link.visibility_by_quote as Record<string, any>) }
+        : {};
+    const fromForm = {
+      show_proposal: showProposal,
+      show_payments: showPayments,
+      show_schedule: showSchedule,
+      show_documents: showDocuments,
+      show_photos: showPhotos,
+      show_financial_summary: showFinancialSummary,
+      show_line_item_prices: showLineItemPrices,
+      show_section_prices: { ...showSectionPrices },
+    };
+    prev[quoteId] = { ...fromForm, ...overrides };
+    return prev;
+  }
+
   /** Auto-save a single visibility toggle the moment it changes (only when a link already exists). */
   async function autoSaveVisibility(field: string, newValue: boolean) {
     const link = portalLinks.find((l: any) => l.job_id === jobId);
     if (!link) return; // No existing link yet — will be saved when "Save & create link" is clicked
 
-    const updated = {
+    const sectionPricesSafe = sectionPricesJsonForRpc(
+      showSectionPrices as Record<string, boolean> | null,
+      link.show_section_prices as Record<string, boolean> | null
+    );
+    const linePricesVal = field === 'show_line_item_prices' ? newValue : showLineItemPrices;
+    let quoteIdForAutosave =
+      selectedQuoteIdForVisibility ?? (jobQuotes.length === 1 ? jobQuotes[0].id : null);
+    if (!quoteIdForAutosave) {
+      const { data: qr } = await supabase
+        .from('quotes')
+        .select('id')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false })
+        .limit(2);
+      if (qr?.length === 1) quoteIdForAutosave = qr[0].id;
+    }
+    const visibilityPatch: Record<string, unknown> | undefined = quoteIdForAutosave
+      ? (mergeVisibilityForQuote(quoteIdForAutosave, { [field]: newValue } as any) as Record<string, unknown>)
+      : undefined;
+
+    const updated: Record<string, unknown> = {
       show_financial_summary: field === 'show_financial_summary' ? newValue : showFinancialSummary,
-      show_proposal:          field === 'show_proposal'          ? newValue : showProposal,
-      show_payments:          field === 'show_payments'          ? newValue : showPayments,
-      show_schedule:          field === 'show_schedule'          ? newValue : showSchedule,
-      show_documents:         field === 'show_documents'         ? newValue : showDocuments,
-      show_photos:            field === 'show_photos'            ? newValue : showPhotos,
-      show_line_item_prices:  field === 'show_line_item_prices'  ? newValue : showLineItemPrices,
+      show_proposal: field === 'show_proposal' ? newValue : showProposal,
+      show_payments: field === 'show_payments' ? newValue : showPayments,
+      show_schedule: field === 'show_schedule' ? newValue : showSchedule,
+      show_documents: field === 'show_documents' ? newValue : showDocuments,
+      show_photos: field === 'show_photos' ? newValue : showPhotos,
+      show_line_item_prices: linePricesVal,
+      show_section_prices: sectionPricesSafe,
       updated_at: new Date().toISOString(),
     };
-
-    const isColumnError = (e: any) =>
-      e?.code === 'PGRST204' || (e?.message && /show_line_item_prices|column.*exist|unknown column/i.test(String(e.message)));
+    if (visibilityPatch !== undefined) {
+      updated.visibility_by_quote = visibilityPatch;
+    }
 
     try {
-      let result = await supabase
-        .from('customer_portal_access')
-        .update(updated)
-        .eq('id', link.id);
-
-      if (result.error && isColumnError(result.error)) {
-        const withoutLinePrices = { ...updated };
-        delete (withoutLinePrices as any).show_line_item_prices;
-        result = await supabase
-          .from('customer_portal_access')
-          .update(withoutLinePrices)
-          .eq('id', link.id);
+      let { ok, error } = await updateCustomerPortalAccessRowMinimal(link.id, updated);
+      if (!ok && error) {
+        const msg = portalSaveErrorMessage(error);
+        console.error('Failed to auto-save visibility setting:', error);
+        toast.error(`Could not save: ${msg}`, { duration: 8000 });
+        return;
       }
 
-      if (result.error?.code === '42501' || result.error?.code === 'PGRST116') {
-        result = await supabase.rpc('update_customer_portal_link', {
-          p_id: link.id,
-          p_customer_identifier: link.customer_identifier,
-          p_customer_name: link.customer_name,
-          p_customer_email: link.customer_email ?? '',
-          p_customer_phone: link.customer_phone,
-          p_is_active: link.is_active,
-          p_expires_at: link.expires_at,
-          p_show_proposal:          updated.show_proposal,
-          p_show_payments:          updated.show_payments,
-          p_show_schedule:          updated.show_schedule,
-          p_show_documents:         updated.show_documents,
-          p_show_photos:            updated.show_photos,
-          p_show_financial_summary: updated.show_financial_summary,
-          p_show_line_item_prices:  updated.show_line_item_prices,
-          p_custom_message: customMessage || null,
-        });
-        if (result.error && (result.error?.code === '42883' || /unknown function|does not exist|argument/i.test(String(result.error?.message)))) {
-          result = await supabase.rpc('update_customer_portal_link', {
-            p_id: link.id,
-            p_customer_identifier: link.customer_identifier,
-            p_customer_name: link.customer_name,
-            p_customer_email: link.customer_email ?? '',
-            p_customer_phone: link.customer_phone,
-            p_is_active: link.is_active,
-            p_expires_at: link.expires_at,
-            p_show_proposal:          updated.show_proposal,
-            p_show_payments:          updated.show_payments,
-            p_show_schedule:          updated.show_schedule,
-            p_show_documents:         updated.show_documents,
-            p_show_photos:            updated.show_photos,
-            p_show_financial_summary: updated.show_financial_summary,
-            p_custom_message: customMessage || null,
-          });
-        }
-      }
-
-      if (result.error) throw result.error;
-
-      // Update local portal links with the values we just saved so the sync effect doesn't overwrite with stale refetch data (which was causing toggles to reset)
+      const nextVisibility =
+        visibilityPatch !== undefined ? visibilityPatch : link.visibility_by_quote;
       setPortalLinks((prev) =>
-        prev.map((l) =>
-          l.id === link.id ? { ...l, ...updated, show_line_item_prices: updated.show_line_item_prices ?? l.show_line_item_prices } : l
-        )
+        prev.map((l) => {
+          if (l.id !== link.id) return l;
+          const linePrices = updated.show_line_item_prices;
+          return {
+            ...l,
+            ...updated,
+            show_line_item_prices: typeof linePrices === 'boolean' ? linePrices : l.show_line_item_prices,
+            show_section_prices:
+              (updated.show_section_prices as Record<string, boolean>) ?? l.show_section_prices,
+            visibility_by_quote: nextVisibility as CustomerPortalLink['visibility_by_quote'],
+          } as CustomerPortalLink;
+        })
       );
       toast.success('Setting saved — customer link will reflect this.');
     } catch (err: any) {
       console.error('Failed to auto-save visibility setting:', err);
-      toast.error('Failed to save setting');
+      toast.error(err?.message ? `Could not save: ${err.message}` : 'Failed to save setting', { duration: 6000 });
+    }
+  }
+
+  /** Persist per-section price visibility (show/hide price for each section). */
+  async function saveSectionPriceVisibility(sectionId: string, show: boolean) {
+    const link = portalLinks.find((l: any) => l.job_id === jobId);
+    if (!link) return;
+    setShowSectionPrices((prev) => ({ ...prev, [sectionId]: show }));
+    const next = { ...showSectionPrices, [sectionId]: show };
+    const isColumnError = (e: any) =>
+      e?.code === 'PGRST204' || (e?.message && /show_section_prices|visibility_by_quote|column.*exist|unknown column/i.test(String(e?.message)));
+    const PORTAL_COLUMNS_HELP =
+      'Supabase → SQL Editor: run scripts/ensure-portal-section-visibility.sql or npx supabase db push. Also run migration 20250340000000_customer_portal_access_rest_writes.sql if saves return "no row updated".';
+
+    const visibilityMerged = selectedQuoteIdForVisibility
+      ? mergeVisibilityForQuote(selectedQuoteIdForVisibility, { show_section_prices: next })
+      : null;
+    const payload: Record<string, unknown> = selectedQuoteIdForVisibility
+      ? {
+          visibility_by_quote: visibilityMerged,
+          show_section_prices: sectionPricesJsonForRpc(link.show_section_prices as Record<string, boolean> | null),
+        }
+      : { show_section_prices: next };
+
+    try {
+      let { error: resultError } = await updateCustomerPortalAccessRowMinimal(link.id, payload);
+
+      if (resultError && isColumnError(resultError)) {
+        setPortalLinks((prev) =>
+          prev.map((l) =>
+            l.id === link.id
+              ? { ...l, show_section_prices: next, visibility_by_quote: (visibilityMerged as any) ?? l.visibility_by_quote }
+              : l
+          )
+        );
+        toast.warning(`Could not save to database. ${PORTAL_COLUMNS_HELP}`, { duration: 14000 });
+        return;
+      }
+      if (resultError && String((resultError as { code?: string }).code) === '23502') {
+        const r2 = await updateCustomerPortalAccessRowMinimal(link.id, {
+          show_section_prices: sectionPricesJsonForRpc(next, link.show_section_prices as Record<string, boolean> | null),
+          visibility_by_quote: (visibilityMerged ?? link.visibility_by_quote ?? {}) as Record<string, unknown>,
+        });
+        resultError = r2.error;
+      }
+      if (resultError) {
+        toast.error(portalSaveErrorMessage(resultError), { duration: 10000 });
+        setShowSectionPrices((prev) => ({ ...prev, [sectionId]: !show }));
+        return;
+      }
+      setPortalLinks((prev) =>
+        prev.map((l) =>
+          l.id === link.id
+            ? { ...l, show_section_prices: next, visibility_by_quote: (visibilityMerged as any) ?? l.visibility_by_quote }
+            : l
+        )
+      );
+      toast.success('Section price visibility saved.');
+    } catch (err: any) {
+      console.error('Failed to save section price visibility:', err);
+      const msg = err?.message || '';
+      if (/RLS|42501|permission|denied|PORTAL_UPDATE|no row updated/i.test(msg)) {
+        toast.error(`Save blocked or update did not apply. Run migration 20250340000000_customer_portal_access_rest_writes.sql or scripts/fix-customer-portal-access-rls.sql.`, { duration: 10000 });
+      } else if (/column|PGRST204|schema|42703/i.test(msg)) {
+        toast.error(`Database needs portal columns. ${PORTAL_COLUMNS_HELP}`, { duration: 14000 });
+      } else {
+        toast.error(`Could not save section prices. ${PORTAL_COLUMNS_HELP}`, { duration: 14000 });
+      }
+      setShowSectionPrices((prev) => ({ ...prev, [sectionId]: !show }));
     }
   }
 
@@ -871,6 +981,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
         show_line_item_prices: showLineItemPrices,
+        show_section_prices: Object.keys(showSectionPrices).length ? showSectionPrices : undefined,
         custom_message: customMessage,
       });
 
@@ -950,6 +1061,12 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       }
       const viewerLinks = await loadViewerLinksForJob(supabase, j.id);
 
+      const changeOrderQuoteRow = jobQuotes.find((q: any) => q.is_change_order_proposal) ?? null;
+      let changeOrderProposalData: any = null;
+      if (changeOrderQuoteRow?.id) {
+        changeOrderProposalData = await loadProposalDataForQuote(j.id, changeOrderQuoteRow.id, !!changeOrderQuoteRow.tax_exempt);
+      }
+
       const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
       const estimatedPrice = proposalData.totals.grandTotal;
       const remainingBalance = estimatedPrice - totalPaid;
@@ -959,6 +1076,8 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         quote: quoteData,
         jobQuotes,
         proposalDataByQuoteId,
+        changeOrderQuote: changeOrderQuoteRow,
+        changeOrderProposalData,
         payments: paymentsData || [],
         documents: documentsData || [],
         photos: photosData || [],
@@ -1089,10 +1208,10 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     materialSheets: any[];
     customRows: any[];
     subcontractorEstimates: any[];
-    totals: { subtotal: number; tax: number; grandTotal: number };
+    totals: { subtotal: number; tax: number; grandTotal: number; materials?: number; labor?: number };
   }> {
     const TAX_RATE = 0.07;
-    const empty = { materialSheets: [], customRows: [], subcontractorEstimates: [], totals: { subtotal: 0, tax: 0, grandTotal: 0 } };
+    const empty = { materialSheets: [], customRows: [], subcontractorEstimates: [], totals: { subtotal: 0, tax: 0, grandTotal: 0, materials: 0, labor: 0 } };
     try {
       // Use same source as JobFinancials & CustomerPortal: quote columns (proposal_subtotal, proposal_tax, proposal_grand_total) so preview Grand Total matches Proposal & Materials
       let storedTotals: { subtotal: number; tax: number; grandTotal: number } | null = null;
@@ -1244,8 +1363,41 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         taxExempt,
       });
 
-      // Also compute _computedTotal for each item for UI display
+      // Helper: row materials + labor including linked subs (match CustomerPortal so preview matches link)
+      const rowTotalsWithLinkedSubs = (row: any, subs: any[]) => {
+        const lineItems: any[] = row.custom_financial_row_items || [];
+        const rowMarkup = 1 + (Number(row.markup_percent) || 0) / 100;
+        let rowMat = 0, rowLab = 0, rowMatTaxable = 0;
+        if (lineItems.length > 0) {
+          const matItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'material');
+          const labItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'labor');
+          rowMat = matItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0);
+          rowMatTaxable = matItems.filter((i: any) => i.taxable).reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0);
+          rowLab = labItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
+        } else {
+          rowMat = row.category === 'labor' ? 0 : (Number(row.total_cost) || 0);
+          rowMatTaxable = row.taxable ? rowMat : 0;
+          rowLab = row.category === 'labor' ? (Number(row.total_cost) || 0) : 0;
+        }
+        const linkedSubs = subs.filter((e: any) => e.row_id === row.id);
+        linkedSubs.forEach((sub: any) => {
+          const items = sub.subcontractor_estimate_line_items || [];
+          const m = 1 + (Number(sub.markup_percent) || 0) / 100;
+          rowMat += items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * m;
+          rowMatTaxable += items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'material' && i.taxable).reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * m;
+          rowLab += items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * m;
+        });
+        return { materials: rowMat * rowMarkup, labor: rowLab * rowMarkup, materialsTaxable: rowMatTaxable * rowMarkup };
+      };
+
+      let totalMaterials = 0;
+      let totalLabor = 0;
+      const isSheetOptional = (s: any) => s.is_option === true || s.is_option === 'true' || s.is_option === 1;
+
+      // Per-sheet _computedTotal, _computedMaterials, _computedLabor (match CustomerPortal so office preview matches link)
       (materialSheets || []).forEach((sheet: any) => {
+        const isOptional = isSheetOptional(sheet);
+        const isChangeOrder = sheet.sheet_type === 'change_order';
         const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
         const byCategory = new Map<string, any[]>();
         (sheet.items || []).forEach((item: any) => {
@@ -1269,12 +1421,35 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         });
         const sheetDirectLabor = sheet.laborTotal ?? 0;
         let sheetLinkedLabor = 0;
+        let sheetLinkedMaterials = 0;
         (sheet.sheetLinkedItems || []).forEach((item: any) => {
-          if ((item.item_type || 'material') === 'labor') {
-            sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
-          }
+          const itemTotal = (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
+          if ((item.item_type || 'material') === 'labor') sheetLinkedLabor += itemTotal;
+          else sheetLinkedMaterials += itemTotal;
         });
-        (sheet as any)._computedTotal = sheetCatPrice + sheetDirectLabor + sheetLinkedLabor;
+        let linkedRowsMat = 0, linkedRowsLab = 0;
+        (customRowsData || []).filter((r: any) => r.sheet_id === sheet.id).forEach((row: any) => {
+          const t = rowTotalsWithLinkedSubs(row, subEstimatesData || []);
+          linkedRowsMat += t.materials;
+          linkedRowsLab += t.labor;
+        });
+        let linkedSubsMat = 0, linkedSubsLab = 0;
+        (subEstimatesData || []).filter((e: any) => e.sheet_id === sheet.id && !e.row_id).forEach((est: any) => {
+          const items = est.subcontractor_estimate_line_items || [];
+          const m = 1 + (Number(est.markup_percent) || 0) / 100;
+          linkedSubsMat += items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * m;
+          linkedSubsLab += items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * m;
+        });
+        const sheetMaterialsPart = sheetCatPrice + sheetLinkedMaterials + linkedRowsMat + linkedSubsMat;
+        const sheetLaborPart = sheetDirectLabor + sheetLinkedLabor + linkedRowsLab + linkedSubsLab;
+        const sheetTotal = sheetMaterialsPart + sheetLaborPart;
+        (sheet as any)._computedTotal = sheetTotal;
+        (sheet as any)._computedMaterials = sheetMaterialsPart;
+        (sheet as any)._computedLabor = sheetLaborPart;
+        if (!isChangeOrder && !isOptional) {
+          totalMaterials += sheetCatPrice + linkedRowsMat + linkedSubsMat;
+          totalLabor += sheetDirectLabor + sheetLinkedLabor + linkedRowsLab + linkedSubsLab;
+        }
       });
 
       (customRowsData || []).forEach((row: any) => {
@@ -1291,6 +1466,11 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           rowTotal = (Number(row.total_cost) || 0) * rowMarkup;
         }
         (row as any)._computedTotal = rowTotal;
+        if (!row.sheet_id) {
+          const t = rowTotalsWithLinkedSubs(row, subEstimatesData || []);
+          totalMaterials += t.materials;
+          totalLabor += t.labor;
+        }
       });
 
       (subEstimatesData || []).forEach((est: any) => {
@@ -1301,13 +1481,20 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
         const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
         (est as any)._computedTotal = matTotal + labTotal;
+        if (!est.sheet_id && !est.row_id) {
+          totalMaterials += matTotal;
+          totalLabor += labTotal;
+        }
       });
 
       const subtotal = totals.subtotal;
       const tax = totals.tax;
       const grandTotal = totals.grandTotal;
+      const finalTotals = storedTotals
+        ? { ...storedTotals, materials: (storedTotals as any).materials ?? totalMaterials, labor: (storedTotals as any).labor ?? totalLabor }
+        : { subtotal, tax, grandTotal, materials: totalMaterials, labor: totalLabor };
 
-      return { materialSheets, customRows: customRowsData, subcontractorEstimates: subEstimatesData, totals };
+      return { materialSheets, customRows: customRowsData, subcontractorEstimates: subEstimatesData, totals: finalTotals };
     } catch (error) {
       console.error('Error loading proposal data for quote:', error);
       return empty;
@@ -1323,6 +1510,8 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     setShowPhotos(link.show_photos);
     setShowFinancialSummary(link.show_financial_summary);
     setShowLineItemPrices(link.show_line_item_prices ?? false);
+    const raw = link.show_section_prices;
+    setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
     setCustomMessage(link.custom_message || '');
     setShowSettingsDialog(true);
   }
@@ -1392,16 +1581,9 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     show_photos: showPhotos,
     show_financial_summary: showFinancialSummary,
     show_line_item_prices: showLineItemPrices,
+    show_section_prices: Object.keys(showSectionPrices).length ? showSectionPrices : undefined,
     custom_message: customMessage,
   };
-
-  // Map line item id -> visible (so preview reflects "Proposal line items" toggles immediately)
-  const lineItemVisibleToCustomer: Record<string, boolean> = {};
-  proposalLineItems.rows.forEach((row) => {
-    row.items.forEach((item) => {
-      lineItemVisibleToCustomer[item.id] = !item.hide_from_customer;
-    });
-  });
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-12rem)] min-h-[500px]">
@@ -1446,6 +1628,24 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         <div className="border-t pt-4">
           <h4 className="font-semibold mb-3">Visibility</h4>
           <p className="text-xs text-muted-foreground mb-2">Saved to the portal link below. When the customer opens the link, they see only what you enable here.</p>
+          {jobQuotes.length > 1 && (
+            <div className="mb-3">
+              <Label className="text-xs text-muted-foreground">Visibility for proposal</Label>
+              <Select value={selectedQuoteIdForVisibility ?? ''} onValueChange={(v) => setSelectedQuoteIdForVisibility(v || null)}>
+                <SelectTrigger className="mt-1 h-9">
+                  <SelectValue placeholder="Select proposal" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobQuotes.map((q: any) => (
+                    <SelectItem key={q.id} value={q.id}>
+                      Proposal #{q.proposal_number || q.quote_number || q.id.slice(0, 8)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Each proposal can have different sections and prices visible.</p>
+            </div>
+          )}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Show final price</span>
@@ -1472,53 +1672,33 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
               <Switch checked={showPhotos} onCheckedChange={(v) => { setShowPhotos(v); autoSaveVisibility('show_photos', v); }} />
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm">Line item prices</span>
+              <span className="text-sm">Section prices</span>
               <Switch checked={showLineItemPrices} onCheckedChange={(v) => { setShowLineItemPrices(v); autoSaveVisibility('show_line_item_prices', v); }} />
             </div>
+            <p className="text-xs text-muted-foreground -mt-1">Customers see each section with a total (Materials/Labor or one amount). Individual line items are not listed.</p>
+            {showLineItemPrices && (
+              <div className="border-t pt-3 mt-2 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Show price per section</p>
+                {sectionListLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading sections…</p>
+                ) : sectionList.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No sections for this job.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                    {sectionList.map((sec) => {
+                      const show = showSectionPrices[sec.id] !== false;
+                      return (
+                        <div key={sec.id} className="flex items-center justify-between gap-2">
+                          <span className="text-xs truncate flex-1 min-w-0" title={sec.name}>{sec.name}</span>
+                          <Switch checked={show} onCheckedChange={(v) => saveSectionPriceVisibility(sec.id, v)} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-
-        <div className="border-t pt-4">
-          <h4 className="font-semibold mb-1">Proposal line items</h4>
-          <p className="text-xs text-muted-foreground mb-3">Choose which line items the customer sees in the portal.</p>
-          {proposalLineItemsLoading ? (
-            <p className="text-xs text-muted-foreground">Loading…</p>
-          ) : proposalLineItems.rows.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No proposal line items for this job. Add rows and line items in the Proposal tab.</p>
-          ) : (
-            <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-              {proposalLineItems.rows.map((row) => (
-                <div key={row.id} className="space-y-1.5">
-                  <p className="text-xs font-medium text-slate-700">{row.description || row.category || 'Custom row'}</p>
-                  {row.items.length === 0 ? (
-                    <p className="text-xs text-muted-foreground pl-2">No line items</p>
-                  ) : (
-                    <ul className="space-y-1 pl-2 border-l-2 border-slate-200">
-                      {row.items.map((item) => (
-                        <li key={item.id} className="flex items-center justify-between gap-2 py-0.5">
-                          <span className="text-xs text-slate-600 truncate flex-1 min-w-0" title={item.description || ''}>
-                            {item.description || 'Line item'}
-                          </span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {item.hide_from_customer ? (
-                              <span title="Hidden from customer"><EyeOff className="w-3.5 h-3.5 text-amber-600" /></span>
-                            ) : (
-                              <span title="Visible to customer"><Eye className="w-3.5 h-3.5 text-emerald-600" /></span>
-                            )}
-                            <Switch
-                              checked={!item.hide_from_customer}
-                              onCheckedChange={(v) => setLineItemVisibleToCustomer(item.id, v)}
-                              title={item.hide_from_customer ? 'Show in portal' : 'Hide from portal'}
-                            />
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -1640,7 +1820,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                 jobs={previewJobs}
                 visibilitySettings={visibilitySettings}
                 customMessage={customMessage}
-                lineItemVisibleToCustomer={lineItemVisibleToCustomer}
+                initialQuoteId={selectedQuoteIdForVisibility ?? undefined}
               />
             </div>
           </div>
@@ -1671,8 +1851,8 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
                 <div>
-                  <Label className="font-medium">Show line item prices</Label>
-                  <p className="text-sm text-muted-foreground">When on, show $ on each proposal line. When off (default), only show total, tax, and grand total at bottom.</p>
+                  <Label className="font-medium">Show section prices</Label>
+                  <p className="text-sm text-muted-foreground">When on, show a price per section (Materials/Labor or section total). Individual line items are not shown. When off, only subtotal/tax/grand total appear (if final price is on).</p>
                 </div>
                 <Switch checked={showLineItemPrices} onCheckedChange={(v) => { setShowLineItemPrices(v); selectedLink && autoSaveVisibility('show_line_item_prices', v); }} />
               </div>
@@ -2002,7 +2182,6 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                     jobs={previewJobs}
                     visibilitySettings={previewSettings}
                     customMessage={previewSettings?.custom_message}
-                    lineItemVisibleToCustomer={lineItemVisibleToCustomer}
                   />
                 </div>
               </div>

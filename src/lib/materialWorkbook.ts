@@ -27,6 +27,15 @@ export const FIELD_REQUEST_SHEET_NAME = 'Field Request';
 /** Alternate names we treat as the same sheet (legacy / UI). */
 const FIELD_REQUEST_SHEET_ALIASES = ['Field Request', 'Field Requests', 'Crew Orders'];
 
+const FIELD_REQUEST_SHEET_NAMES_LOWER = new Set(
+  FIELD_REQUEST_SHEET_ALIASES.map((a) => a.toLowerCase())
+);
+
+/** True for crew/field-request workbook sections — hide from customer portal & proposal print to customer. */
+export function isFieldRequestSheetName(sheetName: string | null | undefined): boolean {
+  return FIELD_REQUEST_SHEET_NAMES_LOWER.has(String(sheetName ?? '').trim().toLowerCase());
+}
+
 /**
  * Returns the single canonical "Field Request" sheet ID for a job.
  * Crew-requested materials (including "Not Ordered") are stored here so they appear in the workbook.

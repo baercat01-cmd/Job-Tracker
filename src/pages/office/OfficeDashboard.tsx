@@ -211,19 +211,21 @@ export function OfficeDashboard() {
             className="h-8 w-auto flex-shrink-0 sm:h-10"
           />
 
-          {/* Undo - always visible in its own slot after logo */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0"
-            onClick={undo}
-            disabled={!canUndo}
-            title={canUndo ? (lastLabel ? `Undo: ${lastLabel}` : 'Undo') : 'Nothing to undo'}
-          >
-            <Undo2 className="w-4 h-4 sm:mr-1.5" />
-            <span className="hidden sm:inline">Undo</span>
-          </Button>
-          
+          {/* Undo - dedicated slot so it never overlaps other header items and stays clickable */}
+          <div className="flex-shrink-0 min-w-[72px] sm:min-w-[88px] flex justify-center" aria-label="Undo">
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm w-full min-w-0 max-w-[88px]"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); undo(); }}
+              disabled={!canUndo}
+              title={canUndo ? (lastLabel ? `Undo: ${lastLabel}` : 'Undo (Ctrl+Z)') : 'Nothing to undo'}
+            >
+              <Undo2 className="w-4 h-4 sm:mr-1.5 shrink-0" />
+              <span className="hidden sm:inline truncate">Undo</span>
+            </Button>
+          </div>
+
           {/* Navigation Tabs - mobile: 44px touch targets, smooth scroll; desktop: unchanged */}
           <div className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide overflow-y-hidden py-1 -my-1 md:gap-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x [&>button]:min-h-[44px] [&>button]:min-w-[44px] md:[&>button]:min-h-0 md:[&>button]:min-w-0">
             <Button

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -14,6 +14,59 @@ interface WorkbookCacheEntry {
 }
 const workbookCache = new Map<string, WorkbookCacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** When DB has no `flatstock_width_inches` column, persist 41/42 per workbook in this browser only. */
+const FLATSTOCK_WIDTH_LS_PREFIX = 'mb_flatstock_width:';
+function readFlatstockLocalOverride(workbookId: string): number | null {
+  try {
+    const v = localStorage.getItem(FLATSTOCK_WIDTH_LS_PREFIX + workbookId);
+    if (v === '41') return 41;
+    if (v === '42') return 42;
+    return null;
+  } catch {
+    return null;
+  }
+}
+function writeFlatstockLocalOverride(workbookId: string, width: number | null) {
+  try {
+    const k = FLATSTOCK_WIDTH_LS_PREFIX + workbookId;
+    if (width === 41 || width === 42) localStorage.setItem(k, String(width));
+    else localStorage.removeItem(k);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+function mergeFlatstockWidthForWorkbook(wb: any): any {
+  if (!wb?.id) return wb;
+  const dbFlat = wb.flatstock_width_inches;
+  if (dbFlat === 41 || dbFlat === 42) return wb;
+  const local = readFlatstockLocalOverride(wb.id);
+  if (local === 41 || local === 42) return { ...wb, flatstock_width_inches: local };
+  return wb;
+}
+function isFlatstockColumnMissingError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('flatstock_width_inches') &&
+    (m.includes('schema cache') || m.includes('could not find'))
+  );
+}
+/** Long “add DB column” warning only once per tab session so switching 41″/42″ isn’t noisy. */
+const FLATSTOCK_SCHEMA_WARN_SESSION_KEY = 'mb_flatstock_schema_warn_shown_v1';
+function hasShownFlatstockSchemaWarningThisSession(): boolean {
+  try {
+    return sessionStorage.getItem(FLATSTOCK_SCHEMA_WARN_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function markFlatstockSchemaWarningShownThisSession() {
+  try {
+    sessionStorage.setItem(FLATSTOCK_SCHEMA_WARN_SESSION_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +123,8 @@ import {
   GripVertical,
   Pencil,
   Ruler,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -83,7 +138,50 @@ import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
-import { getTotalInchesFromTrimConfig } from './TrimDrawingPreview';
+import {
+  getTotalInchesFromTrimConfig,
+  getCutLengthFromTrimConfig,
+  computeFlatstockSticksNeeded,
+  FLATSTOCK_STICK_LENGTH_INCHES,
+} from './TrimDrawingPreview';
+import {
+  buildTrimSlittingPlan,
+  isTrimSlittingPlanV1,
+  type TrimSlittingPlanV1,
+} from '@/lib/trimFlatstockOptimize';
+import { cn } from '@/lib/utils';
+
+/** Sent, signed, or office-locked — same idea as JobFinancials `isQuoteContractFrozen`. */
+function isQuoteContractFrozenMaterials(q: JobQuote | undefined | null): boolean {
+  if (!q) return false;
+  const sv = q.signed_version;
+  const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
+  return !!(q.locked_for_editing || q.sent_at || hasSigned || q.customer_signed_at);
+}
+
+type ContractQuoteFields = Pick<JobQuote, 'sent_at' | 'locked_for_editing' | 'signed_version' | 'customer_signed_at'>;
+
+/** Merge list row with authoritatively fetched contract fields (avoids stale jobQuotes vs JobFinancials). */
+function buildQuoteForContract(
+  jobQuotes: JobQuote[],
+  effectiveQuoteId: string | null | undefined,
+  fields: ContractQuoteFields | null,
+): JobQuote | undefined {
+  if (!effectiveQuoteId) return undefined;
+  const base = jobQuotes.find((q) => q.id === effectiveQuoteId);
+  if (fields && base) return { ...base, ...fields };
+  if (fields && !base) {
+    return {
+      id: effectiveQuoteId,
+      proposal_number: null,
+      quote_number: null,
+      created_at: '',
+      is_change_order_proposal: false,
+      ...fields,
+    } as JobQuote;
+  }
+  return base;
+}
 
 interface MaterialItem {
   id: string;
@@ -102,6 +200,7 @@ interface MaterialItem {
   extended_price: number | null;
   taxable: boolean;
   trim_saved_config_id?: string | null;
+  trim_cut_state?: 'pending' | 'in_progress' | 'cut_complete' | null;
   notes: string | null;
   order_index: number;
   status: string;
@@ -130,6 +229,8 @@ interface MaterialWorkbook {
   status: 'working' | 'locked';
   sheets: MaterialSheet[];
   flatstock_width_inches?: number | null;
+  /** Width-only slitting plan JSON (v1); see trimFlatstockOptimize */
+  trim_flatstock_plan?: unknown;
 }
 
 interface JobQuote {
@@ -140,6 +241,8 @@ interface JobQuote {
   sent_at: string | null;
   locked_for_editing: boolean | null;
   is_change_order_proposal?: boolean;
+  signed_version?: number | null;
+  customer_signed_at?: string | null;
 }
 
 interface MaterialsManagementProps {
@@ -168,6 +271,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [pendingCrewCount, setPendingCrewCount] = useState(0);
   const [activeSheetId, setActiveSheetId] = useState<string>('');
   const activeSheetIdRef = useRef<string>('');
+  /** Nested loadWorkbook calls (e.g. repair → createWorking → loadWorkbook) — only outermost runs empty-working repair */
+  const workbookLoadDepthRef = useRef(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [movingItem, setMovingItem] = useState<MaterialItem | null>(null);
@@ -248,9 +353,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [savedTrimConfigs, setSavedTrimConfigs] = useState<{ id: string; name: string; drawing_segments?: unknown }[]>([]);
   const [loadingTrimConfigs, setLoadingTrimConfigs] = useState(false);
   const [linkingTrimConfigId, setLinkingTrimConfigId] = useState<string | null>(null);
-  const [trimFlatstockConfigMap, setTrimFlatstockConfigMap] = useState<Record<string, { name: string; totalInches: number }>>({});
+  const [trimFlatstockConfigMap, setTrimFlatstockConfigMap] = useState<
+    Record<string, { name: string; totalInches: number; stretchOutInches: number }>
+  >({});
   const [loadingTrimFlatstock, setLoadingTrimFlatstock] = useState(false);
   const [savingFlatstockWidth, setSavingFlatstockWidth] = useState(false);
+  const [savingTrimSlittingPlan, setSavingTrimSlittingPlan] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -303,6 +411,54 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       });
   }, [workbook]);
 
+  // Fill Metal rows that have no workbook $/ft yet from materials_catalog (import). Never overwrite custom/workbook pricing.
+  useEffect(() => {
+    if (!workbook?.sheets?.length || Object.keys(metalCatalogBySku).length === 0) return;
+    const metalItems: MaterialItem[] = [];
+    workbook.sheets.forEach((s: MaterialSheet) => {
+      s.items.forEach((i: MaterialItem) => {
+        if (i.category === 'Metal' && i.sku && metalCatalogBySku[i.sku]) metalItems.push(i);
+      });
+    });
+    if (metalItems.length === 0) return;
+    let synced = 0;
+    const run = async () => {
+      for (const item of metalItems) {
+        const cat = metalCatalogBySku[item.sku!];
+        const catalogCost = cat.purchase_cost;
+        const catalogPrice = cat.unit_price;
+        const noWorkbookPlf = item.cost_per_unit == null && item.price_per_unit == null;
+        if (!noWorkbookPlf) continue;
+        const lengthFeet = parseLengthToFeet(item.length) ?? 0;
+        const qty = Number(item.quantity) || 1;
+        const mult = lengthFeet > 0 ? lengthFeet * qty : qty;
+        const extended_cost = catalogCost > 0 ? Math.round(catalogCost * mult * 10000) / 10000 : null;
+        const extended_price = catalogPrice > 0 ? Math.round(catalogPrice * mult * 10000) / 10000 : null;
+        const safeMarkup = catalogCost > 0 && catalogPrice > 0
+          ? Math.round(((catalogPrice - catalogCost) / catalogCost) * 100 * 10000) / 10000
+          : null;
+        const { error } = await supabase
+          .from('material_items')
+          .update({
+            cost_per_unit: catalogCost,
+            price_per_unit: catalogPrice,
+            markup_percent: safeMarkup,
+            extended_cost,
+            extended_price,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', item.id);
+        if (!error) synced++;
+      }
+      if (synced > 0) {
+        workbookCache.delete(`${job.id}:${effectiveQuoteId ?? null}`);
+        loadWorkbook(true);
+        window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id } }));
+      }
+    };
+    run();
+  }, [workbook, metalCatalogBySku, job.id, effectiveQuoteId]);
+
   // Load trim configs for Trim / Flatstock tab (total inches per config)
   useEffect(() => {
     if (activeTab !== 'trim-flatstock' || !workbook?.sheets) {
@@ -328,9 +484,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         if (error) {
           setTrimFlatstockConfigMap({});
         } else {
-          const map: Record<string, { name: string; totalInches: number }> = {};
+          const map: Record<string, { name: string; totalInches: number; stretchOutInches: number }> = {};
           (data || []).forEach((row: any) => {
-            map[row.id] = { name: row.name ?? 'Trim', totalInches: getTotalInchesFromTrimConfig(row) };
+            const totalInches = getTotalInchesFromTrimConfig(row);
+            const stretchOutInches =
+              getCutLengthFromTrimConfig(row) || totalInches || 0;
+            map[row.id] = { name: row.name ?? 'Trim', totalInches, stretchOutInches };
           });
           setTrimFlatstockConfigMap(map);
         }
@@ -340,19 +499,124 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   async function setFlatstockWidthInches(width: number | null) {
     if (!workbook?.id) return;
-    setSavingFlatstockWidth(true);
-    const { error } = await supabase
-      .from('material_workbooks')
-      .update({ flatstock_width_inches: width })
-      .eq('id', workbook.id);
-    setSavingFlatstockWidth(false);
-    if (error) {
-      toast.error(error.message || 'Failed to save flatstock width');
+    const next =
+      width === null || Number.isNaN(Number(width))
+        ? null
+        : Number(width);
+    if (next != null && next !== 41 && next !== 42) {
+      toast.error('Choose 41" or 42" flatstock width.');
       return;
     }
-    setWorkbook((prev) => (prev ? { ...prev, flatstock_width_inches: width } : null));
-    workbookCache.delete(`${job.id}:${effectiveQuoteId ?? null}`);
-    toast.success('Flatstock width saved');
+    const previous = workbook.flatstock_width_inches ?? null;
+    setWorkbook((prev) => (prev ? { ...prev, flatstock_width_inches: next } : null));
+    setSavingFlatstockWidth(true);
+    try {
+      const { error } = await supabase
+        .from('material_workbooks')
+        .update({ flatstock_width_inches: next })
+        .eq('id', workbook.id);
+      if (error) {
+        const rawMsg = error.message || '';
+        if (isFlatstockColumnMissingError(rawMsg)) {
+          writeFlatstockLocalOverride(workbook.id, next);
+          for (const key of workbookCache.keys()) {
+            if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+          }
+          if (!hasShownFlatstockSchemaWarningThisSession()) {
+            markFlatstockSchemaWarningShownThisSession();
+            toast.warning(
+              'Flatstock width is saved on this browser only. Add column material_workbooks.flatstock_width_inches to your database (SQL in supabase/migrations/20250344000000_ensure_material_workbooks_flatstock_width.sql or run supabase db push) so the team shares one setting.',
+              { duration: 12000 }
+            );
+          } else {
+            toast.info(`Flatstock width set to ${next}" (this browser only until the database column exists).`);
+          }
+          return;
+        }
+        setWorkbook((prev) =>
+          prev ? { ...prev, flatstock_width_inches: previous } : null
+        );
+        toast.error(rawMsg || 'Failed to save flatstock width');
+        return;
+      }
+      writeFlatstockLocalOverride(workbook.id, null);
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+      toast.success('Flatstock width saved');
+    } finally {
+      setSavingFlatstockWidth(false);
+    }
+  }
+
+  async function saveTrimSlittingPlanFromDemands(
+    demands: { materialItemId: string; materialName: string; sku: string | null; stretchOutInches: number; qty: number }[],
+    flatstockW: number
+  ) {
+    if (!workbook?.id) return;
+    if (workbook.status !== 'working') {
+      toast.error('Slitting plan can only be saved on the working workbook.');
+      return;
+    }
+    const plan = buildTrimSlittingPlan(demands, flatstockW, FLATSTOCK_STICK_LENGTH_INCHES);
+    setSavingTrimSlittingPlan(true);
+    try {
+      const { error } = await supabase
+        .from('material_workbooks')
+        .update({ trim_flatstock_plan: plan as unknown as Record<string, unknown> })
+        .eq('id', workbook.id);
+      if (error) {
+        const m = (error.message || '').toLowerCase();
+        if (m.includes('trim_flatstock_plan') && (m.includes('schema cache') || m.includes('could not find'))) {
+          toast.error(
+            'Database missing material_workbooks.trim_flatstock_plan. Run supabase migration 20250345000000_add_trim_flatstock_plan_and_cut_state.sql (or supabase db push).'
+          );
+        } else {
+          toast.error(error.message || 'Failed to save slitting plan');
+        }
+        return;
+      }
+      setWorkbook((prev) => (prev ? { ...prev, trim_flatstock_plan: plan } : null));
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+      toast.success(`Slitting plan saved (${plan.totalSheets} sheet${plan.totalSheets === 1 ? '' : 's'})`);
+    } finally {
+      setSavingTrimSlittingPlan(false);
+    }
+  }
+
+  async function updateMaterialItemTrimCutState(
+    itemId: string,
+    state: 'pending' | 'in_progress' | 'cut_complete'
+  ) {
+    if (!workbook?.id) return;
+    if (workbook.status !== 'working') {
+      toast.error('Cut status can only be updated on the working workbook.');
+      return;
+    }
+    const { error } = await supabase.from('material_items').update({ trim_cut_state: state }).eq('id', itemId);
+    if (error) {
+      const m = (error.message || '').toLowerCase();
+      if (m.includes('trim_cut_state') && (m.includes('schema cache') || m.includes('could not find'))) {
+        toast.error(
+          'Database missing material_items.trim_cut_state. Run supabase migration 20250345000000_add_trim_flatstock_plan_and_cut_state.sql (or supabase db push).'
+        );
+      } else {
+        toast.error(error.message || 'Failed to update cut status');
+      }
+      return;
+    }
+    setWorkbook((prev) => {
+      if (!prev?.sheets) return prev;
+      return {
+        ...prev,
+        sheets: prev.sheets.map((sh) => ({
+          ...sh,
+          items: sh.items.map((i) => (i.id === itemId ? { ...i, trim_cut_state: state } : i)),
+        })),
+      };
+    });
   }
 
   async function setMaterialItemTrimConfig(itemId: string, trimConfigId: string | null) {
@@ -431,13 +695,25 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [syncChangeDetailsView, setSyncChangeDetailsView] = useState<'inserted' | 'updated' | 'vendors' | null>(null);
   const [refreshingWorkbookPrices, setRefreshingWorkbookPrices] = useState(false);
 
+  // Locked snapshot view (view a specific locked workbook; null = show working/edit view)
+  const [snapshotWorkbookId, setSnapshotWorkbookId] = useState<string | null>(null);
+  const [lockedSnapshotsMeta, setLockedSnapshotsMeta] = useState<{ id: string; version_number: number; locked_at: string | null }[]>([]);
+  const [creatingWorkingFromLocked, setCreatingWorkingFromLocked] = useState(false);
+  const [lockingWorkbook, setLockingWorkbook] = useState(false);
+  /** True when this quote has at least one `working` material_workbook row (even if UI is viewing a locked snapshot). */
+  const [hasWorkingWorkbookForQuote, setHasWorkingWorkbookForQuote] = useState(false);
+  /** Auto lock + create working copy for signed/sent contracts (no manual Lock workbook). */
+  const [ensuringContractWorkbookPair, setEnsuringContractWorkbookPair] = useState(false);
+  /** Fresh sent/signed/office-lock fields for the selected quote (Materials jobQuotes can lag JobFinancials). */
+  const [contractQuoteFields, setContractQuoteFields] = useState<ContractQuoteFields | null>(null);
+
   // Load job quotes (proposals) so we can scope materials per proposal
   useEffect(() => {
     let mounted = true;
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal')
+        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -470,7 +746,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal')
+        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -480,6 +756,71 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     })();
     return () => { mounted = false; };
   }, [isControlled, effectiveQuoteId, job.id, jobQuotes]);
+
+  const jobHasContract = useMemo(
+    () =>
+      jobQuotes.some((q) => {
+        if (q.is_change_order_proposal) return false;
+        const sv = q.signed_version;
+        const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
+        return hasSigned || !!q.customer_signed_at;
+      }),
+    [jobQuotes]
+  );
+
+  // Authoritative contract flags for the selected proposal (matches JobFinancials "Revoke contract" / Sent logic).
+  useEffect(() => {
+    let cancelled = false;
+    if (!effectiveQuoteId) {
+      setContractQuoteFields(null);
+      return;
+    }
+    (async () => {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('sent_at, locked_for_editing, signed_version, customer_signed_at')
+        .eq('id', effectiveQuoteId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        setContractQuoteFields(null);
+        return;
+      }
+      setContractQuoteFields({
+        sent_at: data.sent_at ?? null,
+        locked_for_editing: data.locked_for_editing ?? null,
+        signed_version: data.signed_version ?? null,
+        customer_signed_at: data.customer_signed_at ?? null,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveQuoteId]);
+
+  useEffect(() => {
+    if (!job.id || !effectiveQuoteId) return;
+    const ch = supabase
+      .channel(`materials-quote-contract-${job.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'quotes', filter: `job_id=eq.${job.id}` },
+        (payload: { new?: Record<string, unknown> }) => {
+          const row = payload.new;
+          if (!row || row.id !== effectiveQuoteId) return;
+          setContractQuoteFields({
+            sent_at: (row.sent_at as string | null) ?? null,
+            locked_for_editing: (row.locked_for_editing as boolean | null) ?? null,
+            signed_version: (row.signed_version as number | null) ?? null,
+            customer_signed_at: (row.customer_signed_at as string | null) ?? null,
+          });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [job.id, effectiveQuoteId]);
 
   // When job or quote changes, reset active sheet so the first sheet in the workbook is shown
   useEffect(() => {
@@ -542,6 +883,21 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return () => window.removeEventListener('material-workbook-restored', handler as EventListener);
   }, [effectiveQuoteId]);
 
+  // When office locks/unlocks proposal for editing (JobFinancials), workbook status changes — refetch
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ quoteId?: string | null; jobId?: string }>).detail;
+      if (!detail || detail.jobId !== job.id) return;
+      if (detail.quoteId != null && detail.quoteId !== effectiveQuoteId) return;
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+      loadWorkbook(true);
+    };
+    window.addEventListener('materials-workbook-updated', handler as EventListener);
+    return () => window.removeEventListener('materials-workbook-updated', handler as EventListener);
+  }, [job.id, effectiveQuoteId]);
+
   async function loadPackages() {
     try {
       const { data, error } = await supabase
@@ -584,10 +940,18 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     if (needsEnrich.length === 0) return items;
 
     const skus = [...new Set(needsEnrich.map((i: any) => i.sku as string))];
-    const { data: catalogRows } = await supabase
-      .from('materials_catalog')
-      .select('sku, purchase_cost, unit_price, part_length')
-      .in('sku', skus);
+    let catalogRows: any[] | null = null;
+    try {
+      const { data, error } = await supabase
+        .from('materials_catalog')
+        .select('sku, purchase_cost, unit_price, part_length')
+        .in('sku', skus);
+      if (error) throw error;
+      catalogRows = data ?? null;
+    } catch (e) {
+      console.warn('Enrich items from catalog failed (non-fatal):', e);
+      return items;
+    }
 
     if (!catalogRows || catalogRows.length === 0) return items;
 
@@ -616,7 +980,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const itemLengthIsUnit = rawItemLength && unitOnly.test(rawItemLength);
       const mergedLength = !itemLengthIsUnit && rawItemLength ? rawItemLength : catalogLength;
       const lengthFeet = parseLengthToFeet(mergedLength ?? null);
-      const mult = lengthFeet != null && lengthFeet > 0 ? lengthFeet : qty;
+      const mult = (item.category === 'Metal' && lengthFeet != null && lengthFeet > 0)
+        ? lengthFeet * qty
+        : (lengthFeet != null && lengthFeet > 0 ? lengthFeet : qty);
 
       return {
         ...item,
@@ -674,7 +1040,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           : null;
         const qty = Number(item.quantity) || 1;
         const backfillLengthFeet = parseLengthToFeet(item.length);
-        const backfillMult = backfillLengthFeet != null && backfillLengthFeet > 0 ? backfillLengthFeet : qty;
+        const backfillMult = (item.category === 'Metal' && backfillLengthFeet != null && backfillLengthFeet > 0)
+          ? backfillLengthFeet * qty
+          : (backfillLengthFeet != null && backfillLengthFeet > 0 ? backfillLengthFeet : qty);
 
         await supabase
           .from('material_items')
@@ -706,6 +1074,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   /** Refresh cost/price/length for all material_items in the current workbook from materials_catalog (Zoho Books source). */
   async function refreshWorkbookPricesFromCatalog() {
+    if (workbook?.status !== 'working') {
+      toast.error('Refresh prices is only available on the working workbook, not on a locked contract snapshot.');
+      return;
+    }
     if (!workbook?.sheets?.length) return;
     setRefreshingWorkbookPrices(true);
     try {
@@ -741,7 +1113,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         const qty = Number(item.quantity) || 1;
         const refreshLength = item.length ?? cat.length ?? null;
         const refreshLengthFeet = parseLengthToFeet(refreshLength);
-        const refreshMult = refreshLengthFeet != null && refreshLengthFeet > 0 ? refreshLengthFeet : qty;
+        const refreshMult = (item.category === 'Metal' && refreshLengthFeet != null && refreshLengthFeet > 0)
+          ? refreshLengthFeet * qty
+          : (refreshLengthFeet != null && refreshLengthFeet > 0 ? refreshLengthFeet : qty);
         const safeCost = cat.cost > 0 ? Math.round(cat.cost * 10000) / 10000 : null;
         const safePrice = cat.price > 0 ? Math.round(cat.price * 10000) / 10000 : null;
         const safeMarkup = safeCost && safePrice && safeCost > 0
@@ -772,23 +1146,67 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
-  async function loadWorkbook(silent = false, overrideQuoteId?: string | null) {
+  async function countMaterialItemsForWorkbook(workbookId: string): Promise<number> {
+    const { data: sh } = await supabase.from('material_sheets').select('id').eq('workbook_id', workbookId);
+    const ids = (sh || []).map((s) => s.id);
+    if (ids.length === 0) return 0;
+    const { count, error } = await supabase
+      .from('material_items')
+      .select('*', { count: 'exact', head: true })
+      .in('sheet_id', ids);
+    if (error) return 0;
+    return count ?? 0;
+  }
+
+  /** Remove a workbook and all sheets/items (for replacing an empty working copy). */
+  async function deleteMaterialWorkbookCascade(workbookId: string) {
+    const { data: sheets } = await supabase.from('material_sheets').select('id').eq('workbook_id', workbookId);
+    const sheetIds = (sheets || []).map((s) => s.id);
+    if (sheetIds.length > 0) {
+      await supabase.from('material_items').delete().in('sheet_id', sheetIds);
+      await supabase.from('material_sheet_labor').delete().in('sheet_id', sheetIds);
+      await supabase.from('material_category_markups').delete().in('sheet_id', sheetIds);
+      await supabase.from('material_category_options').delete().in('sheet_id', sheetIds);
+      await supabase.from('material_sheets').delete().eq('workbook_id', workbookId);
+    }
+    const { error: wbErr } = await supabase.from('material_workbooks').delete().eq('id', workbookId);
+    if (wbErr) throw wbErr;
+  }
+
+  async function loadWorkbook(silent = false, overrideQuoteId?: string | null, snapshotIdOverride?: string | null) {
+    workbookLoadDepthRef.current += 1;
+    const loadDepth = workbookLoadDepthRef.current;
     try {
       const quoteIdForLoad = overrideQuoteId !== undefined ? overrideQuoteId : (effectiveQuoteId ?? null);
-      const cacheKey = `${job.id}:${quoteIdForLoad}`;
+      let snapActive: string | null;
+      if (snapshotIdOverride === null) snapActive = null;
+      else if (typeof snapshotIdOverride === 'string') snapActive = snapshotIdOverride;
+      else snapActive = snapshotWorkbookId;
+      const cacheKey = `${job.id}:${quoteIdForLoad ?? 'none'}:${snapActive ?? 'edit'}`;
 
       // Serve from cache immediately (stale-while-revalidate pattern)
       const cached = workbookCache.get(cacheKey);
       if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
-        setWorkbook(cached.workbook);
-        setAllCategories(cached.categories);
-        const sheets = cached.workbook?.sheets ?? [];
-        const current = activeSheetIdRef.current;
-        if (sheets.length > 0 && (!current || !sheets.some((s: any) => s.id === current))) {
-          setActiveSheetId(sheets[0].id);
+        const sheetsC = cached.workbook?.sheets ?? [];
+        const totalCached = sheetsC.reduce((n, s: any) => n + (s.items?.length ?? 0), 0);
+        const emptyWorkingCached =
+          totalCached === 0 &&
+          !!quoteIdForLoad &&
+          !snapActive &&
+          (cached.workbook as MaterialWorkbook)?.status === 'working';
+        if (!emptyWorkingCached) {
+          setWorkbook(mergeFlatstockWidthForWorkbook(cached.workbook));
+          setAllCategories(cached.categories);
+          const sheets = sheetsC;
+          const current = activeSheetIdRef.current;
+          if (sheets.length > 0 && (!current || !sheets.some((s: any) => s.id === current))) {
+            setActiveSheetId(sheets[0].id);
+          }
+          // Refresh in background without showing the loading spinner
+          silent = true;
+        } else {
+          workbookCache.delete(cacheKey);
         }
-        // Refresh in background without showing the loading spinner
-        silent = true;
       } else if (!silent) {
         setLoading(true);
       }
@@ -804,137 +1222,151 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (wbError) throw wbError;
 
       const wbs = allWorkbooks || [];
-      // Priority: working + matching quote > any status + matching quote > null quote_id (legacy) > any
-      const candidates: typeof wbs = [];
-      const byQuoteWorking = wbs.find(w => w.status === 'working' && w.quote_id === quoteIdForLoad);
-      const byQuoteAny = wbs.find(w => w.quote_id === quoteIdForLoad);
-      const byNullQuote = quoteIdForLoad ? wbs.find(w => !w.quote_id) : null;
-      if (byQuoteWorking) candidates.push(byQuoteWorking);
-      if (byQuoteAny && byQuoteAny !== byQuoteWorking) candidates.push(byQuoteAny);
-      if (byNullQuote) candidates.push(byNullQuote);
-      wbs.forEach(w => { if (!candidates.includes(w)) candidates.push(w); });
+      const matchQuote = (w: (typeof wbs)[0]) =>
+        quoteIdForLoad ? w.quote_id === quoteIdForLoad : !w.quote_id;
+
+      const lockedList = wbs
+        .filter((w) => matchQuote(w) && w.status === 'locked')
+        .sort((a, b) => (b.version_number ?? 0) - (a.version_number ?? 0));
+      const workingList = wbs
+        .filter((w) => matchQuote(w) && w.status === 'working')
+        .sort((a, b) => (b.version_number ?? 0) - (a.version_number ?? 0));
+
+      setLockedSnapshotsMeta(
+        lockedList.map((w) => ({
+          id: w.id,
+          version_number: w.version_number ?? 0,
+          locked_at: w.locked_at ?? null,
+        }))
+      );
+      setHasWorkingWorkbookForQuote(workingList.length > 0);
 
       let workbookData: (typeof wbs)[0] | null = null;
+      if (snapActive) {
+        workbookData = wbs.find((w) => w.id === snapActive && w.status === 'locked') ?? null;
+        if (!workbookData) setSnapshotWorkbookId(null);
+      }
+      if (!workbookData) {
+        workbookData = workingList[0] ?? lockedList[0] ?? null;
+      }
+      if (!workbookData && quoteIdForLoad) {
+        workbookData =
+          wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
+          wbs.find((w) => w.quote_id === quoteIdForLoad) ??
+          wbs.find((w) => w.status === 'working' && !w.quote_id) ??
+          wbs.find((w) => w.status === 'working') ??
+          wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
+          wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
+          wbs.find((w) => w.status === 'locked') ??
+          null;
+      }
+      if (!workbookData && !quoteIdForLoad) {
+        workbookData = wbs.find((w) => w.status === 'working') ?? wbs[0] ?? null;
+      }
+      // If we still have no workbook but this job has workbooks, show the most recent one so the user can access their data
+      if (!workbookData && wbs.length > 0) {
+        workbookData = wbs[0];
+      }
+
       let sheetsData: any[] = [];
       let itemsData: any[] = [];
 
-      for (const candidate of candidates) {
-        const { data: sheets, error: sheetsError } = await supabase
-          .from('material_sheets')
-          .select('*')
-          .eq('workbook_id', candidate.id)
-          .order('order_index');
-        if (sheetsError) throw sheetsError;
-        const sList = sheets || [];
-        const sheetIds = sList.map((s: any) => s.id);
-        let items: any[] = [];
-        if (sheetIds.length > 0) {
-          const { data: itemsRes, error: itemsError } = await supabase
-            .from('material_items')
-            .select('*')
-            .in('sheet_id', sheetIds)
-            .order('order_index');
-          if (itemsError) throw itemsError;
-          items = itemsRes || [];
-        }
-        const hasContent = sList.length > 0 && items.length > 0;
-        if (hasContent || !workbookData) {
-          workbookData = candidate;
-          sheetsData = sList;
-          itemsData = items;
-          if (hasContent) break;
-        }
-      }
-
       if (!workbookData) {
         setWorkbook(null);
+        setLockedSnapshotsMeta([]);
+        setHasWorkingWorkbookForQuote(false);
         if (!silent) setLoading(false);
         return;
       }
 
-      // Ensure the canonical "Crew Orders" sheet (the one with items) is visible.
-      // The primary workbook may contain an empty crew-orders sheet while items are in
-      // a sheet belonging to a different working workbook — always prefer the one with items.
-      {
+      const { data: sheetsRows, error: sheetsError } = await supabase
+        .from('material_sheets')
+        .select('*')
+        .eq('workbook_id', workbookData.id)
+        .order('order_index');
+      if (sheetsError) throw sheetsError;
+      sheetsData = sheetsRows || [];
+      const sheetIds = sheetsData.map((s: any) => s.id);
+      if (sheetIds.length > 0) {
+        const { data: itemsRes, error: itemsError } = await supabase
+          .from('material_items')
+          .select('*')
+          .in('sheet_id', sheetIds)
+          .order('order_index');
+        if (itemsError) throw itemsError;
+        itemsData = itemsRes || [];
+      }
+
+      const isSnapshotView = !!snapActive && workbookData.id === snapActive;
+      const workingWbForQuote = workingList[0];
+
+      // Field Request / Crew Orders: only on the working workbook for this proposal (not locked snapshots, not other quotes' workbooks).
+      if (!isSnapshotView && workbookData.status === 'working' && workingWbForQuote?.id === workbookData.id) {
+        const frWbId = workbookData.id;
         const existingSheetIds = new Set(sheetsData.map((s: any) => s.id));
 
-        // All working workbooks for this job
-        const { data: allWorkingWbs } = await supabase
-          .from('material_workbooks')
-          .select('id')
-          .eq('job_id', job.id)
-          .eq('status', 'working');
-        const workingWbIds = (allWorkingWbs || []).map((w: any) => w.id);
+        const { data: allCrewSheets } = await supabase
+          .from('material_sheets')
+          .select('*')
+          .eq('workbook_id', frWbId)
+          .in('sheet_name', ['Field Request', 'Field Requests', 'Crew Orders'])
+          .order('created_at', { ascending: true });
 
-        if (workingWbIds.length > 0) {
-          // Fetch ALL crew-orders sheets across all working workbooks (oldest first)
-          const { data: allCrewSheets } = await supabase
-            .from('material_sheets')
-            .select('*')
-            .in('workbook_id', workingWbIds)
-            .in('sheet_name', ['Field Request', 'Field Requests', 'Crew Orders'])
-            .order('created_at', { ascending: true });
+        if ((allCrewSheets || []).length > 0) {
+          const allCrewItems: Record<string, any[]> = {};
+          for (const cs of allCrewSheets!) {
+            const { data: csItems } = await supabase
+              .from('material_items')
+              .select('*')
+              .eq('sheet_id', cs.id)
+              .order('order_index');
+            allCrewItems[cs.id] = csItems || [];
+          }
 
-          if ((allCrewSheets || []).length > 0) {
-            // Load items for every crew-orders sheet so we can find the one with data
-            const allCrewItems: Record<string, any[]> = {};
-            for (const cs of allCrewSheets!) {
-              const { data: csItems } = await supabase
-                .from('material_items')
-                .select('*')
-                .eq('sheet_id', cs.id)
-                .order('order_index');
-              allCrewItems[cs.id] = csItems || [];
-            }
+          const canonical = [...allCrewSheets!].sort(
+            (a, b) => (allCrewItems[b.id]?.length ?? 0) - (allCrewItems[a.id]?.length ?? 0)
+          )[0];
 
-            // Pick the sheet that has the most items (canonical source of truth)
-            const canonical = [...allCrewSheets!].sort(
-              (a, b) => (allCrewItems[b.id]?.length ?? 0) - (allCrewItems[a.id]?.length ?? 0)
-            )[0];
-
-            // Move any crew-requested items that are in a different sheet into the Field Request sheet
-            // so they appear in the workbook like the valley trim (e.g. Smart Vent with valley).
-            const { data: wrongSheetItems } = await supabase
+          const wbSheetIdList = sheetsData.map((s: any) => s.id);
+          let wrongSheetItems: { id: string }[] | null = null;
+          if (wbSheetIdList.length > 0) {
+            const { data } = await supabase
               .from('material_items')
               .select('id')
               .not('requested_by', 'is', null)
+              .in('sheet_id', wbSheetIdList)
               .neq('sheet_id', canonical.id);
-            if ((wrongSheetItems?.length ?? 0) > 0) {
-              const ids = wrongSheetItems!.map((r: { id: string }) => r.id);
-              await supabase
-                .from('material_items')
-                .update({ sheet_id: canonical.id, updated_at: new Date().toISOString() })
-                .in('id', ids);
-              // Re-fetch canonical sheet items so moved items are included
-              const { data: canonicalItems } = await supabase
-                .from('material_items')
-                .select('*')
-                .eq('sheet_id', canonical.id)
-                .order('order_index');
-              allCrewItems[canonical.id] = canonicalItems ?? [];
-            }
+            wrongSheetItems = data;
+          }
+          if ((wrongSheetItems?.length ?? 0) > 0) {
+            const ids = wrongSheetItems!.map((r: { id: string }) => r.id);
+            await supabase
+              .from('material_items')
+              .update({ sheet_id: canonical.id, updated_at: new Date().toISOString() })
+              .in('id', ids);
+            const { data: canonicalItems } = await supabase
+              .from('material_items')
+              .select('*')
+              .eq('sheet_id', canonical.id)
+              .order('order_index');
+            allCrewItems[canonical.id] = canonicalItems ?? [];
+          }
 
-            if (existingSheetIds.has(canonical.id)) {
-              // Ensure itemsData includes the full Field Request sheet (including any we just moved)
-              itemsData = itemsData.filter((i: any) => i.sheet_id !== canonical.id).concat(allCrewItems[canonical.id] ?? []);
-            } else {
-              // The canonical sheet belongs to another workbook.
-              // Remove any empty crew-orders placeholder already in sheetsData (don't show two).
-              const emptyCrewIdx = sheetsData.findIndex(
-                (s: any) =>
-                  (s.sheet_name === 'Field Request' || s.sheet_name === 'Field Requests' || s.sheet_name === 'Crew Orders') &&
-                  (allCrewItems[s.id]?.length ?? itemsData.filter((i: any) => i.sheet_id === s.id).length) === 0
-              );
-              if (emptyCrewIdx !== -1) {
-                const removedId = sheetsData[emptyCrewIdx].id;
-                sheetsData.splice(emptyCrewIdx, 1);
-                // drop items that belonged to the removed sheet
-                itemsData = itemsData.filter((i: any) => i.sheet_id !== removedId);
-              }
-
-              sheetsData.push(canonical);
-              itemsData.push(...allCrewItems[canonical.id]);
+          if (existingSheetIds.has(canonical.id)) {
+            itemsData = itemsData.filter((i: any) => i.sheet_id !== canonical.id).concat(allCrewItems[canonical.id] ?? []);
+          } else {
+            const emptyCrewIdx = sheetsData.findIndex(
+              (s: any) =>
+                (s.sheet_name === 'Field Request' || s.sheet_name === 'Field Requests' || s.sheet_name === 'Crew Orders') &&
+                (allCrewItems[s.id]?.length ?? itemsData.filter((i: any) => i.sheet_id === s.id).length) === 0
+            );
+            if (emptyCrewIdx !== -1) {
+              const removedId = sheetsData[emptyCrewIdx].id;
+              sheetsData.splice(emptyCrewIdx, 1);
+              itemsData = itemsData.filter((i: any) => i.sheet_id !== removedId);
             }
+            sheetsData.push(canonical);
+            itemsData.push(...allCrewItems[canonical.id]);
           }
         }
       }
@@ -956,12 +1388,38 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         items: itemsData.filter((item: any) => item.sheet_id === sheet.id),
       }));
 
+      const totalItemsCount = sheets.reduce((n, s) => n + s.items.length, 0);
+      if (
+        loadDepth === 1 &&
+        quoteIdForLoad &&
+        !snapActive &&
+        workbookData.status === 'working' &&
+        lockedList.length > 0 &&
+        totalItemsCount === 0
+      ) {
+        try {
+          const lockedCnt = await countMaterialItemsForWorkbook(lockedList[0].id);
+          if (lockedCnt > 0) {
+            if (!silent) toast.info('Working copy was empty — cloning line items from the signed workbook…');
+            await deleteMaterialWorkbookCascade(workbookData.id);
+            for (const key of workbookCache.keys()) {
+              if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+            }
+            await createWorkingFromLatestLocked({ silent: true });
+            return;
+          }
+        } catch (reErr: any) {
+          console.error('repair empty working workbook:', reErr);
+          if (!silent) toast.error(reErr?.message || 'Could not rebuild working copy from the signed workbook.');
+        }
+      }
+
       const uniqueCategories = new Set<string>();
       itemsData.forEach((item: any) => { if (item.category) uniqueCategories.add(item.category); });
       const categories = Array.from(uniqueCategories).sort();
       setAllCategories(categories);
 
-      const fullWorkbook = { ...workbookData, sheets };
+      const fullWorkbook = mergeFlatstockWidthForWorkbook({ ...workbookData, sheets });
       setWorkbook(fullWorkbook);
 
       // Write to cache so the next visit is instant
@@ -979,12 +1437,318 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       }
     } catch (error: any) {
       console.error('Error loading workbook:', error);
-      const msg = error?.message || 'Unknown error';
-      toast.error(msg.includes('schema') || msg.includes('relation') ? `Failed to load materials: ${msg}` : 'Failed to load materials');
+      const msg = error?.message || error?.error_description || String(error);
+      const short = msg.length > 120 ? msg.slice(0, 117) + '…' : msg;
+      toast.error(short ? `Failed to load materials: ${short}` : 'Failed to load materials');
     } finally {
+      workbookLoadDepthRef.current -= 1;
       setLoading(false);
     }
   }
+
+  async function openLockedSnapshotView(wbId: string) {
+    setSnapshotWorkbookId(wbId);
+    await loadWorkbook(false, undefined, wbId);
+  }
+
+  async function exitLockedSnapshotView() {
+    setSnapshotWorkbookId(null);
+    await loadWorkbook(false, undefined, null);
+  }
+
+  async function createWorkingFromLatestLocked(opts?: { silent?: boolean; _retriedAfterEmptyPurge?: boolean }) {
+    const silent = !!opts?.silent;
+    const qid = effectiveQuoteId;
+    if (!qid) {
+      if (!silent) toast.error('Select a proposal first.');
+      return;
+    }
+    setCreatingWorkingFromLocked(true);
+    try {
+      const { data: allWbs, error } = await supabase.from('material_workbooks').select('*').eq('job_id', job.id);
+      if (error) throw error;
+      const wbs = allWbs || [];
+      const workingRows = wbs
+        .filter((w: any) => w.quote_id === qid && w.status === 'working')
+        .sort((a: any, b: any) => (b.version_number ?? 0) - (a.version_number ?? 0));
+      const lockedRows = wbs
+        .filter((w: any) => w.quote_id === qid && w.status === 'locked')
+        .sort((a: any, b: any) => (b.version_number ?? 0) - (a.version_number ?? 0));
+      const topWorking = workingRows[0];
+      const topLocked = lockedRows[0];
+
+      if (topWorking && !opts?._retriedAfterEmptyPurge) {
+        const wCount = await countMaterialItemsForWorkbook(topWorking.id);
+        const lCount = topLocked ? await countMaterialItemsForWorkbook(topLocked.id) : 0;
+        if (wCount === 0 && lCount > 0) {
+          await deleteMaterialWorkbookCascade(topWorking.id);
+          for (const key of workbookCache.keys()) {
+            if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+          }
+          return createWorkingFromLatestLocked({ ...opts, silent, _retriedAfterEmptyPurge: true });
+        }
+        if (wCount > 0) {
+          if (!silent) toast.info('A working workbook already exists for this proposal.');
+          for (const key of workbookCache.keys()) {
+            if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+          }
+          await loadWorkbook(true, undefined, null);
+          return;
+        }
+        // Empty working + empty locked materials: still replace with a proper clone (sheets/structure from locked)
+        if (wCount === 0 && lCount === 0 && topLocked) {
+          await deleteMaterialWorkbookCascade(topWorking.id);
+          for (const key of workbookCache.keys()) {
+            if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+          }
+          return createWorkingFromLatestLocked({ ...opts, silent, _retriedAfterEmptyPurge: true });
+        }
+        if (wCount === 0 && !topLocked) {
+          if (!silent) toast.error('No locked workbook found to copy from.');
+          return;
+        }
+      }
+
+      const locked = wbs
+        .filter((w: any) => w.quote_id === qid && w.status === 'locked')
+        .sort((a: any, b: any) => (b.version_number ?? 0) - (a.version_number ?? 0));
+      const source = locked[0];
+      if (!source) {
+        if (!silent) toast.error('No locked workbook found for this proposal.');
+        return;
+      }
+      const { data: maxWb } = await supabase
+        .from('material_workbooks')
+        .select('version_number')
+        .eq('job_id', job.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextVer = (maxWb?.version_number ?? 0) + 1;
+      const { data: newWb, error: insErr } = await supabase
+        .from('material_workbooks')
+        .insert({
+          job_id: job.id,
+          quote_id: qid,
+          version_number: nextVer,
+          status: 'working',
+          created_by: userId,
+        })
+        .select()
+        .single();
+      if (insErr || !newWb) throw new Error(insErr?.message ?? 'Failed to create workbook');
+
+      const { data: oldSheets } = await supabase
+        .from('material_sheets')
+        .select('*')
+        .eq('workbook_id', source.id)
+        .order('order_index');
+
+      const sheetIdMap: Record<string, string> = {};
+      const orderedOldSheets = oldSheets || [];
+
+      for (const oldSheet of orderedOldSheets) {
+        const insPayload: Record<string, unknown> = {
+          workbook_id: newWb.id,
+          sheet_name: oldSheet.sheet_name,
+          order_index: oldSheet.order_index ?? 0,
+          is_option: (oldSheet as any).is_option ?? false,
+          sheet_type: (oldSheet as any).sheet_type ?? 'proposal',
+          description: (oldSheet as any).description ?? null,
+          change_order_seq: (oldSheet as any).change_order_seq ?? null,
+          compare_to_sheet_id: null,
+        };
+        // Some deployments may not yet have the `category_order` column (or schema cache is stale).
+        // Only include it in the insert when present on the source sheet.
+        if ((oldSheet as any).category_order !== undefined) {
+          insPayload.category_order = (oldSheet as any).category_order ?? null;
+        }
+
+        const { data: newSheet, error: shErr } = await supabase
+          .from('material_sheets')
+          .insert(insPayload)
+          .select()
+          .single();
+        if (shErr || !newSheet) throw new Error(shErr?.message ?? 'Failed to copy sheet');
+        sheetIdMap[oldSheet.id] = newSheet.id;
+
+        const { data: oldItems } = await supabase.from('material_items').select('*').eq('sheet_id', oldSheet.id);
+        if (oldItems?.length) {
+          const rows = oldItems.map((item: any) => {
+            const { id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...rest } = item;
+            return { ...rest, sheet_id: newSheet.id };
+          });
+          const { error: itErr } = await supabase.from('material_items').insert(rows);
+          if (itErr) throw itErr;
+        }
+
+        const { data: oldMarkups } = await supabase
+          .from('material_category_markups')
+          .select('*')
+          .eq('sheet_id', oldSheet.id);
+        if (oldMarkups?.length) {
+          const { error: mErr } = await supabase.from('material_category_markups').insert(
+            oldMarkups.map((m: any) => ({
+              sheet_id: newSheet.id,
+              category_name: m.category_name,
+              markup_percent: m.markup_percent,
+            }))
+          );
+          if (mErr) throw mErr;
+        }
+
+        const { data: laborRows } = await supabase
+          .from('material_sheet_labor')
+          .select('*')
+          .eq('sheet_id', oldSheet.id);
+        for (const oldLabor of laborRows || []) {
+          const { id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...lr } = oldLabor;
+          const { error: lErr } = await supabase.from('material_sheet_labor').insert({ ...lr, sheet_id: newSheet.id });
+          if (lErr) throw lErr;
+        }
+      }
+
+      for (const oldSheet of orderedOldSheets) {
+        const newSid = sheetIdMap[oldSheet.id];
+        const oldCmp = (oldSheet as any).compare_to_sheet_id;
+        if (newSid && oldCmp && sheetIdMap[oldCmp]) {
+          const { error: uErr } = await supabase
+            .from('material_sheets')
+            .update({ compare_to_sheet_id: sheetIdMap[oldCmp] })
+            .eq('id', newSid);
+          if (uErr) throw uErr;
+        }
+      }
+
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+      if (!silent) {
+        toast.success('Working workbook created. Field requests and edits use this copy; locked snapshots stay unchanged.');
+      }
+      setSnapshotWorkbookId(null);
+      await loadWorkbook(false, undefined, null);
+      window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id, quoteId: qid } }));
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Failed to create working workbook.');
+    } finally {
+      setCreatingWorkingFromLocked(false);
+    }
+  }
+
+  /** Lock the current working workbook in place (status only — no rows/sheets changed). Creates a contract snapshot; use "Create working copy from snapshot" to edit again. */
+  async function lockCurrentWorkbookSnapshot() {
+    if (!workbook?.id || workbook.status !== 'working') {
+      toast.error('Only a working workbook can be locked.');
+      return;
+    }
+    if (!effectiveQuoteId) {
+      toast.error('Select a proposal first.');
+      return;
+    }
+    if (isWorkbookReadOnly) {
+      toast.error('This proposal is read-only here. Open the current/active proposal to lock its workbook.');
+      return;
+    }
+    if (
+      !confirm(
+        'Lock this materials workbook?\n\nNothing is deleted: line items, descriptions, and totals stay exactly as they are. This copy becomes read-only (like a signed contract record). Use “Create working copy from snapshot” afterward for Crew Orders, shop status, and edits.'
+      )
+    ) {
+      return;
+    }
+    setLockingWorkbook(true);
+    try {
+      const { error } = await supabase
+        .from('material_workbooks')
+        .update({ status: 'locked', updated_at: new Date().toISOString() })
+        .eq('id', workbook.id)
+        .eq('status', 'working');
+      if (error) throw error;
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+      setSnapshotWorkbookId(null);
+      toast.success('Workbook locked. Create a working copy from this snapshot if you need to edit or run Crew Orders.');
+      await loadWorkbook(true, undefined, null);
+      window.dispatchEvent(
+        new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id, quoteId: effectiveQuoteId } })
+      );
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Failed to lock workbook.');
+    } finally {
+      setLockingWorkbook(false);
+    }
+  }
+
+  /** Stable key when the selected quote is a sent/signed/office-locked contract (triggers auto workbook pairing). */
+  const frozenContractQuoteKey = useMemo(() => {
+    const q = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
+    if (!q || !effectiveQuoteId || !isQuoteContractFrozenMaterials(q)) return null;
+    return `${q.id}|${q.sent_at ?? ''}|${q.signed_version ?? ''}|${q.customer_signed_at ?? ''}|${q.locked_for_editing ?? ''}`;
+  }, [jobQuotes, effectiveQuoteId, contractQuoteFields]);
+
+  // Signed / sent proposals: ensure locked (contract) + working (shop/crew) workbooks without manual "Lock workbook".
+  useEffect(() => {
+    if (!frozenContractQuoteKey || !effectiveQuoteId) return;
+    const qid = effectiveQuoteId;
+    let cancelled = false;
+    (async () => {
+      const { data: allWbs, error } = await supabase
+        .from('material_workbooks')
+        .select('id, quote_id, status, version_number')
+        .eq('job_id', job.id);
+      if (cancelled || error) return;
+      let wbsForQ = (allWbs || []).filter((w: any) => w.quote_id === qid);
+      if (wbsForQ.length === 0) return;
+
+      let hasWorking = wbsForQ.some((w: any) => w.status === 'working');
+      let hasLocked = wbsForQ.some((w: any) => w.status === 'locked');
+      if (hasWorking && hasLocked) return;
+
+      setEnsuringContractWorkbookPair(true);
+      try {
+        if (hasWorking && !hasLocked) {
+          const sorted = [...wbsForQ]
+            .filter((w: any) => w.status === 'working')
+            .sort((a: any, b: any) => (b.version_number ?? 0) - (a.version_number ?? 0));
+          const top = sorted[0];
+          if (top?.id) {
+            const { error: uErr } = await supabase
+              .from('material_workbooks')
+              .update({ status: 'locked', updated_at: new Date().toISOString() })
+              .eq('id', top.id)
+              .eq('status', 'working');
+            if (uErr) throw uErr;
+          }
+          const { data: allWbs2, error: e2 } = await supabase
+            .from('material_workbooks')
+            .select('id, quote_id, status, version_number')
+            .eq('job_id', job.id);
+          if (cancelled || e2) return;
+          wbsForQ = (allWbs2 || []).filter((w: any) => w.quote_id === qid);
+          hasWorking = wbsForQ.some((w: any) => w.status === 'working');
+          hasLocked = wbsForQ.some((w: any) => w.status === 'locked');
+        }
+
+        if (hasLocked && !hasWorking) {
+          await createWorkingFromLatestLocked({ silent: true });
+        }
+      } catch (e: any) {
+        console.error('ensureContractWorkbookPair:', e);
+        toast.error(e?.message || 'Could not prepare signed-contract workbooks.');
+      } finally {
+        if (!cancelled) setEnsuringContractWorkbookPair(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- createWorkingFromLatestLocked/loadWorkbook are stable for this intent; avoid re-running on every render
+  }, [frozenContractQuoteKey, effectiveQuoteId, job.id]);
 
   function handleSheetChange(sheetId: string) {
     setActiveSheetId(sheetId);
@@ -1249,15 +2013,46 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   /**
-   * For extended cost/price: use length in feet when item has a length (lineal-foot priced, e.g. metal/Omni);
-   * otherwise use quantity.
+   * For extended cost/price: total = piece price × quantity.
+   * Metal (lineal-foot): piece = price_per_unit × length, so multiplier = length × quantity.
+   * Other items with length (e.g. trim): piece price is price_per_unit, so multiplier = quantity only.
+   * Items without length: multiplier = quantity.
    */
   function getEffectiveMultiplierForExtended(item: MaterialItem, lengthOverride?: string | null, quantityOverride?: number): number {
     const len = lengthOverride !== undefined ? lengthOverride : item.length;
     const lengthFeet = parseLengthToFeet(len);
-    if (lengthFeet != null && lengthFeet > 0) return lengthFeet;
     const qty = quantityOverride !== undefined ? quantityOverride : item.quantity;
-    return Number(qty) || 1;
+    const nq = Number(qty) || 1;
+    if (lengthFeet != null && lengthFeet > 0) {
+      // Metal (lineal-foot): total = (price per ft × length) × qty → multiplier = length × qty
+      if (item.category === 'Metal') return lengthFeet * nq;
+      // Trim / other with length: piece price = price_per_unit; total = piece × qty → multiplier = qty
+      return nq;
+    }
+    return nq;
+  }
+
+  /** Display extended cost/price = piece × quantity (so totals match the table). Metal: workbook $/ft overrides catalog. */
+  function getDisplayExtended(item: MaterialItem): { cost: number; price: number } {
+    const qty = Number(item.quantity) || 1;
+    const lengthFeetMetal = item.category === 'Metal' ? parseLengthToFeet(item.length) : null;
+    let pieceCost: number | null = null;
+    let piecePrice: number | null = null;
+
+    if (item.category === 'Metal' && lengthFeetMetal != null && lengthFeetMetal > 0) {
+      const cFt = getMetalCostPerFootDisplay(item);
+      const pFt = getMetalPricePerFootDisplay(item);
+      if (cFt != null) pieceCost = cFt * lengthFeetMetal;
+      if (pFt != null) piecePrice = pFt * lengthFeetMetal;
+    } else {
+      const lengthFeet = parseLengthToFeet(item.length);
+      pieceCost = item.cost_per_unit != null ? ((lengthFeet != null && lengthFeet > 0) ? item.cost_per_unit * lengthFeet : item.cost_per_unit) : null;
+      piecePrice = item.price_per_unit != null ? ((lengthFeet != null && lengthFeet > 0) ? item.price_per_unit * lengthFeet : item.price_per_unit) : null;
+    }
+    return {
+      cost: pieceCost != null ? pieceCost * qty : (item.extended_cost ?? 0),
+      price: piecePrice != null ? piecePrice * qty : (item.extended_price ?? 0),
+    };
   }
 
   function isMaterialInAnyPackage(materialId: string): boolean {
@@ -1352,22 +2147,36 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return catGroup.items.some((i) => parseLengthToFeet(i.length) != null && parseLengthToFeet(i.length)! > 0);
   }
 
-  /** Get cost/price per foot for Metal: use item's saved values when set (so user-entered plf stays visible), else materials_catalog for that SKU. */
+  /** Get cost/price per foot for category header. Metal: prefer workbook (item) per-ft when set; else materials_catalog by SKU. */
   function getCategoryFootPrice(catGroup: CategoryGroup): { costPerFoot: number | null; pricePerFoot: number | null } {
-    const withLength = catGroup.items.find((i) => parseLengthToFeet(i.length) != null && parseLengthToFeet(i.length)! > 0);
+    const linealItems = catGroup.items.filter((i) => {
+      const feet = parseLengthToFeet(i.length);
+      return feet != null && feet > 0;
+    });
+    const withLength = linealItems[0];
     if (!withLength) return { costPerFoot: null, pricePerFoot: null };
+
+    if (catGroup.category === 'Metal') {
+      const fromItem = linealItems.find((i) => i.cost_per_unit != null || i.price_per_unit != null);
+      if (fromItem && (fromItem.cost_per_unit != null || fromItem.price_per_unit != null)) {
+        return {
+          costPerFoot: fromItem.cost_per_unit ?? null,
+          pricePerFoot: fromItem.price_per_unit ?? null,
+        };
+      }
+      if (withLength.sku && metalCatalogBySku[withLength.sku]) {
+        const cat = metalCatalogBySku[withLength.sku];
+        return {
+          costPerFoot: cat.purchase_cost > 0 ? cat.purchase_cost : null,
+          pricePerFoot: cat.unit_price > 0 ? cat.unit_price : null,
+        };
+      }
+    }
     const hasItemPrices = withLength.cost_per_unit != null || withLength.price_per_unit != null;
     if (hasItemPrices) {
       return {
         costPerFoot: withLength.cost_per_unit ?? null,
         pricePerFoot: withLength.price_per_unit ?? null,
-      };
-    }
-    if (catGroup.category === 'Metal' && withLength.sku && metalCatalogBySku[withLength.sku]) {
-      const cat = metalCatalogBySku[withLength.sku];
-      return {
-        costPerFoot: cat.purchase_cost > 0 ? cat.purchase_cost : null,
-        pricePerFoot: cat.unit_price > 0 ? cat.unit_price : null,
       };
     }
     return {
@@ -1376,10 +2185,38 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     };
   }
 
-  /** Apply new cost/price per foot to all lineal-foot items in this category; persist and update workbook. Metal: price = cost + $0.10, total = (price per ft × length) × qty. */
+  /**
+   * Catalog PLF for Metal when the row has no per-ft price on the item (import-only).
+   * If cost_per_unit / price_per_unit are set on the item, returns null so UI uses workbook values and allows edits when unlocked.
+   */
+  function getMetalPlf(item: MaterialItem): { costPerFoot: number; pricePerFoot: number } | null {
+    if (item.category !== 'Metal' || !item.sku) return null;
+    if (item.cost_per_unit != null || item.price_per_unit != null) return null;
+    const cat = metalCatalogBySku[item.sku];
+    if (!cat || (cat.purchase_cost === 0 && cat.unit_price === 0)) return null;
+    return {
+      costPerFoot: cat.purchase_cost,
+      pricePerFoot: cat.unit_price,
+    };
+  }
+
+  /** Effective $/ft for display (workbook overrides catalog when present). */
+  function getMetalCostPerFootDisplay(item: MaterialItem): number | null {
+    if (item.category !== 'Metal') return null;
+    if (item.cost_per_unit != null) return Number(item.cost_per_unit);
+    return getMetalPlf(item)?.costPerFoot ?? null;
+  }
+
+  function getMetalPricePerFootDisplay(item: MaterialItem): number | null {
+    if (item.category !== 'Metal') return null;
+    if (item.price_per_unit != null) return Number(item.price_per_unit);
+    return getMetalPlf(item)?.pricePerFoot ?? null;
+  }
+
+  /** Apply new cost/price per foot to all lineal-foot items in this category; persist and update workbook. Metal: if only cost is entered, default price = cost + $0.10; if only price, default cost = price − $0.10; if both entered, use both. */
   async function applyCategoryFootPrice(catGroup: CategoryGroup, costPerFoot: number | null, pricePerFoot: number | null) {
-    if (isWorkbookReadOnly) {
-      toast.error('This proposal is locked and cannot be edited.');
+    if (isWorkbookReadOnly || workbook?.status === 'locked') {
+      toast.error(workbook?.status === 'locked' ? 'This is a locked snapshot — return to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
       return;
     }
     const linealItems = catGroup.items.filter((i) => {
@@ -1388,17 +2225,26 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     });
     if (linealItems.length === 0) return;
     const current = getCategoryFootPrice(catGroup);
+    const explicitCost = costPerFoot != null && Number.isFinite(costPerFoot);
+    const explicitPrice = pricePerFoot != null && Number.isFinite(pricePerFoot);
     let safeCost =
-      costPerFoot != null && Number.isFinite(costPerFoot)
-        ? Math.round(costPerFoot * 10000) / 10000
+      explicitCost
+        ? Math.round(costPerFoot! * 10000) / 10000
         : (current.costPerFoot != null ? Math.round(current.costPerFoot * 10000) / 10000 : null);
     let safePrice =
-      pricePerFoot != null && Number.isFinite(pricePerFoot)
-        ? Math.round(pricePerFoot * 10000) / 10000
+      explicitPrice
+        ? Math.round(pricePerFoot! * 10000) / 10000
         : (current.pricePerFoot != null ? Math.round(current.pricePerFoot * 10000) / 10000 : null);
     if (catGroup.category === 'Metal') {
-      if (safeCost != null) safePrice = Math.round((safeCost + 0.1) * 10000) / 10000;
-      else if (safePrice != null) safeCost = Math.round((safePrice - 0.1) * 10000) / 10000;
+      if (explicitCost && !explicitPrice && safeCost != null) {
+        safePrice = Math.round((safeCost + 0.1) * 10000) / 10000;
+      } else if (!explicitCost && explicitPrice && safePrice != null) {
+        safeCost = Math.round((safePrice - 0.1) * 10000) / 10000;
+      }
+    }
+    if (safeCost == null && safePrice == null) {
+      toast.error('Enter cost and/or price per lineal foot.');
+      return;
     }
     const safeMarkup =
       safeCost != null && safePrice != null && safeCost > 0
@@ -1454,10 +2300,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (existing) workbookCache.set(cacheKey, { ...existing, workbook: updatedWorkbook, cachedAt: Date.now() });
     }
     toast.success(`Updated ${updates.length} metal panel(s) to $${safeCost?.toFixed(2) ?? '—'}/ft cost, $${safePrice?.toFixed(2) ?? '—'}/ft price.`);
+    window.dispatchEvent(
+      new CustomEvent('materials-workbook-updated', { detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id } })
+    );
   }
 
   function startCellEdit(itemId: string, field: string, currentValue: any) {
-    if (isWorkbookReadOnly) return;
+    if (isWorkbookReadOnly || workbook?.status === 'locked') return;
     setEditingCell({ itemId, field });
     setCellValue(currentValue?.toString() || '');
   }
@@ -1512,11 +2361,22 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         updateData.extended_price = newPrice != null && mult ? Math.round(mult * newPrice * 10000) / 10000 : null;
       }
 
-      if (field === 'markup_percent' && item.cost_per_unit) {
-        const newPricePerUnit = item.cost_per_unit * (1 + value);
-        updateData.price_per_unit = newPricePerUnit;
-        updateData.extended_price = newPricePerUnit != null && mult ? Math.round(mult * newPricePerUnit * 10000) / 10000 : null;
-        updateData.extended_cost = item.cost_per_unit != null && mult ? Math.round(mult * item.cost_per_unit * 10000) / 10000 : null;
+      if (field === 'markup_percent') {
+        const baseCost =
+          item.cost_per_unit != null && item.cost_per_unit > 0
+            ? Number(item.cost_per_unit)
+            : item.category === 'Metal'
+              ? getMetalPlf(item)?.costPerFoot ?? null
+              : null;
+        if (baseCost != null && baseCost > 0) {
+          const newPricePerUnit = baseCost * (1 + value);
+          updateData.price_per_unit = newPricePerUnit;
+          if (item.category === 'Metal' && item.cost_per_unit == null) {
+            updateData.cost_per_unit = baseCost;
+          }
+          updateData.extended_price = newPricePerUnit != null && mult ? Math.round(mult * newPricePerUnit * 10000) / 10000 : null;
+          updateData.extended_cost = mult ? Math.round(mult * baseCost * 10000) / 10000 : null;
+        }
       }
 
       scrollPositionRef.current = window.scrollY;
@@ -1575,6 +2435,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function updateStatus(itemId: string, newStatus: string) {
+    if (workbook?.status !== 'working') {
+      toast.error('Shop / order status can only be updated on the working workbook, not on a locked contract snapshot.');
+      return;
+    }
     try {
       // Save current scroll position
       scrollPositionRef.current = window.scrollY;
@@ -1627,15 +2491,30 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       case 'ready_for_job':
         return 'bg-emerald-100 text-emerald-800 border-emerald-300';
       case 'at_job':
-        return 'bg-teal-100 text-teal-800 border-teal-300';
+        return 'bg-teal-100 text-teal-800 border-gray-200';
       case 'not_ordered':
       default:
         return 'bg-slate-100 text-slate-800 border-slate-300';
     }
   }
 
+  function formatStatusLabel(status: string): string {
+    const labels: Record<string, string> = {
+      not_ordered: 'Not ordered',
+      ordered: 'Ordered',
+      received: 'Received',
+      pull_from_shop: 'Pull from shop',
+      ready_for_job: 'Ready for job',
+      at_job: 'At job',
+    };
+    return labels[status] || status.replace(/_/g, ' ');
+  }
+
   async function deleteItem(itemId: string) {
-    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
+    if (isWorkbookReadOnly || workbook?.status === 'locked') {
+      toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+      return;
+    }
     if (!confirm('Delete this material?')) return;
 
     try {
@@ -1779,7 +2658,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function addMaterialsFromCatalogSelection() {
-    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
+    if (isWorkbookReadOnly || workbook?.status === 'locked') {
+      toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+      return;
+    }
     if (selectedCatalogMaterials.length === 0) {
       toast.error('Select at least one material');
       return;
@@ -1887,11 +2769,19 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   function openZohoOrderDialogForMaterial(item: MaterialItem) {
+    if (workbook?.status !== 'working') {
+      toast.error('Zoho orders are only available on the working workbook, not on a locked contract snapshot.');
+      return;
+    }
     setSelectedMaterialsForOrder([item]);
     setShowZohoOrderDialog(true);
   }
 
   function openZohoOrderDialogForCategory(categoryItems: MaterialItem[]) {
+    if (workbook?.status !== 'working') {
+      toast.error('Zoho orders are only available on the working workbook, not on a locked contract snapshot.');
+      return;
+    }
     if (categoryItems.length === 0) {
       toast.error('No materials to order');
       return;
@@ -1982,8 +2872,15 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   async function addNewSheet() {
     const isChangeOrder = newSheetType === 'change_order';
+    if (isChangeOrder && !jobHasContract) {
+      toast.error('Set the main proposal as contract before adding change order sheets.');
+      return;
+    }
     if (!isChangeOrder) {
-      if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
+      if (isWorkbookReadOnly || workbook?.status === 'locked') {
+        toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+        return;
+      }
       if (!workbook || workbook.status === 'locked') {
         toast.error('Cannot add sheets to a locked workbook');
         return;
@@ -2045,6 +2942,21 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       }
 
       if (error) throw error;
+
+      if (isChangeOrder && newSheet?.id) {
+        try {
+          const { data: coSheets } = await supabase
+            .from('material_sheets')
+            .select('id, change_order_seq')
+            .eq('workbook_id', targetWorkbookId)
+            .eq('sheet_type', 'change_order');
+          const others = (coSheets || []).filter((s: any) => s.id !== newSheet.id);
+          const maxSeq = others.reduce((m: number, s: any) => Math.max(m, Number(s.change_order_seq) || 0), 0);
+          await supabase.from('material_sheets').update({ change_order_seq: maxSeq + 1 }).eq('id', newSheet.id);
+        } catch {
+          /* change_order_seq column may not exist until migration */
+        }
+      }
 
       toast.success(`Sheet "${newSheetName}" added successfully`);
       setShowAddSheetDialog(false);
@@ -2175,7 +3087,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function deleteSheet(sheet: MaterialSheet) {
-    if (isWorkbookReadOnly) { toast.error('This proposal is locked and cannot be edited.'); return; }
+    if (isWorkbookReadOnly || workbook?.status === 'locked') {
+      toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+      return;
+    }
     if (!workbook || workbook.status === 'locked') {
       toast.error('Cannot delete sheets from a locked workbook');
       return;
@@ -2526,8 +3441,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   const selectedQuote = jobQuotes.find(q => q.id === effectiveQuoteId);
-  const proposalLabel = selectedQuote
-    ? (selectedQuote.is_change_order_proposal ? 'Change orders' : (selectedQuote.proposal_number || selectedQuote.quote_number || `Proposal ${selectedQuote.id.slice(0, 8)}`))
+  const quoteForContractUi = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
+  const labelQuote = selectedQuote ?? quoteForContractUi;
+  const proposalLabel = labelQuote
+    ? (labelQuote.is_change_order_proposal ? 'Change orders' : (labelQuote.proposal_number || labelQuote.quote_number || `Proposal ${labelQuote.id.slice(0, 8)}`))
     : (proposalNumber || 'Proposal');
 
   // Mirror the same locked logic used in JobFinancials. Put change order proposal last; then sort regular quotes by proposal_number descending.
@@ -2540,14 +3457,88 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return nb.localeCompare(na, undefined, { numeric: true });
   });
   const latestQuoteId = sortedQuotes.find(q => !q.is_change_order_proposal)?.id ?? sortedQuotes[0]?.id;
-  const isWorkbookReadOnly = !!selectedQuote && (
-    selectedQuote.is_change_order_proposal
-      ? (!!selectedQuote.sent_at || !!selectedQuote.locked_for_editing)
-      : ((sortedQuotes.length > 0 && selectedQuote.id !== latestQuoteId) || !!selectedQuote.sent_at || !!selectedQuote.locked_for_editing)
+  const isWorkbookReadOnly = !!quoteForContractUi && (
+    quoteForContractUi.is_change_order_proposal
+      ? (!!quoteForContractUi.sent_at || !!quoteForContractUi.locked_for_editing)
+      : ((sortedQuotes.length > 0 && quoteForContractUi.id !== latestQuoteId) || !!quoteForContractUi.sent_at || !!quoteForContractUi.locked_for_editing)
   );
+  const materialsWorkbookLocked = isWorkbookReadOnly || workbook?.status === 'locked';
+  /** Zoho orders + line status (Not Ordered / etc.) are for operations on the working copy only — never on locked contract snapshots. */
+  const showShopOrderControls = workbook?.status === 'working';
+
+  const quoteContractFrozen = isQuoteContractFrozenMaterials(quoteForContractUi);
+  /** Unsigned / draft proposals: optional manual lock. Sent or signed contracts auto-manage locked + working copies. */
+  const showManualLockWorkbook =
+    !!workbook && workbook.status === 'working' && !quoteContractFrozen && !isWorkbookReadOnly;
+  /** Show switch whenever we have a locked contract row — working side enables after auto-setup (or is disabled until then). */
+  const showContractWorkingToggle = quoteContractFrozen && lockedSnapshotsMeta.length > 0;
+  /** User manually locked while still editable — keep older “view snapshot” row. */
+  const showLegacyLockedSnapshotButtons =
+    !quoteContractFrozen && workbook?.status === 'working' && lockedSnapshotsMeta.length > 0;
 
   const materialsSlot = useMaterialsToolbarSlot();
   const portalTarget = materialsSlot?.ready && materialsSlot?.ref?.current ? materialsSlot.ref.current : null;
+
+  const viewingSignedContractWorkbook =
+    !!snapshotWorkbookId ||
+    (!!workbook?.id &&
+      workbook.status === 'locked' &&
+      lockedSnapshotsMeta.some((l) => l.id === workbook.id));
+  const viewingWorkingCopy =
+    !!workbook &&
+    workbook.status === 'working' &&
+    !snapshotWorkbookId &&
+    hasWorkingWorkbookForQuote;
+  const workingCopyToggleDisabled = !hasWorkingWorkbookForQuote;
+
+  /** Readable on both the dark portaled job bar and light inline headers */
+  const contractWorkbookViewToggle =
+    showContractWorkingToggle && lockedSnapshotsMeta[0] ? (
+      <div className="flex items-center gap-1.5 shrink-0" role="group" aria-label="Switch materials workbook view">
+        <div className="inline-flex rounded-md border-2 border-amber-600 bg-white/95 dark:bg-slate-900/90 p-0.5 shadow-sm">
+          <button
+            type="button"
+            disabled={workingCopyToggleDisabled}
+            onClick={() => {
+              if (workingCopyToggleDisabled) return;
+              void exitLockedSnapshotView();
+            }}
+            className={cn(
+              'rounded px-2 sm:px-2.5 py-1 text-[10px] sm:text-[11px] font-bold transition-colors whitespace-nowrap',
+              viewingWorkingCopy
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-amber-950 hover:bg-amber-50',
+              workingCopyToggleDisabled && 'opacity-40 cursor-not-allowed hover:bg-transparent',
+            )}
+            title={
+              workingCopyToggleDisabled
+                ? ensuringContractWorkbookPair
+                  ? 'Creating working copy…'
+                  : 'Working copy is being prepared for this signed contract'
+                : 'Edit materials, shop status, and crew orders'
+            }
+          >
+            Working copy
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void openLockedSnapshotView(lockedSnapshotsMeta[0].id);
+            }}
+            className={cn(
+              'rounded px-2 sm:px-2.5 py-1 text-[10px] sm:text-[11px] font-bold transition-colors whitespace-nowrap',
+              viewingSignedContractWorkbook
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-amber-950 hover:bg-amber-50',
+            )}
+            title="Read-only line items and totals as signed/sent"
+          >
+            Signed contract{' '}
+            <span className="opacity-90 font-semibold">v{lockedSnapshotsMeta[0].version_number}</span>
+          </button>
+        </div>
+      </div>
+    ) : null;
 
   // Action buttons that appear in the top bar (Move / Package / Documents / Export / Add Material).
   // Only rendered when the Workbook tab is active and a workbook exists.
@@ -2579,36 +3570,57 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         </>
       ) : (
         <>
-          {workbook.sheets.length > 1 && (
-            <Button onClick={toggleBulkMoveMode} size="sm" variant="outline"
-              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100">
-              <MoveHorizontal className="w-2.5 h-2.5 mr-0.5" />Move
+          {showShopOrderControls && (
+            <>
+              {workbook.sheets.length > 1 && (
+                <Button onClick={toggleBulkMoveMode} size="sm" variant="outline"
+                  className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100">
+                  <MoveHorizontal className="w-2.5 h-2.5 mr-0.5" />Move
+                </Button>
+              )}
+              {packages.length > 0 && (
+                <Button onClick={togglePackageSelectionMode} size="sm" variant="outline"
+                  className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
+                  <Package className="w-2.5 h-2.5 mr-0.5" />Package
+                </Button>
+              )}
+              {activeSheet && activeSheet.items.length > 0 && (
+                <Button onClick={openSortCategoriesDialog} size="sm" variant="outline"
+                  className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
+                  title="Change the display order of categories for this sheet">
+                  <ListOrdered className="w-2.5 h-2.5 mr-0.5" />Sort Categories
+                </Button>
+              )}
+              <Button onClick={refreshWorkbookPricesFromCatalog} size="sm" variant="outline"
+                disabled={refreshingWorkbookPrices}
+                className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+                title="Update cost and price for all materials in this workbook from the catalog (Zoho Books).">
+                {refreshingWorkbookPrices ? (
+                  <><div className="w-2.5 h-2.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mr-0.5" />Refreshing…</>
+                ) : (
+                  <><RefreshCw className="w-2.5 h-2.5 mr-0.5" />Refresh prices</>
+                )}
+              </Button>
+            </>
+          )}
+          {showManualLockWorkbook && (
+            <Button
+              type="button"
+              onClick={() => lockCurrentWorkbookSnapshot()}
+              size="sm"
+              variant="outline"
+              disabled={lockingWorkbook}
+              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-amber-50 border-2 border-amber-600 text-amber-950 hover:bg-amber-100 font-semibold shadow-sm"
+              title="Lock this copy as a read-only snapshot (unsigned proposals). Signed/sent contracts lock automatically."
+            >
+              {lockingWorkbook ? (
+                <><div className="w-2.5 h-2.5 border-2 border-amber-800 border-t-transparent rounded-full animate-spin mr-0.5" />Locking…</>
+              ) : (
+                <><Lock className="w-2.5 h-2.5 mr-0.5" />Lock snapshot</>
+              )}
             </Button>
           )}
-          {packages.length > 0 && (
-            <Button onClick={togglePackageSelectionMode} size="sm" variant="outline"
-              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
-              <Package className="w-2.5 h-2.5 mr-0.5" />Package
-            </Button>
-          )}
-          {activeSheet && activeSheet.items.length > 0 && (
-            <Button onClick={openSortCategoriesDialog} size="sm" variant="outline"
-              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100"
-              title="Change the display order of categories for this sheet">
-              <ListOrdered className="w-2.5 h-2.5 mr-0.5" />Sort Categories
-            </Button>
-          )}
-          <Button onClick={refreshWorkbookPricesFromCatalog} size="sm" variant="outline"
-            disabled={refreshingWorkbookPrices}
-            className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
-            title="Update cost and price for all materials in this workbook from the catalog (Zoho Books).">
-            {refreshingWorkbookPrices ? (
-              <><div className="w-2.5 h-2.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mr-0.5" />Refreshing…</>
-            ) : (
-              <><RefreshCw className="w-2.5 h-2.5 mr-0.5" />Refresh prices</>
-            )}
-          </Button>
-          {!isWorkbookReadOnly && (
+          {!materialsWorkbookLocked && (
             <Button onClick={() => openAddDialog()} size="sm"
               className="h-6 text-[10px] gradient-primary whitespace-nowrap px-1.5">
               <Plus className="w-2.5 h-2.5 mr-0.5" />Add Material
@@ -2636,7 +3648,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   ) : null;
 
   const materialsToolbarContent = (
-    <div className="flex items-center gap-1 flex-wrap text-xs">
+    <div className="flex items-center gap-1 flex-wrap text-xs justify-end min-w-0">
       <TabsList className="flex flex-wrap items-center gap-1 h-8 p-0 bg-transparent border-0">
         <TabsTrigger
           value="manage"
@@ -2686,6 +3698,37 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           <span>Upload</span>
         </TabsTrigger>
       </TabsList>
+      {activeTab === 'manage' && contractWorkbookViewToggle && (
+        <>
+          <div className="h-6 w-px bg-yellow-500/50 flex-shrink-0 hidden sm:block" aria-hidden />
+          {contractWorkbookViewToggle}
+        </>
+      )}
+      {activeTab === 'manage' && !contractWorkbookViewToggle && showManualLockWorkbook && (
+        <>
+          <div className="h-6 w-px bg-yellow-500/50 flex-shrink-0 hidden sm:block" aria-hidden />
+          <Button
+            type="button"
+            onClick={() => lockCurrentWorkbookSnapshot()}
+            size="sm"
+            disabled={lockingWorkbook}
+            className="h-7 text-[11px] px-2 font-bold bg-amber-200 border-2 border-amber-600 text-amber-950 hover:bg-amber-300 shadow-md shrink-0"
+            title="Lock a read-only snapshot (unsigned proposals). Signed/sent contracts lock automatically."
+          >
+            {lockingWorkbook ? (
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 border-2 border-amber-900 border-t-transparent rounded-full animate-spin" />
+                Locking…
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5" />
+                Lock snapshot
+              </span>
+            )}
+          </Button>
+        </>
+      )}
     </div>
   );
 
@@ -2719,7 +3762,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   </SelectContent>
                 </Select>
                 <div className="flex-1" />
-                {workbookActionButtons}
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {contractWorkbookViewToggle}
+                  {workbookActionButtons}
+                </div>
               </div>
             ) : null}
             <div className="flex items-center gap-2 flex-wrap">
@@ -2756,11 +3802,170 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   </TabsTrigger>
                 </TabsList>
               </div>
-              {/* Single/no proposal: buttons sit beside the tab strip */}
-              {jobQuotes.length <= 1 && workbookActionButtons}
+              {/* Single/no proposal: toggle + buttons beside the tab strip */}
+              {jobQuotes.length <= 1 && (
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  {contractWorkbookViewToggle}
+                  {workbookActionButtons}
+                </div>
+              )}
             </div>
           </div>
         )}
+
+        {quoteContractFrozen && ensuringContractWorkbookPair && (
+          <div className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-950 mb-2 flex items-center gap-2">
+            <div className="w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0" />
+            <span>Preparing working copy for shop, crew orders, and edits…</span>
+          </div>
+        )}
+
+        {showLegacyLockedSnapshotButtons && (
+          <div className="flex flex-wrap items-center gap-2 justify-end mb-2">
+            <Button
+              type="button"
+              size="sm"
+              className="h-9 text-xs font-semibold bg-amber-100 border-2 border-amber-400 text-amber-950 hover:bg-amber-200 shadow-sm"
+              onClick={() => openLockedSnapshotView(lockedSnapshotsMeta[0].id)}
+              title="Open the latest locked snapshot (read-only)"
+            >
+              <Lock className="w-3.5 h-3.5 mr-1.5" />
+              View locked snapshot
+              <Badge variant="outline" className="ml-2 bg-white border-amber-500 text-amber-900">
+                v{lockedSnapshotsMeta[0].version_number}
+              </Badge>
+            </Button>
+            {lockedSnapshotsMeta.slice(1).map((lb) => (
+              <Button
+                key={lb.id}
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-amber-300 text-amber-900 bg-white hover:bg-amber-50"
+                onClick={() => openLockedSnapshotView(lb.id)}
+              >
+                <Lock className="w-3 h-3 mr-1" />
+                v{lb.version_number}
+                {lb.locked_at ? ` · ${new Date(lb.locked_at).toLocaleDateString()}` : ''}
+              </Button>
+            ))}
+          </div>
+        )}
+
+        {workbook && quoteContractFrozen && !!snapshotWorkbookId && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50/95 px-3 py-2 text-sm text-amber-950 mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Lock className="w-4 h-4 shrink-0" />
+              <span className="text-xs sm:text-sm">
+                Viewing <strong>signed contract</strong> (read-only) · v{workbook.version_number}. Use <strong>Working copy</strong> in the bar above for edits and crew orders.
+              </span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-8 text-xs shrink-0"
+              onClick={() => exitLockedSnapshotView()}
+            >
+              <LockOpen className="w-3 h-3 mr-1" />
+              Working copy
+            </Button>
+          </div>
+        )}
+
+        {workbook &&
+          quoteContractFrozen &&
+          workbook.status === 'locked' &&
+          !snapshotWorkbookId &&
+          !hasWorkingWorkbookForQuote &&
+          !ensuringContractWorkbookPair && (
+            <div className="rounded-lg border p-3 px-3 flex flex-col gap-2 text-sm border-amber-300 bg-amber-50 text-amber-950 mb-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Lock className="w-4 h-4 shrink-0" />
+                <span className="font-semibold">Signed contract workbook — add a working copy</span>
+                <Badge variant="outline" className="bg-white/80">
+                  v{workbook.version_number}
+                </Badge>
+              </div>
+              <p className="text-xs opacity-90 pl-6">
+                If automatic setup did not finish, create a working copy for shop and crew (the signed version stays unchanged).
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 text-xs w-fit gradient-primary"
+                disabled={creatingWorkingFromLocked}
+                onClick={() => createWorkingFromLatestLocked()}
+              >
+                {creatingWorkingFromLocked ? 'Creating…' : 'Create working copy'}
+              </Button>
+            </div>
+          )}
+
+        {workbook &&
+          !quoteContractFrozen &&
+          (snapshotWorkbookId || (workbook.status === 'locked' && !snapshotWorkbookId)) && (
+            <div className="rounded-lg border p-3 px-3 flex flex-col gap-2 text-sm border-amber-300 bg-amber-50 text-amber-950">
+              {snapshotWorkbookId ? (
+                <>
+                  <div className="flex flex-wrap items-start gap-2 w-full">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Lock className="w-4 h-4 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
+                            Locked snapshot
+                          </span>
+                          <span className="font-semibold">Read-only snapshot (line items & totals)</span>
+                          <Badge variant="outline" className="bg-white/80">
+                            v{workbook.version_number}
+                          </Badge>
+                        </div>
+                        <p className="text-xs opacity-90 mt-1 max-w-[56rem]">
+                          Shop orders and line status are hidden here. Use <strong>Back to working workbook</strong> for crew orders and edits.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 text-xs shrink-0"
+                      onClick={() => exitLockedSnapshotView()}
+                    >
+                      <LockOpen className="w-3 h-3 mr-1" />
+                      Back to working workbook
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Lock className="w-4 h-4 shrink-0" />
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
+                      Locked only
+                    </span>
+                    <span className="font-semibold">No working copy yet</span>
+                    <Badge variant="outline" className="bg-white/80">
+                      v{workbook.version_number}
+                    </Badge>
+                  </div>
+                  <p className="text-xs opacity-90 pl-6">
+                    Create a working copy for crew orders, shop status, and edits — this locked version stays unchanged.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 text-xs w-fit gradient-primary"
+                    disabled={creatingWorkingFromLocked}
+                    onClick={() => createWorkingFromLatestLocked()}
+                  >
+                    {creatingWorkingFromLocked ? 'Creating…' : 'Create working copy from snapshot'}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
 
         <TabsContent value="manage" className="space-y-3 flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
           {!workbook ? (
@@ -2768,8 +3973,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               <CardContent className="py-12 text-center">
                 <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
                 <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
+                <p className="text-sm text-muted-foreground mb-2">
+                  There is no workbook yet for this job{jobQuotes.length > 1 && effectiveQuoteId ? ' and proposal' : ''}. Workbooks are stored per job (and per proposal when you have multiple).
+                </p>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Upload an Excel workbook to get started with material management
+                  Go to the <strong>Upload</strong> tab to create an empty workbook or upload an Excel file to get started.
                 </p>
                 <Button onClick={() => setActiveTab('upload')} className="gradient-primary">
                   <Upload className="w-4 h-4 mr-2" />
@@ -2842,6 +4050,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                           variant="outline"
                           size="sm"
                           onClick={() => {
+                            if (sheetTypeFilter === 'change_order' && !jobHasContract) {
+                              toast.error('Set the main proposal as contract before adding change orders.');
+                              return;
+                            }
                             setNewSheetType(sheetTypeFilter === 'change_order' ? 'change_order' : 'proposal');
                             setShowAddSheetDialog(true);
                           }}
@@ -3020,10 +4232,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             </Button>
                                           </>
                                         ) : (
-                                          <button
-                                            type="button"
+                                          <span
+                                            className={`text-[10px] text-indigo-700 flex items-center gap-1.5 ${
+                                              materialsWorkbookLocked && catGroup.category === 'Metal'
+                                                ? 'cursor-default'
+                                                : 'hover:text-indigo-900 hover:underline cursor-pointer'
+                                            }`}
                                             onClick={() => {
-                                              if (isWorkbookReadOnly) return;
+                                              if (materialsWorkbookLocked) return;
                                               const { costPerFoot, pricePerFoot } = getCategoryFootPrice(catGroup);
                                               setCategoryFootPriceEdit({
                                                 category: catGroup.category,
@@ -3031,30 +4247,39 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                                 pricePerFoot: pricePerFoot != null ? String(pricePerFoot) : '',
                                               });
                                             }}
-                                            className="text-[10px] text-indigo-700 hover:text-indigo-900 hover:underline flex items-center gap-1.5"
+                                            title={
+                                              catGroup.category === 'Metal'
+                                                ? materialsWorkbookLocked
+                                                  ? 'Metal PLF from SKU (import); locked workbook — open working copy to edit'
+                                                  : 'Click to edit lineal ft cost/price for all Metal items'
+                                                : undefined
+                                            }
                                           >
                                             <DollarSign className="w-3 h-3" />
                                             Cost {footPrice.costPerFoot != null ? `$${footPrice.costPerFoot.toFixed(2)}` : '—'}/ft
                                             <span className="text-slate-400">|</span>
                                             Price {footPrice.pricePerFoot != null ? `$${footPrice.pricePerFoot.toFixed(2)}` : '—'}/ft
-                                            <Pencil className="w-2.5 h-2.5" />
-                                          </button>
+                                            {!materialsWorkbookLocked && <Pencil className="w-2.5 h-2.5" />}
+                                          </span>
                                         )}
                                       </div>
                                     )}
                                     <div className="flex gap-1">
-                                      <Button
-                                        size="sm"
-                                        onClick={() => openZohoOrderDialogForCategory(catGroup.items)}
-                                        className="h-6 text-[10px] bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-2"
-                                      >
-                                        <ShoppingCart className="w-2.5 h-2.5 mr-0.5" />
-                                        Order All
-                                      </Button>
+                                      {showShopOrderControls && (
+                                        <Button
+                                          size="sm"
+                                          onClick={() => openZohoOrderDialogForCategory(catGroup.items)}
+                                          className="h-6 text-[10px] bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-2"
+                                        >
+                                          <ShoppingCart className="w-2.5 h-2.5 mr-0.5" />
+                                          Order All
+                                        </Button>
+                                      )}
                                       <Button
                                         size="sm"
                                         onClick={() => openAddDialog(catGroup.category)}
                                         className="h-6 text-[10px] bg-indigo-600 hover:bg-indigo-700 px-2"
+                                        disabled={materialsWorkbookLocked}
                                       >
                                         <Plus className="w-2.5 h-2.5 mr-0.5" />
                                         Add to {catGroup.category}
@@ -3066,7 +4291,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                 </td>
                               </tr>
                               {catGroup.items.map((item, itemIndex) => {
-                                const markupPercent = calculateMarkupPercent(item.cost_per_unit, item.price_per_unit);
+                                const markupPercent = (() => {
+                                  if (item.category === 'Metal') {
+                                    const c = getMetalCostPerFootDisplay(item);
+                                    const p = getMetalPricePerFootDisplay(item);
+                                    if (c != null && p != null && c > 0) return calculateMarkupPercent(c, p);
+                                  }
+                                  return calculateMarkupPercent(item.cost_per_unit, item.price_per_unit);
+                                })();
                                 const isEven = itemIndex % 2 === 0;
                                 const isEditingThisCell = (field: string) => 
                                   editingCell?.itemId === item.id && editingCell?.field === field;
@@ -3322,15 +4554,39 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                         />
                                       ) : (
                                         <div
-                                          onClick={() => startCellEdit(item.id, 'cost_per_unit', item.cost_per_unit)}
-                                          className="text-right font-mono text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
-                                          title={item.category === 'Metal' && parseLengthToFeet(item.length) != null ? 'Cost per piece (cost/ft × length); click to edit cost per ft' : undefined}
+                                          onClick={() => {
+                                            if (materialsWorkbookLocked && item.category === 'Metal' && getMetalPlf(item)) return;
+                                            const seed =
+                                              item.category === 'Metal'
+                                                ? (item.cost_per_unit ?? getMetalPlf(item)?.costPerFoot)
+                                                : item.cost_per_unit;
+                                            startCellEdit(item.id, 'cost_per_unit', seed);
+                                          }}
+                                          className={`text-right font-mono text-xs p-1 rounded min-h-[24px] ${
+                                            item.category === 'Metal' && getMetalPlf(item) && materialsWorkbookLocked
+                                              ? 'cursor-default'
+                                              : 'cursor-pointer hover:bg-blue-100'
+                                          }`}
+                                          title={
+                                            item.category === 'Metal' && getMetalPlf(item) && materialsWorkbookLocked
+                                              ? 'Cost per piece from SKU (cost/ft × length); locked workbook'
+                                              : item.category === 'Metal' && parseLengthToFeet(item.length) != null
+                                                ? 'Cost per piece (cost/ft × length); click to edit $/ft'
+                                                : undefined
+                                          }
                                         >
-                                          {item.cost_per_unit != null ? (() => {
+                                          {(() => {
                                             const lengthFeet = item.category === 'Metal' ? parseLengthToFeet(item.length) : null;
-                                            const perPiece = lengthFeet != null && lengthFeet > 0 ? item.cost_per_unit * lengthFeet : item.cost_per_unit;
-                                            return `$${perPiece.toFixed(2)}`;
-                                          })() : '-'}
+                                            const costFt = getMetalCostPerFootDisplay(item);
+                                            if (item.category === 'Metal' && costFt != null && lengthFeet != null && lengthFeet > 0) {
+                                              return `$${(costFt * lengthFeet).toFixed(2)}`;
+                                            }
+                                            if (item.cost_per_unit != null) {
+                                              const perPiece = lengthFeet != null && lengthFeet > 0 ? item.cost_per_unit * lengthFeet : item.cost_per_unit;
+                                              return `$${perPiece.toFixed(2)}`;
+                                            }
+                                            return '-';
+                                          })()}
                                         </div>
                                       )}
                                     </td>
@@ -3360,21 +4616,48 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                       ) : (
                                         <div
                                           onClick={() => {
-                                            const displayMarkup = (item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
-                                              ? calculateMarkupPercent(item.cost_per_unit, item.price_per_unit)
-                                              : (item.markup_percent != null ? item.markup_percent * 100 : 0);
+                                            if (item.category === 'Metal' && getMetalPlf(item) && materialsWorkbookLocked) return;
+                                            const displayMarkup =
+                                              item.category === 'Metal' &&
+                                              getMetalCostPerFootDisplay(item) != null &&
+                                              getMetalPricePerFootDisplay(item) != null &&
+                                              (getMetalCostPerFootDisplay(item) ?? 0) > 0
+                                                ? calculateMarkupPercent(
+                                                    getMetalCostPerFootDisplay(item)!,
+                                                    getMetalPricePerFootDisplay(item)!,
+                                                  )
+                                                : item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null
+                                                  ? calculateMarkupPercent(item.cost_per_unit, item.price_per_unit)
+                                                  : item.markup_percent != null
+                                                    ? item.markup_percent * 100
+                                                    : 0;
                                             startCellEdit(item.id, 'markup_percent', displayMarkup.toFixed(1));
                                           }}
-                                          className="cursor-pointer hover:bg-blue-100 py-0.5 px-1 rounded min-h-[22px] flex items-center justify-center text-xs"
-                                          title="Click to edit markup %"
+                                          className={`py-0.5 px-1 rounded min-h-[22px] flex items-center justify-center text-xs ${
+                                            item.category === 'Metal' && getMetalPlf(item) && materialsWorkbookLocked
+                                              ? 'cursor-default'
+                                              : 'cursor-pointer hover:bg-blue-100'
+                                          }`}
+                                          title={
+                                            item.category === 'Metal' && getMetalPlf(item) && materialsWorkbookLocked
+                                              ? 'Markup from SKU (import); locked workbook'
+                                              : 'Click to edit markup %'
+                                          }
                                         >
                                           {(item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null) || (item.markup_percent != null && item.markup_percent > 0) || markupPercent > 0 ? (
                                             <Badge variant="outline" className="font-semibold text-xs px-2 py-0.5 border-slate-200 bg-slate-50 text-slate-700">
                                               <Percent className="w-3 h-3 mr-1" />
                                               {(() => {
-                                                const val = (item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
-                                                  ? markupPercent
-                                                  : (item.markup_percent != null ? item.markup_percent * 100 : markupPercent);
+                                                const cFt = getMetalCostPerFootDisplay(item);
+                                                const pFt = getMetalPricePerFootDisplay(item);
+                                                const val =
+                                                  cFt != null && pFt != null && cFt > 0
+                                                    ? calculateMarkupPercent(cFt, pFt)
+                                                    : item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null
+                                                      ? markupPercent
+                                                      : item.markup_percent != null
+                                                        ? item.markup_percent * 100
+                                                        : markupPercent;
                                                 return val % 1 === 0 ? val.toFixed(0) : val.toFixed(1);
                                               })()}
                                             </Badge>
@@ -3403,42 +4686,78 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                         />
                                       ) : (
                                         <div
-                                          onClick={() => startCellEdit(item.id, 'price_per_unit', item.price_per_unit)}
-                                          className="text-right font-mono text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
-                                          title={item.category === 'Metal' && parseLengthToFeet(item.length) != null ? 'Price per piece (price/ft × length); click to edit price per ft' : undefined}
+                                          onClick={() => {
+                                            if (materialsWorkbookLocked && item.category === 'Metal' && getMetalPlf(item)) return;
+                                            const seed =
+                                              item.category === 'Metal'
+                                                ? (item.price_per_unit ?? getMetalPlf(item)?.pricePerFoot)
+                                                : item.price_per_unit;
+                                            startCellEdit(item.id, 'price_per_unit', seed);
+                                          }}
+                                          className={`text-right font-mono text-xs p-1 rounded min-h-[24px] ${
+                                            item.category === 'Metal' && getMetalPlf(item) && materialsWorkbookLocked
+                                              ? 'cursor-default'
+                                              : 'cursor-pointer hover:bg-blue-100'
+                                          }`}
+                                          title={
+                                            item.category === 'Metal' && getMetalPlf(item) && materialsWorkbookLocked
+                                              ? 'Price per piece from SKU (price/ft × length); locked workbook'
+                                              : item.category === 'Metal' && parseLengthToFeet(item.length) != null
+                                                ? 'Price per piece (price/ft × length); click to edit $/ft'
+                                                : undefined
+                                          }
                                         >
-                                          {item.price_per_unit != null ? (() => {
+                                          {(() => {
                                             const lengthFeet = item.category === 'Metal' ? parseLengthToFeet(item.length) : null;
-                                            const perPiece = lengthFeet != null && lengthFeet > 0 ? item.price_per_unit * lengthFeet : item.price_per_unit;
-                                            return `$${perPiece.toFixed(2)}`;
-                                          })() : '-'}
+                                            const priceFt = getMetalPricePerFootDisplay(item);
+                                            if (item.category === 'Metal' && priceFt != null && lengthFeet != null && lengthFeet > 0) {
+                                              return `$${(priceFt * lengthFeet).toFixed(2)}`;
+                                            }
+                                            if (item.price_per_unit != null) {
+                                              const perPiece = lengthFeet != null && lengthFeet > 0 ? item.price_per_unit * lengthFeet : item.price_per_unit;
+                                              return `$${perPiece.toFixed(2)}`;
+                                            }
+                                            return '-';
+                                          })()}
                                         </div>
                                       )}
                                     </td>
 
                                     <td className="p-1 text-right border-r">
                                       <div className="font-bold text-xs text-green-700">
-                                        {item.extended_price ? `$${item.extended_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                                        {(() => {
+                                          const { price } = getDisplayExtended(item);
+                                          return price !== 0 ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
+                                        })()}
                                       </div>
                                     </td>
 
                                     <td className="p-1 border-r whitespace-nowrap">
-                                      <Select
-                                        value={item.status || 'not_ordered'}
-                                        onValueChange={(value) => updateStatus(item.id, value)}
-                                      >
-                                        <SelectTrigger className={`h-6 text-[10px] font-semibold border ${getStatusColor(item.status || 'not_ordered')}`}>
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="not_ordered">Not Ordered</SelectItem>
-                                          <SelectItem value="ordered">Ordered</SelectItem>
-                                          <SelectItem value="received">Received</SelectItem>
-                                          <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
-                                          <SelectItem value="ready_for_job">Ready for Job</SelectItem>
-                                          <SelectItem value="at_job">At Job</SelectItem>
-                                        </SelectContent>
-                                      </Select>
+                                      {showShopOrderControls ? (
+                                        <Select
+                                          value={item.status || 'not_ordered'}
+                                          onValueChange={(value) => updateStatus(item.id, value)}
+                                        >
+                                          <SelectTrigger className={`h-6 text-[10px] font-semibold border ${getStatusColor(item.status || 'not_ordered')}`}>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="not_ordered">Not Ordered</SelectItem>
+                                            <SelectItem value="ordered">Ordered</SelectItem>
+                                            <SelectItem value="received">Received</SelectItem>
+                                            <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
+                                            <SelectItem value="ready_for_job">Ready for Job</SelectItem>
+                                            <SelectItem value="at_job">At Job</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      ) : (
+                                        <div
+                                          className={`h-6 text-[10px] font-semibold border rounded-md px-2 flex items-center justify-center ${getStatusColor(item.status || 'not_ordered')}`}
+                                          title="Shop status is only editable on the working workbook"
+                                        >
+                                          {formatStatusLabel(item.status || 'not_ordered')}
+                                        </div>
+                                      )}
                                     </td>
 
                                     <td className="p-0.5">
@@ -3449,10 +4768,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                           </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
-                                          <DropdownMenuItem onClick={() => openZohoOrderDialogForMaterial(item)}>
-                                            <ShoppingCart className="w-3.5 h-3.5 mr-2" />
-                                            Create Zoho Order
-                                          </DropdownMenuItem>
+                                          {showShopOrderControls && (
+                                            <DropdownMenuItem onClick={() => openZohoOrderDialogForMaterial(item)}>
+                                              <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                                              Create Zoho Order
+                                            </DropdownMenuItem>
+                                          )}
                                           <DropdownMenuItem onClick={() => setOpenPhotosForItem({ id: item.id, materialName: item.material_name })}>
                                             <ImageIcon className="w-3.5 h-3.5 mr-2" />
                                             Photos
@@ -3465,7 +4786,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             <MoveHorizontal className="w-3.5 h-3.5 mr-2" />
                                             Move
                                           </DropdownMenuItem>
-                                          {!isWorkbookReadOnly && (
+                                          {!materialsWorkbookLocked && (
                                             <DropdownMenuItem
                                               onClick={() => deleteItem(item.id)}
                                               className="text-destructive focus:text-destructive"
@@ -3500,7 +4821,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 <DollarSign className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
                 <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Upload an Excel workbook to view cost breakdown
+                  Create or upload a workbook on the <strong>Upload</strong> tab to view cost breakdown.
                 </p>
                 <Button onClick={() => setActiveTab('upload')} className="gradient-primary">
                   <Upload className="w-4 h-4 mr-2" />
@@ -3545,8 +4866,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                     );
                   }
 
-                  const totalCost = sheet.items.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
-                  const totalPrice = sheet.items.reduce((sum, item) => sum + (item.extended_price || 0), 0);
+                  const totalCost = sheet.items.reduce((sum, item) => sum + getDisplayExtended(item).cost, 0);
+                  const totalPrice = sheet.items.reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
                   const totalProfit = totalPrice - totalCost;
                   const profitMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
                   const categoryGroups = groupByCategory(sheet.items);
@@ -3590,8 +4911,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                         <h4 className="text-lg font-bold text-slate-900 mb-4">Breakdown by Category</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {categoryGroups.map((catGroup) => {
-                            const catCost = catGroup.items.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
-                            const catPrice = catGroup.items.reduce((sum, item) => sum + (item.extended_price || 0), 0);
+                            const catCost = catGroup.items.reduce((sum, item) => sum + getDisplayExtended(item).cost, 0);
+                            const catPrice = catGroup.items.reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
                             const catProfit = catPrice - catCost;
                             const catMargin = catCost > 0 ? (catProfit / catCost) * 100 : 0;
 
@@ -3660,7 +4981,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 Trim &amp; flatstock order
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Trim lines that have a drawing (figured) with total inches and pieces of 16&apos; flatstock to order.
+                Sheet count nests trim across the coil width (41&quot; or 42&quot;) on 10&apos; long sheets using stretch-out from the drawing
+                and each line&apos;s piece length. Set length on each trim line for accurate cuts along the sheet.
               </p>
             </CardHeader>
             <CardContent className="pt-4">
@@ -3668,11 +4990,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 <p className="text-muted-foreground text-sm">No workbook. Upload or create one first.</p>
               ) : (
                 <>
-                  <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
                     <Label htmlFor="flatstock-width" className="text-sm font-medium">Flatstock width</Label>
                     <Select
-                      value={workbook.flatstock_width_inches != null ? String(workbook.flatstock_width_inches) : '42'}
-                      onValueChange={(v) => setFlatstockWidthInches(v === '' ? null : parseInt(v, 10))}
+                      value={
+                        Number(workbook.flatstock_width_inches) === 41 ? '41' : '42'
+                      }
+                      onValueChange={(v) => {
+                        const n = v === '' ? null : Number.parseInt(v, 10);
+                        void setFlatstockWidthInches(Number.isFinite(n) ? n : null);
+                      }}
                       disabled={savingFlatstockWidth}
                     >
                       <SelectTrigger id="flatstock-width" className="w-[140px]">
@@ -3687,14 +5014,26 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                       <span className="text-xs text-muted-foreground">Saving…</span>
                     )}
                   </div>
+                  <p className="text-xs text-muted-foreground mb-4 max-w-3xl">
+                    Wider coil fits more trim strips side-by-side (stretch-out ÷ width). Switch between 41&quot; and 42&quot; to match what you are ordering.
+                  </p>
                   {loadingTrimFlatstock ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                       Loading trim data…
                     </div>
                   ) : (() => {
-                const FLATSTOCK_INCHES = 192; // 16'
-                const itemsWithTrim: { item: MaterialItem; configName: string; inchesPerPiece: number }[] = [];
+                const flatstockW = workbook.flatstock_width_inches ?? 42;
+                const trimPieceLengthInches = (item: MaterialItem): number => {
+                  const ft = parseLengthToFeet(item.length);
+                  if (ft != null && ft > 0) return Math.round(ft * 12 * 10000) / 10000;
+                  return FLATSTOCK_STICK_LENGTH_INCHES;
+                };
+                const itemsWithTrim: {
+                  item: MaterialItem;
+                  configName: string;
+                  stretchOutInches: number;
+                }[] = [];
                 workbook.sheets?.forEach((s: MaterialSheet) => {
                   s.items.forEach((i: MaterialItem) => {
                     if (!i.trim_saved_config_id) return;
@@ -3703,7 +5042,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                     itemsWithTrim.push({
                       item: i,
                       configName: config.name,
-                      inchesPerPiece: config.totalInches,
+                      stretchOutInches: config.stretchOutInches,
                     });
                   });
                 });
@@ -3715,22 +5054,76 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   );
                 }
                 const q = (n: number) => Number(n) || 0;
-                const bySku = new Map<string, { name: string; sku: string | null; totalInches: number; rows: typeof itemsWithTrim }>();
-                itemsWithTrim.forEach(({ item, configName, inchesPerPiece }) => {
-                  const key = item.sku ?? item.material_name ?? item.id;
-                  const totalInches = inchesPerPiece * q(item.quantity);
-                  if (!bySku.has(key)) bySku.set(key, { name: item.material_name, sku: item.sku ?? null, totalInches: 0, rows: [] });
-                  const agg = bySku.get(key)!;
-                  agg.totalInches += totalInches;
-                  agg.rows.push({ item, configName, inchesPerPiece });
-                });
-                const skuRows = Array.from(bySku.entries()).map(([key, agg]) => ({
-                  key,
-                  ...agg,
-                  piecesToOrder: Math.ceil(agg.totalInches / FLATSTOCK_INCHES),
+                type RowCalc = {
+                  item: MaterialItem;
+                  configName: string;
+                  stretchOutInches: number;
+                  pieceLenIn: number;
+                  qty: number;
+                  nest: ReturnType<typeof computeFlatstockSticksNeeded>;
+                };
+                const lineCalcs: RowCalc[] = itemsWithTrim.map(
+                  ({ item, configName, stretchOutInches }) => {
+                    const pieceLenIn = trimPieceLengthInches(item);
+                    const qty = q(item.quantity);
+                    const nest =
+                      qty <= 0
+                        ? {
+                            stripsAcross: 0,
+                            piecesAlongStick: 0,
+                            capacityPerStick: 0,
+                            sticksNeeded: 0,
+                            stretchOutWiderThanSheet: false,
+                          }
+                        : computeFlatstockSticksNeeded({
+                            flatstockWidthInches: flatstockW,
+                            stickLengthInches: FLATSTOCK_STICK_LENGTH_INCHES,
+                            stretchOutInches,
+                            pieceLengthInches: pieceLenIn,
+                            pieceCount: qty,
+                          });
+                    return {
+                      item,
+                      configName,
+                      stretchOutInches,
+                      pieceLenIn,
+                      qty,
+                      nest,
+                    };
+                  }
+                );
+
+                const totalFlatstockPieces = lineCalcs.reduce((sum, r) => sum + r.nest.sticksNeeded, 0);
+                const savedPlan = isTrimSlittingPlanV1(workbook.trim_flatstock_plan)
+                  ? (workbook.trim_flatstock_plan as TrimSlittingPlanV1)
+                  : null;
+                const canEditTrimSlitting = workbook.status === 'working';
+                const demandsForPlan = itemsWithTrim.map(({ item, stretchOutInches }) => ({
+                  materialItemId: item.id,
+                  materialName: item.material_name,
+                  sku: item.sku ?? null,
+                  stretchOutInches,
+                  qty: q(item.quantity),
                 }));
                 return (
                   <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={!canEditTrimSlitting || savingTrimSlittingPlan}
+                        onClick={() => void saveTrimSlittingPlanFromDemands(demandsForPlan, flatstockW)}
+                      >
+                        {savingTrimSlittingPlan ? 'Saving plan…' : 'Generate & save slitting plan'}
+                      </Button>
+                      {savedPlan && (
+                        <span className="text-xs text-muted-foreground">
+                          Saved plan: {savedPlan.totalSheets} sheet{savedPlan.totalSheets === 1 ? '' : 's'} (vs{' '}
+                          {savedPlan.legacyIndependentSheetsSum} if each line counted alone)
+                        </span>
+                      )}
+                    </div>
                     <div className="rounded-md border overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -3738,47 +5131,142 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             <th className="text-left p-2 font-semibold">Material</th>
                             <th className="text-left p-2 font-semibold">SKU</th>
                             <th className="text-left p-2 font-semibold">Trim drawing</th>
-                            <th className="text-right p-2 font-semibold">In./piece</th>
+                            <th className="text-right p-2 font-semibold">Stretch-out</th>
+                            <th className="text-right p-2 font-semibold">Piece len</th>
                             <th className="text-right p-2 font-semibold">Qty</th>
-                            <th className="text-right p-2 font-semibold">Total in.</th>
-                            <th className="text-right p-2 font-semibold">Pieces (16&apos;)</th>
+                            <th
+                              className="text-right p-2 font-semibold"
+                              title={`Trim strips that fit across a ${flatstockW}" wide coil`}
+                            >
+                              Across {flatstockW}&quot;
+                            </th>
+                            <th
+                              className="text-right p-2 font-semibold"
+                              title={`Count of ${FLATSTOCK_STICK_LENGTH_INCHES / 12}' × ${flatstockW}" flatstock pieces to order for this line`}
+                            >
+                              Flatstock pieces
+                              <span className="block text-[10px] font-normal text-muted-foreground normal-case">
+                                ({FLATSTOCK_STICK_LENGTH_INCHES / 12}&apos; × {flatstockW}&quot;)
+                              </span>
+                            </th>
+                            <th className="text-left p-2 font-semibold min-w-[140px]">Cut status</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {itemsWithTrim.map(({ item, configName, inchesPerPiece }) => {
-                            const totalInches = inchesPerPiece * q(item.quantity);
-                            const pieces = Math.ceil(totalInches / FLATSTOCK_INCHES);
+                          {lineCalcs.map(({ item, configName, stretchOutInches, pieceLenIn, qty, nest }) => {
+                            const lenFt = parseLengthToFeet(item.length);
+                            const usedDefaultLen = lenFt == null || lenFt <= 0;
                             return (
                               <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30">
                                 <td className="p-2">{item.material_name}</td>
                                 <td className="p-2 font-mono text-xs">{item.sku ?? '–'}</td>
                                 <td className="p-2">{configName}</td>
-                                <td className="p-2 text-right">{inchesPerPiece.toFixed(1)}</td>
-                                <td className="p-2 text-right">{item.quantity}</td>
-                                <td className="p-2 text-right">{totalInches.toFixed(1)}</td>
-                                <td className="p-2 text-right font-medium">{pieces}</td>
+                                <td className="p-2 text-right" title="Profile width on coil (drawing + hems)">
+                                  {stretchOutInches.toFixed(2)}&quot;
+                                </td>
+                                <td
+                                  className="p-2 text-right"
+                                  title={usedDefaultLen ? 'No length on line — assumed full 10′ sheet' : ''}
+                                >
+                                  {usedDefaultLen && pieceLenIn >= FLATSTOCK_STICK_LENGTH_INCHES - 0.01
+                                    ? `10′ (default)`
+                                    : `${pieceLenIn.toFixed(2)}″`}
+                                </td>
+                                <td className="p-2 text-right">{qty}</td>
+                                <td className="p-2 text-right">
+                                  {nest.stretchOutWiderThanSheet ? (
+                                    <span className="text-amber-700" title="Stretch-out wider than coil — verify with shop">
+                                      1*
+                                    </span>
+                                  ) : (
+                                    nest.stripsAcross
+                                  )}
+                                </td>
+                                <td
+                                  className="p-2 text-right font-semibold tabular-nums text-base"
+                                  title={`Order ${nest.sticksNeeded} piece(s) of ${FLATSTOCK_STICK_LENGTH_INCHES / 12}' × ${flatstockW}" flatstock for this line`}
+                                >
+                                  {nest.sticksNeeded}
+                                </td>
+                                <td className="p-2 align-top">
+                                  <Select
+                                    value={item.trim_cut_state ?? 'pending'}
+                                    onValueChange={(v) => {
+                                      if (
+                                        v === 'pending' ||
+                                        v === 'in_progress' ||
+                                        v === 'cut_complete'
+                                      ) {
+                                        void updateMaterialItemTrimCutState(item.id, v);
+                                      }
+                                    }}
+                                    disabled={!canEditTrimSlitting}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">Pending</SelectItem>
+                                      <SelectItem value="in_progress">In progress</SelectItem>
+                                      <SelectItem value="cut_complete">Cut</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </td>
                               </tr>
                             );
                           })}
                         </tbody>
+                        <tfoot>
+                          <tr className="bg-muted/40 border-t-2 font-semibold">
+                            <td colSpan={7} className="p-2 text-right">
+                              Total flatstock pieces ({FLATSTOCK_STICK_LENGTH_INCHES / 12}&apos; × {flatstockW}&quot;)
+                            </td>
+                            <td className="p-2 text-right tabular-nums text-base">{totalFlatstockPieces}</td>
+                            <td className="p-2" />
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
-                    <div className="rounded-md border bg-muted/30 p-3">
-                      <h4 className="font-semibold text-sm mb-2">
-                        By SKU — pieces of 16&apos; flatstock to order
-                        {workbook?.flatstock_width_inches != null && (
-                          <span className="text-muted-foreground font-normal"> ({workbook.flatstock_width_inches}&quot; wide)</span>
-                        )}
-                      </h4>
-                      <ul className="space-y-1 text-sm">
-                        {skuRows.map(({ key, name, sku, totalInches, piecesToOrder }) => (
-                          <li key={key} className="flex justify-between gap-4">
-                            <span>{name} {sku && <span className="text-muted-foreground font-mono">({sku})</span>}</span>
-                            <span className="font-medium">{piecesToOrder} pieces</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    {savedPlan && savedPlan.sheets.length > 0 && (
+                      <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+                        <p className="text-sm font-semibold">Width slitting cut list (full {savedPlan.stickLengthInches / 12}&apos; strips)</p>
+                        <p className="text-xs text-muted-foreground">
+                          Cut widest first (order #). Coil {savedPlan.flatstockWidthInches}&quot; wide. Regenerate after qty or width changes.
+                        </p>
+                        <div className="space-y-1">
+                          {savedPlan.sheets.map((sh) => (
+                            <Collapsible key={sh.sheetIndex}>
+                              <CollapsibleTrigger className="flex w-full items-center gap-2 text-left text-sm font-medium py-1 hover:bg-muted/50 rounded px-1">
+                                <ChevronDown className="h-4 w-4 shrink-0 transition-transform [[data-state=open]_&]:rotate-180" />
+                                Sheet {sh.sheetIndex} — {sh.strips.length} strip{sh.strips.length === 1 ? '' : 's'}
+                                {sh.scrapWidthInches > 0.001
+                                  ? ` (${sh.scrapWidthInches.toFixed(2)}" scrap width)`
+                                  : ''}
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="pl-6 pb-2 text-sm space-y-1">
+                                {sh.strips.map((st) => (
+                                  <div key={`${sh.sheetIndex}-${st.cutOrder}-${st.materialItemId}`}>
+                                    <span className="tabular-nums text-muted-foreground mr-2">#{st.cutOrder}</span>
+                                    {st.materialName}
+                                    {st.sku ? (
+                                      <span className="font-mono text-xs ml-1">({st.sku})</span>
+                                    ) : null}
+                                    {' — '}
+                                    {st.stretchOutInches.toFixed(2)}&quot;
+                                    {st.stretchWiderThanCoil ? (
+                                      <span className="text-amber-700 text-xs ml-1">(wider than coil — verify)</span>
+                                    ) : null}
+                                  </div>
+                                ))}
+                              </CollapsibleContent>
+                            </Collapsible>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      *Stretch-out exceeds selected coil width — layout assumes one strip; confirm with shop.
+                    </p>
                   </div>
                 );
               })()}

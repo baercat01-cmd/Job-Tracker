@@ -21,6 +21,8 @@ AS $$
            is_active, expires_at, last_accessed_at, created_by, created_at, updated_at,
            show_proposal, show_payments, show_schedule, show_documents, show_photos,
            show_financial_summary, COALESCE(show_line_item_prices, false) AS show_line_item_prices,
+           COALESCE(show_section_prices, '{}'::jsonb) AS show_section_prices,
+           COALESCE(visibility_by_quote, '{}'::jsonb) AS visibility_by_quote,
            custom_message
     FROM customer_portal_access
     WHERE job_id = p_job_id
@@ -45,6 +47,8 @@ AS $$
            is_active, expires_at, last_accessed_at, created_by, created_at, updated_at,
            show_proposal, show_payments, show_schedule, show_documents, show_photos,
            show_financial_summary, COALESCE(show_line_item_prices, false) AS show_line_item_prices,
+           COALESCE(show_section_prices, '{}'::jsonb) AS show_section_prices,
+           COALESCE(visibility_by_quote, '{}'::jsonb) AS visibility_by_quote,
            custom_message
     FROM customer_portal_access
     WHERE access_token = p_access_token AND is_active = true
@@ -73,6 +77,8 @@ CREATE OR REPLACE FUNCTION public.create_customer_portal_link(
   p_show_photos boolean DEFAULT true,
   p_show_financial_summary boolean DEFAULT true,
   p_show_line_item_prices boolean DEFAULT false,
+  p_show_section_prices jsonb DEFAULT null,
+  p_visibility_by_quote jsonb DEFAULT null,
   p_custom_message text DEFAULT null
 )
 RETURNS jsonb
@@ -87,12 +93,12 @@ BEGIN
   INSERT INTO public.customer_portal_access (
     job_id, customer_identifier, access_token, customer_name, customer_email, customer_phone,
     is_active, expires_at, created_by,
-    show_proposal, show_payments, show_schedule, show_documents, show_photos, show_financial_summary, show_line_item_prices,
+    show_proposal, show_payments, show_schedule, show_documents, show_photos, show_financial_summary, show_line_item_prices, show_section_prices, visibility_by_quote,
     custom_message, updated_at
   ) VALUES (
     p_job_id, p_customer_identifier, p_access_token, p_customer_name, p_customer_email, p_customer_phone,
     p_is_active, p_expires_at, p_created_by,
-    p_show_proposal, p_show_payments, p_show_schedule, p_show_documents, p_show_photos, p_show_financial_summary, coalesce(p_show_line_item_prices, false),
+    p_show_proposal, p_show_payments, p_show_schedule, p_show_documents, p_show_photos, p_show_financial_summary, coalesce(p_show_line_item_prices, false), coalesce(p_show_section_prices, '{}'::jsonb), coalesce(p_visibility_by_quote, '{}'::jsonb),
     p_custom_message, now()
   )
   ON CONFLICT (job_id, customer_identifier)
@@ -111,6 +117,8 @@ BEGIN
     show_financial_summary = EXCLUDED.show_financial_summary,
     custom_message = EXCLUDED.custom_message,
     show_line_item_prices = EXCLUDED.show_line_item_prices,
+    show_section_prices = coalesce(EXCLUDED.show_section_prices, '{}'::jsonb),
+    visibility_by_quote = coalesce(EXCLUDED.visibility_by_quote, '{}'::jsonb),
     updated_at = now()
   RETURNING to_jsonb(customer_portal_access.*) INTO v_row;
   
@@ -134,7 +142,9 @@ CREATE FUNCTION public.update_customer_portal_link(
   p_show_photos boolean,
   p_show_financial_summary boolean,
   p_show_line_item_prices boolean DEFAULT false,
-  p_custom_message text
+  p_show_section_prices jsonb DEFAULT null,
+  p_visibility_by_quote jsonb DEFAULT null,
+  p_custom_message text DEFAULT null
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -159,6 +169,8 @@ BEGIN
     show_photos = p_show_photos,
     show_financial_summary = p_show_financial_summary,
     show_line_item_prices = coalesce(p_show_line_item_prices, false),
+    show_section_prices = coalesce(p_show_section_prices, '{}'::jsonb),
+    visibility_by_quote = coalesce(p_visibility_by_quote, '{}'::jsonb),
     custom_message = p_custom_message,
     updated_at = now()
   WHERE id = p_id

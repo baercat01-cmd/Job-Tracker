@@ -138,6 +138,51 @@ export function getCutLengthFromTrimConfig(config: { drawing_segments?: unknown 
   return total + hemCount * Math.max(0.125, hemDepthInches);
 }
 
+/** Standard flatstock sheet length in inches (10'). */
+export const FLATSTOCK_STICK_LENGTH_INCHES = 120;
+
+/**
+ * How many 10' × W" flatstock sheets to order for trim, nesting pieces across the sheet width.
+ * - stretchOutInches: developed width of one trim profile (strip taken across the coil), from the drawing.
+ * - pieceLengthInches: cut length of each trim piece along the sheet (from the job line length).
+ * - Strips across: floor(W / stretchOut) when stretchOut ≤ W, else 1 (wider than sheet — shop may need multiple passes).
+ * - Capacity per sheet: stripsAcross × max(1, floor(sheetLength / pieceLength)).
+ */
+export function computeFlatstockSticksNeeded(params: {
+  flatstockWidthInches: number;
+  stickLengthInches?: number;
+  stretchOutInches: number;
+  pieceLengthInches: number;
+  pieceCount: number;
+}): {
+  stripsAcross: number;
+  piecesAlongStick: number;
+  capacityPerStick: number;
+  sticksNeeded: number;
+  stretchOutWiderThanSheet: boolean;
+} {
+  const L = params.stickLengthInches ?? FLATSTOCK_STICK_LENGTH_INCHES;
+  const W = params.flatstockWidthInches;
+  const s = params.stretchOutInches;
+  const pl = params.pieceLengthInches;
+  const Q = params.pieceCount;
+  if (!Number.isFinite(W) || W <= 0 || !Number.isFinite(s) || s <= 0 || !Number.isFinite(pl) || pl <= 0 || !Number.isFinite(Q) || Q <= 0) {
+    return {
+      stripsAcross: 0,
+      piecesAlongStick: 0,
+      capacityPerStick: 0,
+      sticksNeeded: 0,
+      stretchOutWiderThanSheet: false,
+    };
+  }
+  const stretchOutWiderThanSheet = s > W;
+  const stripsAcross = stretchOutWiderThanSheet ? 1 : Math.max(1, Math.floor(W / s));
+  const piecesAlongStick = Math.max(1, Math.floor(L / pl));
+  const capacityPerStick = stripsAcross * piecesAlongStick;
+  const sticksNeeded = Math.ceil(Q / capacityPerStick);
+  return { stripsAcross, piecesAlongStick, capacityPerStick, sticksNeeded, stretchOutWiderThanSheet };
+}
+
 interface TrimDrawingPreviewProps {
   segments: LineSegment[];
   width?: number;

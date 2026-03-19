@@ -2366,7 +2366,7 @@ export function TrimPricingCalculator() {
               {/* Add Hem Button - Available when segment selected or last segment exists */}
               {!hemPreviewMode && (drawing.selectedSegmentId || drawing.segments.length > 0) && (
                 <Button
-                  onClick={startHemPreview}
+                  onClick={() => startHemPreview()}
                   size="sm"
                   className={`h-7 px-2 text-xs font-bold ${
                     (drawing.selectedSegmentId && drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.hasHem) ||

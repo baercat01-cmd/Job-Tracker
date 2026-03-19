@@ -894,3 +894,95 @@ export function generateProposalHTML(data: {
     </html>
   `;
 }
+
+/** Single change order document (print / save as PDF) — one sheet = one numbered change order */
+export function generateChangeOrderDocumentHTML(data: {
+  changeOrderNumber: string;
+  date: string;
+  job: { client_name: string; address: string; name: string };
+  scopeTitle: string;
+  scopeDescription: string;
+  lineItems: Array<{ description: string; amount?: number; isLabor?: boolean }>;
+  materialsTotal: number;
+  laborTotal: number;
+  subtotal: number;
+  tax: number;
+  grandTotal: number;
+  showPrices: boolean;
+  taxExempt?: boolean;
+  signedName?: string;
+  signedAt?: string;
+}): string {
+  const {
+    changeOrderNumber,
+    date,
+    job,
+    scopeTitle,
+    scopeDescription,
+    lineItems,
+    materialsTotal,
+    laborTotal,
+    subtotal,
+    tax,
+    grandTotal,
+    showPrices,
+    taxExempt = false,
+    signedName,
+    signedAt,
+  } = data;
+  const money = (n: number) =>
+    `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const lines =
+    lineItems.length > 0
+      ? lineItems
+          .map((li) => {
+            const desc = `${li.isLabor ? '<em>Labor:</em> ' : ''}${li.description || '—'}`;
+            const amt =
+              li.amount != null && li.amount > 0 ? money(li.amount) : '—';
+            return showPrices
+              ? `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;">${desc}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${amt}</td></tr>`
+              : `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;">${desc}</td></tr>`;
+          })
+          .join('')
+      : `<tr><td colspan="${showPrices ? 2 : 1}" style="padding:8px;color:#64748b;">No line-item detail.</td></tr>`;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Change Order ${changeOrderNumber}</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; max-width: 720px; margin: 0 auto; padding: 28px; color: #1e293b; font-size: 11pt; line-height: 1.45; }
+  h1 { font-size: 22pt; color: #9a3412; margin: 0 0 6px 0; }
+  .sub { color: #64748b; font-size: 10pt; margin-bottom: 20px; }
+  .box { border: 2px solid #ea580c; padding: 14px 16px; margin: 16px 0; background: #fff7ed; }
+  .box h2 { margin: 0 0 8px 0; font-size: 13pt; color: #9a3412; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th { text-align: left; padding: 8px; border-bottom: 2px solid #ea580c; color: #7c2d12; }
+  .totals { margin-top: 18px; text-align: right; }
+  .totals div { margin: 4px 0; }
+  .grand { font-size: 16pt; font-weight: bold; color: #9a3412; margin-top: 10px; }
+  .sig { margin-top: 28px; padding-top: 16px; border-top: 1px solid #cbd5e1; font-size: 10pt; color: #475569; }
+</style></head><body>
+  <h1>Change Order ${changeOrderNumber}</h1>
+  <p class="sub">Martin Builder · ${date}</p>
+  <p><strong>Project:</strong> ${job.name}<br/>
+  <strong>Customer:</strong> ${job.client_name}<br/>
+  <strong>Site:</strong> ${job.address || '—'}</p>
+  <div class="box">
+    <h2>Scope of work</h2>
+    <p style="margin:0;font-weight:600;">${scopeTitle}</p>
+    ${scopeDescription ? `<p style="margin:10px 0 0 0;white-space:pre-wrap;">${scopeDescription}</p>` : ''}
+  </div>
+  ${showPrices ? `<table>
+    <thead><tr><th>Description</th><th style="text-align:right;width:120px;">Amount</th></tr></thead>
+    <tbody>${lines}</tbody>
+  </table>
+  <div class="totals">
+    ${materialsTotal > 0 ? `<div>Materials: ${money(materialsTotal)}</div>` : ''}
+    ${laborTotal > 0 ? `<div>Labor: ${money(laborTotal)}</div>` : ''}
+    <div><strong>Subtotal:</strong> ${money(subtotal)}</div>
+    ${taxExempt ? '<div>Tax exempt</div>' : `<div>Tax (7%): ${money(tax)}</div>`}
+    <div class="grand">Total: ${money(grandTotal)}</div>
+  </div>` : `<table><thead><tr><th>Description</th></tr></thead><tbody>${lines}</tbody></table><p style="color:#64748b;margin-top:12px;">Pricing omitted — contact your project manager for the amount.</p>`}
+  ${signedName && signedAt ? `<div class="sig"><strong>Authorized by customer:</strong> ${signedName}<br/>Signed: ${signedAt}</div>` : `<div class="sig"><strong>Customer authorization</strong> — sign in the customer portal to accept this change order.</div>`}
+  <p style="margin-top:32px;font-size:9pt;color:#94a3b8;">This document is separate from your main building proposal. Change order ${changeOrderNumber}.</p>
+</body></html>`;
+}

@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { isFieldRequestSheetName } from '@/lib/materialWorkbook';
 import { 
   Building2, 
   MapPin, 
@@ -24,7 +25,8 @@ import {
   Download,
   CheckCircle,
   Clock,
-  ExternalLink
+  ExternalLink,
+  ClipboardList
 } from 'lucide-react';
 
 interface CustomerPortalPreviewProps {
@@ -32,11 +34,11 @@ interface CustomerPortalPreviewProps {
   jobs: any[];
   visibilitySettings: any;
   customMessage?: string | null;
-  /** When provided (office preview), line items are filtered by this so the preview matches the sidebar toggles. */
-  lineItemVisibleToCustomer?: Record<string, boolean>;
+  /** When provided (office preview), the proposal for this quote is shown so preview matches "Visibility for proposal" selection. */
+  initialQuoteId?: string | null;
 }
 
-export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, customMessage, lineItemVisibleToCustomer }: CustomerPortalPreviewProps) {
+export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, customMessage, initialQuoteId }: CustomerPortalPreviewProps) {
   const [selectedJob, setSelectedJob] = useState<any>(null);
 
   // When previewing a single job (e.g. from Create dialog), open straight to its detail view
@@ -51,7 +53,7 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
         jobData={selectedJob}
         onBack={() => setSelectedJob(null)}
         visibilitySettings={visibilitySettings}
-        lineItemVisibleToCustomer={lineItemVisibleToCustomer}
+        initialQuoteId={initialQuoteId}
       />
     );
   }
@@ -173,27 +175,57 @@ export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, 
 }
 
 // Job Detail Preview Component - Shows individual job with all tabs
-function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisibleToCustomer }: any) {
-  const [activeTab, setActiveTab] = useState('overview');
+function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId }: any) {
   const jobQuotes = jobData.jobQuotes || (jobData.quote ? [jobData.quote] : []);
+  const proposalQuotes = jobQuotes.filter((q: any) => !q.is_change_order_proposal);
+  const changeOrderQuote = jobData.changeOrderQuote ?? null;
+  const changeOrderProposalData = jobData.changeOrderProposalData ?? null;
+  const showProposalTab = !!visibilitySettings?.show_proposal;
+  const hasChangeOrderTab = showProposalTab && !!changeOrderQuote;
+
+  const [activeTab, setActiveTab] = useState(() => (showProposalTab ? 'proposal' : 'overview'));
+  useEffect(() => {
+    if (showProposalTab && activeTab === 'overview') setActiveTab('proposal');
+    if (!showProposalTab && activeTab === 'proposal') setActiveTab('overview');
+    if (activeTab === 'change-orders' && !hasChangeOrderTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
+  }, [showProposalTab, hasChangeOrderTab, activeTab]);
+
   const proposalDataByQuoteId = jobData.proposalDataByQuoteId || {};
-  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(jobData.quote?.id ?? jobQuotes[0]?.id ?? null);
-  const selectedQuote = jobQuotes.find((q: any) => q.id === selectedQuoteId) ?? jobData.quote ?? jobQuotes[0];
-  const proposalData = (selectedQuoteId && proposalDataByQuoteId[selectedQuoteId]) ? proposalDataByQuoteId[selectedQuoteId] : jobData.proposalData;
+  const defaultQuoteId = proposalQuotes[0]?.id ?? null;
+  const validInitial =
+    initialQuoteId != null && proposalQuotes.some((q: any) => q.id === initialQuoteId) ? initialQuoteId : null;
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(validInitial ?? defaultQuoteId);
+  useEffect(() => {
+    if (validInitial != null) setSelectedQuoteId(validInitial);
+  }, [validInitial]);
+  useEffect(() => {
+    if (selectedQuoteId && !proposalQuotes.some((q: any) => q.id === selectedQuoteId)) {
+      setSelectedQuoteId(defaultQuoteId);
+    }
+  }, [proposalQuotes, selectedQuoteId, defaultQuoteId]);
+
+  const selectedQuote =
+    proposalQuotes.find((q: any) => q.id === selectedQuoteId) ?? proposalQuotes[0] ?? jobData.quote;
+  const proposalData =
+    selectedQuoteId && proposalDataByQuoteId[selectedQuoteId]
+      ? proposalDataByQuoteId[selectedQuoteId]
+      : jobData.proposalData;
   const { payments, documents, photos, scheduleEvents, viewerLinks = [] } = jobData;
   const totalPaid = payments?.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0) || 0;
   const balance = (proposalData?.totals?.grandTotal || 0) - totalPaid;
   const isSignedContract = selectedQuote?.status === 'accepted' || selectedQuote?.status === 'signed';
   const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
 
-  // Filter tabs: no separate Proposal tab – proposal is on Overview
   const visibleTabs = [
-    { value: 'overview', label: 'Overview', show: true },
+    ...(showProposalTab
+      ? [{ value: 'proposal', label: 'Proposal', show: true as boolean }]
+      : [{ value: 'overview', label: 'Overview', show: true as boolean }]),
+    ...(hasChangeOrderTab ? [{ value: 'change-orders', label: 'Change orders', show: true as boolean }] : []),
     { value: 'payments', label: 'Payments', show: visibilitySettings?.show_payments },
     { value: 'schedule', label: 'Schedule', show: visibilitySettings?.show_schedule },
     { value: 'documents', label: 'Documents', show: visibilitySettings?.show_documents },
     { value: 'photos', label: 'Photos', show: visibilitySettings?.show_photos },
-  ].filter(tab => tab.show);
+  ].filter((tab) => tab.show);
 
   return (
     <div className="min-h-full">
@@ -208,13 +240,13 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisible
               <div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-3xl font-bold text-amber-400">{jobData.name}</h1>
-                  {jobQuotes.length > 1 ? (
+                  {proposalQuotes.length > 1 ? (
                     <Select value={selectedQuoteId ?? ''} onValueChange={(v) => setSelectedQuoteId(v || null)}>
                       <SelectTrigger className="w-[180px] bg-amber-500/10 border-amber-500/50 text-amber-200">
                         <SelectValue placeholder="Select proposal" />
                       </SelectTrigger>
                       <SelectContent>
-                        {jobQuotes.map((q: any) => (
+                        {proposalQuotes.map((q: any) => (
                           <SelectItem key={q.id} value={q.id}>
                             Proposal #{q.proposal_number || q.quote_number || q.id.slice(0, 8)}
                           </SelectItem>
@@ -252,9 +284,8 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisible
             ))}
           </TabsList>
 
-          {/* Overview Tab – matches customer portal: custom message, drawings, proposal */}
-          <TabsContent value="overview" className="space-y-6">
-            {/* Custom welcome message (from Portal settings) */}
+          {/* Proposal tab — contract proposal only (matches customer portal Proposal / overview flow) */}
+          <TabsContent value="proposal" className="space-y-6">
             {visibilitySettings?.custom_message && (
               <Card className="border-amber-200 bg-amber-50/50">
                 <CardContent className="pt-6">
@@ -262,35 +293,6 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisible
                 </CardContent>
               </Card>
             )}
-            {/* Drawings & 3D Views (viewer links) — only when Documents visibility is on */}
-            {visibilitySettings?.show_documents && viewerLinks.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <ExternalLink className="w-5 h-5" />
-                    Drawings & 3D Views
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground font-normal">Open the links below to view plans and 3D models.</p>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-3">
-                    {viewerLinks.map((link: any) => (
-                      <Button
-                        key={link.id}
-                        variant="outline"
-                        className="flex items-center gap-2"
-                        onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        {link.label}
-                      </Button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Proposal on same page as overview */}
             {visibilitySettings?.show_proposal && (
               <Card className="border-emerald-200/60">
                 <CardHeader>
@@ -301,35 +303,101 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisible
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {(() => {
-                    const showPrice = !!(visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices);
-                    // Combine all sections in order_index order — mirrors JobFinancials allItemsUnsorted
+                    const baseShowPrice = !!(visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices);
+                    const sp: Record<string, boolean> | null = (typeof visibilitySettings?.show_section_prices === 'object' && visibilitySettings?.show_section_prices !== null && !Array.isArray(visibilitySettings?.show_section_prices)) ? visibilitySettings.show_section_prices : null;
+                    const showPriceForSection = (sectionId: string) => baseShowPrice && (sp == null || sp[sectionId] !== false);
+                    const totals = proposalData?.totals;
+                    const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
+                    // Summary line matching office: Proposal # | Materials | Labor | Subtotal | Tax | GRAND TOTAL
+                    const showSummary = visibilitySettings?.show_financial_summary && totals;
+                    // Build sections: material sheets (section totals only), linked custom rows, standalone rows/subs
+                    const proposalSheets = (proposalData?.materialSheets || []).filter(
+                      (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+                    );
+                    const customRows = proposalData?.customRows || [];
+                    const standaloneCustomRows = customRows.filter((r: any) => !r.sheet_id);
+                    const sheetSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [];
+                    proposalSheets.forEach((sheet: any) => {
+                      const sheetOrder = sheet.order_index ?? 0;
+                      sheetSections.push({ type: 'material' as const, id: sheet.id, orderIndex: sheetOrder * 1000, data: sheet });
+                      customRows.filter((r: any) => r.sheet_id === sheet.id).sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)).forEach((row: any, idx: number) => {
+                        sheetSections.push({ type: 'custom' as const, id: row.id, orderIndex: sheetOrder * 1000 + 100 + (row.order_index ?? idx), data: row });
+                      });
+                    });
                     const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
-                      ...(proposalData?.materialSheets || []).map((s: any) => ({ type: 'material' as const, id: s.id, orderIndex: s.order_index ?? 0, data: s })),
-                      ...(proposalData?.customRows || []).filter((r: any) => !r.sheet_id).map((r: any) => ({ type: 'custom' as const, id: r.id, orderIndex: r.order_index ?? 0, data: r })),
-                      ...(proposalData?.subcontractorEstimates || []).filter((e: any) => !e.sheet_id && !e.row_id).map((e: any) => ({ type: 'subcontractor' as const, id: e.id, orderIndex: e.order_index ?? 0, data: e })),
+                      ...sheetSections,
+                      ...standaloneCustomRows.map((r: any) => ({ type: 'custom' as const, id: r.id, orderIndex: (r.order_index ?? 0) * 1000, data: r })),
+                      ...(proposalData?.subcontractorEstimates || []).filter((e: any) => !e.sheet_id && !e.row_id).map((e: any) => ({ type: 'subcontractor' as const, id: e.id, orderIndex: (e.order_index ?? 0) * 1000, data: e })),
                     ].sort((a, b) => a.orderIndex - b.orderIndex);
 
-                    return allSections.map((section) => {
+                    return (
+                      <>
+                        {showSummary && (
+                          <div className="text-sm font-medium text-slate-700 border-b border-slate-200 pb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span>Proposal #{proposalNumber}</span>
+                            {(totals.materials != null || totals.labor != null) && (
+                              <>
+                                <span className="text-slate-400">|</span>
+                                {totals.materials != null && (
+                                  <span>Materials {typeof totals.materials === 'number' ? `$${totals.materials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}</span>
+                                )}
+                                {totals.labor != null && (
+                                  <span>Labor {typeof totals.labor === 'number' ? `$${totals.labor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}</span>
+                                )}
+                              </>
+                            )}
+                            <span className="text-slate-400">|</span>
+                            <span>Subtotal: ${(totals.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-slate-400">|</span>
+                            <span>Tax (7%): ${(totals.tax ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-slate-400">|</span>
+                            <span className="font-bold text-emerald-700">GRAND TOTAL: ${(totals.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {allSections.map((section) => {
+                      const showPrice = showPriceForSection(section.id);
                       if (section.type === 'material') {
                         const sheet = section.data;
-                        const total = sheet._computedTotal ?? 0;
+                        const sheetMaterials = sheet._computedMaterials ?? 0;
+                        const sheetLabor = sheet._computedLabor ?? 0;
                         return (
                           <div key={sheet.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
                               <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
                               {sheet.description && <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>}
                             </div>
-                            {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                            {showPrice && (sheetMaterials > 0 || sheetLabor > 0) && (
+                              <div className="w-[100px] flex-shrink-0 text-right">
+                                {sheetMaterials > 0 && (
+                                  <>
+                                    <p className="text-sm text-slate-500">Materials</p>
+                                    <p className="text-base font-bold text-blue-700">${sheetMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                  </>
+                                )}
+                                {sheetLabor > 0 && (
+                                  <>
+                                    <p className="text-sm text-slate-500 mt-2">Labor</p>
+                                    <p className="text-base font-bold text-amber-700">${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       }
                       if (section.type === 'custom') {
                         const row = section.data;
                         const total = row._computedTotal ?? 0;
+                        const title = row.description || row.category || 'Custom';
+                        const descriptionParts: string[] = [];
+                        if (row.notes?.trim()) descriptionParts.push(row.notes.trim());
+                        if (row.description?.trim() && row.description.trim() !== title.trim()) descriptionParts.push(row.description.trim());
+                        const descriptionText = descriptionParts.join('\n\n');
                         return (
                           <div key={row.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
-                              <h3 className="font-bold text-lg">{row.description || row.category}</h3>
+                              <h3 className="font-bold text-lg">{title}</h3>
+                              {descriptionText && <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{descriptionText}</p>}
                             </div>
                             {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                           </div>
@@ -346,7 +414,9 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisible
                           {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                         </div>
                       );
-                    });
+                    })}
+                      </>
+                    );
                   })()}
 
                   {visibilitySettings?.show_financial_summary && (
@@ -370,8 +440,252 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisible
                 </CardContent>
               </Card>
             )}
-
           </TabsContent>
+
+          {/* Overview when proposal tab is hidden — welcome + drawings only */}
+          <TabsContent value="overview" className="space-y-6">
+            {visibilitySettings?.custom_message && (
+              <Card className="border-amber-200 bg-amber-50/50">
+                <CardContent className="pt-6">
+                  <p className="text-slate-800 whitespace-pre-wrap">{visibilitySettings.custom_message}</p>
+                </CardContent>
+              </Card>
+            )}
+            {visibilitySettings?.show_documents && viewerLinks.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ExternalLink className="w-5 h-5" />
+                    Drawings & 3D Views
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground font-normal">Also available under the Documents tab.</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-3">
+                    {viewerLinks.map((link: any) => (
+                      <Button
+                        key={link.id}
+                        variant="outline"
+                        className="flex items-center gap-2"
+                        onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        {link.label}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {!visibilitySettings?.custom_message && (!viewerLinks.length || !visibilitySettings?.show_documents) && (
+              <p className="text-sm text-muted-foreground text-center py-8">Enable Proposal or Documents in portal settings to see more here.</p>
+            )}
+          </TabsContent>
+
+          {/* Change orders — separate from main proposal */}
+          {hasChangeOrderTab && (
+            <TabsContent value="change-orders" className="space-y-6">
+              <Card className="border-orange-200/80 bg-orange-50/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-900">
+                    <ClipboardList className="w-5 h-5" />
+                    Change order
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground font-normal">
+                    Separate from the main contract proposal. Customer reviews and signs this in the Change orders tab in the live portal.
+                  </p>
+                  {(changeOrderQuote as any)?.sent_at && (
+                    <Badge className="w-fit bg-orange-100 text-orange-900 border-orange-300">Sent to customer</Badge>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {(() => {
+                    const co = changeOrderProposalData;
+                    if (!co) {
+                      return (
+                        <p className="text-sm text-muted-foreground py-4">Loading change order…</p>
+                      );
+                    }
+                    const baseShowPrice = !!(visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices);
+                    const sp: Record<string, boolean> | null =
+                      typeof visibilitySettings?.show_section_prices === 'object' &&
+                      visibilitySettings?.show_section_prices !== null &&
+                      !Array.isArray(visibilitySettings?.show_section_prices)
+                        ? visibilitySettings.show_section_prices
+                        : null;
+                    const showPriceForSection = (sectionId: string) => baseShowPrice && (sp == null || sp[sectionId] !== false);
+                    const totals = co.totals;
+                    const coNum =
+                      (changeOrderQuote as any)?.proposal_number ||
+                      (changeOrderQuote as any)?.quote_number ||
+                      'Change order';
+                    const sheets = (co.materialSheets || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
+                    const customRows = co.customRows || [];
+                    const standaloneCustomRows = customRows.filter((r: any) => !r.sheet_id);
+                    const sheetSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [];
+                    sheets.forEach((sheet: any) => {
+                      const sheetOrder = sheet.order_index ?? 0;
+                      sheetSections.push({ type: 'material' as const, id: sheet.id, orderIndex: sheetOrder * 1000, data: sheet });
+                      customRows
+                        .filter((r: any) => r.sheet_id === sheet.id)
+                        .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+                        .forEach((row: any, idx: number) => {
+                          sheetSections.push({
+                            type: 'custom' as const,
+                            id: row.id,
+                            orderIndex: sheetOrder * 1000 + 100 + (row.order_index ?? idx),
+                            data: row,
+                          });
+                        });
+                    });
+                    const allSections = [
+                      ...sheetSections,
+                      ...standaloneCustomRows.map((r: any) => ({
+                        type: 'custom' as const,
+                        id: r.id,
+                        orderIndex: (r.order_index ?? 0) * 1000,
+                        data: r,
+                      })),
+                      ...(co.subcontractorEstimates || [])
+                        .filter((e: any) => !e.sheet_id && !e.row_id)
+                        .map((e: any) => ({
+                          type: 'subcontractor' as const,
+                          id: e.id,
+                          orderIndex: (e.order_index ?? 0) * 1000,
+                          data: e,
+                        })),
+                    ].sort((a, b) => a.orderIndex - b.orderIndex);
+
+                    if (allSections.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground py-6 text-center">
+                          No change order line items yet. Add sheets on the change order proposal in the office, then send to the customer.
+                        </p>
+                      );
+                    }
+
+                    return (
+                      <>
+                        {visibilitySettings?.show_financial_summary && totals && (
+                          <div className="text-sm font-medium text-orange-950/90 border-b border-orange-200 pb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span>#{coNum}</span>
+                            <span className="text-slate-400">|</span>
+                            <span>Subtotal: ${(totals.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-slate-400">|</span>
+                            <span>Tax: ${(totals.tax ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-slate-400">|</span>
+                            <span className="font-bold text-orange-800">
+                              TOTAL: ${(totals.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                        {allSections.map((section) => {
+                          const showPrice = showPriceForSection(section.id);
+                          if (section.type === 'material') {
+                            const sheet = section.data;
+                            const sheetMaterials = sheet._computedMaterials ?? 0;
+                            const sheetLabor = sheet._computedLabor ?? 0;
+                            return (
+                              <div
+                                key={sheet.id}
+                                className="border border-orange-200 rounded-lg p-4 flex items-start justify-between gap-4 bg-white"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="font-bold text-lg text-orange-950">{sheet.sheet_name}</h3>
+                                  {sheet.description && (
+                                    <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                                  )}
+                                </div>
+                                {showPrice && (sheetMaterials > 0 || sheetLabor > 0) && (
+                                  <div className="w-[100px] flex-shrink-0 text-right">
+                                    {sheetMaterials > 0 && (
+                                      <>
+                                        <p className="text-sm text-slate-500">Materials</p>
+                                        <p className="text-base font-bold text-blue-700">
+                                          ${sheetMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                      </>
+                                    )}
+                                    {sheetLabor > 0 && (
+                                      <>
+                                        <p className="text-sm text-slate-500 mt-2">Labor</p>
+                                        <p className="text-base font-bold text-amber-700">
+                                          ${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+                          if (section.type === 'custom') {
+                            const row = section.data;
+                            const total = row._computedTotal ?? 0;
+                            const title = row.description || row.category || 'Custom';
+                            return (
+                              <div key={row.id} className="border border-orange-200 rounded-lg p-4 flex items-start justify-between gap-4 bg-white">
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="font-bold text-lg">{title}</h3>
+                                  {row.notes?.trim() && (
+                                    <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{row.notes}</p>
+                                  )}
+                                </div>
+                                {showPrice && total > 0 && (
+                                  <p className="text-xl font-bold text-orange-700 shrink-0">
+                                    ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+                          const est = section.data;
+                          const total = est._computedTotal ?? 0;
+                          return (
+                            <div key={est.id} className="border border-orange-200 rounded-lg p-4 flex items-start justify-between gap-4 bg-white">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-bold text-lg">{est.company_name}</h3>
+                                {est.scope_of_work && (
+                                  <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
+                                )}
+                              </div>
+                              {showPrice && total > 0 && (
+                                <p className="text-xl font-bold text-orange-700 shrink-0">
+                                  ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {visibilitySettings?.show_financial_summary && (
+                          <div className="border-t-2 border-orange-200 pt-4 space-y-2">
+                            <div className="flex justify-between text-lg">
+                              <span className="font-medium">Subtotal:</span>
+                              <span>
+                                ${(co.totals?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-lg">
+                              <span className="font-medium">Tax (7%):</span>
+                              <span>
+                                ${(co.totals?.tax ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-2xl font-bold pt-2 border-t border-orange-200">
+                              <span>Change order total:</span>
+                              <span className="text-orange-800">
+                                ${(co.totals?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
           {/* Payments Tab */}
           {visibilitySettings?.show_payments && (
@@ -457,7 +771,33 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, lineItemVisible
           )}
 
           {visibilitySettings?.show_documents && (
-            <TabsContent value="documents">
+            <TabsContent value="documents" className="space-y-6">
+              {viewerLinks.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ExternalLink className="w-5 h-5" />
+                      Drawings & 3D Views
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground font-normal">Plans and models shared for this project.</p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-3">
+                      {viewerLinks.map((link: any) => (
+                        <Button
+                          key={link.id}
+                          variant="outline"
+                          className="flex items-center gap-2"
+                          onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          {link.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">

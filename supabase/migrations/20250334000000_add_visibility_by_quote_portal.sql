@@ -1,0 +1,49 @@
+-- Per-proposal visibility: each quote can have its own visibility settings (sections, prices, etc.).
+ALTER TABLE public.customer_portal_access
+  ADD COLUMN IF NOT EXISTS visibility_by_quote jsonb DEFAULT '{}';
+
+COMMENT ON COLUMN public.customer_portal_access.visibility_by_quote IS 'Per-quote visibility overrides: { "quote-uuid": { show_proposal, show_payments, ..., show_section_prices } }. When customer views a proposal, use this quote key if set, else use top-level columns.';
+
+-- Return visibility_by_quote from GET RPCs so office and customer portal can use it.
+CREATE OR REPLACE FUNCTION public.get_customer_portal_link_by_job(p_job_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT to_jsonb(r) FROM (
+    SELECT id, job_id, customer_identifier, access_token, customer_name, customer_email, customer_phone,
+           is_active, expires_at, last_accessed_at, created_by, created_at, updated_at,
+           show_proposal, show_payments, show_schedule, show_documents, show_photos,
+           show_financial_summary, COALESCE(show_line_item_prices, false) AS show_line_item_prices,
+           COALESCE(show_section_prices, '{}'::jsonb) AS show_section_prices,
+           COALESCE(visibility_by_quote, '{}'::jsonb) AS visibility_by_quote,
+           custom_message
+    FROM customer_portal_access
+    WHERE job_id = p_job_id
+    ORDER BY updated_at DESC NULLS LAST, created_at DESC
+    LIMIT 1
+  ) r;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_customer_portal_access_by_token(p_access_token text)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT to_jsonb(r) FROM (
+    SELECT id, job_id, customer_identifier, access_token, customer_name, customer_email, customer_phone,
+           is_active, expires_at, last_accessed_at, created_by, created_at, updated_at,
+           show_proposal, show_payments, show_schedule, show_documents, show_photos,
+           show_financial_summary, COALESCE(show_line_item_prices, false) AS show_line_item_prices,
+           COALESCE(show_section_prices, '{}'::jsonb) AS show_section_prices,
+           COALESCE(visibility_by_quote, '{}'::jsonb) AS visibility_by_quote,
+           custom_message
+    FROM customer_portal_access
+    WHERE access_token = p_access_token AND is_active = true
+    LIMIT 1
+  ) r;
+$$;
