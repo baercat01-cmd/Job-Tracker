@@ -21,6 +21,7 @@ import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck, Bui
 import { toast } from 'sonner';
 import { TrimDrawingPreview, getCutLengthFromTrimConfig, formatLengthInches, type LineSegment } from '@/components/office/TrimDrawingPreview';
 import { TrimDrawingFullScreenView } from '@/components/office/TrimDrawingFullScreenView';
+import { extractFlatstockCutListSnippet } from '@/lib/flatstockCutListNotes';
 
 function toNum(v: unknown): number {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -179,8 +180,10 @@ interface MaterialItem {
   usage: string | null;
   status: string;
   cost_per_unit: number | null;
+  notes?: string | null;
   quantity_ready_for_job?: number;
   trim_saved_config_id?: string | null;
+  trim_cut_state?: 'pending' | 'in_progress' | 'cut_complete' | null;
   trim_saved_configs?: { id: string; name: string; drawing_segments: unknown } | null;
   sheets: {
     sheet_name: string;
@@ -592,8 +595,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         .select('material_item_id');
       const bundledSet = new Set((bundledItemIds || []).map((r: any) => r.material_item_id));
 
-      const unbundledSelectFull = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit, trim_saved_config_id, quantity_ready_for_job`;
-      const unbundledSelectMinimal = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit`;
+      const unbundledSelectFull = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit, trim_saved_config_id, quantity_ready_for_job, trim_cut_state, notes`;
+      const unbundledSelectMinimal = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit, trim_cut_state, notes`;
       const unbundledRes = await supabase
         .from('material_items')
         .select(unbundledSelectFull)
@@ -1245,7 +1248,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                               <CollapsibleContent>
                                 <CardContent className="p-2 sm:p-3">
                                   <div className="space-y-2">
-                                    {pullFromShopItems.map((item) => (
+                                    {pullFromShopItems.map((item) => {
+                                      const cutSnippet = extractFlatstockCutListSnippet(item.material_items.notes);
+                                      return (
                                       <div
                                         key={item.id}
                                         className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
@@ -1283,7 +1288,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                   </p>
                                                 </div>
                                               )}
+                                          </div>
+                                          {cutSnippet && (
+                                            <div className="mt-2 text-[11px] whitespace-pre-wrap bg-indigo-50 border border-indigo-100 rounded p-2 text-indigo-950/80">
+                                              {cutSnippet}
                                             </div>
+                                          )}
                                           </div>
                                           <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
                                             {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id || item.material_items.category === 'Trim') && (
@@ -1392,7 +1402,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                           </div>
                                         </div>
                                       </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </CardContent>
                               </CollapsibleContent>

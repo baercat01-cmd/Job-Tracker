@@ -69,7 +69,7 @@ export async function updateCustomerPortalAccessRow(
       },
     };
   }
-  const row = rows[0] as Record<string, unknown>;
+  const row = rows[0] as unknown as Record<string, unknown>;
   if (selectFallback === selectColumns || row.show_line_item_prices === undefined) {
     row.show_line_item_prices = row.show_line_item_prices ?? false;
   }
@@ -120,7 +120,7 @@ export async function insertCustomerPortalAccessRow(
     res = await supabase.from('customer_portal_access').insert([rest]).select(selectFallback);
   }
   if (res.error) return { data: null, error: res.error };
-  const row = (res.data?.[0] as Record<string, unknown>) ?? null;
+  const row = (res.data?.[0] as unknown as Record<string, unknown>) ?? null;
   if (row && row.show_line_item_prices === undefined) row.show_line_item_prices = false;
   return { data: row, error: null };
 }

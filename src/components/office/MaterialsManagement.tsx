@@ -149,6 +149,12 @@ import {
   isTrimSlittingPlanV1,
   type TrimSlittingPlanV1,
 } from '@/lib/trimFlatstockOptimize';
+import {
+  FLATSTOCK_CUT_LIST_DELIM_END,
+  FLATSTOCK_CUT_LIST_DELIM_START,
+  extractFlatstockCutListSnippet,
+  upsertFlatstockCutListNotes,
+} from '@/lib/flatstockCutListNotes';
 import { cn } from '@/lib/utils';
 
 /** Sent, signed, or office-locked — same idea as JobFinancials `isQuoteContractFrozen`. */
@@ -359,6 +365,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [loadingTrimFlatstock, setLoadingTrimFlatstock] = useState(false);
   const [savingFlatstockWidth, setSavingFlatstockWidth] = useState(false);
   const [savingTrimSlittingPlan, setSavingTrimSlittingPlan] = useState(false);
+  const [savingTrimCutListToNotes, setSavingTrimCutListToNotes] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -583,6 +590,97 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       toast.success(`Slitting plan saved (${plan.totalSheets} sheet${plan.totalSheets === 1 ? '' : 's'})`);
     } finally {
       setSavingTrimSlittingPlan(false);
+    }
+  }
+
+  async function applyTrimSlittingPlanToNotes(
+    plan: TrimSlittingPlanV1,
+    itemsWithTrim: { item: MaterialItem; stretchOutInches: number }[]
+  ) {
+    if (!workbook?.id) return;
+    if (workbook.status !== 'working') {
+      toast.error('Trim cut list can only be applied on the working workbook.');
+      return;
+    }
+
+    setSavingTrimCutListToNotes(true);
+    try {
+      const W = plan.flatstockWidthInches;
+      const instancesByItemId = new Map<string, string[]>();
+
+      for (const sh of plan.sheets) {
+        let used = 0;
+        for (const st of sh.strips) {
+          const cutoffBefore = W - used;
+          const cutoffBeforeRounded = Math.round(cutoffBefore * 100) / 100;
+          const line = `Sheet ${sh.sheetIndex}, strip #${st.cutOrder}: use ${cutoffBeforeRounded}" cutoff to cut ${st.stretchOutInches.toFixed(2)}" strip (10' long).`;
+          const arr = instancesByItemId.get(st.materialItemId) ?? [];
+          arr.push(line);
+          instancesByItemId.set(st.materialItemId, arr);
+          used += st.stretchOutInches;
+        }
+      }
+
+      for (const row of itemsWithTrim) {
+        const item = row.item;
+        const instances = instancesByItemId.get(item.id) ?? [];
+        const stripCount = instances.length;
+        const skuPart = item.sku ? ` (${item.sku})` : '';
+        const materialPart = `${item.material_name}${skuPart}`;
+
+        const blockLines = [
+          FLATSTOCK_CUT_LIST_DELIM_START,
+          `Coil width: ${W}" (10' slitting strips)`,
+          `Material: ${materialPart}`,
+          `Planned strips: ${stripCount}`,
+          ...(instances.length ? ['Instances (cut order, widest-first):', ...instances.map((x) => `- ${x}`)] : ['Instances: none in current plan.']),
+          FLATSTOCK_CUT_LIST_DELIM_END,
+        ];
+        const newBlock = blockLines.join('\n');
+        const newNotes = upsertFlatstockCutListNotes(item.notes ?? null, newBlock);
+
+        const { error } = await supabase.from('material_items').update({ notes: newNotes }).eq('id', item.id);
+        if (error) {
+          toast.error(error.message || 'Failed to apply cut list to notes');
+          return;
+        }
+      }
+
+      // Update local workbook state so the user immediately sees the updated notes.
+      setWorkbook((prev) => {
+        if (!prev?.sheets) return prev;
+        const itemsById = new Map(itemsWithTrim.map((r) => [r.item.id, r.item]));
+        return {
+          ...prev,
+          sheets: prev.sheets.map((sh) => ({
+            ...sh,
+            items: sh.items.map((i) => {
+              if (!itemsById.has(i.id)) return i;
+              const instances = instancesByItemId.get(i.id) ?? [];
+              const stripCount = instances.length;
+              const skuPart = i.sku ? ` (${i.sku})` : '';
+              const materialPart = `${i.material_name}${skuPart}`;
+              const blockLines = [
+                FLATSTOCK_CUT_LIST_DELIM_START,
+                `Coil width: ${W}" (10' slitting strips)`,
+                `Material: ${materialPart}`,
+                `Planned strips: ${stripCount}`,
+                ...(instances.length
+                  ? ['Instances (cut order, widest-first):', ...instances.map((x) => `- ${x}`)]
+                  : ['Instances: none in current plan.']),
+                FLATSTOCK_CUT_LIST_DELIM_END,
+              ];
+              const newBlock = blockLines.join('\n');
+              const newNotes = upsertFlatstockCutListNotes(i.notes ?? null, newBlock);
+              return { ...i, notes: newNotes };
+            }),
+          })),
+        };
+      });
+
+      toast.success('Cut list applied to trim line notes');
+    } finally {
+      setSavingTrimCutListToNotes(false);
     }
   }
 
@@ -2881,8 +2979,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
         return;
       }
-      if (!workbook || workbook.status === 'locked') {
-        toast.error('Cannot add sheets to a locked workbook');
+      if (!workbook) {
+        toast.error('Cannot add sheets until the workbook is loaded.');
         return;
       }
     }
@@ -3091,8 +3189,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
       return;
     }
-    if (!workbook || workbook.status === 'locked') {
-      toast.error('Cannot delete sheets from a locked workbook');
+    if (!workbook) {
+      toast.error('Cannot delete sheets until the workbook is loaded.');
       return;
     }
 
@@ -5097,6 +5195,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 const savedPlan = isTrimSlittingPlanV1(workbook.trim_flatstock_plan)
                   ? (workbook.trim_flatstock_plan as TrimSlittingPlanV1)
                   : null;
+                const stripsPlannedByItem = savedPlan
+                  ? new Map(savedPlan.perItem.map((p) => [p.materialItemId, p.stripsPlanned]))
+                  : null;
+                const totalFlatstockPiecesOptimized = savedPlan
+                  ? savedPlan.sheets.reduce((sum, sh) => sum + sh.strips.length, 0)
+                  : totalFlatstockPieces;
                 const canEditTrimSlitting = workbook.status === 'working';
                 const demandsForPlan = itemsWithTrim.map(({ item, stretchOutInches }) => ({
                   materialItemId: item.id,
@@ -5122,6 +5226,17 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                           Saved plan: {savedPlan.totalSheets} sheet{savedPlan.totalSheets === 1 ? '' : 's'} (vs{' '}
                           {savedPlan.legacyIndependentSheetsSum} if each line counted alone)
                         </span>
+                      )}
+                      {savedPlan && savedPlan.sheets.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!canEditTrimSlitting || savingTrimCutListToNotes}
+                          onClick={() => void applyTrimSlittingPlanToNotes(savedPlan, itemsWithTrim.map(({ item, stretchOutInches }) => ({ item, stretchOutInches })))}
+                        >
+                          {savingTrimCutListToNotes ? 'Applying…' : 'Apply cut list to notes'}
+                        </Button>
                       )}
                     </div>
                     <div className="rounded-md border overflow-x-auto">
@@ -5184,9 +5299,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                 </td>
                                 <td
                                   className="p-2 text-right font-semibold tabular-nums text-base"
-                                  title={`Order ${nest.sticksNeeded} piece(s) of ${FLATSTOCK_STICK_LENGTH_INCHES / 12}' × ${flatstockW}" flatstock for this line`}
+                                  title={`Plan for ${stripsPlannedByItem?.get(item.id) ?? nest.sticksNeeded} strip(s) (10' long)`}
                                 >
-                                  {nest.sticksNeeded}
+                                  {stripsPlannedByItem?.get(item.id) ?? nest.sticksNeeded}
                                 </td>
                                 <td className="p-2 align-top">
                                   <Select
@@ -5221,7 +5336,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             <td colSpan={7} className="p-2 text-right">
                               Total flatstock pieces ({FLATSTOCK_STICK_LENGTH_INCHES / 12}&apos; × {flatstockW}&quot;)
                             </td>
-                            <td className="p-2 text-right tabular-nums text-base">{totalFlatstockPieces}</td>
+                            <td className="p-2 text-right tabular-nums text-base">{totalFlatstockPiecesOptimized}</td>
                             <td className="p-2" />
                           </tr>
                         </tfoot>
