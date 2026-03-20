@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid, ShoppingCart } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid, ShoppingCart, Key } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,6 +21,7 @@ import { JobPhotosView } from './JobPhotosView';
 import { JobFinancials } from './JobFinancials';
 import { ProposalAndMaterialsView } from './ProposalAndMaterialsView';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
+import { SubcontractorPortalJobPanel } from './SubcontractorPortalJobPanel';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { JobCommunications } from './JobCommunications';
 import { JobZohoOrders } from './JobZohoOrders';
@@ -31,6 +32,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 import { format } from 'date-fns';
 
 import { useAuth } from '@/hooks/useAuth';
+import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
 import type { Job } from '@/types';
 import { JobDetailProposalToolbarContext } from '@/contexts/JobDetailProposalToolbarContext';
 import { JobDetailMaterialsToolbarSlotContext } from '@/contexts/JobDetailMaterialsToolbarContext';
@@ -505,14 +507,8 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
         setSelectedProposalQuoteId(null);
         return;
       }
-      const isQuoteContractFrozen = (q: any) => {
-        const sv = q?.signed_version;
-        const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
-        return !!(q?.locked_for_editing || q?.sent_at || hasSigned || q?.customer_signed_at);
-      };
-
       const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
-      const frozenMain = mainQuotes.filter(isQuoteContractFrozen);
+      const frozenMain = mainQuotes.filter((q: any) => isQuoteContractFrozen(q));
 
       // If this job has a contract-frozen main quote, default selection to it.
       // This prevents Materials from loading "No Material Workbook" when the locked workbook exists only for the contract quote.
@@ -1323,7 +1319,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
             <h1 className="text-lg font-bold text-yellow-500 truncate shrink-0 max-w-[180px] sm:max-w-[240px]">
               {job.name}
             </h1>
-            <TabsList className="flex-1 min-w-0 grid grid-cols-11 h-11 rounded-none bg-transparent p-0 gap-0 border-0">
+            <TabsList className="flex-1 min-w-0 grid grid-cols-12 h-11 rounded-none bg-transparent p-0 gap-0 border-0 overflow-x-auto">
             <TabsTrigger 
               value="overview" 
               className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
@@ -1403,6 +1399,13 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
             >
               <Users className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Portal</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="subcontractor-portal" 
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
+            >
+              <Key className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Sub portal</span>
             </TabsTrigger>
             <TabsTrigger 
               value="communications" 
@@ -1889,6 +1892,12 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
         <TabsContent value="customer-portal" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
             <CustomerPortalManagement key={portalJobId ?? job.id} job={job} portalJobId={portalJobId ?? job.id} getPortalJobId={getPortalJobId} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="subcontractor-portal" className="w-full">
+          <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <SubcontractorPortalJobPanel jobId={portalJobId ?? job.id} jobName={job.name} />
           </div>
         </TabsContent>
 

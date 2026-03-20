@@ -1,10 +1,12 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
 import type { Job } from '@/types';
 import { DocumentPanelContext } from '@/contexts/DocumentPanelContext';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 import { JobFinancials } from './JobFinancials';
+import type { BreakdownSheetPrice } from './MaterialsManagement';
 
 export type ViewMode = 'split' | 'proposal' | 'materials';
 
@@ -34,7 +36,9 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
   const viewMode = viewModeProp ?? internalViewMode;
   const setViewMode = onViewModeChange ?? setInternalViewMode;
   const [internalQuoteId, setInternalQuoteId] = useState<string | null>(null);
+  const [linkedSheetId, setLinkedSheetId] = useState<string | null>(null);
   const [showDocumentsInPanel, setShowDocumentsInPanel] = useState(false);
+  const [breakdownSheetPrices, setBreakdownSheetPrices] = useState<BreakdownSheetPrice[]>([]);
 
   const isControlled = controlledQuoteId !== undefined;
   const selectedQuoteId = isControlled ? (controlledQuoteId ?? null) : internalQuoteId;
@@ -58,16 +62,10 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
         return;
       }
 
-      const isQuoteContractFrozen = (q: any) => {
-        const sv = q?.signed_version;
-        const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
-        return !!(q?.locked_for_editing || q?.sent_at || hasSigned || q?.customer_signed_at);
-      };
-
-      // Prefer a signed/sent/office-locked main proposal so Materials binds to the workbook that exists for contracts.
+      // Prefer a signed/office-locked main proposal so Materials binds to the workbook that exists for contracts.
       // This fixes the "No Material Workbook" case when the most-recent proposal is not the frozen contract.
       const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
-      const frozenMain = mainQuotes.filter(isQuoteContractFrozen);
+      const frozenMain = mainQuotes.filter((q: any) => isQuoteContractFrozen(q));
       if (frozenMain.length > 0) {
         setInternalQuoteId((prev) => {
           if (prev && frozenMain.some((q: any) => q.id === prev)) return prev;
@@ -120,6 +118,8 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
                 job={job}
                 controlledQuoteId={selectedQuoteId ?? undefined}
                 onQuoteChange={setSelectedQuoteId}
+                onSheetSelect={setLinkedSheetId}
+                externalBreakdownSheetPrices={breakdownSheetPrices}
               />
             </div>
           </div>
@@ -147,6 +147,8 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
                   userId={userId}
                   controlledQuoteId={selectedQuoteId ?? undefined}
                   onQuoteChange={setSelectedQuoteId}
+                  externalActiveSheetId={linkedSheetId}
+                  onBreakdownPriceSync={setBreakdownSheetPrices}
                 />
               </Suspense>
             )}

@@ -15,7 +15,9 @@ import {
   Building2,
   Briefcase,
   Key,
-  Settings
+  Settings,
+  Copy,
+  Link2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -50,6 +52,9 @@ interface JobAccess {
   can_view_documents: boolean;
   can_view_photos: boolean;
   can_view_financials: boolean;
+  can_view_proposal?: boolean;
+  can_view_materials?: boolean;
+  can_edit_schedule?: boolean;
   notes: string | null;
   jobs: any;
 }
@@ -79,6 +84,9 @@ export function PortalManagement() {
   const [canViewDocuments, setCanViewDocuments] = useState(true);
   const [canViewPhotos, setCanViewPhotos] = useState(false);
   const [canViewFinancials, setCanViewFinancials] = useState(false);
+  const [canViewProposal, setCanViewProposal] = useState(true);
+  const [canViewMaterials, setCanViewMaterials] = useState(true);
+  const [canEditSchedule, setCanEditSchedule] = useState(false);
   const [accessNotes, setAccessNotes] = useState('');
 
   useEffect(() => {
@@ -181,6 +189,9 @@ export function PortalManagement() {
           can_view_documents: canViewDocuments,
           can_view_photos: canViewPhotos,
           can_view_financials: canViewFinancials,
+          can_view_proposal: canViewProposal,
+          can_view_materials: canViewMaterials,
+          can_edit_schedule: canEditSchedule,
           notes: accessNotes || null,
           created_by: profile?.id,
         }]);
@@ -279,7 +290,20 @@ export function PortalManagement() {
     setCanViewDocuments(true);
     setCanViewPhotos(false);
     setCanViewFinancials(false);
+    setCanViewProposal(true);
+    setCanViewMaterials(true);
+    setCanEditSchedule(false);
     setAccessNotes('');
+  }
+
+  async function copySubcontractorPortalUrl() {
+    const url = `${window.location.origin}/subcontractor-portal`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Subcontractor portal link copied');
+    } catch {
+      toast.error('Could not copy link');
+    }
   }
 
   const customerUsers = portalUsers.filter(u => u.user_type === 'customer');
@@ -313,6 +337,26 @@ export function PortalManagement() {
         </TabsList>
 
         <TabsContent value="subcontractors" className="space-y-4">
+          <Card className="border-dashed">
+            <CardContent className="pt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <Link2 className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium">Subcontractor portal URL</p>
+                  <p className="text-sm text-muted-foreground">
+                    Share this link with subs. They sign in with the email and password you create here, then see only jobs you grant.
+                  </p>
+                  <code className="text-xs block mt-2 bg-muted px-2 py-1 rounded break-all">
+                    {typeof window !== 'undefined' ? `${window.location.origin}/subcontractor-portal` : '/subcontractor-portal'}
+                  </code>
+                </div>
+              </div>
+              <Button type="button" variant="outline" onClick={copySubcontractorPortalUrl}>
+                <Copy className="w-4 h-4 mr-2" />
+                Copy link
+              </Button>
+            </CardContent>
+          </Card>
           {subcontractorUsers.length === 0 ? (
             <Card>
               <CardContent className="text-center py-12">
@@ -575,6 +619,9 @@ export function PortalManagement() {
                           {access.can_view_documents && <Badge variant="outline" className="text-xs">Documents</Badge>}
                           {access.can_view_photos && <Badge variant="outline" className="text-xs">Photos</Badge>}
                           {access.can_view_financials && <Badge variant="outline" className="text-xs">Financials</Badge>}
+                          {access.can_view_proposal && <Badge variant="outline" className="text-xs">Proposal</Badge>}
+                          {access.can_view_materials && <Badge variant="outline" className="text-xs">Materials</Badge>}
+                          {access.can_edit_schedule && <Badge variant="outline" className="text-xs">Edit schedule</Badge>}
                         </div>
                       </div>
                       <Button
@@ -613,7 +660,7 @@ export function PortalManagement() {
                   </Select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex items-center justify-between p-3 border rounded-lg">
                     <Label>View Schedule</Label>
                     <Switch checked={canViewSchedule} onCheckedChange={setCanViewSchedule} />
@@ -629,6 +676,18 @@ export function PortalManagement() {
                   <div className="flex items-center justify-between p-3 border rounded-lg">
                     <Label>View Financials</Label>
                     <Switch checked={canViewFinancials} onCheckedChange={setCanViewFinancials} />
+                  </div>
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <Label>Proposal (scope PDF)</Label>
+                    <Switch checked={canViewProposal} onCheckedChange={setCanViewProposal} />
+                  </div>
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <Label>Material sheets</Label>
+                    <Switch checked={canViewMaterials} onCheckedChange={setCanViewMaterials} />
+                  </div>
+                  <div className="flex items-center justify-between p-3 border rounded-lg sm:col-span-2">
+                    <Label>Allow editing schedule dates &amp; notes</Label>
+                    <Switch checked={canEditSchedule} onCheckedChange={setCanEditSchedule} />
                   </div>
                 </div>
 

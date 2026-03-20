@@ -29,7 +29,8 @@ import {
   LayoutDashboard,
   Printer,
   PenLine,
-  ClipboardList
+  ClipboardList,
+  Package
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { isFieldRequestSheetName } from '@/lib/materialWorkbook';
@@ -51,7 +52,13 @@ import {
 } from '@/components/ui/select';
 import { generateProposalHTML, generateChangeOrderDocumentHTML } from '@/components/office/ProposalPDFTemplate';
 import { computeProposalTotals } from '@/lib/proposalTotals';
+import { loadProposalDataForQuote } from '@/lib/loadProposalDataForQuote';
+import { buildProposalHtmlForPortal } from '@/lib/proposalPortalHtml';
+import { quoteHasActiveContract } from '@/lib/quoteProposalLock';
 import { MartinBuilderContractSeal } from '@/components/customer/MartinBuilderContractSeal';
+import { PortalMaterialItemsTable } from '@/components/customer/PortalMaterialItemsTable';
+import { PortalMultilineText } from '@/components/customer/PortalMultilineText';
+import { PortalSheetPricedLineItems } from '@/components/customer/PortalSheetPricedLineItems';
 
 interface Job {
   id: string;
@@ -134,6 +141,9 @@ export default function CustomerPortal() {
             show_photos: fresh.show_photos ?? prev.show_photos,
             show_financial_summary: fresh.show_financial_summary ?? prev.show_financial_summary,
             show_line_item_prices: fresh.show_line_item_prices ?? prev.show_line_item_prices,
+            show_material_items_no_prices:
+              (fresh as { show_material_items_no_prices?: boolean }).show_material_items_no_prices ??
+              prev.show_material_items_no_prices,
             show_section_prices: fresh.show_section_prices ?? prev.show_section_prices,
             visibility_by_quote: fresh.visibility_by_quote ?? prev.visibility_by_quote,
           };
@@ -563,6 +573,9 @@ function JobDetailView({
   // If URL has ?quote=uuid and it's a main proposal for this job, use it (never the change-order quote here)
   const quoteIdFromUrl = searchParams?.get('quote') ?? null;
   const coQuoteIdFromUrl = searchParams?.get('change_order') === '1';
+  /** Full-page material list (no prices): /customer-portal?token=…&sheet=<sheetId>[&quote=…|&change_order=1] */
+  const sheetIdFromUrl = searchParams?.get('sheet') ?? null;
+  const materialSheetPageIsCo = searchParams?.get('change_order') === '1';
   const initialQuoteId =
     quoteIdFromUrl && proposalQuotes.some((q: any) => q.id === quoteIdFromUrl)
       ? quoteIdFromUrl
@@ -571,6 +584,14 @@ function JobDetailView({
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(initialQuoteId);
   const selectedQuote =
     proposalQuotes.find((q: any) => q.id === selectedQuoteId) ?? proposalQuotes[0] ?? null;
+
+  /** Show proposal body when office clicked "Mark as Sent" OR set a contract (customer sign / signed_version). */
+  const proposalVisibleInPortal = useMemo(() => {
+    if (!selectedQuote) return false;
+    const q = selectedQuote as any;
+    if (q.sent_at) return true;
+    return quoteHasActiveContract(q);
+  }, [selectedQuote]);
 
   useEffect(() => {
     if (searchParams?.get('change_order') === '1' && changeOrderQuote) {
@@ -595,9 +616,22 @@ function JobDetailView({
     : null;
   const vis = (perQuoteVis && typeof perQuoteVis === 'object') ? perQuoteVis : customerInfo;
   const showFinancial = vis?.show_financial_summary === true;
-  const showLineItemPrices = vis?.show_line_item_prices === true;
+  const multiProposal = proposalQuotes.length > 1;
+  const lineFromLink = customerInfo?.show_line_item_prices === true;
+  const perQMain =
+    perQuoteVis && typeof perQuoteVis === 'object'
+      ? (perQuoteVis as Record<string, unknown>)
+      : null;
+  const hasExplicitLineMain = !!(perQMain && 'show_line_item_prices' in perQMain);
+  const lineFromPerMain = hasExplicitLineMain ? perQMain!.show_line_item_prices === true : null;
+  /** Match office portal: if only one main proposal, row column true beats stale false inside visibility_by_quote jsonb. */
+  const showLineItemPrices =
+    multiProposal && hasExplicitLineMain
+      ? lineFromPerMain === true
+      : lineFromLink || lineFromPerMain === true;
   const showSectionPrices: Record<string, boolean> | null = (typeof vis?.show_section_prices === 'object' && vis?.show_section_prices !== null && !Array.isArray(vis?.show_section_prices)) ? vis.show_section_prices : null;
   const showPriceForSection = (sectionId: string) => showFinancial && showLineItemPrices && (showSectionPrices == null || showSectionPrices[sectionId] !== false);
+  const showMaterialItemsNoPrices = vis?.show_material_items_no_prices === true;
   const showProposal = vis?.show_proposal === true;
   const showPayments = vis?.show_payments === true;
   const showSchedule = vis?.show_schedule === true;
@@ -631,13 +665,23 @@ function JobDetailView({
       : null;
   const coVis = coQuoteVis && typeof coQuoteVis === 'object' ? coQuoteVis : customerInfo;
   const showFinancialCo = coVis?.show_financial_summary === true;
-  const showLineItemPricesCo = coVis?.show_line_item_prices === true;
+  const coPerObj =
+    coQuoteVis && typeof coQuoteVis === 'object'
+      ? (coQuoteVis as Record<string, unknown>)
+      : null;
+  const coHasExplicitLine = !!(coPerObj && 'show_line_item_prices' in coPerObj);
+  const lineFromPerCo = coHasExplicitLine ? coPerObj!.show_line_item_prices === true : null;
+  const showLineItemPricesCo =
+    multiProposal && coHasExplicitLine
+      ? lineFromPerCo === true
+      : lineFromLink || lineFromPerCo === true;
   const showSectionPricesCo: Record<string, boolean> | null =
     typeof coVis?.show_section_prices === 'object' && coVis?.show_section_prices !== null && !Array.isArray(coVis?.show_section_prices)
       ? coVis.show_section_prices
       : null;
   const showPriceForCoSection = (sectionId: string) =>
     showFinancialCo && showLineItemPricesCo && (showSectionPricesCo == null || showSectionPricesCo[sectionId] !== false);
+  const showMaterialItemsNoPricesCo = coVis?.show_material_items_no_prices === true;
 
   useEffect(() => {
     if (!job?.id || !changeOrderQuoteId) {
@@ -696,6 +740,31 @@ function JobDetailView({
   const portalToken =
     searchParams?.get('token') ??
     (typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY) : null);
+
+  const buildMaterialSheetFullUrl = useCallback(
+    (sheetId: string, opts: { changeOrder: boolean }) => {
+      if (!portalToken || typeof window === 'undefined') return '#';
+      const u = new URL(`${window.location.origin}/customer-portal`);
+      u.searchParams.set('token', portalToken);
+      u.searchParams.set('sheet', sheetId);
+      if (opts.changeOrder) u.searchParams.set('change_order', '1');
+      else if (selectedQuoteId) u.searchParams.set('quote', selectedQuoteId);
+      return u.toString();
+    },
+    [portalToken, selectedQuoteId]
+  );
+
+  const buildPortalUrlWithoutSheet = useCallback(
+    (opts?: { openChangeOrdersTab?: boolean }) => {
+      if (!portalToken || typeof window === 'undefined') return '/customer-portal';
+      const u = new URL(`${window.location.origin}/customer-portal`);
+      u.searchParams.set('token', portalToken);
+      if (opts?.openChangeOrdersTab) u.searchParams.set('change_order', '1');
+      else if (selectedQuoteId) u.searchParams.set('quote', selectedQuoteId);
+      return u.toString();
+    },
+    [portalToken, selectedQuoteId]
+  );
 
   // Prefill signer from portal access when proposal is sent and not yet signed
   useEffect(() => {
@@ -939,503 +1008,6 @@ function JobDetailView({
     }
   }
 
-  async function loadProposalDataForQuote(
-    jobId: string,
-    quoteId: string | null,
-    taxExempt: boolean,
-    opts?: { forChangeOrderDocument?: boolean }
-  ) {
-    try {
-      const { data: coQuoteEarly } = await supabase
-        .from('quotes')
-        .select('id')
-        .eq('job_id', jobId)
-        .eq('is_change_order_proposal', true)
-        .limit(1)
-        .maybeSingle();
-      const changeOrderQuoteIdForJob = coQuoteEarly?.id ?? null;
-      const forChangeOrderDocument =
-        !!opts?.forChangeOrderDocument || (!!quoteId && quoteId === changeOrderQuoteIdForJob);
-
-      // Prefer proposal totals stored on the quote (written by JobFinancials) so portal always matches office
-      let storedTotals: { subtotal: number; tax: number; grandTotal: number; materials?: number; labor?: number } | null = null;
-      if (quoteId) {
-        const { data: quoteRow } = await supabase
-          .from('quotes')
-          .select('proposal_subtotal, proposal_tax, proposal_grand_total')
-          .eq('id', quoteId)
-          .maybeSingle();
-        const sub = quoteRow?.proposal_subtotal != null ? Number(quoteRow.proposal_subtotal) : NaN;
-        const tax = quoteRow?.proposal_tax != null ? Number(quoteRow.proposal_tax) : NaN;
-        const grand = quoteRow?.proposal_grand_total != null ? Number(quoteRow.proposal_grand_total) : NaN;
-        if (Number.isFinite(sub) && Number.isFinite(grand)) {
-          storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
-        }
-      }
-
-      // Workbook selection — mirrors JobFinancials multi-step fallback exactly:
-      // 1a. Quote-specific workbook, status='working' (primary — matches JobFinancials default)
-      // 1b. Quote-specific workbook, any status (fallback)
-      // 2.  Null-quote legacy workbook, status='working'
-      // 3.  Scan ALL job workbooks, pick 'working' then newest
-      let workbookData: { id: string } | null = null;
-      if (quoteId) {
-        const { data: wb } = await supabase
-          .from('material_workbooks')
-          .select('id')
-          .eq('job_id', jobId)
-          .eq('quote_id', quoteId)
-          .eq('status', 'working')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        workbookData = wb ?? null;
-        if (!workbookData) {
-          const { data: wb2 } = await supabase
-            .from('material_workbooks')
-            .select('id')
-            .eq('job_id', jobId)
-            .eq('quote_id', quoteId)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          workbookData = wb2 ?? null;
-        }
-      }
-      if (!workbookData) {
-        const { data: wb } = await supabase
-          .from('material_workbooks')
-          .select('id')
-          .eq('job_id', jobId)
-          .is('quote_id', null)
-          .eq('status', 'working')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        workbookData = wb ?? null;
-      }
-      if (!workbookData) {
-        const { data: allWbs } = await supabase
-          .from('material_workbooks')
-          .select('id')
-          .eq('job_id', jobId)
-          .order('status', { ascending: false })
-          .order('updated_at', { ascending: false });
-        workbookData = (allWbs || [])[0] ?? null;
-      }
-
-      let materialSheets: any[] = [];
-      if (workbookData) {
-        const { data: sheetsData } = await supabase
-          .from('material_sheets')
-          .select('*')
-          .eq('workbook_id', workbookData.id)
-          .order('order_index');
-        let sheets = sheetsData || [];
-
-        // When we have a quote-specific workbook with sheets, always use it. Do not fall back to
-        // another workbook just because material_items count is 0: sections can be description +
-        // line items only, and labor-only sheets (e.g. "Stain & Labor for ceiling") have no
-        // material_items and must still appear in the customer portal.
-        const doFallback = sheets.length === 0;
-        if (doFallback) {
-          const { data: allWbs } = await supabase
-            .from('material_workbooks')
-            .select('id')
-            .eq('job_id', jobId)
-            .order('status', { ascending: false })
-            .order('updated_at', { ascending: false });
-          for (const wb of allWbs || []) {
-            if (wb.id === workbookData.id) continue;
-            const { data: altSheets } = await supabase
-              .from('material_sheets')
-              .select('*')
-              .eq('workbook_id', wb.id)
-              .order('order_index');
-            if ((altSheets || []).length > 0) {
-              const altSheetIds = (altSheets || []).map((s: any) => s.id);
-              const { count: altCount } = await supabase
-                .from('material_items')
-                .select('id', { count: 'exact', head: true })
-                .in('sheet_id', altSheetIds);
-              if ((altCount ?? 0) > 0) {
-                sheets = (altSheets || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
-                workbookData = wb;
-                break;
-              }
-            }
-          }
-        }
-
-        const sheetIds = sheets.map((s: any) => s.id);
-        for (const sheet of sheets) {
-          const [{ data: items }, { data: laborRows }, { data: categoryMarkupRows }] = await Promise.all([
-            supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
-            supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
-            supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id),
-          ]);
-          (sheet as any).items = items || [];
-          (sheet as any).laborRows = laborRows || [];
-          const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
-          (sheet as any).laborTotal = laborTotal;
-          const catMarkupMap: Record<string, number> = {};
-          (categoryMarkupRows || []).forEach((cm: any) => { catMarkupMap[cm.category_name] = cm.markup_percent ?? 10; });
-          (sheet as any).categoryMarkups = catMarkupMap;
-        }
-        // Fetch sheet-linked custom_financial_row_items (row_id IS NULL) — used for labor line items added to sheets
-        if (sheetIds.length > 0) {
-          const { data: sheetLineItems } = await supabase
-            .from('custom_financial_row_items')
-            .select('*')
-            .in('sheet_id', sheetIds)
-            .is('row_id', null)
-            .order('order_index');
-          const bySheet: Record<string, any[]> = {};
-          (sheetLineItems || []).forEach((item: any) => {
-            const sid = item.sheet_id;
-            if (sid) {
-              if (!bySheet[sid]) bySheet[sid] = [];
-              bySheet[sid].push(item);
-            }
-          });
-          sheets.forEach((sheet: any) => {
-            (sheet as any).sheetLinkedItems = bySheet[sheet.id] || [];
-          });
-        }
-        materialSheets = sheets;
-      }
-
-      // Change order proposal workbook (main proposal view only — not when loading the CO document itself)
-      let changeOrderSheets: any[] = [];
-      const changeOrderQuoteRow = changeOrderQuoteIdForJob ? { id: changeOrderQuoteIdForJob } : null;
-      if (changeOrderQuoteRow?.id && !forChangeOrderDocument) {
-        const { data: coWb } = await supabase
-          .from('material_workbooks')
-          .select('id')
-          .eq('quote_id', changeOrderQuoteRow.id)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (coWb?.id) {
-          const { data: coSheets } = await supabase
-            .from('material_sheets')
-            .select('*')
-            .eq('workbook_id', coWb.id)
-            .order('order_index');
-          const coSheetsList = (coSheets || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
-          for (const sheet of coSheetsList) {
-            const [{ data: items }, { data: laborRows }, { data: categoryMarkupRows }] = await Promise.all([
-              supabase.from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index'),
-              supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id),
-              supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id),
-            ]);
-            (sheet as any).items = items || [];
-            (sheet as any).laborRows = laborRows || [];
-            const laborTotal = (laborRows || []).reduce((s: number, l: any) => s + (l.total_labor_cost ?? (l.estimated_hours ?? 0) * (l.hourly_rate ?? 0)), 0);
-            (sheet as any).laborTotal = laborTotal;
-            const catMarkupMap: Record<string, number> = {};
-            (categoryMarkupRows || []).forEach((cm: any) => { catMarkupMap[cm.category_name] = cm.markup_percent ?? 10; });
-            (sheet as any).categoryMarkups = catMarkupMap;
-          }
-          const coSheetIds = coSheetsList.map((s: any) => s.id);
-          if (coSheetIds.length > 0) {
-            const { data: sheetLineItems } = await supabase
-              .from('custom_financial_row_items')
-              .select('*')
-              .in('sheet_id', coSheetIds)
-              .is('row_id', null)
-              .order('order_index');
-            const bySheet: Record<string, any[]> = {};
-            (sheetLineItems || []).forEach((item: any) => {
-              const sid = item.sheet_id;
-              if (sid) { if (!bySheet[sid]) bySheet[sid] = []; bySheet[sid].push(item); }
-            });
-            coSheetsList.forEach((sheet: any) => { (sheet as any).sheetLinkedItems = bySheet[sheet.id] || []; });
-          }
-          coSheetsList.forEach((sheet: any) => {
-            const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
-            const byCategory = new Map<string, any[]>();
-            (sheet.items || []).forEach((item: any) => {
-              const cat = item.category || 'Uncategorized';
-              if (!byCategory.has(cat)) byCategory.set(cat, []);
-              byCategory.get(cat)!.push(item);
-            });
-            let sheetCatPrice = 0;
-            byCategory.forEach((catItems, catName) => {
-              const markup = catMarkups[catName] ?? 10;
-              sheetCatPrice += catItems.reduce((s: number, i: any) => {
-                const ext = i.extended_price != null && i.extended_price !== '' ? Number(i.extended_price) : null;
-                if (ext != null && ext > 0) return s + ext;
-                const qty = Number(i.quantity) || 0;
-                const pricePerUnit = Number(i.price_per_unit) || 0;
-                if (pricePerUnit > 0) return s + qty * pricePerUnit;
-                const cost = i.extended_cost != null ? Number(i.extended_cost) : qty * (Number(i.cost_per_unit) || 0);
-                return s + cost * (1 + markup / 100);
-              }, 0);
-            });
-            let sheetLinkedLabor = 0;
-            (sheet.sheetLinkedItems || []).forEach((item: any) => {
-              if ((item.item_type || 'material') === 'labor')
-                sheetLinkedLabor += (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
-            });
-            (sheet as any)._computedTotal = sheetCatPrice + (sheet.laborTotal ?? 0) + sheetLinkedLabor;
-          });
-          changeOrderSheets = coSheetsList;
-        }
-      }
-
-      // Custom rows: quote-specific + job-level (quote_id null), deduplicated and sorted.
-      // Matches JobFinancials exactly: quote rows take priority; job-level rows that share an id are dropped.
-      let customRowsData: any[] = [];
-      if (quoteId) {
-        const [forQuote, forJob] = await Promise.all([
-          supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('quote_id', quoteId).order('order_index'),
-          supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
-        ]);
-        const quoteRowIds = new Set((forQuote.data || []).map((r: any) => r.id));
-        const jobOnlyRows = (forJob.data || []).filter((r: any) => !quoteRowIds.has(r.id));
-        customRowsData = [...(forQuote.data || []), ...jobOnlyRows].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
-      } else {
-        const { data } = await supabase.from('custom_financial_rows').select('*, custom_financial_row_items(*)').eq('job_id', jobId).order('order_index');
-        customRowsData = data || [];
-      }
-
-      // Subcontractor estimates: same deduplicated pattern
-      let subEstimatesData: any[] = [];
-      if (quoteId) {
-        const [forQuote, forJob] = await Promise.all([
-          supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('quote_id', quoteId).order('order_index'),
-          supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).is('quote_id', null).order('order_index'),
-        ]);
-        const quoteSubIds = new Set((forQuote.data || []).map((r: any) => r.id));
-        const jobOnlySubs = (forJob.data || []).filter((r: any) => !quoteSubIds.has(r.id));
-        subEstimatesData = [...(forQuote.data || []), ...jobOnlySubs].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
-      } else {
-        const { data } = await supabase.from('subcontractor_estimates').select('*, subcontractor_estimate_line_items(*)').eq('job_id', jobId).order('order_index');
-        subEstimatesData = data || [];
-      }
-
-      const TAX_RATE = 0.07;
-
-      // Optional sheet IDs — exclude from proposal totals (match JobFinancials)
-      const isSheetOptional = (s: any) => s.is_option === true || s.is_option === 'true' || s.is_option === 1;
-      const optionalSheetIds = new Set(
-        (materialSheets || []).filter((s: any) => isSheetOptional(s)).map((s: any) => s.id)
-      );
-
-      // Optional categories: from material_category_options and/or infer from items (match JobFinancials)
-      const proposalSheetIds = (materialSheets || []).map((s: any) => s.id).filter(Boolean);
-      const categoryOptionalMap = new Map<string, boolean>();
-      if (proposalSheetIds.length > 0) {
-        const { data: categoryOptions } = await supabase
-          .from('material_category_options')
-          .select('sheet_id, category_name, is_optional')
-          .in('sheet_id', proposalSheetIds);
-        (categoryOptions || []).forEach((r: any) => {
-          categoryOptionalMap.set(`${r.sheet_id}_${r.category_name}`, !!r.is_optional);
-        });
-        // Fallback: if no category options (e.g. RLS), treat category as optional when every item has is_optional
-        (materialSheets || []).forEach((sheet: any) => {
-          const byCategory = new Map<string, any[]>();
-          (sheet.items || []).forEach((item: any) => {
-            const cat = item.category || 'Uncategorized';
-            if (!byCategory.has(cat)) byCategory.set(cat, []);
-            byCategory.get(cat)!.push(item);
-          });
-          byCategory.forEach((items, catName) => {
-            const key = `${sheet.id}_${catName}`;
-            if (categoryOptionalMap.has(key)) return;
-            const allOptional = items.length > 0 && items.every((i: any) => i.is_optional === true || i.is_optional === 'true');
-            if (allOptional) categoryOptionalMap.set(key, true);
-          });
-        });
-      }
-
-      // Helper: compute row materials + labor (with line item markups) and add linked subs (est.row_id === row.id)
-      const rowTotalsWithLinkedSubs = (row: any, subs: any[]) => {
-        const lineItems: any[] = row.custom_financial_row_items || [];
-        const rowMarkup = 1 + (Number(row.markup_percent) || 0) / 100;
-        let rowMat = 0;
-        let rowLab = 0;
-        let rowMatTaxable = 0;
-        if (lineItems.length > 0) {
-          const matItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'material');
-          const labItems = lineItems.filter((li: any) => (li.item_type || 'material') === 'labor');
-          rowMat = matItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0);
-          rowMatTaxable = matItems.filter((i: any) => i.taxable).reduce((s: number, i: any) => s + (Number(i.total_cost) || 0), 0);
-          rowLab = labItems.reduce((s: number, i: any) => s + (Number(i.total_cost) || 0) * (1 + ((i.markup_percent ?? 0) / 100)), 0);
-        } else {
-          rowMat = row.category === 'labor' ? 0 : (Number(row.total_cost) || 0);
-          rowMatTaxable = row.taxable ? rowMat : 0;
-          rowLab = row.category === 'labor' ? (Number(row.total_cost) || 0) : 0;
-        }
-        const linkedSubs = subs.filter((e: any) => e.row_id === row.id);
-        linkedSubs.forEach((sub: any) => {
-          const items = sub.subcontractor_estimate_line_items || [];
-          const sm = items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0);
-          const smTax = items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'material' && i.taxable).reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0);
-          const sl = items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0);
-          const m = 1 + (Number(sub.markup_percent) || 0) / 100;
-          rowMat += sm * m;
-          rowMatTaxable += smTax * m;
-          rowLab += sl * m;
-        });
-        return { materials: rowMat * rowMarkup, labor: rowLab * rowMarkup, materialsTaxable: rowMatTaxable * rowMarkup };
-      };
-
-      // Materials: use extended_price (selling price override) per category; fall back to extended_cost × markup.
-      // Include linked custom rows and sheet-level subcontractors in each sheet total (match JobFinancials).
-      let sheetMaterialsTotal = 0;
-      let sheetLaborTotal = 0;
-      let sheetMaterialsTaxableOnly = 0;
-      (materialSheets || []).forEach((sheet: any) => {
-        const isOptional = isSheetOptional(sheet);
-        const isChangeOrder = sheet.sheet_type === 'change_order';
-        const catMarkups: Record<string, number> = sheet.categoryMarkups || {};
-        const byCategory = new Map<string, any[]>();
-        (sheet.items || []).forEach((item: any) => {
-          const cat = item.category || 'Uncategorized';
-          if (!byCategory.has(cat)) byCategory.set(cat, []);
-          byCategory.get(cat)!.push(item);
-        });
-        let sheetCatPrice = 0;
-        // Match JobFinancials itemEffectivePrice: extended_price or quantity*price_per_unit only (no cost*markup fallback)
-        const itemEffectivePrice = (i: any) =>
-          (i.extended_price != null && i.extended_price !== '') ? Number(i.extended_price) : (Number(i.quantity) || 0) * (Number(i.price_per_unit) || 0);
-        const isItemOptional = (i: any) => i.is_optional === true || i.is_optional === 'true' || i.is_optional === 1;
-        byCategory.forEach((catItems, catName) => {
-          const isCategoryOptional = categoryOptionalMap.get(`${sheet.id}_${catName}`) === true;
-          if (isCategoryOptional) return; // exclude optional categories from proposal total (match JobFinancials)
-          const categoryTotal = catItems
-            .filter((i: any) => !isItemOptional(i))
-            .reduce((s: number, i: any) => s + itemEffectivePrice(i), 0);
-          sheetCatPrice += categoryTotal;
-        });
-        const sheetDirectLabor = sheet.laborTotal ?? 0;
-        let sheetLinkedLabor = 0;
-        let sheetLinkedMaterials = 0;
-        (sheet.sheetLinkedItems || []).forEach((item: any) => {
-          const itemTotal = (Number(item.total_cost) || 0) * (1 + ((item.markup_percent ?? 0) / 100));
-          if ((item.item_type || 'material') === 'labor') {
-            sheetLinkedLabor += itemTotal;
-          } else {
-            sheetLinkedMaterials += itemTotal;
-          }
-        });
-        // Linked custom rows (row.sheet_id === sheet.id) and their linked subs
-        let linkedRowsMat = 0;
-        let linkedRowsLab = 0;
-        let linkedRowsMatTaxable = 0;
-        (customRowsData || []).filter((r: any) => r.sheet_id === sheet.id).forEach((row: any) => {
-          const t = rowTotalsWithLinkedSubs(row, subEstimatesData || []);
-          linkedRowsMat += t.materials;
-          linkedRowsLab += t.labor;
-          linkedRowsMatTaxable += t.materialsTaxable;
-        });
-        // Sheet-level linked subcontractors (est.sheet_id === sheet.id, no row_id)
-        let linkedSubsMat = 0;
-        let linkedSubsLab = 0;
-        let linkedSubsMatTaxable = 0;
-        (subEstimatesData || []).filter((e: any) => e.sheet_id === sheet.id && !e.row_id).forEach((est: any) => {
-          const items = est.subcontractor_estimate_line_items || [];
-          const m = 1 + (Number(est.markup_percent) || 0) / 100;
-          const mat = items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0);
-          const matTax = items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'material' && i.taxable).reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0);
-          const lab = items.filter((i: any) => !i.excluded && (i.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0);
-          linkedSubsMat += mat * m;
-          linkedSubsMatTaxable += matTax * m;
-          linkedSubsLab += lab * m;
-        });
-        const sheetMaterialsPart = sheetCatPrice + sheetLinkedMaterials + linkedRowsMat + linkedSubsMat;
-        const sheetLaborPart = sheetDirectLabor + sheetLinkedLabor + linkedRowsLab + linkedSubsLab;
-        const sheetTotal = sheetMaterialsPart + sheetLaborPart;
-        (sheet as any)._computedTotal = sheetTotal;
-        (sheet as any)._computedMaterials = sheetMaterialsPart;
-        (sheet as any)._computedLabor = sheetLaborPart;
-        const countInProposalTotals = (!isChangeOrder || forChangeOrderDocument) && !isOptional;
-        if (countInProposalTotals) {
-          sheetMaterialsTotal += sheetCatPrice + linkedRowsMat + linkedSubsMat;
-          sheetLaborTotal += sheetDirectLabor + sheetLinkedLabor + linkedRowsLab + linkedSubsLab;
-          // All sheet category materials taxable by default (match JobFinancials)
-          sheetMaterialsTaxableOnly += sheetCatPrice + linkedRowsMatTaxable + linkedSubsMatTaxable;
-        }
-      });
-
-      // Custom rows — only standalone (no sheet_id). Include linked subs. Store per-row _computedTotal.
-      const standaloneCustomRows = (customRowsData || []).filter((r: any) => !r.sheet_id);
-      let customMaterialsTotal = 0;
-      let customLaborTotal = 0;
-      let customMaterialsTaxableOnly = 0;
-      standaloneCustomRows.forEach((row: any) => {
-        const t = rowTotalsWithLinkedSubs(row, subEstimatesData || []);
-        customMaterialsTotal += t.materials;
-        customLaborTotal += t.labor;
-        customMaterialsTaxableOnly += t.materialsTaxable;
-        (row as any)._computedTotal = t.materials + t.labor;
-      });
-
-      // Subcontractors — only standalone (no sheet_id, no row_id). Store per-est _computedTotal.
-      const standaloneSubs = (subEstimatesData || []).filter((e: any) => !e.sheet_id && !e.row_id);
-      let subMaterialsTotal = 0;
-      let subLaborTotalVal = 0;
-      let subMaterialsTaxableOnly = 0;
-      standaloneSubs.forEach((est: any) => {
-        const lineItems: any[] = est.subcontractor_estimate_line_items || [];
-        const markup = 1 + (Number(est.markup_percent) || 0) / 100;
-        const matItems = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material');
-        const labItems = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor');
-        const matTotal = matItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        const matTaxable = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material' && li.taxable).reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        const labTotal = labItems.reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        subMaterialsTotal += matTotal;
-        subLaborTotalVal += labTotal;
-        subMaterialsTaxableOnly += matTaxable;
-        (est as any)._computedTotal = matTotal + labTotal;
-      });
-
-      // Also set _computedTotal for linked rows/subs so UI can show per-row/sub totals (they're included in sheet total)
-      (customRowsData || []).filter((r: any) => r.sheet_id).forEach((row: any) => {
-        const t = rowTotalsWithLinkedSubs(row, subEstimatesData || []);
-        (row as any)._computedTotal = t.materials + t.labor;
-      });
-      (subEstimatesData || []).filter((e: any) => e.sheet_id || e.row_id).forEach((est: any) => {
-        const lineItems: any[] = est.subcontractor_estimate_line_items || [];
-        const markup = 1 + (Number(est.markup_percent) || 0) / 100;
-        const mat = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'material').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        const lab = lineItems.filter((li: any) => !li.excluded && (li.item_type || 'material') === 'labor').reduce((s: number, i: any) => s + (Number(i.total_price) || 0), 0) * markup;
-        (est as any)._computedTotal = mat + lab;
-      });
-
-      const totalMaterials = sheetMaterialsTotal + customMaterialsTotal + subMaterialsTotal;
-      const totalLabor = sheetLaborTotal + customLaborTotal + subLaborTotalVal;
-      const computedSubtotal = totalMaterials + totalLabor;
-      const materialsTaxableOnly = sheetMaterialsTaxableOnly + customMaterialsTaxableOnly + subMaterialsTaxableOnly;
-      const computedTax = taxExempt ? 0 : materialsTaxableOnly * TAX_RATE;
-      const computedGrandTotal = computedSubtotal + computedTax;
-
-      // Use stored totals from quote (written by JobFinancials) so portal matches office exactly; include materials/labor for header
-      const totals = storedTotals
-        ? { ...storedTotals, materials: storedTotals.materials ?? totalMaterials, labor: storedTotals.labor ?? totalLabor }
-        : { subtotal: computedSubtotal, tax: computedTax, grandTotal: computedGrandTotal, materials: totalMaterials, labor: totalLabor };
-
-      return {
-        materialSheets,
-        changeOrderSheets,
-        customRows: customRowsData,
-        subcontractorEstimates: subEstimatesData,
-        totals,
-      };
-    } catch (error) {
-      console.error('Error loading proposal data:', error);
-      return {
-        materialSheets: [],
-        changeOrderSheets: [],
-        customRows: [],
-        subcontractorEstimates: [],
-        totals: { subtotal: 0, tax: 0, grandTotal: 0, materials: 0, labor: 0 },
-      };
-    }
-  }
 
   useEffect(() => {
     if (!job?.id || !selectedQuoteId) {
@@ -1482,6 +1054,49 @@ function JobDetailView({
     return () => { cancelled = true; };
   }, [selectedQuoteId]);
 
+  const standaloneMaterialSheet = useMemo(() => {
+    if (!sheetIdFromUrl) return null;
+    if (materialSheetPageIsCo) {
+      const sheets = (changeOrderProposalData?.materialSheets || []).filter(
+        (s: any) => !isFieldRequestSheetName(s.sheet_name)
+      );
+      return sheets.find((s: any) => s.id === sheetIdFromUrl) ?? null;
+    }
+    const sheets = (proposalData?.materialSheets || []).filter(
+      (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+    );
+    return sheets.find((s: any) => s.id === sheetIdFromUrl) ?? null;
+  }, [sheetIdFromUrl, materialSheetPageIsCo, changeOrderProposalData, proposalData]);
+
+  const mainMaterialSheetsForTab = useMemo(
+    () =>
+      (proposalData?.materialSheets || []).filter(
+        (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+      ),
+    [proposalData]
+  );
+
+  const changeOrderMaterialSheetsForTab = useMemo(() => {
+    const raw = changeOrderProposalData?.materialSheets;
+    if (!raw?.length) return [];
+    let sheets = (raw as any[]).filter(
+      (s: any) =>
+        !isFieldRequestSheetName(s.sheet_name) &&
+        (s.sheet_type === 'change_order' || s.sheet_type == null)
+    );
+    sheets = [...sheets].sort((a: any, b: any) => {
+      const sa = Number(a.change_order_seq) || 0;
+      const sb = Number(b.change_order_seq) || 0;
+      if (sa !== sb) return sa - sb;
+      return (a.order_index ?? 0) - (b.order_index ?? 0);
+    });
+    return sheets;
+  }, [changeOrderProposalData]);
+
+  const showMaterialsTab = showProposal && showMaterialItemsNoPrices;
+  const showCoMaterialsInMaterialsTab =
+    !!changeOrderQuote && showMaterialItemsNoPricesCo && !!(changeOrderQuote as any)?.sent_at;
+
   const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
   const portalUrl = typeof window !== 'undefined' ? window.location.href : '';
 
@@ -1498,78 +1113,15 @@ function JobDetailView({
   /** Open print dialog with proposal HTML that matches the office Export Customer PDF (Proposal-26012-5 style). */
   function handlePrintProposal() {
     if (!proposalData || !job) return;
-    const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
-    const proposalSheets = (proposalData.materialSheets || []).filter(
-      (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
-    );
-    const customRows = proposalData.customRows || [];
-    const standaloneCustomRows = customRows.filter((row: any) => !row.sheet_id);
-    const sheetSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [];
-    proposalSheets.forEach((sheet: any) => {
-      const sheetOrder = sheet.order_index ?? 0;
-      sheetSections.push({ type: 'material' as const, id: sheet.id, orderIndex: sheetOrder * 1000, data: sheet });
-      customRows.filter((r: any) => r.sheet_id === sheet.id).sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)).forEach((row: any, idx: number) => {
-        sheetSections.push({ type: 'custom' as const, id: row.id, orderIndex: sheetOrder * 1000 + 100 + (row.order_index ?? idx), data: row });
-      });
-    });
-    const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
-      ...sheetSections,
-      ...standaloneCustomRows.map((row: any) => ({ type: 'custom' as const, id: row.id, orderIndex: (row.order_index ?? 0) * 1000, data: row })),
-      ...(proposalData.subcontractorEstimates || []).filter((est: any) => !est.sheet_id && !est.row_id).map((est: any) => ({ type: 'subcontractor' as const, id: est.id, orderIndex: (est.order_index ?? 0) * 1000, data: est })),
-    ].sort((a, b) => a.orderIndex - b.orderIndex);
-
-    // Sections visible in proposal (sheet-linked line items are part of the sheet total, not separate print lines).
-    const sections = allSections.map((section) => {
-      if (section.type === 'material') {
-        const s = section.data;
-        const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === s.id);
-        const parts: string[] = [];
-        if (s.description) parts.push(s.description);
-        linkedSubs.forEach((est: any) => { if (est.scope_of_work) parts.push(est.scope_of_work); });
-        const description = parts.join('\n');
-        return { name: s.sheet_name, description, price: showPriceForSection(s.id) ? (s._computedTotal ?? 0) : undefined, optional: false };
-      }
-      if (section.type === 'custom') {
-        const r = section.data;
-        return { name: r.description || r.category || 'Custom', description: r.notes || '', price: showPriceForSection(r.id) ? (r._computedTotal ?? 0) : undefined, optional: false };
-      }
-      const e = section.data;
-      return { name: e.company_name, description: e.scope_of_work || '', price: showFinancial && showLineItemPrices ? (e._computedTotal ?? 0) : undefined, optional: false };
-    });
-
-    const displayTotalsForPrint =
-      (proposalData?.totals != null ? proposalData.totals : null) ??
-      quoteStoredTotals ??
-      ((selectedQuote && Number.isFinite(Number(selectedQuote.proposal_grand_total)) && Number.isFinite(Number(selectedQuote.proposal_subtotal))
-        ? { subtotal: Number(selectedQuote.proposal_subtotal), tax: Number(selectedQuote.proposal_tax) || 0, grandTotal: Number(selectedQuote.proposal_grand_total) }
-        : null));
-    const totals = displayTotalsForPrint
-      ? {
-          materials: 0,
-          labor: 0,
-          subtotal: displayTotalsForPrint.subtotal,
-          tax: displayTotalsForPrint.tax,
-          grandTotal: displayTotalsForPrint.grandTotal,
-        }
-      : { materials: 0, labor: 0, subtotal: 0, tax: 0, grandTotal: 0 };
-
-    const html = generateProposalHTML({
-      proposalNumber,
-      date: new Date().toLocaleDateString('en-US'),
-      job: {
-        client_name: job.client_name,
-        address: job.address || '',
-        name: job.name,
-        customer_phone: job.customer_phone || undefined,
-        description: job.description || undefined,
-      },
-      sections,
-      totals,
-      showLineItems: false,
-      showSectionPrices: !!(showFinancial && showLineItemPrices),
-      showInternalDetails: false,
-      theme: 'default',
-      taxExempt: !!selectedQuote?.tax_exempt,
+    const html = buildProposalHtmlForPortal({
+      job,
+      quote: selectedQuote,
+      proposalData,
+      showFinancial,
+      showLineItemPrices,
+      showSectionPrices,
+      showMaterialItemsNoPrices,
+      quoteStoredTotals: quoteStoredTotals ?? undefined,
     });
 
     const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
@@ -1597,6 +1149,9 @@ function JobDetailView({
     ...(showProposal && changeOrderQuote
       ? [{ value: 'change-orders' as const, label: 'Change orders', icon: ClipboardList }]
       : []),
+    ...(showMaterialsTab
+      ? [{ value: 'materials' as const, label: 'Materials', icon: Package }]
+      : []),
     ...(showPayments ? [{ value: 'payments' as const, label: 'Payments', icon: DollarSign }] : []),
     ...(showSchedule ? [{ value: 'schedule' as const, label: 'Schedule', icon: Calendar }] : []),
     ...(showDocuments ? [{ value: 'documents' as const, label: 'Documents', icon: FileSpreadsheet }] : []),
@@ -1608,11 +1163,99 @@ function JobDetailView({
   useEffect(() => {
     const allowed = new Set(viewOptions.map((o) => o.value));
     if (!allowed.has(activeTab)) setActiveTab('overview');
-  }, [showPayments, showSchedule, showDocuments, showPhotos, showProposal, changeOrderQuote?.id, activeTab]);
+  }, [
+    showPayments,
+    showSchedule,
+    showDocuments,
+    showPhotos,
+    showProposal,
+    showMaterialItemsNoPrices,
+    changeOrderQuote?.id,
+    activeTab,
+  ]);
 
   useEffect(() => {
     if (activeTab === 'change-orders' && !changeOrderQuote) setActiveTab('overview');
   }, [activeTab, changeOrderQuote]);
+
+  /** Dedicated page: material name / qty / usage only (same visibility as “Material list (no prices)”) */
+  if (sheetIdFromUrl) {
+    const standaloneLoading = materialSheetPageIsCo ? changeOrderDataLoading : proposalDataLoading;
+    const standaloneAllowed = materialSheetPageIsCo ? showMaterialItemsNoPricesCo : showMaterialItemsNoPrices;
+    const backHref = materialSheetPageIsCo
+      ? buildPortalUrlWithoutSheet({ openChangeOrdersTab: true })
+      : buildPortalUrlWithoutSheet();
+
+    if (standaloneLoading) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
+          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+            <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            <p>Loading material sheet…</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!standaloneAllowed) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+          <div className="max-w-lg mx-auto px-4 py-16 text-center space-y-4">
+            <p className="text-lg font-medium text-slate-800">Material list not available</p>
+            <p className="text-sm text-muted-foreground">This view is turned off for your portal link.</p>
+            <Button asChild variant="outline">
+              <a href={backHref}>Back to project</a>
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    if (!standaloneMaterialSheet || isFieldRequestSheetName(standaloneMaterialSheet.sheet_name)) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+          <div className="max-w-lg mx-auto px-4 py-16 text-center space-y-4">
+            <p className="text-lg font-medium text-slate-800">Sheet not found</p>
+            <p className="text-sm text-muted-foreground">The link may be outdated or the proposal was updated.</p>
+            <Button asChild variant="outline">
+              <a href={backHref}>Back to project</a>
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    const sh = standaloneMaterialSheet;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="bg-gradient-to-r from-zinc-900 via-emerald-950 to-zinc-900 text-white shadow-xl border-b-2 border-amber-500/40">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-3">
+            <Button asChild variant="ghost" className="text-amber-200 hover:text-white hover:bg-white/10 -ml-2 h-9 px-2">
+              <a href={backHref}>← Back to project</a>
+            </Button>
+            <div>
+              <p className="text-emerald-100/90 text-sm">{job.client_name}</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-amber-400 mt-1">{job.name}</h1>
+              <p className="text-emerald-200/90 text-sm mt-2 flex items-center gap-1">
+                <FileSpreadsheet className="w-4 h-4 shrink-0 text-amber-400/90" />
+                {materialSheetPageIsCo ? 'Change order — ' : ''}
+                {sh.sheet_name}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+          {sh.description?.trim() && (
+            <p className="text-sm text-muted-foreground">
+              <PortalMultilineText text={sh.description} />
+            </p>
+          )}
+          <PortalMaterialItemsTable items={sh.items} />
+          <p className="text-xs text-muted-foreground">Quantities and usage only — pricing is not shown on this page.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -1693,7 +1336,9 @@ function JobDetailView({
             {customerInfo?.custom_message && (
               <Card className="border-amber-200 bg-amber-50/50">
                 <CardContent className="pt-6">
-                  <p className="text-slate-800 whitespace-pre-wrap">{customerInfo.custom_message}</p>
+                  <p className="text-slate-800">
+                    <PortalMultilineText text={customerInfo.custom_message} />
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -1732,15 +1377,17 @@ function JobDetailView({
               </Card>
             )}
 
-            {/* Project Proposal: only visible to customer after "Mark as Sent" in the office */}
+            {/* Project Proposal: visible after "Mark as Sent" and/or office contract (matches office workflow) */}
             {showProposal && (
               <>
-                {!(selectedQuote as any)?.sent_at ? (
+                {!proposalVisibleInPortal ? (
                   <Card className="border-slate-200 bg-slate-50/50">
                     <CardContent className="py-8 text-center text-muted-foreground">
                       <FileSpreadsheet className="w-10 h-10 mx-auto mb-3 opacity-50" />
                       <p className="font-medium text-slate-600">Your proposal is not ready yet</p>
-                      <p className="text-sm mt-1">It will appear here once your project manager has sent it to you.</p>
+                      <p className="text-sm mt-1">
+                        It will appear here once your project manager marks it as sent or records it as your contract in the office.
+                      </p>
                     </CardContent>
                   </Card>
                 ) : (
@@ -1786,6 +1433,7 @@ function JobDetailView({
                             Include every material sheet (including labor-only sheets with no material items) and both
                             standalone and sheet-linked custom rows so section order matches the office proposal. */}
                         {(() => {
+                          const materialListNoPrices = vis?.show_material_items_no_prices === true;
                           const proposalSheets = (proposalData.materialSheets || []).filter(
                             (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
                           );
@@ -1840,6 +1488,8 @@ function JobDetailView({
                               const sheetTotal = sheet._computedTotal ?? (sheetMaterials + sheetLabor);
                               const isOptional = sheet.is_option === true || sheet.is_option === 'true' || sheet.is_option === 1;
                               const showPrice = showPriceForSection(sheet.id);
+                              const showSheetMoney =
+                                showPrice && !materialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
                               return (
                                 <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
                                   <div className="min-w-0 flex-1">
@@ -1852,15 +1502,24 @@ function JobDetailView({
                                       )}
                                     </div>
                                     {sheet.description && (
-                                      <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        <PortalMultilineText text={sheet.description} />
+                                      </p>
+                                    )}
+                                    {materialListNoPrices && (
+                                      <PortalMaterialItemsTable items={sheet.items} />
                                     )}
                                     {linkedSubs.map((est: any) => (
                                       <div key={est.id} className="mt-2">
-                                        {est.scope_of_work && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{est.scope_of_work}</p>}
+                                        {est.scope_of_work && (
+                                          <p className="text-sm text-muted-foreground">
+                                            <PortalMultilineText text={est.scope_of_work} />
+                                          </p>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
-                                  {showPrice && (sheetMaterials > 0 || sheetLabor > 0) && (
+                                  {showSheetMoney && (
                                     <div className="w-[100px] flex-shrink-0 text-right">
                                       {sheetMaterials > 0 && (
                                         <>
@@ -1899,7 +1558,9 @@ function JobDetailView({
                                   <div className="min-w-0 flex-1">
                                     <h3 className="font-semibold text-base">{title}</h3>
                                     {descriptionText && (
-                                      <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{descriptionText}</p>
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        <PortalMultilineText text={descriptionText} />
+                                      </p>
                                     )}
                                   </div>
                                   {showPriceForSection(row.id) && (row._computedTotal ?? 0) > 0 && (
@@ -2011,7 +1672,7 @@ function JobDetailView({
                               <MartinBuilderContractSeal />
                             </div>
                           </div>
-                        ) : (selectedQuote as any)?.sent_at ? (
+                        ) : proposalVisibleInPortal ? (
                           <div className="border-t-2 pt-4 mt-4 space-y-3">
                             <h4 className="font-semibold text-slate-800 flex items-center gap-2">
                               <PenLine className="w-4 h-4" />
@@ -2214,8 +1875,29 @@ function JobDetailView({
                                 </CardHeader>
                                 <CardContent className="space-y-4 pt-4">
                                   {sheet.description && (
-                                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{sheet.description}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      <PortalMultilineText text={sheet.description} />
+                                    </p>
                                   )}
+                                  {showMaterialItemsNoPricesCo && (
+                                    <div className="mt-2">
+                                      <a
+                                        href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 text-sm font-medium text-orange-800 hover:underline"
+                                      >
+                                        <ExternalLink className="w-4 h-4 shrink-0" />
+                                        Open full material list (new page)
+                                      </a>
+                                      <p className="text-xs text-muted-foreground mt-1.5">Opens in a new tab — name, quantity, and usage only.</p>
+                                    </div>
+                                  )}
+                                  {showPriceForCoSection(sheet.id) &&
+                                    !showMaterialItemsNoPricesCo &&
+                                    ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
+                                      <PortalSheetPricedLineItems sheet={sheet} variant="changeOrder" />
+                                    )}
                                   {(sheet.sheetLinkedItems || []).filter((x: any) => !x.hide_from_customer).length > 0 && (
                                     <ul className="text-sm space-y-1 border-t border-orange-100 pt-3">
                                       {(sheet.sheetLinkedItems || [])
@@ -2231,7 +1913,7 @@ function JobDetailView({
                                                 {isLabor ? 'Labor: ' : ''}
                                                 {item.description || 'Line'}
                                               </span>
-                                              {showPriceForCoSection(sheet.id) && lineTotal > 0 && (
+                                              {!showMaterialItemsNoPricesCo && showPriceForCoSection(sheet.id) && lineTotal > 0 && (
                                                 <span className="font-medium tabular-nums">
                                                   ${lineTotal.toLocaleString('en-US', {
                                                     minimumFractionDigits: 2,
@@ -2248,9 +1930,11 @@ function JobDetailView({
                                     <div key={row.id} className="border-t border-orange-50 pt-2">
                                       <p className="font-medium text-sm">{row.description || row.category}</p>
                                       {row.notes?.trim() && (
-                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">{row.notes}</p>
+                                        <p className="text-sm text-muted-foreground">
+                                          <PortalMultilineText text={row.notes} />
+                                        </p>
                                       )}
-                                      {showPriceForCoSection(row.id) && (row._computedTotal ?? 0) > 0 && (
+                                      {!showMaterialItemsNoPricesCo && showPriceForCoSection(row.id) && (row._computedTotal ?? 0) > 0 && (
                                         <p className="text-sm font-semibold text-orange-800 mt-1">
                                           $
                                           {(row._computedTotal as number).toLocaleString('en-US', {
@@ -2264,11 +1948,13 @@ function JobDetailView({
                                   {linkedSubs.map((est: any) => (
                                     <div key={est.id} className="text-sm text-muted-foreground">
                                       {est.scope_of_work && (
-                                        <p className="whitespace-pre-wrap">{est.scope_of_work}</p>
+                                        <p>
+                                          <PortalMultilineText text={est.scope_of_work} />
+                                        </p>
                                       )}
                                     </div>
                                   ))}
-                                  {showFinancialCo && showLineItemPricesCo && (
+                                  {showFinancialCo && showLineItemPricesCo && !showMaterialItemsNoPricesCo && (
                                     <div className="border-t pt-3 space-y-1 text-sm">
                                       {sheetMat > 0 && (
                                         <div className="flex justify-between">
@@ -2395,6 +2081,105 @@ function JobDetailView({
             ) : null}
           </TabsContent>
 
+          {/* Materials (no prices) — same visibility as office "Material list (no prices)" */}
+          <TabsContent value="materials" className="space-y-6">
+            <Card className="border-emerald-200/70">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-900">
+                  <Package className="w-5 h-5" />
+                  Material list
+                </CardTitle>
+                <p className="text-sm text-muted-foreground font-normal">
+                  Item names, quantities, and usage only — pricing is not shown.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-8">
+                {proposalDataLoading && !proposalData ? (
+                  <div className="flex items-center justify-center py-10 text-muted-foreground">
+                    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                    Loading materials…
+                  </div>
+                ) : !proposalData ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">Proposal data is not available yet.</p>
+                ) : mainMaterialSheetsForTab.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">No material sheets on this proposal.</p>
+                ) : (
+                  <div className="space-y-8">
+                    {mainMaterialSheetsForTab.map((sheet: any) => (
+                      <div key={sheet.id} className="border rounded-lg p-4 space-y-3 bg-card">
+                        <div>
+                          <h3 className="font-semibold text-base text-slate-900">{sheet.sheet_name}</h3>
+                          {sheet.description?.trim() && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              <PortalMultilineText text={sheet.description} />
+                            </p>
+                          )}
+                        </div>
+                        <PortalMaterialItemsTable items={sheet.items} />
+                        <a
+                          href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: false })}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-800 hover:underline"
+                        >
+                          <ExternalLink className="w-4 h-4 shrink-0" />
+                          Open full material list (new page)
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {showCoMaterialsInMaterialsTab && (
+              <Card className="border-orange-200 bg-orange-50/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-950">
+                    <ClipboardList className="w-5 h-5" />
+                    Change order materials
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground font-normal">
+                    Same quantity / usage view for items on your change order (no prices).
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {changeOrderDataLoading && !changeOrderProposalData ? (
+                    <div className="flex items-center justify-center py-8 text-muted-foreground">
+                      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                      Loading change order materials…
+                    </div>
+                  ) : !changeOrderProposalData || changeOrderMaterialSheetsForTab.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No material sheets on the change order.</p>
+                  ) : (
+                    changeOrderMaterialSheetsForTab.map((sheet: any) => (
+                      <div key={sheet.id} className="border border-orange-200 rounded-lg p-4 space-y-3 bg-white">
+                        <div>
+                          <h3 className="font-semibold text-base text-orange-950">{sheet.sheet_name}</h3>
+                          {sheet.description?.trim() && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              <PortalMultilineText text={sheet.description} />
+                            </p>
+                          )}
+                        </div>
+                        <PortalMaterialItemsTable items={sheet.items} />
+                        <a
+                          href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm font-medium text-orange-800 hover:underline"
+                        >
+                          <ExternalLink className="w-4 h-4 shrink-0" />
+                          Open full material list (new page)
+                        </a>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
           {/* Payments Tab */}
           <TabsContent value="payments">
             <Card>
@@ -2471,7 +2256,9 @@ function JobDetailView({
                         <div className="flex-1">
                           <h3 className="font-bold text-lg">{event.title}</h3>
                           {event.description && (
-                            <p className="text-muted-foreground mt-1">{event.description}</p>
+                            <p className="text-muted-foreground mt-1">
+                              <PortalMultilineText text={event.description} />
+                            </p>
                           )}
                           <Badge variant="outline" className="mt-2">
                             {event.event_type}
@@ -2624,7 +2411,9 @@ function JobDetailView({
                               dangerouslySetInnerHTML={{ __html: email.body_html }}
                             />
                           ) : (
-                            <p className="whitespace-pre-wrap text-sm">{email.body_text}</p>
+                            <p className="text-sm">
+                              <PortalMultilineText text={email.body_text} />
+                            </p>
                           )}
                         </div>
                       </div>

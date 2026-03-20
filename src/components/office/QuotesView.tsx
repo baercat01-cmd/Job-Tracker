@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, 
-  Briefcase, Archive, Lock, History, Eye, Download, Calendar, RefreshCw 
+  Briefcase, Archive, Lock, History, Eye, Download, Calendar, RefreshCw, PauseCircle, PlayCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMeasurement } from '@/lib/utils';
@@ -41,7 +41,11 @@ interface Quote {
   job_id: string | null;
   current_version: number | null;
   signed_version: number | null;
+  /** Paused for follow-up; status column unchanged */
+  on_hold?: boolean | null;
 }
+
+type QuoteTab = 'all' | Quote['status'] | 'on_hold';
 
 interface ProposalVersion {
   id: string;
@@ -80,7 +84,7 @@ export function QuotesView() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | Quote['status']>('all');
+  const [activeTab, setActiveTab] = useState<QuoteTab>('all');
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const [versions, setVersions] = useState<ProposalVersion[]>([]);
@@ -438,28 +442,50 @@ export function QuotesView() {
     }
   }
 
-  const getFilteredQuotes = (status: 'all' | Quote['status']) => {
-    return quotes.filter(quote => {
-      const matchesStatus = status === 'all' ? quote.status !== 'lost' : quote.status === status;
-      const matchesSearch = !searchTerm || 
+  const getFilteredQuotes = (tab: QuoteTab) => {
+    return quotes.filter((quote) => {
+      const matchesSearch =
+        !searchTerm ||
         quote.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         quote.project_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         quote.quote_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         quote.proposal_number?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      return matchesStatus && matchesSearch;
+
+      if (!matchesSearch) return false;
+
+      if (tab === 'all') return quote.status !== 'lost';
+      if (tab === 'on_hold') return !!quote.on_hold && quote.status !== 'lost';
+      if (tab === 'lost') return quote.status === 'lost';
+      return quote.status === tab && !quote.on_hold;
     });
   };
 
   const statusCounts = {
-    all: quotes.filter(q => q.status !== 'lost').length,
-    draft: quotes.filter(q => q.status === 'draft').length,
-    submitted: quotes.filter(q => q.status === 'submitted').length,
-    estimated: quotes.filter(q => q.status === 'estimated').length,
-    won: quotes.filter(q => q.status === 'won').length,
-    signed: quotes.filter(q => q.status === 'signed').length,
-    lost: quotes.filter(q => q.status === 'lost').length,
+    all: quotes.filter((q) => q.status !== 'lost').length,
+    draft: quotes.filter((q) => q.status === 'draft' && !q.on_hold).length,
+    submitted: quotes.filter((q) => q.status === 'submitted' && !q.on_hold).length,
+    estimated: quotes.filter((q) => q.status === 'estimated' && !q.on_hold).length,
+    won: quotes.filter((q) => q.status === 'won' && !q.on_hold).length,
+    signed: quotes.filter((q) => q.status === 'signed' && !q.on_hold).length,
+    lost: quotes.filter((q) => q.status === 'lost').length,
+    on_hold: quotes.filter((q) => !!q.on_hold && q.status !== 'lost').length,
   };
+
+  async function setQuoteOnHold(quoteId: string, onHold: boolean, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from('quotes')
+        .update({ on_hold: onHold, updated_at: new Date().toISOString() })
+        .eq('id', quoteId);
+      if (error) throw error;
+      toast.success(onHold ? 'Quote put on hold' : 'Quote resumed');
+      await loadQuotes();
+    } catch (err: any) {
+      console.error('Error updating quote on hold:', err);
+      toast.error(err?.message || 'Failed to update quote');
+    }
+  }
 
   const renderQuoteCard = (quote: Quote) => {
     const config = STATUS_CONFIG[quote.status];
@@ -468,12 +494,12 @@ export function QuotesView() {
     return (
       <Card 
         key={quote.id} 
-        className="cursor-pointer hover:shadow-lg transition-shadow"
+        className={`cursor-pointer hover:shadow-lg transition-shadow ${quote.on_hold ? 'ring-2 ring-amber-300/80 border-amber-200' : ''}`}
         onClick={() => navigate(`/office/quotes/${quote.id}`)}
       >
         <CardHeader className="pb-3">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div className="flex-1 min-w-0">
               <CardTitle className="text-lg">
                 {quote.project_name || quote.customer_name || 'Untitled Quote'}
               </CardTitle>
@@ -503,10 +529,18 @@ export function QuotesView() {
                 </div>
               )}
             </div>
-            <Badge className={`${config.color} text-white`}>
-              <Icon className="w-3 h-3 mr-1" />
-              {config.label}
-            </Badge>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <Badge className={`${config.color} text-white`}>
+                <Icon className="w-3 h-3 mr-1" />
+                {config.label}
+              </Badge>
+              {quote.on_hold && (
+                <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-400 text-xs">
+                  <PauseCircle className="w-3 h-3 mr-1" />
+                  On hold
+                </Badge>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -647,8 +681,8 @@ export function QuotesView() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-7">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as QuoteTab)} className="space-y-4">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 h-auto">
           <TabsTrigger value="all" className="relative">
             All
             <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">
@@ -688,6 +722,13 @@ export function QuotesView() {
             Signed
             <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">
               {statusCounts.signed}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="on_hold" className="relative">
+            <PauseCircle className="w-3 h-3 mr-1" />
+            On hold
+            <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">
+              {statusCounts.on_hold}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="lost" className="relative">
@@ -811,6 +852,24 @@ export function QuotesView() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {getFilteredQuotes('signed').map(renderQuoteCard)}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="on_hold" className="space-y-4">
+          {getFilteredQuotes('on_hold').length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <PauseCircle className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
+                <p className="text-lg font-medium text-muted-foreground">No quotes on hold</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Use <strong>Put on hold</strong> on a quote card to pause it without changing its status.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {getFilteredQuotes('on_hold').map(renderQuoteCard)}
             </div>
           )}
         </TabsContent>

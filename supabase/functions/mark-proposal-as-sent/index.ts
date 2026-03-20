@@ -63,16 +63,7 @@ serve(async (req) => {
 
     console.warn('RPC failed, trying direct updates. RPC error:', rpcError.message);
 
-    // 2) Direct updates via service-role (bypasses RLS; needs sent_at/sent_by columns)
-    const { error: lockErr } = await admin
-      .from('material_workbooks')
-      .update({ status: 'locked', updated_at: new Date().toISOString() })
-      .eq('quote_id', quoteId);
-
-    if (lockErr) {
-      console.error('Lock workbooks failed:', lockErr.message);
-    }
-
+    // 2) Direct update via service-role (bypasses RLS; needs sent_at/sent_by columns). Do not lock workbooks.
     const { error: sentErr } = await admin
       .from('quotes')
       .update({ sent_at: new Date().toISOString(), sent_by: userId })

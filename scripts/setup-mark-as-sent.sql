@@ -30,14 +30,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- Lock material workbooks for this quote (prevents editing materials after sent)
-  UPDATE material_workbooks
-  SET status = 'locked', updated_at = now()
-  WHERE quote_id = p_quote_id;
-
-  -- Mark quote as sent with timestamp and user
   UPDATE quotes
-  SET sent_at = now(), sent_by = p_user_id
+  SET
+    sent_at = coalesce(sent_at, now()),
+    sent_by = coalesce(sent_by, p_user_id),
+    updated_at = now()
   WHERE id = p_quote_id;
 
   IF NOT FOUND THEN

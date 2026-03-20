@@ -1,4 +1,4 @@
--- Mark proposal as sent: lock workbooks and set sent_at/sent_by (runs in DB, bypasses schema cache).
+-- Mark proposal as sent: set sent_at/sent_by only (does not lock workbooks; contract signing locks materials).
 --
 -- SETUP (do this once):
 -- 1. Run add-quote-sent-columns.sql first (adds sent_at, sent_by to quotes).
@@ -19,14 +19,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- Lock material workbooks for this quote
-  UPDATE material_workbooks
-  SET status = 'locked', updated_at = now()
-  WHERE quote_id = p_quote_id;
-
-  -- Set sent timestamp and user on quote (column must exist; run add-quote-sent-columns.sql first)
   UPDATE quotes
-  SET sent_at = now(), sent_by = p_user_id
+  SET
+    sent_at = coalesce(sent_at, now()),
+    sent_by = coalesce(sent_by, p_user_id),
+    updated_at = now()
   WHERE id = p_quote_id;
 
   IF NOT FOUND THEN

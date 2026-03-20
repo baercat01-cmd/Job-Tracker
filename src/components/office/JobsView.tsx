@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical, DollarSign, TrendingUp, TrendingDown, ScrollText, Mail, Reply, Send } from 'lucide-react';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical, DollarSign, TrendingUp, TrendingDown, ScrollText, Mail, Reply, Send, PauseCircle, PlayCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -88,6 +88,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [budgetJobId, setBudgetJobId] = useState<string | null>(null);
   const [jobQuotes, setJobQuotes] = useState<Record<string, any>>({});
+  /** Primary proposal is on hold (quote row) — board shows these in On Hold alongside job.status === 'on_hold' */
+  const isPrimaryProposalOnHold = (jobId: string) => !!jobQuotes[jobId]?.on_hold;
   const [recentMessages, setRecentMessages] = useState<Array<{ id: string; job_id: string; subject: string; from_name: string | null; from_email: string | null; body_text: string | null; email_date: string; direction?: string; jobs: { id: string; name: string } | null }>>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [showReplyDialog, setShowReplyDialog] = useState(false);
@@ -386,14 +388,60 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
       if (error) throw error;
 
+      /** One entry per job: prefer main proposal (not a change order), else newest by created_at */
+      const byJob: Record<string, any[]> = {};
+      (data || []).forEach((quote: any) => {
+        const j = quote.job_id;
+        if (!j) return;
+        if (!byJob[j]) byJob[j] = [];
+        byJob[j].push(quote);
+      });
       const quotesMap: Record<string, any> = {};
-      (data || []).forEach(quote => {
-        quotesMap[quote.job_id] = quote;
+      Object.entries(byJob).forEach(([jobId, quotes]) => {
+        const main =
+          quotes.find((q: any) => !q.is_change_order_proposal) ??
+          [...quotes].sort(
+            (a: any, b: any) =>
+              new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+          )[0];
+        if (main) quotesMap[jobId] = main;
       });
 
       setJobQuotes(quotesMap);
     } catch (error: any) {
       console.error('Error loading job quotes:', error);
+    }
+  }
+
+  /** Toggle `quotes.on_hold` for the job's primary proposal (same rules as loadJobQuotes). */
+  async function togglePrimaryQuoteOnHold(jobId: string) {
+    try {
+      const { data: rows, error } = await supabase
+        .from('quotes')
+        .select('id, on_hold, is_change_order_proposal, created_at')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      const list = rows || [];
+      const main =
+        list.find((q: any) => !q.is_change_order_proposal) ?? list[0];
+      if (!main) {
+        toast.error('No proposal for this job');
+        return;
+      }
+      const next = !main.on_hold;
+      const { error: uErr } = await supabase
+        .from('quotes')
+        .update({ on_hold: next, updated_at: new Date().toISOString() })
+        .eq('id', main.id);
+      if (uErr) throw uErr;
+      toast.success(next ? 'Proposal put on hold' : 'Proposal resumed');
+      await loadJobQuotes();
+      loadJobs();
+    } catch (error: any) {
+      console.error('Error toggling proposal on hold:', error);
+      toast.error(error?.message || 'Failed to update proposal');
     }
   }
 
@@ -947,13 +995,13 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 <h3 className="text-base sm:text-lg font-bold text-green-900 flex items-center gap-2">
                   Active
                   <Badge variant="secondary" className="bg-green-200 text-green-900">
-                    {jobs.filter(j => j.status === 'active' && !j.is_internal).length}
+                    {jobs.filter(j => j.status === 'active' && !j.is_internal && !isPrimaryProposalOnHold(j.id)).length}
                   </Badge>
                 </h3>
               </div>
               <div className="space-y-2 sm:space-y-3">
                 {jobs
-                  .filter((job) => job.status === 'active' && !job.is_internal)
+                  .filter((job) => job.status === 'active' && !job.is_internal && !isPrimaryProposalOnHold(job.id))
                   .map((job) => {
                     const jobStats = stats[job.id] || {};
                     
@@ -1238,13 +1286,13 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 <h3 className="text-base sm:text-lg font-bold text-blue-900 flex items-center gap-2">
                   Prepping
                   <Badge variant="secondary" className="bg-blue-200 text-blue-900">
-                    {jobs.filter(j => j.status === 'prepping' && !j.is_internal).length}
+                    {jobs.filter(j => j.status === 'prepping' && !j.is_internal && !isPrimaryProposalOnHold(j.id)).length}
                   </Badge>
                 </h3>
               </div>
               <div className="space-y-2 sm:space-y-3">
                 {jobs
-                  .filter((job) => job.status === 'prepping' && !job.is_internal)
+                  .filter((job) => job.status === 'prepping' && !job.is_internal && !isPrimaryProposalOnHold(job.id))
                   .map((job) => {
                     const jobStats = stats[job.id] || {};
                     
@@ -1468,13 +1516,13 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 <h3 className="text-base sm:text-lg font-bold text-yellow-900 flex items-center gap-2">
                   Quoting
                   <Badge variant="secondary" className="bg-yellow-200 text-yellow-900">
-                    {jobs.filter(j => j.status === 'quoting' && !j.is_internal).length}
+                    {jobs.filter(j => j.status === 'quoting' && !j.is_internal && !isPrimaryProposalOnHold(j.id)).length}
                   </Badge>
                 </h3>
               </div>
               <div className="space-y-2 sm:space-y-3">
                 {jobs
-                  .filter((job) => job.status === 'quoting' && !job.is_internal)
+                  .filter((job) => job.status === 'quoting' && !job.is_internal && !isPrimaryProposalOnHold(job.id))
                   .map((job) => {
                     const jobStats = stats[job.id] || {};
                     
@@ -1536,6 +1584,26 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  disabled={!jobQuotes[job.id]}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void togglePrimaryQuoteOnHold(job.id);
+                                  }}
+                                >
+                                  {jobQuotes[job.id]?.on_hold ? (
+                                    <>
+                                      <PlayCircle className="w-4 h-4 mr-2" />
+                                      Resume proposal
+                                    </>
+                                  ) : (
+                                    <>
+                                      <PauseCircle className="w-4 h-4 mr-2" />
+                                      Put proposal on hold
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1690,13 +1758,13 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 <h3 className="text-base sm:text-lg font-bold text-orange-900 flex items-center gap-2">
                   On Hold
                   <Badge variant="secondary" className="bg-orange-200 text-orange-900">
-                    {jobs.filter(j => j.status === 'on_hold' && !j.is_internal).length}
+                    {jobs.filter(j => !j.is_internal && j.status !== 'archived' && j.status !== 'completed' && (j.status === 'on_hold' || isPrimaryProposalOnHold(j.id))).length}
                   </Badge>
                 </h3>
               </div>
               <div className="space-y-2 sm:space-y-3">
                 {jobs
-                  .filter((job) => job.status === 'on_hold' && !job.is_internal)
+                  .filter((job) => !job.is_internal && job.status !== 'archived' && job.status !== 'completed' && (job.status === 'on_hold' || isPrimaryProposalOnHold(job.id)))
                   .map((job) => {
                     const jobStats = stats[job.id] || {};
                     
@@ -1766,6 +1834,25 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 >
                                   <FileText className="w-4 h-4 mr-2" />
                                   Move to Quoting
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  disabled={!jobQuotes[job.id]}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void togglePrimaryQuoteOnHold(job.id);
+                                  }}
+                                >
+                                  {jobQuotes[job.id]?.on_hold ? (
+                                    <>
+                                      <PlayCircle className="w-4 h-4 mr-2" />
+                                      Resume proposal
+                                    </>
+                                  ) : (
+                                    <>
+                                      <PauseCircle className="w-4 h-4 mr-2" />
+                                      Put proposal on hold
+                                    </>
+                                  )}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={(e) => {

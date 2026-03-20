@@ -6,12 +6,41 @@ import { supabase } from '@/lib/supabase';
 
 export function isPortalColumnOrSchemaError(e: unknown): boolean {
   const m = String((e as { message?: string })?.message ?? '');
+  const details = String((e as { details?: string })?.details ?? '');
   const code = (e as { code?: string })?.code;
+  const combined = `${m} ${details}`;
   return (
     code === 'PGRST204' ||
-    /show_line_item_prices|show_section_prices|visibility_by_quote|column.*exist|unknown column|schema cache/i.test(m)
+    code === '42703' ||
+    code === '22P02' ||
+    /show_line_item_prices|show_section_prices|show_material_items_no_prices|visibility_by_quote|column.*exist|unknown column|schema cache|Could not find the.*column|PGRST204|PGRST102/i.test(
+      combined
+    )
   );
 }
+
+function stripUndefinedDeep(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(stripUndefinedDeep);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (v === undefined) continue;
+    out[k] = stripUndefinedDeep(v);
+  }
+  return out;
+}
+
+/** Ensure PostgREST gets plain JSON (no undefined, no exotic types). */
+function portalPatchForRest(patch: Record<string, unknown>): Record<string, unknown> {
+  const cleaned = stripUndefinedDeep(patch) as Record<string, unknown>;
+  try {
+    return JSON.parse(JSON.stringify(cleaned)) as Record<string, unknown>;
+  } catch {
+    return cleaned;
+  }
+}
+
 
 export function isPortalUpdateBlockedError(e: unknown): boolean {
   const code = (e as { code?: string })?.code;
@@ -26,6 +55,7 @@ export function stripOptionalPortalColumns(patch: Record<string, unknown>): Reco
   const o = { ...patch };
   delete o.show_line_item_prices;
   delete o.show_section_prices;
+  delete o.show_material_items_no_prices;
   delete o.visibility_by_quote;
   return o;
 }
@@ -82,15 +112,22 @@ export async function updateCustomerPortalAccessRow(
 export async function updateCustomerPortalAccessRowMinimal(
   linkId: string,
   patch: Record<string, unknown>
-): Promise<{ ok: boolean; error: unknown }> {
-  const payload = { ...patch, updated_at: new Date().toISOString() };
+): Promise<{ ok: boolean; error: unknown; visibilityByQuoteStripped?: boolean }> {
+  const payload = portalPatchForRest({ ...patch, updated_at: new Date().toISOString() });
+  let visibilityByQuoteStripped = false;
   let res = await supabase.from('customer_portal_access').update(payload).eq('id', linkId).select('id');
   if (res.error && isPortalColumnOrSchemaError(res.error)) {
     res = await supabase
       .from('customer_portal_access')
-      .update(stripOptionalPortalColumns(payload))
+      .update(portalPatchForRest(stripOptionalPortalColumns(payload)))
       .eq('id', linkId)
       .select('id');
+  }
+  // Invalid / oversized visibility_by_quote often yields 400; persist top-level toggles without the json blob.
+  if (res.error && payload.visibility_by_quote !== undefined) {
+    visibilityByQuoteStripped = true;
+    const { visibility_by_quote: _vbq, ...rest } = payload;
+    res = await supabase.from('customer_portal_access').update(portalPatchForRest(rest)).eq('id', linkId).select('id');
   }
   if (res.error) return { ok: false, error: res.error };
   if (!res.data?.length) {
@@ -103,7 +140,7 @@ export async function updateCustomerPortalAccessRowMinimal(
       },
     };
   }
-  return { ok: true, error: null };
+  return { ok: true, error: null, visibilityByQuoteStripped };
 }
 
 export async function insertCustomerPortalAccessRow(
@@ -113,10 +150,13 @@ export async function insertCustomerPortalAccessRow(
 ): Promise<{ data: Record<string, unknown> | null; error: unknown }> {
   let res = await supabase.from('customer_portal_access').insert([insertPayload]).select(selectColumns);
   if (res.error && isPortalColumnOrSchemaError(res.error)) {
-    const { show_line_item_prices, show_section_prices, visibility_by_quote, ...rest } = insertPayload as Record<
-      string,
-      unknown
-    >;
+    const {
+      show_line_item_prices,
+      show_section_prices,
+      show_material_items_no_prices,
+      visibility_by_quote,
+      ...rest
+    } = insertPayload as Record<string, unknown>;
     res = await supabase.from('customer_portal_access').insert([rest]).select(selectFallback);
   }
   if (res.error) return { data: null, error: res.error };
@@ -126,7 +166,7 @@ export async function insertCustomerPortalAccessRow(
 }
 
 export function portalSaveErrorMessage(error: unknown): string {
-  const e = error as { code?: string; message?: string; details?: string };
+  const e = error as { code?: string; message?: string; details?: string; hint?: string };
   if (e?.code === ZERO_ROWS || e?.code === 'PGRST116') {
     return e.message ?? 'Update did not apply. Check Supabase RLS/grants (run portal REST migration).';
   }
@@ -136,5 +176,6 @@ export function portalSaveErrorMessage(error: unknown): string {
   if (e?.code === '23502') {
     return 'Save failed (NOT NULL). Ensure show_section_prices and visibility_by_quote are sent; run ensure-portal-section-visibility.sql if needed.';
   }
-  return e?.message || e?.details || 'Save failed';
+  const parts = [e?.message, e?.details, e?.hint].filter(Boolean);
+  return parts.length ? parts.join(' — ') : 'Save failed';
 }

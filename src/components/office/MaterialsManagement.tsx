@@ -186,14 +186,7 @@ import {
   upsertFlatstockCutListNotes,
 } from '@/lib/flatstockCutListNotes';
 import { cn } from '@/lib/utils';
-
-/** Sent, signed, or office-locked — same idea as JobFinancials `isQuoteContractFrozen`. */
-function isQuoteContractFrozenMaterials(q: JobQuote | undefined | null): boolean {
-  if (!q) return false;
-  const sv = q.signed_version;
-  const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
-  return !!(q.locked_for_editing || q.sent_at || hasSigned || q.customer_signed_at);
-}
+import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
 
 type ContractQuoteFields = Pick<JobQuote, 'sent_at' | 'locked_for_editing' | 'signed_version' | 'customer_signed_at'>;
 
@@ -281,6 +274,13 @@ interface JobQuote {
   customer_signed_at?: string | null;
 }
 
+export interface BreakdownSheetPrice {
+  sheetId: string;
+  sheetName: string;
+  /** Per-category totals = sum of getDisplayExtended(item).price — same green "Price" as Breakdown by Category cards */
+  categories: Record<string, number>;
+}
+
 interface MaterialsManagementProps {
   job: Job;
   userId: string;
@@ -289,6 +289,10 @@ interface MaterialsManagementProps {
   controlledQuoteId?: string | null;
   /** Called when user selects a different proposal in the dropdown */
   onQuoteChange?: (quoteId: string | null) => void;
+  /** Optional sheet sync from split-view proposal panel */
+  externalActiveSheetId?: string | null;
+  /** Sync breakdown prices to parent for proposal-side source-of-truth display. */
+  onBreakdownPriceSync?: (prices: BreakdownSheetPrice[]) => void;
 }
 
 interface CategoryGroup {
@@ -296,7 +300,13 @@ interface CategoryGroup {
   items: MaterialItem[];
 }
 
-export function MaterialsManagement({ job, userId, proposalNumber, controlledQuoteId, onQuoteChange }: MaterialsManagementProps) {
+export function MaterialsManagement({ job, userId, proposalNumber, controlledQuoteId, onQuoteChange, externalActiveSheetId, onBreakdownPriceSync }: MaterialsManagementProps) {
+  const normalizeSyncKeyPart = (value: unknown) =>
+    String(value ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
   const [jobQuotes, setJobQuotes] = useState<JobQuote[]>([]);
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const isControlled = controlledQuoteId !== undefined;
@@ -306,7 +316,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'trim-flatstock' | 'upload'>('manage');
   const [pendingCrewCount, setPendingCrewCount] = useState(0);
   const [activeSheetId, setActiveSheetId] = useState<string>('');
+  /** Step 2 of sheet delete: which sheet id is showing Cancel / Delete (only for active tab). */
+  const [sheetDeleteConfirmId, setSheetDeleteConfirmId] = useState<string | null>(null);
   const activeSheetIdRef = useRef<string>('');
+  const lastAppliedExternalSheetIdRef = useRef<string | null>(null);
   /** Nested loadWorkbook calls (e.g. repair → createWorking → loadWorkbook) — only outermost runs empty-working repair */
   const workbookLoadDepthRef = useRef(0);
   const [searchTerm, setSearchTerm] = useState('');
@@ -326,6 +339,22 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   useEffect(() => {
     activeSheetIdRef.current = activeSheetId;
   }, [activeSheetId]);
+
+  useEffect(() => {
+    setSheetDeleteConfirmId(null);
+  }, [activeSheetId]);
+
+  // Split view sync: when left panel selects a sheet, mirror it in Materials tabs/selectors.
+  useEffect(() => {
+    if (!externalActiveSheetId || !workbook?.sheets?.length) return;
+    const exists = workbook.sheets.some((s) => s.id === externalActiveSheetId);
+    if (!exists) return;
+    // Only apply when the external sheet selection actually changes.
+    // This prevents clobbering manual sheet changes in the right-panel dropdown.
+    if (lastAppliedExternalSheetIdRef.current === externalActiveSheetId) return;
+    lastAppliedExternalSheetIdRef.current = externalActiveSheetId;
+    if (activeSheetId !== externalActiveSheetId) setActiveSheetId(externalActiveSheetId);
+  }, [externalActiveSheetId, workbook, activeSheetId]);
   
   // Sheet type filter
   const [sheetTypeFilter, setSheetTypeFilter] = useState<'all' | 'proposal' | 'change_order'>('proposal');
@@ -879,7 +908,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [snapshotWorkbookId, setSnapshotWorkbookId] = useState<string | null>(null);
   const [lockedSnapshotsMeta, setLockedSnapshotsMeta] = useState<{ id: string; version_number: number; locked_at: string | null }[]>([]);
   const [creatingWorkingFromLocked, setCreatingWorkingFromLocked] = useState(false);
-  const [lockingWorkbook, setLockingWorkbook] = useState(false);
   /** True when this quote has at least one `working` material_workbook row (even if UI is viewing a locked snapshot). */
   const [hasWorkingWorkbookForQuote, setHasWorkingWorkbookForQuote] = useState(false);
   /** Auto lock + create working copy for signed/sent contracts (no manual Lock workbook). */
@@ -1957,57 +1985,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
-  /** Lock the current working workbook in place (status only — no rows/sheets changed). Creates a contract snapshot; use "Create working copy from snapshot" to edit again. */
-  async function lockCurrentWorkbookSnapshot() {
-    if (!workbook?.id || workbook.status !== 'working') {
-      toast.error('Only a working workbook can be locked.');
-      return;
-    }
-    if (!effectiveQuoteId) {
-      toast.error('Select a proposal first.');
-      return;
-    }
-    if (isWorkbookReadOnly) {
-      toast.error('This proposal is read-only here. Open the current/active proposal to lock its workbook.');
-      return;
-    }
-    if (
-      !confirm(
-        'Lock this materials workbook?\n\nNothing is deleted: line items, descriptions, and totals stay exactly as they are. This copy becomes read-only (like a signed contract record). Use “Create working copy from snapshot” afterward for Crew Orders, shop status, and edits.'
-      )
-    ) {
-      return;
-    }
-    setLockingWorkbook(true);
-    try {
-      const { error } = await supabase
-        .from('material_workbooks')
-        .update({ status: 'locked', updated_at: new Date().toISOString() })
-        .eq('id', workbook.id)
-        .eq('status', 'working');
-      if (error) throw error;
-      for (const key of workbookCache.keys()) {
-        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
-      }
-      setSnapshotWorkbookId(null);
-      toast.success('Workbook locked. Create a working copy from this snapshot if you need to edit or run Crew Orders.');
-      await loadWorkbook(true, undefined, null);
-      window.dispatchEvent(
-        new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id, quoteId: effectiveQuoteId } })
-      );
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e?.message || 'Failed to lock workbook.');
-    } finally {
-      setLockingWorkbook(false);
-    }
-  }
-
-  /** Stable key when the selected quote is a sent/signed/office-locked contract (triggers auto workbook pairing). */
+  /** Stable key when the selected quote is signed/office-locked contract (triggers auto workbook pairing). "Sent" alone does not count. */
   const frozenContractQuoteKey = useMemo(() => {
     const q = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
-    if (!q || !effectiveQuoteId || !isQuoteContractFrozenMaterials(q)) return null;
-    return `${q.id}|${q.sent_at ?? ''}|${q.signed_version ?? ''}|${q.customer_signed_at ?? ''}|${q.locked_for_editing ?? ''}`;
+    if (!q || !effectiveQuoteId || !isQuoteContractFrozen(q as any)) return null;
+    return `${q.id}|${q.signed_version ?? ''}|${q.customer_signed_at ?? ''}|${q.locked_for_editing ?? ''}`;
   }, [jobQuotes, effectiveQuoteId, contractQuoteFields]);
 
   // Signed / sent proposals: ensure locked (contract) + working (shop/crew) workbooks without manual "Lock workbook".
@@ -3143,18 +3125,37 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   /** Get or create the dedicated change order proposal (quote + workbook) for this job. */
-  async function getOrCreateChangeOrderWorkbook(): Promise<{ quoteId: string; workbookId: string; quote: { sent_at: string | null; locked_for_editing: boolean | null } }> {
+  async function getOrCreateChangeOrderWorkbook(): Promise<{
+    quoteId: string;
+    workbookId: string;
+    quote: {
+      sent_at: string | null;
+      locked_for_editing: boolean | null;
+      signed_version?: unknown;
+      customer_signed_at?: string | null;
+    };
+  }> {
     const { data: changeOrderQuotes } = await supabase
       .from('quotes')
-      .select('id, sent_at, locked_for_editing')
+      .select('id, sent_at, locked_for_editing, signed_version, customer_signed_at')
       .eq('job_id', job.id)
       .eq('is_change_order_proposal', true)
       .limit(1);
     let quoteId: string;
-    let quote: { sent_at: string | null; locked_for_editing: boolean | null };
+    let quote: {
+      sent_at: string | null;
+      locked_for_editing: boolean | null;
+      signed_version?: unknown;
+      customer_signed_at?: string | null;
+    };
     if (changeOrderQuotes?.length) {
       quoteId = changeOrderQuotes[0].id;
-      quote = { sent_at: changeOrderQuotes[0].sent_at ?? null, locked_for_editing: changeOrderQuotes[0].locked_for_editing ?? null };
+      quote = {
+        sent_at: changeOrderQuotes[0].sent_at ?? null,
+        locked_for_editing: changeOrderQuotes[0].locked_for_editing ?? null,
+        signed_version: changeOrderQuotes[0].signed_version,
+        customer_signed_at: (changeOrderQuotes[0] as any).customer_signed_at ?? null,
+      };
     } else {
       const { data: newQuote, error: quoteErr } = await supabase
         .from('quotes')
@@ -3163,11 +3164,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           is_change_order_proposal: true,
           created_by: userId,
         } as Record<string, unknown>)
-        .select('id, sent_at, locked_for_editing')
+        .select('id, sent_at, locked_for_editing, signed_version, customer_signed_at')
         .single();
       if (quoteErr || !newQuote) throw new Error(newQuote ? quoteErr?.message : 'Failed to create change order proposal');
       quoteId = newQuote.id;
-      quote = { sent_at: newQuote.sent_at ?? null, locked_for_editing: newQuote.locked_for_editing ?? null };
+      quote = {
+        sent_at: newQuote.sent_at ?? null,
+        locked_for_editing: newQuote.locked_for_editing ?? null,
+        signed_version: newQuote.signed_version,
+        customer_signed_at: (newQuote as any).customer_signed_at ?? null,
+      };
     }
     const { data: workbooks } = await supabase
       .from('material_workbooks')
@@ -3229,8 +3235,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
       if (isChangeOrder) {
         const co = await getOrCreateChangeOrderWorkbook();
-        if (co.quote.sent_at || co.quote.locked_for_editing) {
-          toast.error('The change order proposal is locked and cannot be edited.');
+        if (isQuoteContractFrozen(co.quote as any)) {
+          toast.error('The change order is under contract or office-locked and cannot be edited.');
           return;
         }
         targetWorkbookId = co.workbookId;
@@ -3417,24 +3423,24 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   async function deleteSheet(sheet: MaterialSheet) {
     if (isWorkbookReadOnly || workbook?.status === 'locked') {
+      setSheetDeleteConfirmId(null);
       toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
       return;
     }
     if (!workbook) {
+      setSheetDeleteConfirmId(null);
       toast.error('Cannot delete sheets until the workbook is loaded.');
       return;
     }
 
     if (workbook.sheets.length === 1) {
+      setSheetDeleteConfirmId(null);
       toast.error('Cannot delete the last sheet. Workbooks must have at least one sheet.');
       return;
     }
 
-    if (!confirm(`Delete sheet "${sheet.sheet_name}"? This will also delete all ${sheet.items.length} materials in this sheet.`)) {
-      return;
-    }
-
     try {
+      setSheetDeleteConfirmId(null);
       // Save current scroll position
       scrollPositionRef.current = window.scrollY;
 
@@ -3465,6 +3471,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     } catch (error: any) {
       console.error('Error deleting sheet:', error);
       toast.error('Failed to delete sheet');
+      setSheetDeleteConfirmId(null);
     }
   }
 
@@ -3760,6 +3767,23 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Group by workbook category, using user-defined order when present
   const categoryGroups = groupByCategory(filteredItems, activeSheet?.category_order);
 
+  useEffect(() => {
+    if (!workbook?.sheets?.length) return;
+
+    const sheetPrices: BreakdownSheetPrice[] = workbook.sheets.map((sheet) => {
+      const allCategoryGroups = groupByCategory(sheet.items || [], sheet.category_order);
+      const categories: Record<string, number> = {};
+      allCategoryGroups.forEach((catGroup) => {
+        const key = String(catGroup.category || '').trim().toLowerCase();
+        // Must match breakdown tab math exactly: catGroup.items reduce getDisplayExtended(item).price
+        categories[key] = (catGroup.items || []).reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
+      });
+      return { sheetId: sheet.id, sheetName: sheet.sheet_name || '', categories };
+    });
+
+    onBreakdownPriceSync?.(sheetPrices);
+  }, [workbook, onBreakdownPriceSync]);
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -3788,14 +3812,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const latestQuoteId = sortedQuotes.find(q => !q.is_change_order_proposal)?.id ?? sortedQuotes[0]?.id;
   const isWorkbookReadOnly = !!quoteForContractUi && (
     quoteForContractUi.is_change_order_proposal
-      ? (!!quoteForContractUi.sent_at || !!quoteForContractUi.locked_for_editing)
-      : ((sortedQuotes.length > 0 && quoteForContractUi.id !== latestQuoteId) || !!quoteForContractUi.sent_at || !!quoteForContractUi.locked_for_editing)
+      ? isQuoteContractFrozen(quoteForContractUi as any)
+      : ((sortedQuotes.length > 0 && quoteForContractUi.id !== latestQuoteId) || isQuoteContractFrozen(quoteForContractUi as any))
   );
   const materialsWorkbookLocked = isWorkbookReadOnly || workbook?.status === 'locked';
   /** Zoho orders + line status (Not Ordered / etc.) are for operations on the working copy only — never on locked contract snapshots. */
   const showShopOrderControls = workbook?.status === 'working';
 
-  const quoteContractFrozen = isQuoteContractFrozenMaterials(quoteForContractUi);
+  const quoteContractFrozen = isQuoteContractFrozen(quoteForContractUi as any);
   /** Unsigned / draft proposals: optional manual lock. Sent or signed contracts auto-manage locked + working copies. */
   const showManualLockWorkbook =
     !!workbook && workbook.status === 'working' && !quoteContractFrozen && !isWorkbookReadOnly;
@@ -4308,29 +4332,68 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                               Change orders
                             </span>
                           )}
-                        <div className="relative group flex-shrink-0 pr-1 border-r border-slate-300/80 last:border-r-0">
+                        <div className="group/tab relative flex-shrink-0 pr-1 border-r border-slate-300/80 last:border-r-0 flex items-center gap-1">
                           <Button
                             variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
                             size="sm"
                             onClick={() => handleSheetChange(sheet.id)}
-                            className={`flex items-center gap-1 min-w-[100px] justify-start font-semibold pr-6 text-xs h-7 ${activeSheetId === sheet.id ? 'bg-white shadow border border-primary' : 'hover:bg-white/50'}`}
+                            title={sheet.sheet_name}
+                            className={`flex items-center gap-1 min-w-[100px] max-w-[min(280px,40vw)] justify-start h-7 px-2.5 text-sm leading-tight ${
+                              activeSheetId === sheet.id
+                                ? 'font-bold text-slate-900 bg-white shadow-sm border-2 border-primary/90 ring-1 ring-primary/20 hover:bg-white'
+                                : 'font-semibold text-slate-700 hover:text-slate-900 hover:bg-white/80 border border-transparent'
+                            }`}
                           >
-                            {sheet.sheet_name}
+                            <span className="truncate">{sheet.sheet_name}</span>
                           </Button>
-                          {/* Delete Sheet Button - only show when workbook is working status */}
-                          {workbook.status === 'working' && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteSheet(sheet);
-                              }}
-                              className="absolute right-0 top-0 h-full w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 hover:bg-red-600 text-white rounded-l-none"
-                              title="Delete this sheet"
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
+                          {/* Delete: active sheet only; trash hidden until tab row hover; confirm step always visible */}
+                          {workbook.status === 'working' && activeSheetId === sheet.id && (
+                            sheetDeleteConfirmId === sheet.id ? (
+                              <div className="flex items-center gap-0.5 shrink-0 animate-in fade-in duration-150">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-[10px]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSheetDeleteConfirmId(null);
+                                  }}
+                                  title="Cancel deletion"
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="h-7 px-2 text-[10px]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void deleteSheet(sheet);
+                                  }}
+                                  title={`Permanently delete "${sheet.sheet_name}" and ${sheet.items.length} material line(s)`}
+                                >
+                                  Delete
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="shrink-0 opacity-0 transition-opacity duration-150 group-hover/tab:opacity-100 focus-within:opacity-100">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSheetDeleteConfirmId(sheet.id);
+                                  }}
+                                  className="h-7 w-7 p-0 bg-red-500 hover:bg-red-600 text-white rounded-md shadow-sm"
+                                  title="Delete this sheet — click, then confirm Delete"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )
                           )}
                         </div>
                         </Fragment>
@@ -5162,7 +5225,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                   const totalPrice = sheet.items.reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
                   const totalProfit = totalPrice - totalCost;
                   const profitMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
-                  const categoryGroups = groupByCategory(sheet.items);
+                  const categoryGroups = groupByCategory(sheet.items, sheet.category_order);
 
                   return (
                     <div className="space-y-6">

@@ -1,7 +1,7 @@
 // Interactive Customer Portal Preview Component
 // This component renders a full-featured preview of what customers will see in their portal
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,8 +26,12 @@ import {
   CheckCircle,
   Clock,
   ExternalLink,
-  ClipboardList
+  ClipboardList,
+  Package
 } from 'lucide-react';
+import { PortalMaterialItemsTable } from '@/components/customer/PortalMaterialItemsTable';
+import { PortalMultilineText } from '@/components/customer/PortalMultilineText';
+import { PortalSheetPricedLineItems } from '@/components/customer/PortalSheetPricedLineItems';
 
 interface CustomerPortalPreviewProps {
   customerName: string;
@@ -182,13 +186,17 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
   const changeOrderProposalData = jobData.changeOrderProposalData ?? null;
   const showProposalTab = !!visibilitySettings?.show_proposal;
   const hasChangeOrderTab = showProposalTab && !!changeOrderQuote;
+  /** Declare before effects — `useEffect` below reads `showMaterialsTab` (TDZ if defined later). */
+  const previewMaterialListNoPrices = visibilitySettings?.show_material_items_no_prices === true;
+  const showMaterialsTab = showProposalTab && previewMaterialListNoPrices;
 
   const [activeTab, setActiveTab] = useState(() => (showProposalTab ? 'proposal' : 'overview'));
   useEffect(() => {
     if (showProposalTab && activeTab === 'overview') setActiveTab('proposal');
     if (!showProposalTab && activeTab === 'proposal') setActiveTab('overview');
     if (activeTab === 'change-orders' && !hasChangeOrderTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
-  }, [showProposalTab, hasChangeOrderTab, activeTab]);
+    if (activeTab === 'materials' && !showMaterialsTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
+  }, [showProposalTab, hasChangeOrderTab, showMaterialsTab, activeTab]);
 
   const proposalDataByQuoteId = jobData.proposalDataByQuoteId || {};
   const defaultQuoteId = proposalQuotes[0]?.id ?? null;
@@ -216,11 +224,40 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
   const isSignedContract = selectedQuote?.status === 'accepted' || selectedQuote?.status === 'signed';
   const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
 
+  const previewMainMaterialSheets = useMemo(
+    () =>
+      (proposalData?.materialSheets || []).filter(
+        (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+      ),
+    [proposalData]
+  );
+
+  const previewCoMaterialSheets = useMemo(() => {
+    const co = changeOrderProposalData;
+    if (!co?.materialSheets?.length) return [];
+    let sheets = (co.materialSheets as any[]).filter(
+      (s: any) =>
+        !isFieldRequestSheetName(s.sheet_name) &&
+        (s.sheet_type === 'change_order' || s.sheet_type == null)
+    );
+    sheets = [...sheets].sort((a: any, b: any) => {
+      const sa = Number(a.change_order_seq) || 0;
+      const sb = Number(b.change_order_seq) || 0;
+      if (sa !== sb) return sa - sb;
+      return (a.order_index ?? 0) - (b.order_index ?? 0);
+    });
+    return sheets;
+  }, [changeOrderProposalData]);
+
+  const previewShowCoMaterials =
+    hasChangeOrderTab && previewMaterialListNoPrices && !!(changeOrderQuote as any)?.sent_at;
+
   const visibleTabs = [
     ...(showProposalTab
       ? [{ value: 'proposal', label: 'Proposal', show: true as boolean }]
       : [{ value: 'overview', label: 'Overview', show: true as boolean }]),
     ...(hasChangeOrderTab ? [{ value: 'change-orders', label: 'Change orders', show: true as boolean }] : []),
+    ...(showMaterialsTab ? [{ value: 'materials', label: 'Materials', show: true as boolean }] : []),
     { value: 'payments', label: 'Payments', show: visibilitySettings?.show_payments },
     { value: 'schedule', label: 'Schedule', show: visibilitySettings?.show_schedule },
     { value: 'documents', label: 'Documents', show: visibilitySettings?.show_documents },
@@ -289,7 +326,9 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
             {visibilitySettings?.custom_message && (
               <Card className="border-amber-200 bg-amber-50/50">
                 <CardContent className="pt-6">
-                  <p className="text-slate-800 whitespace-pre-wrap">{visibilitySettings.custom_message}</p>
+                  <p className="text-slate-800">
+                    <PortalMultilineText text={visibilitySettings.custom_message} />
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -360,13 +399,35 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                         const sheet = section.data;
                         const sheetMaterials = sheet._computedMaterials ?? 0;
                         const sheetLabor = sheet._computedLabor ?? 0;
+                        const showSheetMoney =
+                          showPrice && !previewMaterialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
                         return (
                           <div key={sheet.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
                               <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
-                              {sheet.description && <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>}
+                              {sheet.description && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  <PortalMultilineText text={sheet.description} />
+                                </p>
+                              )}
+                              {showPrice &&
+                                !previewMaterialListNoPrices &&
+                                ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
+                                  <PortalSheetPricedLineItems sheet={sheet} />
+                                )}
+                              {previewMaterialListNoPrices && (
+                                <div className="mt-3 rounded-md border border-dashed border-emerald-600/40 bg-emerald-50/50 px-3 py-2 text-sm flex items-start gap-2">
+                                  <ExternalLink className="w-4 h-4 shrink-0 text-emerald-800 mt-0.5" />
+                                  <div>
+                                    <span className="font-medium text-emerald-900">Materials tab &amp; full page</span>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Customers use the <strong>Materials</strong> tab for lists here, or open the full table in a new browser tab.
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            {showPrice && (sheetMaterials > 0 || sheetLabor > 0) && (
+                            {showSheetMoney && (
                               <div className="w-[100px] flex-shrink-0 text-right">
                                 {sheetMaterials > 0 && (
                                   <>
@@ -397,7 +458,11 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                           <div key={row.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
                               <h3 className="font-bold text-lg">{title}</h3>
-                              {descriptionText && <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{descriptionText}</p>}
+                              {descriptionText && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  <PortalMultilineText text={descriptionText} />
+                                </p>
+                              )}
                             </div>
                             {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                           </div>
@@ -447,7 +512,9 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
             {visibilitySettings?.custom_message && (
               <Card className="border-amber-200 bg-amber-50/50">
                 <CardContent className="pt-6">
-                  <p className="text-slate-800 whitespace-pre-wrap">{visibilitySettings.custom_message}</p>
+                  <p className="text-slate-800">
+                    <PortalMultilineText text={visibilitySettings.custom_message} />
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -585,6 +652,8 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                             const sheet = section.data;
                             const sheetMaterials = sheet._computedMaterials ?? 0;
                             const sheetLabor = sheet._computedLabor ?? 0;
+                            const showSheetMoney =
+                              showPrice && !previewMaterialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
                             return (
                               <div
                                 key={sheet.id}
@@ -593,10 +662,26 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                 <div className="min-w-0 flex-1">
                                   <h3 className="font-bold text-lg text-orange-950">{sheet.sheet_name}</h3>
                                   {sheet.description && (
-                                    <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                      <PortalMultilineText text={sheet.description} />
+                                    </p>
+                                  )}
+                                  {showPrice &&
+                                    !previewMaterialListNoPrices &&
+                                    ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
+                                      <PortalSheetPricedLineItems sheet={sheet} variant="changeOrder" />
+                                    )}
+                                  {previewMaterialListNoPrices && (
+                                    <div className="mt-3 rounded-md border border-dashed border-orange-400/60 bg-orange-50/80 px-3 py-2 text-sm flex items-start gap-2">
+                                      <ExternalLink className="w-4 h-4 shrink-0 text-orange-900 mt-0.5" />
+                                      <div>
+                                        <span className="font-medium text-orange-950">Open full material list (new page)</span>
+                                        <p className="text-xs text-muted-foreground mt-1">Live portal opens the list in a new tab.</p>
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
-                                {showPrice && (sheetMaterials > 0 || sheetLabor > 0) && (
+                                {showSheetMoney && (
                                   <div className="w-[100px] flex-shrink-0 text-right">
                                     {sheetMaterials > 0 && (
                                       <>
@@ -628,7 +713,9 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                 <div className="min-w-0 flex-1">
                                   <h3 className="font-bold text-lg">{title}</h3>
                                   {row.notes?.trim() && (
-                                    <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{row.notes}</p>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                      <PortalMultilineText text={row.notes} />
+                                    </p>
                                   )}
                                 </div>
                                 {showPrice && total > 0 && (
@@ -684,6 +771,76 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                   })()}
                 </CardContent>
               </Card>
+            </TabsContent>
+          )}
+
+          {showMaterialsTab && (
+            <TabsContent value="materials" className="space-y-6">
+              <Card className="border-emerald-200/70">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-emerald-900">
+                    <Package className="w-5 h-5" />
+                    Material list
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground font-normal">
+                    Item names, quantities, and usage only — matches the live portal when “Material list (no prices)” is on.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-8">
+                  {!proposalData ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">Load proposal data to preview materials.</p>
+                  ) : previewMainMaterialSheets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">No material sheets on this proposal.</p>
+                  ) : (
+                    previewMainMaterialSheets.map((sheet: any) => (
+                      <div key={sheet.id} className="border rounded-lg p-4 space-y-3 bg-card">
+                        <div>
+                          <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                          {sheet.description?.trim() && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              <PortalMultilineText text={sheet.description} />
+                            </p>
+                          )}
+                        </div>
+                        <PortalMaterialItemsTable items={sheet.items} />
+                        <p className="text-xs text-muted-foreground">
+                          In the live portal, customers can open this sheet in a dedicated full-page view from here.
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              {previewShowCoMaterials && (
+                <Card className="border-orange-200 bg-orange-50/20">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-orange-950">
+                      <ClipboardList className="w-5 h-5" />
+                      Change order materials
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {!changeOrderProposalData || previewCoMaterialSheets.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">No material sheets on the change order.</p>
+                    ) : (
+                      previewCoMaterialSheets.map((sheet: any) => (
+                        <div key={sheet.id} className="border border-orange-200 rounded-lg p-4 space-y-3 bg-white">
+                          <div>
+                            <h3 className="font-semibold text-base text-orange-950">{sheet.sheet_name}</h3>
+                            {sheet.description?.trim() && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <PortalMultilineText text={sheet.description} />
+                              </p>
+                            )}
+                          </div>
+                          <PortalMaterialItemsTable items={sheet.items} />
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           )}
 

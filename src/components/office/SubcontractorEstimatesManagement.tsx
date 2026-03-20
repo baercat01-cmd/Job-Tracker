@@ -46,6 +46,9 @@ import { useUndo } from '@/contexts/UndoContext';
 interface SubcontractorEstimate {
   id: string;
   quote_id: string | null;
+  /** When set, this sub is rolled into this material sheet section in Job Financials */
+  sheet_id?: string | null;
+  row_id?: string | null;
   job_id: string | null;
   subcontractor_id: string | null;
   pdf_url: string;
@@ -99,6 +102,8 @@ interface LineItem {
   order_index: number;
   excluded?: boolean;
   markup_percent?: number;
+  item_type?: 'material' | 'labor';
+  taxable?: boolean;
 }
 
 interface SubcontractorEstimatesManagementProps {
@@ -140,6 +145,8 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
   const [jobQuotes, setJobQuotes] = useState<{ id: string; proposal_number?: string; quote_number?: string }[]>([]);
   const [proposalQuoteId, setProposalQuoteId] = useState<string | null>(quoteId || null);
   const [estimatesNotOnProposal, setEstimatesNotOnProposal] = useState<SubcontractorEstimate[]>([]);
+  const [proposalSheets, setProposalSheets] = useState<{ id: string; sheet_name: string }[]>([]);
+  const [loadingSheets, setLoadingSheets] = useState(false);
 
   useEffect(() => {
     if (quoteId) setProposalQuoteId(quoteId);
@@ -148,6 +155,10 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
   useEffect(() => {
     loadEstimatesNotOnProposal();
   }, [proposalQuoteId, jobId]);
+
+  useEffect(() => {
+    void loadProposalSheets();
+  }, [proposalQuoteId, quoteId, jobId]);
 
   useEffect(() => {
     loadData();
@@ -173,7 +184,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
       supabase.removeChannel(estimatesChannel);
       supabase.removeChannel(invoicesChannel);
     };
-  }, [jobId, quoteId]);
+  }, [jobId, quoteId, proposalQuoteId]);
 
   async function loadJobQuotes() {
     if (!jobId) return;
@@ -227,6 +238,52 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
     }
   }
 
+  async function loadProposalSheets() {
+    const qid = proposalQuoteId || quoteId;
+    if (!qid) {
+      setProposalSheets([]);
+      return;
+    }
+    setLoadingSheets(true);
+    try {
+      let wbQuery = supabase
+        .from('material_workbooks')
+        .select('id, status')
+        .eq('quote_id', qid);
+      if (jobId) wbQuery = wbQuery.eq('job_id', jobId);
+      const { data: wbs, error } = await wbQuery.order('updated_at', { ascending: false });
+      if (error) throw error;
+      const list = wbs || [];
+      const wb = list.find((w: any) => w.status === 'working') ?? list[0];
+      if (!wb) {
+        setProposalSheets([]);
+        return;
+      }
+      const { data: sheets, error: sErr } = await supabase
+        .from('material_sheets')
+        .select('id, sheet_name, order_index')
+        .eq('workbook_id', wb.id)
+        .order('order_index');
+      if (sErr) throw sErr;
+      setProposalSheets((sheets || []).map((s: any) => ({ id: s.id, sheet_name: s.sheet_name })));
+    } catch (e) {
+      console.error('Error loading proposal sections:', e);
+      setProposalSheets([]);
+    } finally {
+      setLoadingSheets(false);
+    }
+  }
+
+  function notifyProposalMaterialsRefresh() {
+    const qid = proposalQuoteId || quoteId;
+    if (!qid) return;
+    window.dispatchEvent(
+      new CustomEvent('materials-workbook-updated', {
+        detail: { jobId: jobId ?? undefined, quoteId: qid },
+      })
+    );
+  }
+
   async function loadEstimates() {
     try {
       let query = supabase
@@ -240,8 +297,9 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
       if (jobId) {
         query = query.eq('job_id', jobId);
       }
-      if (quoteId) {
-        query = query.eq('quote_id', quoteId);
+      const effectiveQuoteFilter = proposalQuoteId || quoteId;
+      if (effectiveQuoteFilter) {
+        query = query.eq('quote_id', effectiveQuoteFilter);
       }
 
       const { data, error } = await query;
@@ -250,6 +308,44 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
       setEstimates(data || []);
     } catch (error: any) {
       console.error('Error loading estimates:', error);
+    }
+  }
+
+  async function assignEstimateToSheet(estimateId: string, sheetId: string | null) {
+    const qid = proposalQuoteId || quoteId;
+    if (!qid) {
+      toast.error('Select a proposal first');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimates')
+        .update({ sheet_id: sheetId, row_id: null })
+        .eq('id', estimateId);
+      if (error) throw error;
+      toast.success(sheetId ? 'Linked to proposal section' : 'Unlinked from section');
+      await loadEstimates();
+      await loadEstimatesNotOnProposal();
+      notifyProposalMaterialsRefresh();
+    } catch (e: any) {
+      console.error('Error assigning section:', e);
+      toast.error(e?.message || 'Failed to update section');
+    }
+  }
+
+  async function markAllLineItemsAsLabor(estimateId: string) {
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .update({ item_type: 'labor', taxable: false })
+        .eq('estimate_id', estimateId);
+      if (error) throw error;
+      toast.success('All lines set to Labor — totals roll into section labor in the proposal');
+      await loadEstimates();
+      notifyProposalMaterialsRefresh();
+    } catch (e: any) {
+      console.error('Error updating line items:', e);
+      toast.error(e?.message || 'Failed to update line items');
     }
   }
 
@@ -285,12 +381,13 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
     try {
       const { error } = await supabase
         .from('subcontractor_estimates')
-        .update({ quote_id: proposalQuoteId })
+        .update({ quote_id: proposalQuoteId, sheet_id: null, row_id: null })
         .eq('id', estimateId);
       if (error) throw error;
-      toast.success('Added to proposal');
+      toast.success('Added to proposal — pick a proposal section below to roll it into that sheet.');
       loadEstimates();
       loadEstimatesNotOnProposal();
+      notifyProposalMaterialsRefresh();
     } catch (error: any) {
       console.error('Error adding to proposal:', error);
       toast.error('Failed to add to proposal');
@@ -301,10 +398,11 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
     const quoteIdToRestore = proposalQuoteId;
     const estimate = estimates.find((e) => e.id === estimateId);
     const label = estimate?.company_name || estimate?.file_name || 'Subcontractor';
+    const sheetIdToRestore = estimate?.sheet_id ?? null;
     try {
       const { error } = await supabase
         .from('subcontractor_estimates')
-        .update({ quote_id: null })
+        .update({ quote_id: null, sheet_id: null, row_id: null })
         .eq('id', estimateId);
       if (error) throw error;
       undoApi.push({
@@ -325,6 +423,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
       });
       loadEstimates();
       loadEstimatesNotOnProposal();
+      notifyProposalMaterialsRefresh();
     } catch (error: any) {
       console.error('Error removing from proposal:', error);
       toast.error('Failed to remove from proposal');
@@ -1048,6 +1147,50 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose, onPr
                       </Button>
                     </div>
                   </div>
+
+                  {proposalQuoteId && estimate.quote_id === proposalQuoteId && (
+                    <div
+                      className="px-4 py-2 border-t bg-slate-50/50 flex flex-wrap items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Label className="text-xs shrink-0">Proposal section</Label>
+                      <Select
+                        value={estimate.sheet_id || '__none__'}
+                        onValueChange={(v) => assignEstimateToSheet(estimate.id, v === '__none__' ? null : v)}
+                        disabled={loadingSheets || proposalSheets.length === 0}
+                      >
+                        <SelectTrigger className="h-8 w-[min(280px,100%)] text-xs">
+                          <SelectValue
+                            placeholder={loadingSheets ? 'Loading sections…' : 'Select section for totals'}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Not assigned to a section</SelectItem>
+                          {proposalSheets.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.sheet_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {hasLineItems && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-8 text-xs"
+                          onClick={() => markAllLineItemsAsLabor(estimate.id)}
+                        >
+                          Set all lines as Labor
+                        </Button>
+                      )}
+                      {proposalSheets.length === 0 && !loadingSheets && (
+                        <span className="text-xs text-muted-foreground">
+                          No material sections for this proposal yet — add a workbook/sections in Proposal &amp; Materials.
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Expanded Details */}
                   {isExpanded && (

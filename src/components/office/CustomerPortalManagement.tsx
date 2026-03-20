@@ -43,6 +43,7 @@ interface CustomerPortalLink {
   show_photos: boolean;
   show_financial_summary: boolean;
   show_line_item_prices?: boolean;
+  show_material_items_no_prices?: boolean;
   /** Per-section price visibility: { [sectionId]: true | false }. Omitted key = use global show_line_item_prices. */
   show_section_prices?: Record<string, boolean> | null;
   /** Per-proposal visibility overrides: { [quoteId]: { show_proposal?, show_section_prices?, ... } }. Customer sees these when viewing that proposal. */
@@ -54,6 +55,7 @@ interface CustomerPortalLink {
     show_photos?: boolean;
     show_financial_summary?: boolean;
     show_line_item_prices?: boolean;
+    show_material_items_no_prices?: boolean;
     show_section_prices?: Record<string, boolean>;
   }> | null;
   custom_message: string | null;
@@ -61,7 +63,7 @@ interface CustomerPortalLink {
 
 // Full select including show_line_item_prices and show_section_prices (use fallback if columns not in schema yet)
 const CUSTOMER_PORTAL_ACCESS_SELECT =
-  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,show_section_prices,visibility_by_quote,custom_message';
+  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,show_section_prices,visibility_by_quote,show_material_items_no_prices,custom_message';
 // Fallback when show_line_item_prices column is missing (PGRST204 / migration not run)
 const CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
@@ -78,6 +80,29 @@ function sectionPricesJsonForRpc(
     return { ...preserveWhenPerQuote };
   }
   return {};
+}
+
+type PortalVisibilityEff = {
+  show_proposal: boolean;
+  show_payments: boolean;
+  show_schedule: boolean;
+  show_documents: boolean;
+  show_photos: boolean;
+  show_financial_summary: boolean;
+  show_line_item_prices: boolean;
+  show_material_items_no_prices: boolean;
+  show_section_prices: Record<string, boolean>;
+};
+
+/** Only plain objects per quote; other shapes break `customer_portal_access` jsonb PATCH (400). */
+function cloneVisibilityByQuoteSafe(raw: unknown): Record<string, Record<string, unknown>> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [quoteId, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (!val || typeof val !== 'object' || Array.isArray(val)) continue;
+    out[quoteId] = { ...(val as Record<string, unknown>) };
+  }
+  return out;
 }
 
 interface CustomerPortalManagementProps {
@@ -119,6 +144,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
   const [showPhotos, setShowPhotos] = useState(true);
   const [showFinancialSummary, setShowFinancialSummary] = useState(true);
   const [showLineItemPrices, setShowLineItemPrices] = useState(false);
+  const [showMaterialItemsNoPrices, setShowMaterialItemsNoPrices] = useState(false);
   /** Per-section price visibility. When undefined for a section, fall back to showLineItemPrices. */
   const [showSectionPrices, setShowSectionPrices] = useState<Record<string, boolean>>({});
   const [customMessage, setCustomMessage] = useState('');
@@ -137,12 +163,26 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
   /** Which proposal's visibility we're editing. When set, section list and form sync from visibility_by_quote[this]. */
   const [selectedQuoteIdForVisibility, setSelectedQuoteIdForVisibility] = useState<string | null>(null);
 
-  // Mount once — jobId is frozen, so these never need to re-run
+  // Reload portal row whenever this job changes; load customer fallbacks only when no portal link exists (avoids race overwriting saved portal settings on refresh).
   useEffect(() => {
-    console.log(`[PortalMgmt] Mounted for job: "${job.name}" id=${jobId}`);
-    loadPortalLinks();
-    loadCustomerInfo();
-  }, []);
+    let cancelled = false;
+    console.log(`[PortalMgmt] Job context: "${job.name}" id=${jobId}`);
+    (async () => {
+      setLoading(true);
+      try {
+        const links = await loadPortalLinks();
+        if (cancelled) return;
+        if (!links.length) {
+          await loadCustomerInfo();
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
 
   // Load preview data whenever customer name is filled
   useEffect(() => {
@@ -173,15 +213,39 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     const perQuote = selectedQuoteIdForVisibility && link.visibility_by_quote && typeof link.visibility_by_quote === 'object' && !Array.isArray(link.visibility_by_quote)
       ? (link.visibility_by_quote as Record<string, any>)[selectedQuoteIdForVisibility]
       : null;
+    /** Per-quote JSON often only contains fields that were autosaved (e.g. show_section_prices). Missing keys must inherit link-level columns or toggles stay stuck off. */
+    const pqBool = (pq: Record<string, unknown> | null | undefined, key: string, linkFallback: boolean | undefined): boolean => {
+      if (pq && typeof pq === 'object' && key in pq) return pq[key] === true;
+      return linkFallback === true;
+    };
     if (perQuote && typeof perQuote === 'object') {
-      setShowProposal(perQuote.show_proposal === true);
-      setShowPayments(perQuote.show_payments === true);
-      setShowSchedule(perQuote.show_schedule === true);
-      setShowDocuments(perQuote.show_documents === true);
-      setShowPhotos(perQuote.show_photos === true);
-      setShowFinancialSummary(perQuote.show_financial_summary === true);
-      setShowLineItemPrices(perQuote.show_line_item_prices === true);
-      const raw = perQuote.show_section_prices;
+      const pq = perQuote as Record<string, unknown>;
+      const multiQuote = jobQuotes.length > 1;
+      const lineFromLink = link.show_line_item_prices === true;
+      const hasExplicitLine = 'show_line_item_prices' in pq;
+      const lineFromPer = hasExplicitLine ? pq.show_line_item_prices === true : null;
+      /**
+       * Multi-quote: explicit per-proposal `show_line_item_prices` wins (so one proposal can differ).
+       * Single-quote (or only one proposal on the job): row column `true` wins over a stale `false` in
+       * jsonb (happens when a retry PATCH updated the column but not `visibility_by_quote`).
+       */
+      const lineItemPricesSynced =
+        multiQuote && hasExplicitLine
+          ? lineFromPer === true
+          : lineFromLink || lineFromPer === true;
+
+      setShowProposal(pqBool(pq, 'show_proposal', link.show_proposal));
+      setShowPayments(pqBool(pq, 'show_payments', link.show_payments));
+      setShowSchedule(pqBool(pq, 'show_schedule', link.show_schedule));
+      setShowDocuments(pqBool(pq, 'show_documents', link.show_documents));
+      setShowPhotos(pqBool(pq, 'show_photos', link.show_photos));
+      setShowFinancialSummary(pqBool(pq, 'show_financial_summary', link.show_financial_summary));
+      setShowLineItemPrices(lineItemPricesSynced);
+      setShowMaterialItemsNoPrices(pqBool(pq, 'show_material_items_no_prices', link.show_material_items_no_prices));
+      const raw =
+        'show_section_prices' in pq && typeof pq.show_section_prices === 'object' && pq.show_section_prices !== null && !Array.isArray(pq.show_section_prices)
+          ? pq.show_section_prices
+          : link.show_section_prices;
       setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
     } else {
       setShowProposal(link.show_proposal === true);
@@ -191,6 +255,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       setShowPhotos(link.show_photos === true);
       setShowFinancialSummary(link.show_financial_summary === true);
       setShowLineItemPrices(link.show_line_item_prices === true);
+      setShowMaterialItemsNoPrices(link.show_material_items_no_prices === true);
       const raw = link.show_section_prices;
       setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
     }
@@ -373,7 +438,8 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     }
   }
 
-  async function loadPortalLinks() {
+  /** Returns loaded links for callers; initial mount effect sets loading false after optional loadCustomerInfo. */
+  async function loadPortalLinks(): Promise<CustomerPortalLink[]> {
     console.log(`[PortalMgmt] loadPortalLinks for job="${job.name}" id=${jobId}`);
     try {
       // Try RPC first (has SECURITY DEFINER, bypasses RLS, returns full visibility row)
@@ -386,11 +452,14 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         }
         if (Array.isArray(row) && row.length > 0) row = row[0];
         if (row && typeof row === 'object' && (row.job_id != null || row.id != null)) {
-          const link = { ...row, show_line_item_prices: row.show_line_item_prices ?? false } as CustomerPortalLink;
+          const link = {
+            ...row,
+            show_line_item_prices: row.show_line_item_prices ?? false,
+            show_material_items_no_prices: row.show_material_items_no_prices ?? false,
+          } as CustomerPortalLink;
           console.log(`[PortalMgmt] RPC found link job_id=${link.job_id} token=${link.access_token?.slice(0, 8)}...`);
           setPortalLinks([link]);
-          setLoading(false);
-          return;
+          return [link];
         }
       }
 
@@ -418,11 +487,12 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       const jobLinks = (data || []).map((l: any) => ({ ...l, show_line_item_prices: l.show_line_item_prices ?? false }));
       console.log(`[PortalMgmt] Direct query found ${jobLinks.length} link(s) for job ${jobId}`);
       setPortalLinks(jobLinks);
+      return jobLinks;
     } catch (error: any) {
       console.error('[PortalMgmt] Error loading portal links:', error);
       toast.error('Failed to load portal links');
-    } finally {
-      setLoading(false);
+      setPortalLinks([]);
+      return [];
     }
   }
 
@@ -533,6 +603,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
         show_line_item_prices: showLineItemPrices,
+        show_material_items_no_prices: showMaterialItemsNoPrices,
         show_section_prices: sectionPricesJsonForRpc(showSectionPrices),
         visibility_by_quote:
           visibilityPatch !== undefined
@@ -566,6 +637,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           show_photos: portalData.show_photos,
           show_financial_summary: portalData.show_financial_summary,
           show_line_item_prices: portalData.show_line_item_prices,
+          show_material_items_no_prices: portalData.show_material_items_no_prices,
           show_section_prices: sectionPricesJsonForRpc(portalData.show_section_prices as Record<string, boolean> | null),
           custom_message: portalData.custom_message,
         };
@@ -679,6 +751,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           ...data,
           show_line_item_prices: (data as any).show_line_item_prices ?? false,
           visibility_by_quote: (data as any).visibility_by_quote ?? (portalData as any).visibility_by_quote ?? (existingLink as any)?.visibility_by_quote,
+          show_material_items_no_prices: (data as any).show_material_items_no_prices ?? false,
         } as CustomerPortalLink;
         setPortalLinks((prev) => {
           const rest = prev.filter((l) => l.job_id !== jobIdToUse);
@@ -707,6 +780,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                   show_photos: portalData.show_photos,
                   show_financial_summary: portalData.show_financial_summary,
                   show_line_item_prices: portalData.show_line_item_prices,
+                  show_material_items_no_prices: portalData.show_material_items_no_prices,
                   show_section_prices: portalData.show_section_prices,
                   visibility_by_quote:
                     visibilityPatch !== undefined ? visibilityPatch : l.visibility_by_quote,
@@ -756,6 +830,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
         show_line_item_prices: showLineItemPrices,
+        show_material_items_no_prices: showMaterialItemsNoPrices,
         show_section_prices: sectionPricesSafe,
         visibility_by_quote: visibilitySafe,
         custom_message: customMessage || null,
@@ -787,37 +862,84 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
    */
   function mergeVisibilityForQuote(
     quoteId: string,
-    overrides: Partial<{ show_proposal: boolean; show_payments: boolean; show_schedule: boolean; show_documents: boolean; show_photos: boolean; show_financial_summary: boolean; show_line_item_prices: boolean; show_section_prices: Record<string, boolean> }>
+    overrides: Partial<{
+      show_proposal: boolean;
+      show_payments: boolean;
+      show_schedule: boolean;
+      show_documents: boolean;
+      show_photos: boolean;
+      show_financial_summary: boolean;
+      show_line_item_prices: boolean;
+      show_material_items_no_prices: boolean;
+      show_section_prices: Record<string, boolean>;
+    }>,
+    eff?: PortalVisibilityEff
   ) {
     const link = portalLinks.find((l: any) => l.job_id === jobId);
-    const prev =
-      link?.visibility_by_quote && typeof link.visibility_by_quote === 'object' && !Array.isArray(link.visibility_by_quote)
-        ? { ...(link.visibility_by_quote as Record<string, any>) }
-        : {};
+    const prev = cloneVisibilityByQuoteSafe(link?.visibility_by_quote);
+    const e: PortalVisibilityEff =
+      eff ??
+      {
+        show_proposal,
+        show_payments,
+        show_schedule,
+        show_documents,
+        show_photos,
+        show_financial_summary,
+        show_line_item_prices,
+        show_material_items_no_prices,
+        show_section_prices,
+      };
     const fromForm = {
-      show_proposal: showProposal,
-      show_payments: showPayments,
-      show_schedule: showSchedule,
-      show_documents: showDocuments,
-      show_photos: showPhotos,
-      show_financial_summary: showFinancialSummary,
-      show_line_item_prices: showLineItemPrices,
-      show_section_prices: { ...showSectionPrices },
+      show_proposal: e.show_proposal,
+      show_payments: e.show_payments,
+      show_schedule: e.show_schedule,
+      show_documents: e.show_documents,
+      show_photos: e.show_photos,
+      show_financial_summary: e.show_financial_summary,
+      show_line_item_prices: e.show_line_item_prices,
+      show_material_items_no_prices: e.show_material_items_no_prices,
+      show_section_prices: { ...e.show_section_prices },
     };
     prev[quoteId] = { ...fromForm, ...overrides };
     return prev;
   }
 
   /** Auto-save a single visibility toggle the moment it changes (only when a link already exists). */
-  async function autoSaveVisibility(field: string, newValue: boolean) {
+  async function autoSaveVisibility(
+    field: string,
+    newValue: boolean,
+    opts?: { alsoEnableFinancialSummary?: boolean }
+  ) {
     const link = portalLinks.find((l: any) => l.job_id === jobId);
     if (!link) return; // No existing link yet — will be saved when "Save & create link" is clicked
 
+    const coEnableFinancial =
+      field === 'show_line_item_prices' &&
+      newValue === true &&
+      (opts?.alsoEnableFinancialSummary === true || !showFinancialSummary);
+
+    const eff: PortalVisibilityEff = {
+      show_proposal: field === 'show_proposal' ? newValue : showProposal,
+      show_payments: field === 'show_payments' ? newValue : showPayments,
+      show_schedule: field === 'show_schedule' ? newValue : showSchedule,
+      show_documents: field === 'show_documents' ? newValue : showDocuments,
+      show_photos: field === 'show_photos' ? newValue : showPhotos,
+      show_financial_summary: coEnableFinancial
+        ? true
+        : field === 'show_financial_summary'
+          ? newValue
+          : showFinancialSummary,
+      show_line_item_prices: field === 'show_line_item_prices' ? newValue : showLineItemPrices,
+      show_material_items_no_prices:
+        field === 'show_material_items_no_prices' ? newValue : showMaterialItemsNoPrices,
+      show_section_prices: { ...showSectionPrices },
+    };
+
     const sectionPricesSafe = sectionPricesJsonForRpc(
-      showSectionPrices as Record<string, boolean> | null,
+      eff.show_section_prices as Record<string, boolean> | null,
       link.show_section_prices as Record<string, boolean> | null
     );
-    const linePricesVal = field === 'show_line_item_prices' ? newValue : showLineItemPrices;
     let quoteIdForAutosave =
       selectedQuoteIdForVisibility ?? (jobQuotes.length === 1 ? jobQuotes[0].id : null);
     if (!quoteIdForAutosave) {
@@ -830,31 +952,46 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       if (qr?.length === 1) quoteIdForAutosave = qr[0].id;
     }
     const visibilityPatch: Record<string, unknown> | undefined = quoteIdForAutosave
-      ? (mergeVisibilityForQuote(quoteIdForAutosave, { [field]: newValue } as any) as Record<string, unknown>)
+      ? (mergeVisibilityForQuote(quoteIdForAutosave, { [field]: newValue } as any, eff) as Record<
+          string,
+          unknown
+        >)
       : undefined;
 
     const updated: Record<string, unknown> = {
-      show_financial_summary: field === 'show_financial_summary' ? newValue : showFinancialSummary,
-      show_proposal: field === 'show_proposal' ? newValue : showProposal,
-      show_payments: field === 'show_payments' ? newValue : showPayments,
-      show_schedule: field === 'show_schedule' ? newValue : showSchedule,
-      show_documents: field === 'show_documents' ? newValue : showDocuments,
-      show_photos: field === 'show_photos' ? newValue : showPhotos,
-      show_line_item_prices: linePricesVal,
+      show_financial_summary: eff.show_financial_summary,
+      show_proposal: eff.show_proposal,
+      show_payments: eff.show_payments,
+      show_schedule: eff.show_schedule,
+      show_documents: eff.show_documents,
+      show_photos: eff.show_photos,
+      show_line_item_prices: eff.show_line_item_prices,
+      show_material_items_no_prices: eff.show_material_items_no_prices,
       show_section_prices: sectionPricesSafe,
-      updated_at: new Date().toISOString(),
     };
     if (visibilityPatch !== undefined) {
       updated.visibility_by_quote = visibilityPatch;
     }
 
     try {
-      let { ok, error } = await updateCustomerPortalAccessRowMinimal(link.id, updated);
+      let { ok, error, visibilityByQuoteStripped } = await updateCustomerPortalAccessRowMinimal(
+        link.id,
+        updated
+      );
       if (!ok && error) {
         const msg = portalSaveErrorMessage(error);
         console.error('Failed to auto-save visibility setting:', error);
         toast.error(`Could not save: ${msg}`, { duration: 8000 });
         return;
+      }
+
+      if (ok && visibilityByQuoteStripped && visibilityPatch !== undefined) {
+        const r2 = await updateCustomerPortalAccessRowMinimal(link.id, {
+          visibility_by_quote: visibilityPatch,
+        });
+        if (!r2.ok && r2.error) {
+          console.warn('[PortalMgmt] follow-up visibility_by_quote save failed', r2.error);
+        }
       }
 
       const nextVisibility =
@@ -863,16 +1000,20 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         prev.map((l) => {
           if (l.id !== link.id) return l;
           const linePrices = updated.show_line_item_prices;
+          const matNo = updated.show_material_items_no_prices;
           return {
             ...l,
             ...updated,
             show_line_item_prices: typeof linePrices === 'boolean' ? linePrices : l.show_line_item_prices,
+            show_material_items_no_prices:
+              typeof matNo === 'boolean' ? matNo : l.show_material_items_no_prices,
             show_section_prices:
               (updated.show_section_prices as Record<string, boolean>) ?? l.show_section_prices,
             visibility_by_quote: nextVisibility as CustomerPortalLink['visibility_by_quote'],
           } as CustomerPortalLink;
         })
       );
+      await loadPortalLinks();
       toast.success('Setting saved — customer link will reflect this.');
     } catch (err: any) {
       console.error('Failed to auto-save visibility setting:', err);
@@ -953,6 +1094,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     // Note: Customer name/email/phone are preserved - they'll be reloaded when dialog opens again
     setExpiresInDays('');
     setShowLineItemPrices(false);
+    setShowMaterialItemsNoPrices(false);
     setShowProposal(true);
     setShowPayments(true);
     setShowSchedule(true);
@@ -981,6 +1123,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
         show_line_item_prices: showLineItemPrices,
+        show_material_items_no_prices: showMaterialItemsNoPrices,
         show_section_prices: Object.keys(showSectionPrices).length ? showSectionPrices : undefined,
         custom_message: customMessage,
       });
@@ -1510,6 +1653,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     setShowPhotos(link.show_photos);
     setShowFinancialSummary(link.show_financial_summary);
     setShowLineItemPrices(link.show_line_item_prices ?? false);
+    setShowMaterialItemsNoPrices(link.show_material_items_no_prices ?? false);
     const raw = link.show_section_prices;
     setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
     setCustomMessage(link.custom_message || '');
@@ -1581,6 +1725,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     show_photos: showPhotos,
     show_financial_summary: showFinancialSummary,
     show_line_item_prices: showLineItemPrices,
+    show_material_items_no_prices: showMaterialItemsNoPrices,
     show_section_prices: Object.keys(showSectionPrices).length ? showSectionPrices : undefined,
     custom_message: customMessage,
   };
@@ -1673,9 +1818,34 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm">Section prices</span>
-              <Switch checked={showLineItemPrices} onCheckedChange={(v) => { setShowLineItemPrices(v); autoSaveVisibility('show_line_item_prices', v); }} />
+              <Switch
+                checked={showLineItemPrices}
+                onCheckedChange={(v) => {
+                  const enableFinToo = v && !showFinancialSummary;
+                  if (enableFinToo) setShowFinancialSummary(true);
+                  setShowLineItemPrices(v);
+                  void autoSaveVisibility('show_line_item_prices', v, {
+                    alsoEnableFinancialSummary: enableFinToo,
+                  });
+                }}
+              />
             </div>
-            <p className="text-xs text-muted-foreground -mt-1">Customers see each section with a total (Materials/Labor or one amount). Individual line items are not listed.</p>
+            <p className="text-xs text-muted-foreground -mt-1">
+              When on (with <span className="font-medium">Show final price</span>), customers see each <strong>material and labor line</strong> with amounts, grouped by category like the office proposal. Section totals stay on the right. Use &quot;Show price per section&quot; below to hide specific sections.
+            </p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">Material list (no prices)</span>
+              <Switch
+                checked={showMaterialItemsNoPrices}
+                onCheckedChange={(v) => {
+                  setShowMaterialItemsNoPrices(v);
+                  autoSaveVisibility('show_material_items_no_prices', v);
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Customers get a link on each sheet to open the full material list in a new page (name, quantity, usage only). Section totals for material sheets stay hidden while this is on (subcontractor blocks and custom rows keep their normal price visibility).
+            </p>
             {showLineItemPrices && (
               <div className="border-t pt-3 mt-2 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Show price per section</p>
@@ -1854,7 +2024,35 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                   <Label className="font-medium">Show section prices</Label>
                   <p className="text-sm text-muted-foreground">When on, show a price per section (Materials/Labor or section total). Individual line items are not shown. When off, only subtotal/tax/grand total appear (if final price is on).</p>
                 </div>
-                <Switch checked={showLineItemPrices} onCheckedChange={(v) => { setShowLineItemPrices(v); selectedLink && autoSaveVisibility('show_line_item_prices', v); }} />
+                <Switch
+                  checked={showLineItemPrices}
+                  onCheckedChange={(v) => {
+                    const enableFinToo = v && !showFinancialSummary;
+                    if (enableFinToo) setShowFinancialSummary(true);
+                    setShowLineItemPrices(v);
+                    if (selectedLink) {
+                      void autoSaveVisibility('show_line_item_prices', v, {
+                        alsoEnableFinancialSummary: enableFinToo,
+                      });
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Material list without prices</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Lists material name, quantity, and usage on each sheet. Hides Materials/Labor dollar amounts for those sheets. Totals at the bottom still follow “Show final price”.
+                  </p>
+                </div>
+                <Switch
+                  checked={showMaterialItemsNoPrices}
+                  onCheckedChange={(v) => {
+                    setShowMaterialItemsNoPrices(v);
+                    selectedLink && autoSaveVisibility('show_material_items_no_prices', v);
+                  }}
+                />
               </div>
 
               <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -2057,6 +2255,20 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                     <p className="text-sm text-muted-foreground">Show progress photos</p>
                   </div>
                   <Switch checked={showPhotos} onCheckedChange={(v) => { setShowPhotos(v); autoSaveVisibility('show_photos', v); }} />
+                </div>
+
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <Label className="font-medium">Material list (no prices)</Label>
+                    <p className="text-sm text-muted-foreground">Show material name, qty, and usage per sheet; hide sheet $ totals for materials.</p>
+                  </div>
+                  <Switch
+                    checked={showMaterialItemsNoPrices}
+                    onCheckedChange={(v) => {
+                      setShowMaterialItemsNoPrices(v);
+                      autoSaveVisibility('show_material_items_no_prices', v);
+                    }}
+                  />
                 </div>
               </div>
             </div>
