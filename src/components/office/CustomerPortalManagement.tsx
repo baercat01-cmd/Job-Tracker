@@ -880,15 +880,15 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     const e: PortalVisibilityEff =
       eff ??
       {
-        show_proposal,
-        show_payments,
-        show_schedule,
-        show_documents,
-        show_photos,
-        show_financial_summary,
-        show_line_item_prices,
-        show_material_items_no_prices,
-        show_section_prices,
+        show_proposal: showProposal,
+        show_payments: showPayments,
+        show_schedule: showSchedule,
+        show_documents: showDocuments,
+        show_photos: showPhotos,
+        show_financial_summary: showFinancialSummary,
+        show_line_item_prices: showLineItemPrices,
+        show_material_items_no_prices: showMaterialItemsNoPrices,
+        show_section_prices: showSectionPrices,
       };
     const fromForm = {
       show_proposal: e.show_proposal,

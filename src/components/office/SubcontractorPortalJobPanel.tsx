@@ -555,7 +555,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
                   <div key={key} className="flex items-center justify-between border rounded p-2">
                     <Label className="text-sm">{label}</Label>
                     <Switch
-                      checked={!!(editRow as Record<string, unknown>)[key]}
+                      checked={!!(editRow as unknown as Record<string, unknown>)[key]}
                       onCheckedChange={(v) => setEditRow((r) => (r ? { ...r, [key]: v } : r))}
                     />
                   </div>

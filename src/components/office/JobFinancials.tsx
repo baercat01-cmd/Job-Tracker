@@ -3860,17 +3860,22 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           return;
         }
 
-        let coSheetsRes = await supabase
+        type CoSheetOrderRow = { order_index: unknown; change_order_seq?: unknown };
+        const coFull = await supabase
           .from('material_sheets')
           .select('order_index, change_order_seq')
           .eq('workbook_id', co.workbookId);
-        if (coSheetsRes.error?.message?.includes('change_order_seq')) {
-          coSheetsRes = await supabase
+        let coSheets: CoSheetOrderRow[] | null = (coFull.data as CoSheetOrderRow[] | null) ?? null;
+        if (coFull.error?.message?.includes('change_order_seq')) {
+          const coFallback = await supabase
             .from('material_sheets')
             .select('order_index')
             .eq('workbook_id', co.workbookId);
+          coSheets = (coFallback.data as CoSheetOrderRow[] | null) ?? null;
+        } else if (coFull.error) {
+          toast.error(coFull.error.message || 'Could not load change order sections');
+          return;
         }
-        const coSheets = coSheetsRes.data;
         const maxOrder = Math.max(-1, ...(coSheets || []).map((s: any) => Number(s.order_index) || 0));
         const maxSeq = Math.max(
           0,
