@@ -17,6 +17,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /** When DB has no `flatstock_width_inches` column, persist 41/42 per workbook in this browser only. */
 const FLATSTOCK_WIDTH_LS_PREFIX = 'mb_flatstock_width:';
+/** When DB has no `trim_flatstock_plan` column, persist per workbook in this browser only. */
+const TRIM_PLAN_LS_PREFIX = 'mb_trim_plan:';
 function readFlatstockLocalOverride(workbookId: string): number | null {
   try {
     const v = localStorage.getItem(FLATSTOCK_WIDTH_LS_PREFIX + workbookId);
@@ -43,6 +45,34 @@ function mergeFlatstockWidthForWorkbook(wb: any): any {
   const local = readFlatstockLocalOverride(wb.id);
   if (local === 41 || local === 42) return { ...wb, flatstock_width_inches: local };
   return wb;
+}
+function readTrimPlanLocalOverride(workbookId: string): unknown | null {
+  try {
+    const raw = localStorage.getItem(TRIM_PLAN_LS_PREFIX + workbookId);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+function writeTrimPlanLocalOverride(workbookId: string, plan: unknown | null) {
+  try {
+    const key = TRIM_PLAN_LS_PREFIX + workbookId;
+    if (plan == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(plan));
+  } catch {
+    /* ignore localStorage unavailability */
+  }
+}
+function mergeTrimPlanForWorkbook(wb: any): any {
+  if (!wb?.id) return wb;
+  if (wb.trim_flatstock_plan != null) return wb;
+  const localPlan = readTrimPlanLocalOverride(wb.id);
+  if (localPlan == null) return wb;
+  return { ...wb, trim_flatstock_plan: localPlan };
+}
+function mergeWorkbookLocalOverrides(wb: any): any {
+  return mergeTrimPlanForWorkbook(mergeFlatstockWidthForWorkbook(wb));
 }
 function isFlatstockColumnMissingError(message: string): boolean {
   const m = message.toLowerCase();
@@ -359,6 +389,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [savedTrimConfigs, setSavedTrimConfigs] = useState<{ id: string; name: string; drawing_segments?: unknown }[]>([]);
   const [loadingTrimConfigs, setLoadingTrimConfigs] = useState(false);
   const [linkingTrimConfigId, setLinkingTrimConfigId] = useState<string | null>(null);
+  const [trimConfigSearchQuery, setTrimConfigSearchQuery] = useState('');
   const [trimFlatstockConfigMap, setTrimFlatstockConfigMap] = useState<
     Record<string, { name: string; totalInches: number; stretchOutInches: number }>
   >({});
@@ -370,6 +401,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   useEffect(() => {
     if (!openLinkTrimForItem) return;
+    setTrimConfigSearchQuery('');
     setLoadingTrimConfigs(true);
     supabase
       .from('trim_saved_configs')
@@ -557,7 +589,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function saveTrimSlittingPlanFromDemands(
-    demands: { materialItemId: string; materialName: string; sku: string | null; stretchOutInches: number; qty: number }[],
+    demands: { materialItemId: string; materialName: string; sku: string | null; stretchOutInches: number; pieceLengthInches: number; qty: number }[],
     flatstockW: number
   ) {
     if (!workbook?.id) return;
@@ -575,14 +607,21 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (error) {
         const m = (error.message || '').toLowerCase();
         if (m.includes('trim_flatstock_plan') && (m.includes('schema cache') || m.includes('could not find'))) {
-          toast.error(
-            'Database missing material_workbooks.trim_flatstock_plan. Run supabase migration 20250345000000_add_trim_flatstock_plan_and_cut_state.sql (or supabase db push).'
+          writeTrimPlanLocalOverride(workbook.id, plan);
+          setWorkbook((prev) => (prev ? { ...prev, trim_flatstock_plan: plan } : null));
+          for (const key of workbookCache.keys()) {
+            if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+          }
+          toast.warning(
+            'Database missing material_workbooks.trim_flatstock_plan. Plan saved in this browser only. Run migration 20250345000000_add_trim_flatstock_plan_and_cut_state.sql (or supabase db push) for shared persistence.',
+            { duration: 12000 }
           );
         } else {
           toast.error(error.message || 'Failed to save slitting plan');
         }
         return;
       }
+      writeTrimPlanLocalOverride(workbook.id, null);
       setWorkbook((prev) => (prev ? { ...prev, trim_flatstock_plan: plan } : null));
       for (const key of workbookCache.keys()) {
         if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
@@ -606,34 +645,70 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     setSavingTrimCutListToNotes(true);
     try {
       const W = plan.flatstockWidthInches;
-      const instancesByItemId = new Map<string, string[]>();
-
+      const stripByInstanceId = new Map<string, (typeof plan.sheets)[number]['strips'][number]>();
       for (const sh of plan.sheets) {
-        let used = 0;
         for (const st of sh.strips) {
-          const cutoffBefore = W - used;
-          const cutoffBeforeRounded = Math.round(cutoffBefore * 100) / 100;
-          const line = `Sheet ${sh.sheetIndex}, strip #${st.cutOrder}: use ${cutoffBeforeRounded}" cutoff to cut ${st.stretchOutInches.toFixed(2)}" strip (10' long).`;
-          const arr = instancesByItemId.get(st.materialItemId) ?? [];
-          arr.push(line);
-          instancesByItemId.set(st.materialItemId, arr);
-          used += st.stretchOutInches;
+          if (st.stripInstanceId) stripByInstanceId.set(st.stripInstanceId, st);
+        }
+      }
+
+      const statsByItemId = new Map<
+        string,
+        {
+          stripsPlanned: number;
+          fullWidthCuts: number;
+          fromOtherTrimCutoffs: number;
+          fromOtherBySource: Map<string, number>;
+        }
+      >();
+      for (const sh of plan.sheets) {
+        for (const st of sh.strips) {
+          const current = statsByItemId.get(st.materialItemId) ?? {
+            stripsPlanned: 0,
+            fullWidthCuts: 0,
+            fromOtherTrimCutoffs: 0,
+            fromOtherBySource: new Map<string, number>(),
+          };
+          current.stripsPlanned += 1;
+          const isFromCutoff = !!st.usesCutoffFromStripInstanceId || st.role === 'from_cutoff';
+          if (!isFromCutoff) {
+            current.fullWidthCuts += 1;
+          } else {
+            const src = st.usesCutoffFromStripInstanceId
+              ? stripByInstanceId.get(st.usesCutoffFromStripInstanceId)
+              : null;
+            if (src && src.materialItemId !== st.materialItemId) {
+              current.fromOtherTrimCutoffs += 1;
+              const srcName = src.materialName || 'Unknown trim';
+              current.fromOtherBySource.set(srcName, (current.fromOtherBySource.get(srcName) ?? 0) + 1);
+            }
+          }
+          statsByItemId.set(st.materialItemId, current);
         }
       }
 
       for (const row of itemsWithTrim) {
         const item = row.item;
-        const instances = instancesByItemId.get(item.id) ?? [];
-        const stripCount = instances.length;
+        const stats = statsByItemId.get(item.id) ?? {
+          stripsPlanned: 0,
+          fullWidthCuts: 0,
+          fromOtherTrimCutoffs: 0,
+          fromOtherBySource: new Map<string, number>(),
+        };
         const skuPart = item.sku ? ` (${item.sku})` : '';
         const materialPart = `${item.material_name}${skuPart}`;
+        const sourceBreakdown = Array.from(stats.fromOtherBySource.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([name, count]) => `${name} (${count})`)
+          .join(', ');
 
         const blockLines = [
           FLATSTOCK_CUT_LIST_DELIM_START,
-          `Coil width: ${W}" (10' slitting strips)`,
+          `Coil width: ${W}" (${plan.stickLengthInches / 12}' slitting strips)`,
           `Material: ${materialPart}`,
-          `Planned strips: ${stripCount}`,
-          ...(instances.length ? ['Instances (cut order, widest-first):', ...instances.map((x) => `- ${x}`)] : ['Instances: none in current plan.']),
+          `Full-width cuts for this trim: ${stats.fullWidthCuts}`,
+          `From other trim cutoffs: ${stats.fromOtherTrimCutoffs}`,
+          `Cutoff sources: ${sourceBreakdown || 'None'}`,
           FLATSTOCK_CUT_LIST_DELIM_END,
         ];
         const newBlock = blockLines.join('\n');
@@ -656,18 +731,25 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             ...sh,
             items: sh.items.map((i) => {
               if (!itemsById.has(i.id)) return i;
-              const instances = instancesByItemId.get(i.id) ?? [];
-              const stripCount = instances.length;
+              const stats = statsByItemId.get(i.id) ?? {
+                stripsPlanned: 0,
+                fullWidthCuts: 0,
+                fromOtherTrimCutoffs: 0,
+                fromOtherBySource: new Map<string, number>(),
+              };
               const skuPart = i.sku ? ` (${i.sku})` : '';
               const materialPart = `${i.material_name}${skuPart}`;
+              const sourceBreakdown = Array.from(stats.fromOtherBySource.entries())
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([name, count]) => `${name} (${count})`)
+                .join(', ');
               const blockLines = [
                 FLATSTOCK_CUT_LIST_DELIM_START,
-                `Coil width: ${W}" (10' slitting strips)`,
+                `Coil width: ${W}" (${plan.stickLengthInches / 12}' slitting strips)`,
                 `Material: ${materialPart}`,
-                `Planned strips: ${stripCount}`,
-                ...(instances.length
-                  ? ['Instances (cut order, widest-first):', ...instances.map((x) => `- ${x}`)]
-                  : ['Instances: none in current plan.']),
+                `Full-width cuts for this trim: ${stats.fullWidthCuts}`,
+                `From other trim cutoffs: ${stats.fromOtherTrimCutoffs}`,
+                `Cutoff sources: ${sourceBreakdown || 'None'}`,
                 FLATSTOCK_CUT_LIST_DELIM_END,
               ];
               const newBlock = blockLines.join('\n');
@@ -923,6 +1005,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // When job or quote changes, reset active sheet so the first sheet in the workbook is shown
   useEffect(() => {
     setActiveSheetId('');
+    // Snapshot view is quote-specific; clear it when proposal changes so we don't keep showing
+    // a locked workbook from a different quote.
+    setSnapshotWorkbookId(null);
   }, [job.id, effectiveQuoteId ?? null]);
 
   // Load workbook once we know which quote to use.
@@ -1077,10 +1162,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const rawItemLength = (item.length != null && item.length !== '') ? String(item.length).trim() : null;
       const itemLengthIsUnit = rawItemLength && unitOnly.test(rawItemLength);
       const mergedLength = !itemLengthIsUnit && rawItemLength ? rawItemLength : catalogLength;
-      const lengthFeet = parseLengthToFeet(mergedLength ?? null);
-      const mult = (item.category === 'Metal' && lengthFeet != null && lengthFeet > 0)
-        ? lengthFeet * qty
-        : (lengthFeet != null && lengthFeet > 0 ? lengthFeet : qty);
+      const mult = getEffectiveMultiplierForExtended(item, mergedLength ?? null, qty);
 
       return {
         ...item,
@@ -1137,10 +1219,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           ? Math.round(((safePrice - safeCost) / safeCost) * 100 * 10000) / 10000
           : null;
         const qty = Number(item.quantity) || 1;
-        const backfillLengthFeet = parseLengthToFeet(item.length);
-        const backfillMult = (item.category === 'Metal' && backfillLengthFeet != null && backfillLengthFeet > 0)
-          ? backfillLengthFeet * qty
-          : (backfillLengthFeet != null && backfillLengthFeet > 0 ? backfillLengthFeet : qty);
+        const backfillMult = getEffectiveMultiplierForExtended(item, item.length, qty);
 
         await supabase
           .from('material_items')
@@ -1210,10 +1289,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         if (!cat || (cat.cost === 0 && cat.price === 0)) continue;
         const qty = Number(item.quantity) || 1;
         const refreshLength = item.length ?? cat.length ?? null;
-        const refreshLengthFeet = parseLengthToFeet(refreshLength);
-        const refreshMult = (item.category === 'Metal' && refreshLengthFeet != null && refreshLengthFeet > 0)
-          ? refreshLengthFeet * qty
-          : (refreshLengthFeet != null && refreshLengthFeet > 0 ? refreshLengthFeet : qty);
+        const refreshMult = getEffectiveMultiplierForExtended(item, refreshLength, qty);
         const safeCost = cat.cost > 0 ? Math.round(cat.cost * 10000) / 10000 : null;
         const safePrice = cat.price > 0 ? Math.round(cat.price * 10000) / 10000 : null;
         const safeMarkup = safeCost && safePrice && safeCost > 0
@@ -1293,7 +1369,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           !snapActive &&
           (cached.workbook as MaterialWorkbook)?.status === 'working';
         if (!emptyWorkingCached) {
-          setWorkbook(mergeFlatstockWidthForWorkbook(cached.workbook));
+          setWorkbook(mergeWorkbookLocalOverrides(cached.workbook));
           setAllCategories(cached.categories);
           const sheets = sheetsC;
           const current = activeSheetIdRef.current;
@@ -1322,6 +1398,25 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const wbs = allWorkbooks || [];
       const matchQuote = (w: (typeof wbs)[0]) =>
         quoteIdForLoad ? w.quote_id === quoteIdForLoad : !w.quote_id;
+      const selectedQuote = quoteIdForLoad
+        ? jobQuotes.find((q) => q.id === quoteIdForLoad) ?? null
+        : null;
+      const sameProposalQuoteIds = selectedQuote
+        ? new Set(
+            jobQuotes
+              .filter((q) =>
+                (selectedQuote.proposal_number != null &&
+                  q.proposal_number != null &&
+                  q.proposal_number === selectedQuote.proposal_number) ||
+                (selectedQuote.quote_number != null &&
+                  q.quote_number != null &&
+                  q.quote_number === selectedQuote.quote_number)
+              )
+              .map((q) => q.id)
+          )
+        : new Set<string>();
+      const matchProposalFamily = (w: (typeof wbs)[0]) =>
+        !!w.quote_id && sameProposalQuoteIds.has(w.quote_id);
 
       const lockedList = wbs
         .filter((w) => matchQuote(w) && w.status === 'locked')
@@ -1329,33 +1424,28 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const workingList = wbs
         .filter((w) => matchQuote(w) && w.status === 'working')
         .sort((a, b) => (b.version_number ?? 0) - (a.version_number ?? 0));
-
-      setLockedSnapshotsMeta(
-        lockedList.map((w) => ({
-          id: w.id,
-          version_number: w.version_number ?? 0,
-          locked_at: w.locked_at ?? null,
-        }))
-      );
       setHasWorkingWorkbookForQuote(workingList.length > 0);
 
       let workbookData: (typeof wbs)[0] | null = null;
       if (snapActive) {
-        workbookData = wbs.find((w) => w.id === snapActive && w.status === 'locked') ?? null;
+        // Snapshot must belong to the currently selected proposal scope.
+        workbookData = wbs.find((w) => w.id === snapActive && w.status === 'locked' && matchQuote(w)) ?? null;
         if (!workbookData) setSnapshotWorkbookId(null);
       }
       if (!workbookData) {
         workbookData = workingList[0] ?? lockedList[0] ?? null;
       }
       if (!workbookData && quoteIdForLoad) {
+        // Quote-scoped view: never fall back to another quote's workbook.
+        // Proposal-family fallback: allow workbooks tied to another quote row with the same proposal number.
+        // Legacy fallback: allow quote_id NULL workbooks for this job (older data before per-proposal linkage).
         workbookData =
           wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
-          wbs.find((w) => w.quote_id === quoteIdForLoad) ??
-          wbs.find((w) => w.status === 'working' && !w.quote_id) ??
-          wbs.find((w) => w.status === 'working') ??
           wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
+          wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
+          wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
+          wbs.find((w) => w.status === 'working' && !w.quote_id) ??
           wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
-          wbs.find((w) => w.status === 'locked') ??
           null;
       }
       if (!workbookData && !quoteIdForLoad) {
@@ -1365,6 +1455,45 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (!workbookData && wbs.length > 0) {
         workbookData = wbs[0];
       }
+
+      // When viewing a contract-frozen proposal and we're landing on a locked workbook,
+      // prefer the newest locked workbook that actually has material_items.
+      // This avoids showing an empty "latest locked" created during an earlier failed clone.
+      if (
+        loadDepth === 1 &&
+        quoteIdForLoad &&
+        !snapActive &&
+        workbookData?.status === 'locked' &&
+        lockedList.length > 1
+      ) {
+        for (const candidate of lockedList) {
+          const cnt = await countMaterialItemsForWorkbook(candidate.id);
+          if (cnt > 0) {
+            workbookData = candidate;
+            break;
+          }
+        }
+      }
+
+      // Keep the "contract snapshot toggle" consistent with the workbook we actually selected:
+      // if we picked a later non-empty locked candidate (or the user is in a snapshot view),
+      // ensure it's first in the meta list so the UI label matches the data shown.
+      const lockedListForMeta =
+        workbookData?.status === 'locked'
+          ? (() => {
+              const primary = lockedList.find((l) => l.id === workbookData.id);
+              if (!primary) return lockedList;
+              return [primary, ...lockedList.filter((l) => l.id !== primary.id)];
+            })()
+          : lockedList;
+
+      setLockedSnapshotsMeta(
+        lockedListForMeta.map((w) => ({
+          id: w.id,
+          version_number: w.version_number ?? 0,
+          locked_at: w.locked_at ?? null,
+        }))
+      );
 
       let sheetsData: any[] = [];
       let itemsData: any[] = [];
@@ -1517,7 +1646,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const categories = Array.from(uniqueCategories).sort();
       setAllCategories(categories);
 
-      const fullWorkbook = mergeFlatstockWidthForWorkbook({ ...workbookData, sheets });
+      const fullWorkbook = mergeWorkbookLocalOverrides({ ...workbookData, sheets });
       setWorkbook(fullWorkbook);
 
       // Write to cache so the next visit is instant
@@ -1610,9 +1739,19 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const locked = wbs
         .filter((w: any) => w.quote_id === qid && w.status === 'locked')
         .sort((a: any, b: any) => (b.version_number ?? 0) - (a.version_number ?? 0));
-      const source = locked[0];
+
+      // Prefer the newest locked workbook that actually has material items.
+      // Some environments can end up with an empty "latest locked" after a partial clone attempt.
+      let source: (typeof locked)[number] | null = null;
+      for (const candidate of locked) {
+        const cnt = await countMaterialItemsForWorkbook(candidate.id);
+        if (cnt > 0) {
+          source = candidate;
+          break;
+        }
+      }
       if (!source) {
-        if (!silent) toast.error('No locked workbook found for this proposal.');
+        if (!silent) toast.error('No locked workbook with materials found for this proposal.');
         return;
       }
       const { data: maxWb } = await supabase
@@ -1656,17 +1795,39 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           change_order_seq: (oldSheet as any).change_order_seq ?? null,
           compare_to_sheet_id: null,
         };
-        // Some deployments may not yet have the `category_order` column (or schema cache is stale).
-        // Only include it in the insert when present on the source sheet.
-        if ((oldSheet as any).category_order !== undefined) {
-          insPayload.category_order = (oldSheet as any).category_order ?? null;
-        }
 
-        const { data: newSheet, error: shErr } = await supabase
-          .from('material_sheets')
-          .insert(insPayload)
-          .select()
-          .single();
+        // Backward-compatible insert: some deployments may not yet have newer optional columns.
+        let newSheet: any = null;
+        let shErr: any = null;
+        let insertPayload: Record<string, unknown> = { ...insPayload };
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const res = await supabase.from('material_sheets').insert(insertPayload).select().single();
+          newSheet = res.data;
+          shErr = res.error;
+          if (!shErr && newSheet) break;
+          const msg = String(shErr?.message || '').toLowerCase();
+          if (msg.includes('change_order_seq')) {
+            const { change_order_seq: _drop, ...next } = insertPayload as Record<string, unknown> & { change_order_seq?: unknown };
+            insertPayload = next;
+            continue;
+          }
+          if (msg.includes('sheet_type')) {
+            const { sheet_type: _drop, ...next } = insertPayload as Record<string, unknown> & { sheet_type?: unknown };
+            insertPayload = next;
+            continue;
+          }
+          if (msg.includes('description')) {
+            const { description: _drop, ...next } = insertPayload as Record<string, unknown> & { description?: unknown };
+            insertPayload = next;
+            continue;
+          }
+          if (msg.includes('compare_to_sheet_id')) {
+            const { compare_to_sheet_id: _drop, ...next } = insertPayload as Record<string, unknown> & { compare_to_sheet_id?: unknown };
+            insertPayload = next;
+            continue;
+          }
+          break;
+        }
         if (shErr || !newSheet) throw new Error(shErr?.message ?? 'Failed to copy sheet');
         sheetIdMap[oldSheet.id] = newSheet.id;
 
@@ -1732,6 +1893,67 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       toast.error(e?.message || 'Failed to create working workbook.');
     } finally {
       setCreatingWorkingFromLocked(false);
+    }
+  }
+
+  /**
+   * Contract-frozen proposal should behave as a clean pair:
+   * exactly one locked contract snapshot + one working copy.
+   * Prunes extra workbook rows for this quote.
+   */
+  async function pruneContractWorkbookPair(quoteId: string, allForQuote?: any[]) {
+    const rows: any[] =
+      allForQuote ??
+      (
+        await supabase
+          .from('material_workbooks')
+          .select('*')
+          .eq('job_id', job.id)
+          .eq('quote_id', quoteId)
+      ).data ??
+      [];
+    if (rows.length <= 2) return;
+
+    const lockedRows = rows
+      .filter((w: any) => w.status === 'locked')
+      .sort((a: any, b: any) => (b.version_number ?? 0) - (a.version_number ?? 0));
+    const workingRows = rows
+      .filter((w: any) => w.status === 'working')
+      .sort((a: any, b: any) => (b.version_number ?? 0) - (a.version_number ?? 0));
+
+    let keepLocked: any | null = null;
+    for (const w of lockedRows) {
+      const cnt = await countMaterialItemsForWorkbook(w.id);
+      if (cnt > 0) {
+        keepLocked = w;
+        break;
+      }
+    }
+    if (!keepLocked) keepLocked = lockedRows[0] ?? null;
+
+    let keepWorking: any | null = null;
+    for (const w of workingRows) {
+      const cnt = await countMaterialItemsForWorkbook(w.id);
+      if (cnt > 0) {
+        keepWorking = w;
+        break;
+      }
+    }
+    if (!keepWorking) keepWorking = workingRows[0] ?? null;
+
+    const keepIds = new Set<string>([keepLocked?.id, keepWorking?.id].filter(Boolean) as string[]);
+    const deleteRows = rows.filter((w: any) => !keepIds.has(w.id));
+    for (const w of deleteRows) {
+      await deleteMaterialWorkbookCascade(w.id);
+      if (snapshotWorkbookId === w.id) {
+        setSnapshotWorkbookId(null);
+      }
+    }
+
+    if (deleteRows.length > 0) {
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
     }
   }
 
@@ -1834,6 +2056,15 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         if (hasLocked && !hasWorking) {
           await createWorkingFromLatestLocked({ silent: true });
         }
+
+        // Re-read and prune to a clean "locked + working" pair for this signed/sent quote.
+        const { data: allWbs3, error: e3 } = await supabase
+          .from('material_workbooks')
+          .select('*')
+          .eq('job_id', job.id)
+          .eq('quote_id', qid);
+        if (cancelled || e3) return;
+        await pruneContractWorkbookPair(qid, allWbs3 || []);
       } catch (e: any) {
         console.error('ensureContractWorkbookPair:', e);
         toast.error(e?.message || 'Could not prepare signed-contract workbooks.');
@@ -2143,9 +2374,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (cFt != null) pieceCost = cFt * lengthFeetMetal;
       if (pFt != null) piecePrice = pFt * lengthFeetMetal;
     } else {
-      const lengthFeet = parseLengthToFeet(item.length);
-      pieceCost = item.cost_per_unit != null ? ((lengthFeet != null && lengthFeet > 0) ? item.cost_per_unit * lengthFeet : item.cost_per_unit) : null;
-      piecePrice = item.price_per_unit != null ? ((lengthFeet != null && lengthFeet > 0) ? item.price_per_unit * lengthFeet : item.price_per_unit) : null;
+      // Non-metal rows are piece-priced: per-piece cost/price is the unit value, and totals are unit × quantity.
+      pieceCost = item.cost_per_unit != null ? item.cost_per_unit : null;
+      piecePrice = item.price_per_unit != null ? item.price_per_unit : null;
     }
     return {
       cost: pieceCost != null ? pieceCost * qty : (item.extended_cost ?? 0),
@@ -3701,23 +3932,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               </Button>
             </>
           )}
-          {showManualLockWorkbook && (
-            <Button
-              type="button"
-              onClick={() => lockCurrentWorkbookSnapshot()}
-              size="sm"
-              variant="outline"
-              disabled={lockingWorkbook}
-              className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-amber-50 border-2 border-amber-600 text-amber-950 hover:bg-amber-100 font-semibold shadow-sm"
-              title="Lock this copy as a read-only snapshot (unsigned proposals). Signed/sent contracts lock automatically."
-            >
-              {lockingWorkbook ? (
-                <><div className="w-2.5 h-2.5 border-2 border-amber-800 border-t-transparent rounded-full animate-spin mr-0.5" />Locking…</>
-              ) : (
-                <><Lock className="w-2.5 h-2.5 mr-0.5" />Lock snapshot</>
-              )}
-            </Button>
-          )}
           {!materialsWorkbookLocked && (
             <Button onClick={() => openAddDialog()} size="sm"
               className="h-6 text-[10px] gradient-primary whitespace-nowrap px-1.5">
@@ -3800,31 +4014,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         <>
           <div className="h-6 w-px bg-yellow-500/50 flex-shrink-0 hidden sm:block" aria-hidden />
           {contractWorkbookViewToggle}
-        </>
-      )}
-      {activeTab === 'manage' && !contractWorkbookViewToggle && showManualLockWorkbook && (
-        <>
-          <div className="h-6 w-px bg-yellow-500/50 flex-shrink-0 hidden sm:block" aria-hidden />
-          <Button
-            type="button"
-            onClick={() => lockCurrentWorkbookSnapshot()}
-            size="sm"
-            disabled={lockingWorkbook}
-            className="h-7 text-[11px] px-2 font-bold bg-amber-200 border-2 border-amber-600 text-amber-950 hover:bg-amber-300 shadow-md shrink-0"
-            title="Lock a read-only snapshot (unsigned proposals). Signed/sent contracts lock automatically."
-          >
-            {lockingWorkbook ? (
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 border-2 border-amber-900 border-t-transparent rounded-full animate-spin" />
-                Locking…
-              </span>
-            ) : (
-              <span className="flex items-center gap-1">
-                <Lock className="w-3.5 h-3.5" />
-                Lock snapshot
-              </span>
-            )}
-          </Button>
         </>
       )}
     </div>
@@ -4034,6 +4223,18 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                       <LockOpen className="w-3 h-3 mr-1" />
                       Back to working workbook
                     </Button>
+                    {!hasWorkingWorkbookForQuote && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 text-xs shrink-0 gradient-primary"
+                        disabled={creatingWorkingFromLocked}
+                        onClick={() => createWorkingFromLatestLocked()}
+                        title="Create an editable working copy from this locked snapshot"
+                      >
+                        {creatingWorkingFromLocked ? 'Creating…' : 'Create working copy'}
+                      </Button>
+                    )}
                   </div>
                 </>
               ) : (
@@ -4096,10 +4297,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
                 <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
                   <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b">
-                    <div className="flex items-center gap-1 px-1.5 py-0.5 overflow-x-auto">
-                      <span className="font-semibold text-slate-700 text-sm flex-shrink-0 whitespace-nowrap">
-                        {proposalLabel}
-                      </span>
+                    <div className="flex items-center gap-1 px-1.5 py-0.5 overflow-x-auto whitespace-nowrap">
                       {workbook.sheets.map((sheet, idx) => {
                         const isChangeOrder = sheet.sheet_type === 'change_order';
                         const prevIsProposal = idx > 0 && workbook.sheets[idx - 1].sheet_type !== 'change_order';
@@ -4110,18 +4308,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                               Change orders
                             </span>
                           )}
-                        <div className="relative group flex-shrink-0">
+                        <div className="relative group flex-shrink-0 pr-1 border-r border-slate-300/80 last:border-r-0">
                           <Button
                             variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
                             size="sm"
                             onClick={() => handleSheetChange(sheet.id)}
                             className={`flex items-center gap-1 min-w-[100px] justify-start font-semibold pr-6 text-xs h-7 ${activeSheetId === sheet.id ? 'bg-white shadow border border-primary' : 'hover:bg-white/50'}`}
                           >
-                            <FileSpreadsheet className="w-3 h-3" />
                             {sheet.sheet_name}
-                            <Badge variant="secondary" className="ml-auto text-[10px] px-1">
-                              {sheet.items.length}
-                            </Badge>
                           </Button>
                           {/* Delete Sheet Button - only show when workbook is working status */}
                           {workbook.status === 'working' && (
@@ -5079,8 +5273,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 Trim &amp; flatstock order
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Sheet count nests trim across the coil width (41&quot; or 42&quot;) on 10&apos; long sheets using stretch-out from the drawing
-                and each line&apos;s piece length. Set length on each trim line for accurate cuts along the sheet.
+                Counts are based on each trim piece: stretch-out determines strips across coil width, and trim piece length determines pieces cut per 10&apos; strip.
+                The final column shows how many 10&apos; flatstock sticks to order per line.
               </p>
             </CardHeader>
             <CardContent className="pt-4">
@@ -5195,18 +5389,32 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 const savedPlan = isTrimSlittingPlanV1(workbook.trim_flatstock_plan)
                   ? (workbook.trim_flatstock_plan as TrimSlittingPlanV1)
                   : null;
-                const stripsPlannedByItem = savedPlan
-                  ? new Map(savedPlan.perItem.map((p) => [p.materialItemId, p.stripsPlanned]))
-                  : null;
                 const totalFlatstockPiecesOptimized = savedPlan
-                  ? savedPlan.sheets.reduce((sum, sh) => sum + sh.strips.length, 0)
+                  ? savedPlan.totalSheets
                   : totalFlatstockPieces;
+                const hasExtendedPlanFields = savedPlan
+                  ? savedPlan.sheets.every((sh) => sh.strips.every((st: any) => Number.isFinite(st?.cutoffBeforeWidthInches) && Number.isFinite(st?.pieceLengthInches)))
+                  : false;
+                const stripByInstanceId = savedPlan
+                  ? (() => {
+                      const map = new Map<string, { sheetIndex: number; strip: any }>();
+                      for (const sh of savedPlan.sheets) {
+                        for (const st of sh.strips) {
+                          if (st?.stripInstanceId) {
+                            map.set(st.stripInstanceId, { sheetIndex: sh.sheetIndex, strip: st });
+                          }
+                        }
+                      }
+                      return map;
+                    })()
+                  : null;
                 const canEditTrimSlitting = workbook.status === 'working';
                 const demandsForPlan = itemsWithTrim.map(({ item, stretchOutInches }) => ({
                   materialItemId: item.id,
                   materialName: item.material_name,
                   sku: item.sku ?? null,
                   stretchOutInches,
+                  pieceLengthInches: trimPieceLengthInches(item),
                   qty: q(item.quantity),
                 }));
                 return (
@@ -5223,7 +5431,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                       </Button>
                       {savedPlan && (
                         <span className="text-xs text-muted-foreground">
-                          Saved plan: {savedPlan.totalSheets} sheet{savedPlan.totalSheets === 1 ? '' : 's'} (vs{' '}
+                          Saved layout: {savedPlan.totalSheets} sheet{savedPlan.totalSheets === 1 ? '' : 's'} (vs{' '}
                           {savedPlan.legacyIndependentSheetsSum} if each line counted alone)
                         </span>
                       )}
@@ -5247,8 +5455,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             <th className="text-left p-2 font-semibold">SKU</th>
                             <th className="text-left p-2 font-semibold">Trim drawing</th>
                             <th className="text-right p-2 font-semibold">Stretch-out</th>
-                            <th className="text-right p-2 font-semibold">Piece len</th>
-                            <th className="text-right p-2 font-semibold">Qty</th>
+                            <th className="text-right p-2 font-semibold">Trim piece len</th>
+                            <th className="text-right p-2 font-semibold">Trim pieces</th>
                             <th
                               className="text-right p-2 font-semibold"
                               title={`Trim strips that fit across a ${flatstockW}" wide coil`}
@@ -5257,9 +5465,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             </th>
                             <th
                               className="text-right p-2 font-semibold"
-                              title={`Count of ${FLATSTOCK_STICK_LENGTH_INCHES / 12}' × ${flatstockW}" flatstock pieces to order for this line`}
+                              title={`How many ${FLATSTOCK_STICK_LENGTH_INCHES / 12}' × ${flatstockW}" flatstock sticks to order for this trim line`}
                             >
-                              Flatstock pieces
+                              Order sticks
                               <span className="block text-[10px] font-normal text-muted-foreground normal-case">
                                 ({FLATSTOCK_STICK_LENGTH_INCHES / 12}&apos; × {flatstockW}&quot;)
                               </span>
@@ -5299,9 +5507,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                 </td>
                                 <td
                                   className="p-2 text-right font-semibold tabular-nums text-base"
-                                  title={`Plan for ${stripsPlannedByItem?.get(item.id) ?? nest.sticksNeeded} strip(s) (10' long)`}
+                                  title={`${qty} trim piece(s) at ${pieceLenIn.toFixed(2)}", ${nest.stripsAcross} strip(s) across, ${nest.piecesAlongStick} piece(s) per strip`}
                                 >
-                                  {stripsPlannedByItem?.get(item.id) ?? nest.sticksNeeded}
+                                  {nest.sticksNeeded}
                                 </td>
                                 <td className="p-2 align-top">
                                   <Select
@@ -5342,7 +5550,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                         </tfoot>
                       </table>
                     </div>
-                    {savedPlan && savedPlan.sheets.length > 0 && (
+                    {savedPlan && savedPlan.sheets.length > 0 && hasExtendedPlanFields && (
                       <div className="rounded-md border bg-muted/20 p-3 space-y-2">
                         <p className="text-sm font-semibold">Width slitting cut list (full {savedPlan.stickLengthInches / 12}&apos; strips)</p>
                         <p className="text-xs text-muted-foreground">
@@ -5350,7 +5558,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                         </p>
                         <div className="space-y-1">
                           {savedPlan.sheets.map((sh) => (
-                            <Collapsible key={sh.sheetIndex}>
+                            <Collapsible key={sh.sheetIndex} defaultOpen={sh.sheetIndex === 1}>
                               <CollapsibleTrigger className="flex w-full items-center gap-2 text-left text-sm font-medium py-1 hover:bg-muted/50 rounded px-1">
                                 <ChevronDown className="h-4 w-4 shrink-0 transition-transform [[data-state=open]_&]:rotate-180" />
                                 Sheet {sh.sheetIndex} — {sh.strips.length} strip{sh.strips.length === 1 ? '' : 's'}
@@ -5359,24 +5567,45 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                   : ''}
                               </CollapsibleTrigger>
                               <CollapsibleContent className="pl-6 pb-2 text-sm space-y-1">
-                                {sh.strips.map((st) => (
-                                  <div key={`${sh.sheetIndex}-${st.cutOrder}-${st.materialItemId}`}>
-                                    <span className="tabular-nums text-muted-foreground mr-2">#{st.cutOrder}</span>
-                                    {st.materialName}
-                                    {st.sku ? (
-                                      <span className="font-mono text-xs ml-1">({st.sku})</span>
-                                    ) : null}
-                                    {' — '}
-                                    {st.stretchOutInches.toFixed(2)}&quot;
-                                    {st.stretchWiderThanCoil ? (
-                                      <span className="text-amber-700 text-xs ml-1">(wider than coil — verify)</span>
-                                    ) : null}
-                                  </div>
-                                ))}
+                                {sh.strips.map((st: any) => {
+                                  const parent = st?.usesCutoffFromStripInstanceId && stripByInstanceId
+                                    ? stripByInstanceId.get(st.usesCutoffFromStripInstanceId) ?? null
+                                    : null;
+
+                                  return (
+                                    <div key={`${sh.sheetIndex}-${st.cutOrder}-${st.materialItemId}`}>
+                                      <span className="tabular-nums text-muted-foreground mr-2">#{st.cutOrder}</span>
+                                      {st.materialName}
+                                      {st.sku ? (
+                                        <span className="font-mono text-xs ml-1">({st.sku})</span>
+                                      ) : null}
+                                      {' — '}
+                                      {st.stretchOutInches.toFixed(2)}&quot; strip
+                                      <span className="block text-[11px] text-muted-foreground">
+                                        Remainder consumed: {Math.round(st.cutoffBeforeWidthInches * 100) / 100}&quot; cutoff; cut length {st.pieceLengthInches.toFixed(2)}&quot;
+                                      </span>
+                                      {parent ? (
+                                        <span className="block text-[11px] text-muted-foreground">
+                                          Derived from cutoff after strip #{parent.strip.cutOrder} ({parent.strip.materialName})
+                                        </span>
+                                      ) : (
+                                        <span className="block text-[11px] text-muted-foreground">(primary cut: creates the remainder for later strips)</span>
+                                      )}
+                                      {st.stretchWiderThanCoil ? (
+                                        <span className="text-amber-700 text-xs ml-1">(wider than coil — verify)</span>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
                               </CollapsibleContent>
                             </Collapsible>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {savedPlan && savedPlan.sheets.length > 0 && !hasExtendedPlanFields && (
+                      <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">
+                        Saved plan is from an older format. Click <b>Generate &amp; save slitting plan</b> again to regenerate cutoff cut list.
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground">
@@ -5392,13 +5621,25 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-2">
-          <MaterialWorkbookManager jobId={job.id} quoteId={effectiveQuoteId ?? undefined} onWorkbookCreated={loadWorkbook} />
+          <MaterialWorkbookManager
+            jobId={job.id}
+            quoteId={effectiveQuoteId ?? undefined}
+            onWorkbookCreated={loadWorkbook}
+            onWorkbookView={(wb) => {
+              setActiveTab('manage');
+              if (wb.status === 'locked') {
+                void openLockedSnapshotView(wb.id);
+              } else {
+                void exitLockedSnapshotView();
+              }
+            }}
+          />
         </TabsContent>
       </Tabs>
 
       {/* Add Material Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[96vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Add Material to {activeSheet?.sheet_name}</span>
@@ -5534,7 +5775,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 </div>
 
                 {/* Search Results */}
-                <div className="max-h-64 overflow-y-auto border rounded-lg bg-white">
+                <div className="max-h-[60vh] overflow-y-auto border rounded-lg bg-white">
                   {(() => {
                     const filtered = catalogMaterials.filter(material => {
                       const matchesSearch = catalogSearchQuery === '' || 
@@ -6605,14 +6846,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
       {/* Link trim drawing to this material item */}
       <Dialog open={!!openLinkTrimForItem} onOpenChange={(open) => !open && setOpenLinkTrimForItem(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="w-5 h-5" />
               Trim drawing for &quot;{openLinkTrimForItem?.materialName}&quot;
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto pr-1">
             {openLinkTrimForItem?.currentTrimConfigId && (
               <Button
                 type="button"
@@ -6626,13 +6867,28 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               </Button>
             )}
             <p className="text-sm text-muted-foreground">Link a saved trim so the shop can see the drawing when pulling this item:</p>
+            <div className="relative">
+              <Input
+                value={trimConfigSearchQuery}
+                onChange={(e) => setTrimConfigSearchQuery(e.target.value)}
+                placeholder="Search saved trims by name..."
+                className="pl-9"
+              />
+              <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            </div>
             {loadingTrimConfigs ? (
               <div className="py-6 text-center text-sm text-muted-foreground">Loading saved trims…</div>
             ) : savedTrimConfigs.length === 0 ? (
               <p className="text-sm text-muted-foreground">No saved trim configurations yet. Draw one below, then come back and link it.</p>
             ) : (
-              <div className="max-h-48 overflow-y-auto space-y-2">
-                {savedTrimConfigs.map((config) => (
+              <div className="max-h-[55vh] overflow-y-auto space-y-2">
+                {savedTrimConfigs
+                  .filter((config) =>
+                    trimConfigSearchQuery.trim() === ''
+                      ? true
+                      : (config.name || '').toLowerCase().includes(trimConfigSearchQuery.toLowerCase())
+                  )
+                  .map((config) => (
                   <div key={config.id} className="flex items-center justify-between gap-2 rounded border p-2">
                     <span className="font-medium text-sm truncate">{config.name}</span>
                     <Button
@@ -6646,6 +6902,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                     </Button>
                   </div>
                 ))}
+                {savedTrimConfigs.length > 0 &&
+                  savedTrimConfigs.filter((config) =>
+                    trimConfigSearchQuery.trim() === ''
+                      ? true
+                      : (config.name || '').toLowerCase().includes(trimConfigSearchQuery.toLowerCase())
+                  ).length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">No trims match your search.</div>
+                  )}
               </div>
             )}
             <div className="pt-2 border-t">

@@ -1837,11 +1837,20 @@ function JobDetailView({
                               const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === sheet.id);
                               const sheetMaterials = sheet._computedMaterials ?? 0;
                               const sheetLabor = sheet._computedLabor ?? 0;
+                              const sheetTotal = sheet._computedTotal ?? (sheetMaterials + sheetLabor);
+                              const isOptional = sheet.is_option === true || sheet.is_option === 'true' || sheet.is_option === 1;
                               const showPrice = showPriceForSection(sheet.id);
                               return (
                                 <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
                                   <div className="min-w-0 flex-1">
-                                    <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                                      {isOptional && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                                          Optional
+                                        </span>
+                                      )}
+                                    </div>
                                     {sheet.description && (
                                       <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{sheet.description}</p>
                                     )}
@@ -1863,6 +1872,14 @@ function JobDetailView({
                                         <>
                                           <p className="text-sm text-slate-500 mt-2">Labor</p>
                                           <p className="text-base font-bold text-amber-700">${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                        </>
+                                      )}
+                                      {isOptional && sheetTotal > 0 && (
+                                        <>
+                                          <p className="text-[11px] text-slate-500 mt-2">Section total</p>
+                                          <p className="text-sm font-bold text-emerald-700">
+                                            ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          </p>
                                         </>
                                       )}
                                     </div>

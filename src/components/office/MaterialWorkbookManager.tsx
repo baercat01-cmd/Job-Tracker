@@ -41,9 +41,10 @@ interface MaterialWorkbookManagerProps {
   jobId: string;
   quoteId?: string;
   onWorkbookCreated?: () => void;
+  onWorkbookView?: (workbook: MaterialWorkbook) => void;
 }
 
-export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: MaterialWorkbookManagerProps) {
+export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated, onWorkbookView }: MaterialWorkbookManagerProps) {
   const { profile } = useAuth();
   const [workbooks, setWorkbooks] = useState<MaterialWorkbook[]>([]);
   const [loading, setLoading] = useState(true);
@@ -427,13 +428,25 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
   }
 
   async function viewWorkbook(workbook: MaterialWorkbook) {
-    toast.info('Opening workbook in new view...');
-    // Navigate to detailed workbook view
+    if (onWorkbookView) {
+      onWorkbookView(workbook);
+      return;
+    }
+    toast.info('Opening workbook...');
+    // Legacy fallback navigation
     window.location.href = `/office/workbooks/${workbook.id}`;
   }
 
-  const workingVersion = workbooks.find(w => w.status === 'working');
-  const lockedVersions = workbooks.filter(w => w.status === 'locked');
+  const workingVersions = workbooks
+    .filter((w) => w.status === 'working')
+    .sort((a, b) => (b.version_number ?? 0) - (a.version_number ?? 0));
+  const lockedVersions = workbooks
+    .filter((w) => w.status === 'locked')
+    .sort((a, b) => (b.version_number ?? 0) - (a.version_number ?? 0));
+  const activeWorkingVersion = workingVersions[0] ?? null;
+  const proposalLockedVersion = lockedVersions[0] ?? null;
+  const hiddenWorkingCount = Math.max(0, workingVersions.length - (activeWorkingVersion ? 1 : 0));
+  const hiddenLockedCount = Math.max(0, lockedVersions.length - (proposalLockedVersion ? 1 : 0));
 
   if (loading) {
     return (
@@ -485,115 +498,127 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
 
       {/* Main Content */}
       <div className="space-y-4">
-        {/* Working Version */}
-        {workingVersion && (
-          <Card className="border-2 border-green-500">
-            <CardHeader className="bg-green-50">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col gap-1">
-                  <CardTitle className="flex items-center gap-2">
-                    <LockOpen className="w-5 h-5 text-green-600" />
-                    Working Version (v{workingVersion.version_number})
-                  </CardTitle>
-                  {quote && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                      <span className="font-semibold text-blue-900">
-                        Proposal #{quote.proposal_number || quote.quote_number}
-                      </span>
-                      <Badge variant="outline" className="bg-blue-100 text-blue-800 text-xs">
-                        Current Proposal
-                      </Badge>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => viewWorkbook(workingVersion)}
-                  >
-                    <Eye className="w-4 h-4 mr-1" />
-                    View
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => deleteWorkbook(workingVersion.id)}
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="space-y-3">
-                <div className="flex items-center gap-4 text-sm flex-wrap">
-                  <div>
-                    <span className="text-muted-foreground">Created:</span>{' '}
-                    {new Date(workingVersion.created_at).toLocaleDateString()}
-                  </div>
-                  <Badge variant="outline" className="bg-green-100 text-green-800">
-                    Quoting Mode - Editable
-                  </Badge>
-                </div>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-sm text-amber-900">
-                    <strong>📝 Note:</strong> Changes to this workbook only affect the current proposal version. 
-                    Previous proposals remain unchanged with their original materials and pricing.
-                  </p>
-                </div>
-                {job?.zoho_quote_number && (
-                  <a
-                    href={`https://books.zoho.com/app/60007115224#/quotes/${job.zoho_quote_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold"
-                  >
-                    <FileSpreadsheet className="w-4 h-4" />
-                    Quote: {job.zoho_quote_number}
-                  </a>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+        {(hiddenWorkingCount > 0 || hiddenLockedCount > 0) && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Showing the active workbook pair only (1 working + 1 locked snapshot).
+            {hiddenWorkingCount > 0 ? ` Hidden working versions: ${hiddenWorkingCount}.` : ''}
+            {hiddenLockedCount > 0 ? ` Hidden locked versions: ${hiddenLockedCount}.` : ''}
+          </div>
         )}
 
-        {/* Locked Versions */}
-        {lockedVersions.length > 0 && (
+        {/* Working Copy */}
+        {activeWorkingVersion && (
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Previous Versions</h3>
-            {lockedVersions.map((version) => (
-              <Card key={version.id}>
-                <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Lock className="w-4 h-4 text-muted-foreground" />
-                      Version {version.version_number} (Locked)
+            <h3 className="text-lg font-semibold">Working Copy</h3>
+            <Card className="border-2 border-green-500">
+              <CardHeader className="bg-green-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-1">
+                    <CardTitle className="flex items-center gap-2">
+                      <LockOpen className="w-5 h-5 text-green-600" />
+                      Working Version (v{activeWorkingVersion.version_number})
                     </CardTitle>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => viewWorkbook(version)}
-                      >
-                        <Eye className="w-4 h-4 mr-1" />
-                        View
-                      </Button>
-                    </div>
+                    {quote && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                        <span className="font-semibold text-blue-900">
+                          Proposal #{quote.proposal_number || quote.quote_number}
+                        </span>
+                        <Badge variant="outline" className="bg-blue-100 text-blue-800 text-xs">
+                          Current Proposal
+                        </Badge>
+                        <Badge variant="outline" className="bg-green-100 text-green-800 text-xs">
+                          Active
+                        </Badge>
+                      </div>
+                    )}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => viewWorkbook(activeWorkingVersion)}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      View
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => deleteWorkbook(activeWorkingVersion.id)}
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4 text-sm flex-wrap">
                     <div>
-                      Locked: {version.locked_at ? new Date(version.locked_at).toLocaleDateString() : 'Unknown'}
+                      <span className="text-muted-foreground">Created:</span>{' '}
+                      {new Date(activeWorkingVersion.created_at).toLocaleDateString()}
                     </div>
+                    <Badge variant="outline" className="bg-green-100 text-green-800">
+                      Quoting Mode - Editable
+                    </Badge>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-sm text-amber-900">
+                      <strong>📝 Note:</strong> This is the editable copy for this proposal. The locked snapshot is
+                      the pricing record used for the proposal.
+                    </p>
+                  </div>
+                  {job?.zoho_quote_number && (
+                    <a
+                      href={`https://books.zoho.com/app/60007115224#/quotes/${job.zoho_quote_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      Quote: {job.zoho_quote_number}
+                    </a>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Locked Proposal Snapshot */}
+        {proposalLockedVersion && (
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">Locked Proposal Snapshot</h3>
+            <Card>
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Lock className="w-4 h-4 text-muted-foreground" />
+                    Version {proposalLockedVersion.version_number} (Locked)
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => viewWorkbook(proposalLockedVersion)}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      View
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <div>
+                    Locked: {proposalLockedVersion.locked_at ? new Date(proposalLockedVersion.locked_at).toLocaleDateString() : 'Unknown'}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 

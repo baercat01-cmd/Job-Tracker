@@ -11,16 +11,28 @@ export type TrimSlittingDemand = {
   materialName: string;
   sku?: string | null;
   stretchOutInches: number;
+  /** Cut length for the resulting trim piece (used for shop instructions). */
+  pieceLengthInches: number;
   qty: number;
 };
 
 export type TrimSlittingStrip = {
+  /** Unique id for this specific strip instance within this plan. */
+  stripInstanceId: string;
   materialItemId: string;
   materialName: string;
   sku?: string | null;
   stretchOutInches: number;
-  /** 1-based; cut widest first (descending stretch-out). */
+  /** 1-based; cut order for this sheet (widest groups first). */
   cutOrder: number;
+  /** Width leftover before this strip is cut (used for cutoff→next-trim mapping). */
+  cutoffBeforeWidthInches: number;
+  /** For strips that consume a remainder produced by earlier cuts on the same sheet. */
+  usesCutoffFromStripInstanceId?: string | null;
+  /** Primary strips vs remainder-derived strips. */
+  role?: 'primary' | 'from_cutoff';
+  /** Cut length for the resulting trim piece (used for shop instructions). */
+  pieceLengthInches: number;
   stretchWiderThanCoil?: boolean;
 };
 
@@ -33,6 +45,7 @@ export type TrimSlittingSheet = {
 
 export type TrimSlittingPerItem = {
   materialItemId: string;
+  /** Number of full 10' slit strips planned for this trim item (each strip maps to one strip instance on some sheet). */
   stripsPlanned: number;
   qtyDemand: number;
 };
@@ -40,6 +53,11 @@ export type TrimSlittingPerItem = {
 export type TrimSlittingPlanV1 = {
   version: 1;
   flatstockWidthInches: number;
+  /**
+   * Width-only slitting layout model.
+   * - `stickLengthInches` is informational (used to label strip length for shop instructions).
+   * - The optimizer is 1D in width: sheet math is driven by width packing only.
+   */
   stickLengthInches: number;
   generatedAt: string;
   sheets: TrimSlittingSheet[];
@@ -51,28 +69,29 @@ export type TrimSlittingPlanV1 = {
 
 type RowDemand = TrimSlittingDemand & { qtyLeft: number };
 
-function sortStripsForCutOrder(
-  raw: Omit<TrimSlittingStrip, 'cutOrder'>[]
-): TrimSlittingStrip[] {
-  const sorted = [...raw].sort((a, b) => {
-    if (b.stretchOutInches !== a.stretchOutInches) {
-      return b.stretchOutInches - a.stretchOutInches;
-    }
-    return a.materialName.localeCompare(b.materialName);
-  });
-  return sorted.map((s, i) => ({ ...s, cutOrder: i + 1 }));
-}
-
-function stripFrom(
-  d: TrimSlittingDemand,
-  wider?: boolean
-): Omit<TrimSlittingStrip, 'cutOrder'> {
+function makeStripInstance(params: {
+  stripInstanceId: string;
+  demand: TrimSlittingDemand;
+  cutOrder: number;
+  cutoffBeforeWidthInches: number;
+  usesCutoffFromStripInstanceId?: string | null;
+  role?: 'primary' | 'from_cutoff';
+  stretchWiderThanCoil?: boolean;
+}): TrimSlittingStrip {
+  const { stripInstanceId, demand, cutOrder, cutoffBeforeWidthInches, usesCutoffFromStripInstanceId, role, stretchWiderThanCoil } =
+    params;
   return {
-    materialItemId: d.materialItemId,
-    materialName: d.materialName,
-    sku: d.sku,
-    stretchOutInches: d.stretchOutInches,
-    stretchWiderThanCoil: wider,
+    stripInstanceId,
+    materialItemId: demand.materialItemId,
+    materialName: demand.materialName,
+    sku: demand.sku,
+    stretchOutInches: demand.stretchOutInches,
+    cutOrder,
+    cutoffBeforeWidthInches,
+    usesCutoffFromStripInstanceId,
+    role,
+    pieceLengthInches: demand.pieceLengthInches,
+    stretchWiderThanCoil,
   };
 }
 
@@ -136,72 +155,132 @@ function fillRemainderStep(rows: RowDemand[], R: number): FillStep | null {
   return null;
 }
 
-function applyStep(
-  step: FillStep,
-  raw: Omit<TrimSlittingStrip, 'cutOrder'>[],
-  byId: Map<string, RowDemand>
-): number {
-  let deltaW = 0;
-  if (step.kind === 'multi') {
-    const d = byId.get(step.id)!;
-    for (let i = 0; i < step.count; i++) {
-      raw.push(stripFrom(d));
-    }
-    d.qtyLeft -= step.count;
-    deltaW = step.count * d.stretchOutInches;
-  } else if (step.kind === 'pair') {
-    const da = byId.get(step.a)!;
-    const db = byId.get(step.b)!;
-    raw.push(stripFrom(da));
-    raw.push(stripFrom(db));
-    da.qtyLeft -= 1;
-    db.qtyLeft -= 1;
-    deltaW = da.stretchOutInches + db.stretchOutInches;
-  } else {
-    const d = byId.get(step.id)!;
-    raw.push(stripFrom(d));
-    d.qtyLeft -= 1;
-    deltaW = d.stretchOutInches;
-  }
-  return deltaW;
-}
-
-function buildOneNormalSheet(W: number, rows: RowDemand[], byId: Map<string, RowDemand>): TrimSlittingSheet | null {
+function buildOneNormalSheet(
+  W: number,
+  rows: RowDemand[],
+  byId: Map<string, RowDemand>,
+  nextStripInstanceId: () => string
+): TrimSlittingSheet | null {
   const eligible = rows.filter((d) => d.qtyLeft > 0 && d.stretchOutInches <= W);
   if (eligible.length === 0) return null;
 
-  const raw: Omit<TrimSlittingStrip, 'cutOrder'>[] = [];
+  let usedWidthInches = 0;
+  const strips: TrimSlittingStrip[] = [];
+  let lastStripInstanceId: string | null = null;
+  let cutOrder = 1;
 
-  const sorted = [...eligible].sort((a, b) => {
-    if (b.stretchOutInches !== a.stretchOutInches) {
-      return b.stretchOutInches - a.stretchOutInches;
-    }
+  // Primary stage: place the widest feasible strip as many times as possible.
+  const first = [...eligible].sort((a, b) => {
+    if (b.stretchOutInches !== a.stretchOutInches) return b.stretchOutInches - a.stretchOutInches;
     return a.materialName.localeCompare(b.materialName);
-  });
-  const first = sorted[0];
+  })[0];
+
   const k0 = Math.min(Math.floor(W / first.stretchOutInches), first.qtyLeft);
   if (k0 <= 0) return null;
 
   for (let i = 0; i < k0; i++) {
-    raw.push(stripFrom(first));
+    const cutoffBefore = Math.round((W - usedWidthInches) * 10000) / 10000;
+    const stripInstanceId = nextStripInstanceId();
+    strips.push(
+      makeStripInstance({
+        stripInstanceId,
+        demand: first,
+        cutOrder,
+        cutoffBeforeWidthInches: cutoffBefore,
+        usesCutoffFromStripInstanceId: lastStripInstanceId,
+        role: 'primary',
+      })
+    );
+    lastStripInstanceId = stripInstanceId;
+    cutOrder += 1;
+    usedWidthInches += first.stretchOutInches;
+    first.qtyLeft -= 1;
   }
-  first.qtyLeft -= k0;
-  let R = W - k0 * first.stretchOutInches;
 
-  while (R > 0) {
+  let R = Math.max(0, W - usedWidthInches);
+  // Remainder stage: prefer multi (same trim), then pair (two different trims), then single.
+  while (R > 1e-9) {
     const step = fillRemainderStep(rows, R);
     if (!step) break;
-    const dw = applyStep(step, raw, byId);
-    R -= dw;
+
+    if (step.kind === 'multi') {
+      const d = byId.get(step.id)!;
+      for (let i = 0; i < step.count; i++) {
+        const cutoffBefore = Math.round((W - usedWidthInches) * 10000) / 10000;
+        const stripInstanceId = nextStripInstanceId();
+        strips.push(
+          makeStripInstance({
+            stripInstanceId,
+            demand: d,
+            cutOrder,
+            cutoffBeforeWidthInches: cutoffBefore,
+            usesCutoffFromStripInstanceId: lastStripInstanceId,
+            role: 'from_cutoff',
+          })
+        );
+        lastStripInstanceId = stripInstanceId;
+        cutOrder += 1;
+        usedWidthInches += d.stretchOutInches;
+        d.qtyLeft -= 1;
+      }
+    } else if (step.kind === 'pair') {
+      const da = byId.get(step.a)!;
+      const db = byId.get(step.b)!;
+      // Place the wider one first.
+      const firstPair = da.stretchOutInches >= db.stretchOutInches ? da : db;
+      const secondPair = firstPair === da ? db : da;
+
+      for (const d of [firstPair, secondPair]) {
+        if (d.qtyLeft <= 0) continue;
+        if (d.stretchOutInches > Math.max(0, W - usedWidthInches)) break;
+        const cutoffBefore = Math.round((W - usedWidthInches) * 10000) / 10000;
+        const stripInstanceId = nextStripInstanceId();
+        strips.push(
+          makeStripInstance({
+            stripInstanceId,
+            demand: d,
+            cutOrder,
+            cutoffBeforeWidthInches: cutoffBefore,
+            usesCutoffFromStripInstanceId: lastStripInstanceId,
+            role: 'from_cutoff',
+          })
+        );
+        lastStripInstanceId = stripInstanceId;
+        cutOrder += 1;
+        usedWidthInches += d.stretchOutInches;
+        d.qtyLeft -= 1;
+      }
+    } else {
+      const d = byId.get(step.id)!;
+      if (d.qtyLeft > 0 && d.stretchOutInches <= Math.max(0, W - usedWidthInches)) {
+        const cutoffBefore = Math.round((W - usedWidthInches) * 10000) / 10000;
+        const stripInstanceId = nextStripInstanceId();
+        strips.push(
+          makeStripInstance({
+            stripInstanceId,
+            demand: d,
+            cutOrder,
+            cutoffBeforeWidthInches: cutoffBefore,
+            usesCutoffFromStripInstanceId: lastStripInstanceId,
+            role: 'from_cutoff',
+          })
+        );
+        lastStripInstanceId = stripInstanceId;
+        cutOrder += 1;
+        usedWidthInches += d.stretchOutInches;
+        d.qtyLeft -= 1;
+      }
+    }
+
+    R = Math.max(0, W - usedWidthInches);
   }
 
-  const strips = sortStripsForCutOrder(raw);
-  const used = strips.reduce((s, x) => s + x.stretchOutInches, 0);
+  const totalUsed = Math.round(usedWidthInches * 10000) / 10000;
   return {
     sheetIndex: 0,
     strips,
-    usedWidthInches: Math.round(used * 10000) / 10000,
-    scrapWidthInches: Math.round((W - used) * 10000) / 10000,
+    usedWidthInches: totalUsed,
+    scrapWidthInches: Math.round((W - totalUsed) * 10000) / 10000,
   };
 }
 
@@ -242,6 +321,7 @@ export function buildTrimSlittingPlan(
       ...d,
       qty: Math.max(0, Math.floor(Number(d.qty) || 0)),
       stretchOutInches: Number(d.stretchOutInches) || 0,
+      pieceLengthInches: Number(d.pieceLengthInches) || 0,
     }))
     .filter((d) => d.qty > 0 && d.stretchOutInches > 0);
 
@@ -267,15 +347,28 @@ export function buildTrimSlittingPlan(
   const rows: RowDemand[] = cleaned.map((d) => ({ ...d, qtyLeft: d.qty }));
   const byId = new Map(rows.map((r) => [r.materialItemId, r]));
   const sheets: TrimSlittingSheet[] = [];
+  let stripInstanceSeq = 0;
+  const nextStripInstanceId = () => `strip-${sheets.length}-${++stripInstanceSeq}`;
 
   // Strips wider than coil: one strip per sheet until qty satisfied
   const wideRows = rows.filter((r) => r.stretchOutInches > W);
   for (const wr of wideRows) {
     while (wr.qtyLeft > 0) {
+      const cutoffBeforeWidthInches = Math.round(W * 10000) / 10000;
       sheets.push({
         sheetIndex: sheets.length + 1,
-        strips: sortStripsForCutOrder([stripFrom(wr, true)]),
-        usedWidthInches: Math.min(wr.stretchOutInches, W),
+        strips: [
+          makeStripInstance({
+            stripInstanceId: nextStripInstanceId(),
+            demand: wr,
+            cutOrder: 1,
+            cutoffBeforeWidthInches,
+            usesCutoffFromStripInstanceId: null,
+            role: 'primary',
+            stretchWiderThanCoil: true,
+          }),
+        ],
+        usedWidthInches: Math.round(Math.min(wr.stretchOutInches, W) * 10000) / 10000,
         scrapWidthInches: Math.max(0, Math.round((W - wr.stretchOutInches) * 10000) / 10000),
       });
       wr.qtyLeft -= 1;
@@ -285,7 +378,7 @@ export function buildTrimSlittingPlan(
   let guard = 0;
   while (rows.some((r) => r.qtyLeft > 0 && r.stretchOutInches <= W)) {
     if (++guard > 10000) break;
-    const sheet = buildOneNormalSheet(W, rows, byId);
+    const sheet = buildOneNormalSheet(W, rows, byId, nextStripInstanceId);
     if (!sheet || sheet.strips.length === 0) break;
     sheet.sheetIndex = sheets.length + 1;
     sheets.push(sheet);

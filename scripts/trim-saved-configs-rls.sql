@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS public.trim_saved_configs (
   drawing_segments jsonb,
   material_type_id uuid,
   material_type_name text,
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  is_custom_trim boolean NOT NULL DEFAULT false
 );
 
 -- =============================================================================

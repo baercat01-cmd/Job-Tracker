@@ -286,6 +286,7 @@ function SortableRow({
       
       // Total labor for display (legacy sheet labor + sheet labor line items + non-taxable subcontractor)
       const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsNonTaxableTotal;
+      const sectionTotal = sheetFinalPrice + totalLaborCost;
 
       return (
         <Collapsible className="border rounded bg-white py-1 px-2">
@@ -520,6 +521,14 @@ function SortableRow({
                 <>
                   <p className="text-sm text-slate-500 mt-2">Labor</p>
                   <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </>
+              )}
+              {(sheet as any).isOptional && (
+                <>
+                  <p className="text-[11px] text-slate-500 mt-2">Section total</p>
+                  <p className="text-sm font-bold text-amber-700">
+                    ${sectionTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </>
               )}
             </div>
@@ -7726,138 +7735,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       categoryTaxableOnly + sheetMatLineTaxable + linkedRowsMaterialsTaxableOnly + linkedSubsMaterialsTaxableOnly;
   });
 
-  // Optional sections with a comparison: add the price difference (add-on cost) to proposal total
-  // so the "Difference" amount shown in the section is included in the section/proposal total
-  let optionalDifferenceTotal = 0;
-  materialsBreakdown.sheetBreakdowns.forEach((sheet: any) => {
-    if (!sheet.isOptional || !sheet.compareToSheetId) return;
-    const baseSheet = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === sheet.compareToSheetId);
-    if (!baseSheet) return;
-    // Base sheet total (materials + labor) — same formula as comparison panel
-    const baseLinkedRows = customRows.filter((r: any) => r.sheet_id === baseSheet.sheetId);
-    const baseLinkedRowsTotal = baseLinkedRows.reduce((rowSum: number, row: any) => {
-      const lineItems = customRowLineItems[row.id] || [];
-      const baseCost = lineItems.length > 0 ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0) : row.total_cost;
-      return rowSum + (baseCost * (1 + row.markup_percent / 100));
-    }, 0);
-    const baseLinkedSubs = linkedSubcontractors[baseSheet.sheetId] || [];
-    const baseLinkedSubsTaxableTotal = baseLinkedSubs.reduce((sum: number, sub: any) => {
-      const lineItems = subcontractorLineItems[sub.id] || [];
-      const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((s: number, item: any) => s + item.total_price, 0);
-      return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
-    }, 0);
-    const baseCategoryTotals = (baseSheet.categories || []).reduce((sum: number, cat: any) => {
-      const sellingPrice = Number(cat.totalPrice);
-      if (sellingPrice > 0) return sum + sellingPrice;
-      const categoryKey = `${baseSheet.sheetId}_${cat.name}`;
-      const markup = categoryMarkups[categoryKey] ?? 10;
-      return sum + (Number(cat.totalCost) || 0) * (1 + markup / 100);
-    }, 0);
-    const baseSheetMatLines = (customRowLineItems[baseSheet.sheetId] || [])
-      .filter((it: any) => (it.item_type || 'material') === 'material')
-      .reduce((s: number, it: any) => s + it.total_cost * (1 + (it.markup_percent ?? 0) / 100), 0);
-    const baseFinalPrice =
-      baseCategoryTotals + baseSheetMatLines + baseLinkedRowsTotal + baseLinkedSubsTaxableTotal;
-    const baseSheetLaborData = sheetLabor[baseSheet.sheetId];
-    const baseSheetLaborTotal = baseSheetLaborData ? baseSheetLaborData.total_labor_cost : 0;
-    const baseSheetLaborLineItems = customRowLineItems[baseSheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
-    const baseSheetLaborLineItemsTotal = baseSheetLaborLineItems.reduce((s: number, it: any) => s + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
-    const baseLinkedSubsNonTax = baseLinkedSubs.reduce((s: number, sub: any) => {
-      const li = subcontractorLineItems[sub.id] || [];
-      const nt = li.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
-      return s + (nt * (1 + (sub.markup_percent || 0) / 100));
-    }, 0);
-    const baseLaborCost = baseSheetLaborTotal + baseSheetLaborLineItemsTotal + baseLinkedSubsNonTax;
-    const baseTotal = baseFinalPrice + baseLaborCost;
-    // Option sheet total (must match SortableRow: sheetFinalPrice + totalLaborCost for this sheet)
-    const optCategoryTotals = (sheet.categories || []).reduce((sum: number, cat: any) => {
-      const sellingPrice = Number(cat.totalPrice);
-      if (sellingPrice > 0) return sum + sellingPrice;
-      const categoryKey = `${sheet.sheetId}_${cat.name}`;
-      const markup = categoryMarkups[categoryKey] ?? 10;
-      return sum + (Number(cat.totalCost) || 0) * (1 + markup / 100);
-    }, 0);
-    const optLinkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
-    const optLinkedRowsTotal = optLinkedRows.reduce((rowSum: number, row: any) => {
-      const lineItems = customRowLineItems[row.id] || [];
-      const baseCost = lineItems.length > 0 ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0) : row.total_cost;
-      return rowSum + (baseCost * (1 + row.markup_percent / 100));
-    }, 0);
-    const optLinkedSubs = linkedSubcontractors[sheet.sheetId] || [];
-    const optLinkedSubsTaxableTotal = optLinkedSubs.reduce((sum: number, sub: any) => {
-      const lineItems = subcontractorLineItems[sub.id] || [];
-      const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((s: number, item: any) => s + item.total_price, 0);
-      return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
-    }, 0);
-    const optSheetLaborData = sheetLabor[sheet.sheetId];
-    const optSheetLaborTotal = optSheetLaborData ? optSheetLaborData.total_labor_cost : 0;
-    const optSheetLaborLineItems = customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
-    const optSheetLaborLineItemsTotal = optSheetLaborLineItems.reduce((s: number, it: any) => s + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
-    const optLinkedSubsNonTax = optLinkedSubs.reduce((s: number, sub: any) => {
-      const li = subcontractorLineItems[sub.id] || [];
-      const nt = li.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
-      return s + (nt * (1 + (sub.markup_percent || 0) / 100));
-    }, 0);
-    const optLaborCost = optSheetLaborTotal + optSheetLaborLineItemsTotal + optLinkedSubsNonTax;
-    const optSheetMatLines = (customRowLineItems[sheet.sheetId] || [])
-      .filter((it: any) => (it.item_type || 'material') === 'material')
-      .reduce((s: number, it: any) => s + it.total_cost * (1 + (it.markup_percent ?? 0) / 100), 0);
-    const optionTotal =
-      optCategoryTotals +
-      optSheetMatLines +
-      optLinkedRowsTotal +
-      optLinkedSubsTaxableTotal +
-      optLaborCost;
-    const priceDiff = optionTotal - baseTotal;
-    optionalDifferenceTotal += priceDiff;
-  });
-
-  // Optional sections WITHOUT a comparison: add the full section total so the displayed price is in the grand total
-  materialsBreakdown.sheetBreakdowns.forEach((sheet: any) => {
-    if (!sheet.isOptional || sheet.compareToSheetId) return;
-    const optCategoryTotals = (sheet.categories || []).reduce((sum: number, cat: any) => {
-      const sellingPrice = Number(cat.totalPrice);
-      if (sellingPrice > 0) return sum + sellingPrice;
-      const categoryKey = `${sheet.sheetId}_${cat.name}`;
-      const markup = categoryMarkups[categoryKey] ?? 10;
-      return sum + (Number(cat.totalCost) || 0) * (1 + markup / 100);
-    }, 0);
-    const optLinkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
-    const optLinkedRowsTotal = optLinkedRows.reduce((rowSum: number, row: any) => {
-      const lineItems = customRowLineItems[row.id] || [];
-      const baseCost = lineItems.length > 0 ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0) : row.total_cost;
-      return rowSum + (baseCost * (1 + row.markup_percent / 100));
-    }, 0);
-    const optLinkedSubs = linkedSubcontractors[sheet.sheetId] || [];
-    const optLinkedSubsTaxableTotal = optLinkedSubs.reduce((sum: number, sub: any) => {
-      const lineItems = subcontractorLineItems[sub.id] || [];
-      const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((s: number, item: any) => s + item.total_price, 0);
-      return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
-    }, 0);
-    const optSheetLaborData = sheetLabor[sheet.sheetId];
-    const optSheetLaborTotal = optSheetLaborData ? optSheetLaborData.total_labor_cost : 0;
-    const optSheetLaborLineItems = customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
-    const optSheetLaborLineItemsTotal = optSheetLaborLineItems.reduce((s: number, it: any) => s + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
-    const optLinkedSubsNonTax = optLinkedSubs.reduce((s: number, sub: any) => {
-      const li = subcontractorLineItems[sub.id] || [];
-      const nt = li.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
-      return s + (nt * (1 + (sub.markup_percent || 0) / 100));
-    }, 0);
-    const optLaborCost = optSheetLaborTotal + optSheetLaborLineItemsTotal + optLinkedSubsNonTax;
-    const optOnlySheetMatLines = (customRowLineItems[sheet.sheetId] || [])
-      .filter((it: any) => (it.item_type || 'material') === 'material')
-      .reduce((s: number, it: any) => s + it.total_cost * (1 + (it.markup_percent ?? 0) / 100), 0);
-    const optionTotalOnly =
-      optCategoryTotals +
-      optOnlySheetMatLines +
-      optLinkedRowsTotal +
-      optLinkedSubsTaxableTotal +
-      optLaborCost;
-    optionalDifferenceTotal += optionTotalOnly;
-  });
-
-  materialSheetsPrice += optionalDifferenceTotal;
-  materialSheetsTaxableOnly += optionalDifferenceTotal;
+  // Optional sections are intentionally excluded from proposal totals.
+  // They remain visible in the "Optional Items" block with their own section totals.
 
   const proposalMaterialsPrice = materialSheetsPrice + customRowsMaterialsTotal;
   const proposalMaterialsTaxableOnly = materialSheetsTaxableOnly + customRowsMaterialsTaxableOnly;

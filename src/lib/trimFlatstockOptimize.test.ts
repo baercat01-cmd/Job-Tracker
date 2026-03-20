@@ -15,20 +15,29 @@ function sumStrips(plan: ReturnType<typeof buildTrimSlittingPlan>, id: string): 
 describe('buildTrimSlittingPlan', () => {
   it('packs 14" qty 5 on 42" in two sheets (3+2)', () => {
     const demands: TrimSlittingDemand[] = [
-      { materialItemId: 'a', materialName: 'A', stretchOutInches: 14, qty: 5 },
+      { materialItemId: 'a', materialName: 'A', stretchOutInches: 14, pieceLengthInches: 120, qty: 5 },
     ];
     const plan = buildTrimSlittingPlan(demands, 42);
     expect(plan.totalSheets).toBe(2);
     expect(sumStrips(plan, 'a')).toBe(5);
     expect(plan.legacyIndependentSheetsSum).toBe(2);
+
+    const s1 = plan.sheets[0].strips;
+    expect(s1).toHaveLength(3);
+    expect(s1[0].cutoffBeforeWidthInches).toBeCloseTo(42, 6);
+    expect(s1[1].cutoffBeforeWidthInches).toBeCloseTo(28, 6);
+    expect(s1[2].cutoffBeforeWidthInches).toBeCloseTo(14, 6);
+    expect(s1[1].usesCutoffFromStripInstanceId).toBe(s1[0].stripInstanceId);
+    expect(s1[2].usesCutoffFromStripInstanceId).toBe(s1[1].stripInstanceId);
+    expect(s1.every((st) => st.pieceLengthInches === 120)).toBe(true);
   });
 
   it('never uses more sheets than independent sum for sample job mix', () => {
     const demands: TrimSlittingDemand[] = [
-      { materialItemId: '1', materialName: 'T1', stretchOutInches: 13.75, qty: 11 },
-      { materialItemId: '2', materialName: 'T2', stretchOutInches: 6.62, qty: 22 },
-      { materialItemId: '3', materialName: 'T3', stretchOutInches: 14.12, qty: 11 },
-      { materialItemId: '4', materialName: 'T4', stretchOutInches: 5.51, qty: 21 },
+      { materialItemId: '1', materialName: 'T1', stretchOutInches: 13.75, pieceLengthInches: 120, qty: 11 },
+      { materialItemId: '2', materialName: 'T2', stretchOutInches: 6.62, pieceLengthInches: 120, qty: 22 },
+      { materialItemId: '3', materialName: 'T3', stretchOutInches: 14.12, pieceLengthInches: 120, qty: 11 },
+      { materialItemId: '4', materialName: 'T4', stretchOutInches: 5.51, pieceLengthInches: 120, qty: 21 },
     ];
     const plan = buildTrimSlittingPlan(demands, 42);
     const legacy = legacyIndependentSheetsSum(demands, 42);
@@ -41,7 +50,7 @@ describe('buildTrimSlittingPlan', () => {
 
   it('uses one sheet per qty when strip is wider than coil', () => {
     const demands: TrimSlittingDemand[] = [
-      { materialItemId: 'w', materialName: 'Wide', stretchOutInches: 50, qty: 3 },
+      { materialItemId: 'w', materialName: 'Wide', stretchOutInches: 50, pieceLengthInches: 120, qty: 3 },
     ];
     const plan = buildTrimSlittingPlan(demands, 42);
     expect(plan.totalSheets).toBe(3);
@@ -51,13 +60,17 @@ describe('buildTrimSlittingPlan', () => {
 
   it('prefers two of same trim in remainder when possible', () => {
     const demands: TrimSlittingDemand[] = [
-      { materialItemId: 'a', materialName: 'A', stretchOutInches: 20, qty: 1 },
-      { materialItemId: 'b', materialName: 'B', stretchOutInches: 6, qty: 4 },
+      { materialItemId: 'a', materialName: 'A', stretchOutInches: 20, pieceLengthInches: 120, qty: 1 },
+      { materialItemId: 'b', materialName: 'B', stretchOutInches: 6, pieceLengthInches: 120, qty: 4 },
     ];
     const plan = buildTrimSlittingPlan(demands, 42);
     const sheetWithA = plan.sheets.find((s) => s.strips.some((x) => x.materialItemId === 'a'));
     expect(sheetWithA).toBeDefined();
     const bs = sheetWithA!.strips.filter((x) => x.materialItemId === 'b');
     expect(bs.length).toBeGreaterThanOrEqual(2);
+
+    const aStrip = sheetWithA!.strips.find((x) => x.materialItemId === 'a')!;
+    const firstB = sheetWithA!.strips.find((x) => x.materialItemId === 'b')!;
+    expect(firstB.usesCutoffFromStripInstanceId).toBe(aStrip.stripInstanceId);
   });
 });

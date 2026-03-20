@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSearchParams } from 'react-router-dom';
 import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -39,6 +40,15 @@ interface SavedConfig {
   created_at: string;
   material_type_id?: string;
   material_type_name?: string;
+  /** When true, treat as custom trim; false = standard library. Undefined uses legacy job_id rule. */
+  is_custom_trim?: boolean | null;
+}
+
+/** Standard = library trim; custom = job-specific or one-off (or legacy rows with job_id). */
+function isSavedConfigCustom(config: SavedConfig): boolean {
+  if (config.is_custom_trim === true) return true;
+  if (config.is_custom_trim === false) return false;
+  return !!config.job_id;
 }
 
 interface Point {
@@ -137,6 +147,12 @@ export function TrimPricingCalculator() {
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const [deletingConfigId, setDeletingConfigId] = useState<string | null>(null);
+  /** Save dialog: standard (default) vs custom trim classification */
+  const [saveAsCustomTrim, setSaveAsCustomTrim] = useState(false);
+  /** Load saved config dialog: default tab is always standard library */
+  const [loadSavedTrimTab, setLoadSavedTrimTab] = useState<'standard' | 'custom'>('standard');
+  /** Trim price list dialog: same default */
+  const [priceListTrimTab, setPriceListTrimTab] = useState<'standard' | 'custom'>('standard');
 
   // Drawing feature states
   const [showDrawing, setShowDrawing] = useState(true); // Always show drawing
@@ -1732,6 +1748,14 @@ export function TrimPricingCalculator() {
     }
   }, [drawing.segments]);
 
+  // Load / price-list dialogs: always open on Standard (library) list first
+  useEffect(() => {
+    if (showLoadDialog) setLoadSavedTrimTab('standard');
+  }, [showLoadDialog]);
+  useEffect(() => {
+    if (showPriceList) setPriceListTrimTab('standard');
+  }, [showPriceList]);
+
   // Calculate trim pricing
   useEffect(() => {
     // All values come from selected trim type
@@ -1880,25 +1904,31 @@ export function TrimPricingCalculator() {
         drawing_segments: drawing.segments.length > 0 ? drawing.segments : null, // Store as array
         material_type_id: selectedTrimTypeId,
         material_type_name: selectedTrimType.name,
+        is_custom_trim: saveAsCustomTrim,
       };
 
       console.log('💾 Saving config data:', configData);
       console.log('📍 Current user session:', await supabase.auth.getSession());
       
-      const { data: insertedData, error } = await supabase
-        .from('trim_saved_configs')
-        .insert([configData])
-        .select();
-
-      if (error) {
-        console.error('❌ Insert error:', error);
+      let insertedData: any[] | null = null;
+      let insertRes = await supabase.from('trim_saved_configs').insert([configData]).select();
+      if (insertRes.error && /is_custom_trim|column/i.test(String(insertRes.error.message || ''))) {
+        const { is_custom_trim: _drop, ...withoutCustomFlag } = configData as Record<string, unknown>;
+        insertRes = await supabase.from('trim_saved_configs').insert([withoutCustomFlag]).select();
+        if (!insertRes.error) {
+          toast.info('Saved without trim category column — run the latest Supabase migration for Standard vs Custom lists.');
+        }
+      }
+      insertedData = insertRes.data;
+      if (insertRes.error) {
+        console.error('❌ Insert error:', insertRes.error);
         console.error('Error details:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
+          message: insertRes.error.message,
+          code: insertRes.error.code,
+          details: insertRes.error.details,
+          hint: insertRes.error.hint
         });
-        throw error;
+        throw insertRes.error;
       }
       
       console.log('✅ Successfully inserted config:', insertedData);
@@ -3023,7 +3053,13 @@ export function TrimPricingCalculator() {
       </Dialog>
 
       {/* Save Dialog */}
-      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+      <Dialog
+        open={showSaveDialog}
+        onOpenChange={(open) => {
+          setShowSaveDialog(open);
+          if (open) setSaveAsCustomTrim(false);
+        }}
+      >
         <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-500">
@@ -3040,6 +3076,32 @@ export function TrimPricingCalculator() {
                 placeholder="e.g., J-Channel Trim"
                 className="bg-white border-green-700"
               />
+            </div>
+            <div>
+              <Label className="text-yellow-400 mb-2 block">Trim type</Label>
+              <div className="flex rounded-lg border border-green-700 overflow-hidden bg-black/40 p-0.5 gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSaveAsCustomTrim(false)}
+                  className={`flex-1 py-2 px-3 text-sm font-semibold rounded-md transition-colors ${
+                    !saveAsCustomTrim ? 'bg-yellow-500 text-black' : 'text-yellow-400/90 hover:bg-green-900/50'
+                  }`}
+                >
+                  Standard trim
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSaveAsCustomTrim(true)}
+                  className={`flex-1 py-2 px-3 text-sm font-semibold rounded-md transition-colors ${
+                    saveAsCustomTrim ? 'bg-yellow-500 text-black' : 'text-yellow-400/90 hover:bg-green-900/50'
+                  }`}
+                >
+                  Custom trim
+                </button>
+              </div>
+              <p className="text-xs text-white/55 mt-1.5">
+                Standard trims appear in the default list when loading. Use custom for job-specific or one-off profiles.
+              </p>
             </div>
             <div>
               <Label className="text-yellow-400">Link to Job (Optional)</Label>
@@ -3157,8 +3219,41 @@ export function TrimPricingCalculator() {
                 No saved configurations yet
               </div>
             ) : (
+              <>
+                <Tabs value={loadSavedTrimTab} onValueChange={(v) => setLoadSavedTrimTab(v as 'standard' | 'custom')}>
+                  <TabsList className="grid w-full grid-cols-2 h-auto gap-1 bg-black/40 border border-green-800 p-1 rounded-lg">
+                    <TabsTrigger
+                      value="standard"
+                      className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-yellow-400 text-sm py-2"
+                    >
+                      Standard trims ({savedConfigs.filter((c) => !isSavedConfigCustom(c)).length})
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="custom"
+                      className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-yellow-400 text-sm py-2"
+                    >
+                      Custom trims ({savedConfigs.filter((c) => isSavedConfigCustom(c)).length})
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              {(() => {
+                const visible =
+                  loadSavedTrimTab === 'standard'
+                    ? savedConfigs.filter((c) => !isSavedConfigCustom(c))
+                    : savedConfigs.filter((c) => isSavedConfigCustom(c));
+                if (visible.length === 0) {
+                  return (
+                    <div className="text-center py-6 text-white/50 text-sm border border-green-800/50 rounded-lg bg-black/20">
+                      No {loadSavedTrimTab === 'standard' ? 'standard' : 'custom'} saved configurations yet.
+                      {loadSavedTrimTab === 'standard'
+                        ? ' Save a new configuration as Standard trim, or switch to Custom.'
+                        : ' Mark saves as Custom trim (existing job-linked saves appear here).'}
+                    </div>
+                  );
+                }
+                return (
               <div className="space-y-2">
-                {savedConfigs.map((config) => {
+                {visible.map((config) => {
                   const pricing = calculateConfigPricing(config);
                   return (
                     <div
@@ -3222,7 +3317,18 @@ export function TrimPricingCalculator() {
 
                         {/* Info: title with bends & price close, then rest */}
                         <div className="flex-1 min-w-0">
-                          <div className="text-yellow-400 font-bold text-lg">{config.name}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-yellow-400 font-bold text-lg">{config.name}</div>
+                            {isSavedConfigCustom(config) ? (
+                              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border border-amber-500/70 text-amber-300 bg-amber-950/40">
+                                Custom
+                              </span>
+                            ) : (
+                              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border border-green-600/70 text-green-300 bg-green-950/40">
+                                Standard
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-sm mt-0.5 text-white/80">
                             <span>Bends: <span className="font-semibold text-white">{config.bends}</span></span>
                             <span>Price: <span className="font-bold text-yellow-400">${pricing.price.toFixed(2)}</span></span>
@@ -3271,6 +3377,9 @@ export function TrimPricingCalculator() {
                   );
                 })}
               </div>
+                );
+              })()}
+              </>
             )}
             <Button
               onClick={() => setShowLoadDialog(false)}
@@ -3316,9 +3425,14 @@ export function TrimPricingCalculator() {
             {priceListMaterialId && (() => {
               const selectedMaterial = trimTypes.find(t => t.id === priceListMaterialId);
               if (!selectedMaterial) return null;
-              
+
+              const configsForPriceList =
+                priceListTrimTab === 'standard'
+                  ? savedConfigs.filter((c) => !isSavedConfigCustom(c))
+                  : savedConfigs.filter((c) => isSavedConfigCustom(c));
+
               // Calculate prices for all configs using selected material
-              const pricedConfigs = savedConfigs.map(config => {
+              const pricedConfigs = configsForPriceList.map(config => {
                 // Parse inches
                 let inchesArray: number[];
                 try {
@@ -3371,6 +3485,23 @@ export function TrimPricingCalculator() {
               }).filter(Boolean);
               
               return (
+                <div className="space-y-3">
+                <Tabs value={priceListTrimTab} onValueChange={(v) => setPriceListTrimTab(v as 'standard' | 'custom')}>
+                  <TabsList className="grid w-full grid-cols-2 h-auto gap-1 bg-black/40 border border-green-800 p-1 rounded-lg">
+                    <TabsTrigger
+                      value="standard"
+                      className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-yellow-400 text-sm py-2"
+                    >
+                      Standard ({savedConfigs.filter((c) => !isSavedConfigCustom(c)).length})
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="custom"
+                      className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-yellow-400 text-sm py-2"
+                    >
+                      Custom ({savedConfigs.filter((c) => isSavedConfigCustom(c)).length})
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
                 <div className="bg-black/30 border-2 border-green-800 rounded-lg overflow-hidden">
                   <div className="bg-green-900/50 p-3 border-b-2 border-green-800">
                     <div className="text-yellow-400 font-bold">
@@ -3483,6 +3614,7 @@ export function TrimPricingCalculator() {
                       )}
                     </table>
                   </div>
+                </div>
                 </div>
               );
             })()}

@@ -47,7 +47,9 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
     (async () => {
       const { data: quotes, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at')
+        .select(
+          'id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, signed_version, customer_signed_at, is_change_order_proposal'
+        )
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -55,6 +57,25 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
         setInternalQuoteId(null);
         return;
       }
+
+      const isQuoteContractFrozen = (q: any) => {
+        const sv = q?.signed_version;
+        const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
+        return !!(q?.locked_for_editing || q?.sent_at || hasSigned || q?.customer_signed_at);
+      };
+
+      // Prefer a signed/sent/office-locked main proposal so Materials binds to the workbook that exists for contracts.
+      // This fixes the "No Material Workbook" case when the most-recent proposal is not the frozen contract.
+      const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
+      const frozenMain = mainQuotes.filter(isQuoteContractFrozen);
+      if (frozenMain.length > 0) {
+        setInternalQuoteId((prev) => {
+          if (prev && frozenMain.some((q: any) => q.id === prev)) return prev;
+          return frozenMain[0]?.id ?? null; // quotes are already sorted by created_at desc
+        });
+        return;
+      }
+
       const sorted = [...quotes].sort((a: any, b: any) => {
         const na = (a.proposal_number || a.quote_number || '').toString();
         const nb = (b.proposal_number || b.quote_number || '').toString();

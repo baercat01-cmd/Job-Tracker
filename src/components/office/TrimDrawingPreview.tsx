@@ -142,11 +142,10 @@ export function getCutLengthFromTrimConfig(config: { drawing_segments?: unknown 
 export const FLATSTOCK_STICK_LENGTH_INCHES = 120;
 
 /**
- * How many 10' × W" flatstock sheets to order for trim, nesting pieces across the sheet width.
- * - stretchOutInches: developed width of one trim profile (strip taken across the coil), from the drawing.
- * - pieceLengthInches: cut length of each trim piece along the sheet (from the job line length).
- * - Strips across: floor(W / stretchOut) when stretchOut ≤ W, else 1 (wider than sheet — shop may need multiple passes).
- * - Capacity per sheet: stripsAcross × max(1, floor(sheetLength / pieceLength)).
+ * Estimate how many 10' × W" flatstock sticks are needed for trim pieces.
+ * - `stretchOutInches` controls strips across coil width.
+ * - `pieceLengthInches` controls pieces per 10' strip.
+ * - capacity = stripsAcross × piecesAlongStick.
  */
 export function computeFlatstockSticksNeeded(params: {
   flatstockWidthInches: number;
@@ -161,12 +160,12 @@ export function computeFlatstockSticksNeeded(params: {
   sticksNeeded: number;
   stretchOutWiderThanSheet: boolean;
 } {
-  const L = params.stickLengthInches ?? FLATSTOCK_STICK_LENGTH_INCHES;
   const W = params.flatstockWidthInches;
+  const L = params.stickLengthInches ?? FLATSTOCK_STICK_LENGTH_INCHES;
   const s = params.stretchOutInches;
   const pl = params.pieceLengthInches;
   const Q = params.pieceCount;
-  if (!Number.isFinite(W) || W <= 0 || !Number.isFinite(s) || s <= 0 || !Number.isFinite(pl) || pl <= 0 || !Number.isFinite(Q) || Q <= 0) {
+  if (!Number.isFinite(W) || W <= 0 || !Number.isFinite(L) || L <= 0 || !Number.isFinite(s) || s <= 0 || !Number.isFinite(pl) || pl <= 0 || !Number.isFinite(Q) || Q <= 0) {
     return {
       stripsAcross: 0,
       piecesAlongStick: 0,
@@ -177,6 +176,7 @@ export function computeFlatstockSticksNeeded(params: {
   }
   const stretchOutWiderThanSheet = s > W;
   const stripsAcross = stretchOutWiderThanSheet ? 1 : Math.max(1, Math.floor(W / s));
+  // Piece-length aware: how many trim pieces can be cut from one 10' strip.
   const piecesAlongStick = Math.max(1, Math.floor(L / pl));
   const capacityPerStick = stripsAcross * piecesAlongStick;
   const sticksNeeded = Math.ceil(Q / capacityPerStick);

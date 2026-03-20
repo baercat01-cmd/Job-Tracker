@@ -15,6 +15,8 @@ import { toast } from 'sonner';
 import type { Job } from '@/types';
 import { TrimDrawingPreview, getCutLengthFromTrimConfig, formatLengthInches, type LineSegment } from '@/components/office/TrimDrawingPreview';
 import { TrimDrawingFullScreenView } from '@/components/office/TrimDrawingFullScreenView';
+import { extractFlatstockCutListSnippet } from '@/lib/flatstockCutListNotes';
+import { isTrimSlittingPlanV1 } from '@/lib/trimFlatstockOptimize';
 
 function toNum(v: unknown): number {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -42,6 +44,45 @@ function normalizeDrawingSegments(raw: unknown): LineSegment[] {
   }
 }
 
+function summarizeCutListSnippet(snippet: string): string {
+  const text = snippet || '';
+  const fullMatch = text.match(/Full-width cuts for this trim:\s*(\d+)/i);
+  const otherMatch = text.match(/From other trim cutoffs:\s*(\d+)/i);
+  const sourcesMatch = text.match(/Cutoff sources:\s*(.+)$/im);
+
+  // New compact format (authoritative values from office apply flow)
+  if (fullMatch && otherMatch) {
+    return [
+      `Full-width cuts: ${fullMatch[1]}`,
+      `From other trim cutoffs: ${sourcesMatch?.[1]?.trim() || otherMatch[1]}`,
+    ].join('\n');
+  }
+
+  // Legacy verbose format fallback:
+  // estimate full-width cuts from instance lines that start at full coil width.
+  const coilMatch = text.match(/Coil width:\s*([0-9]+(?:\.[0-9]+)?)"/i);
+  const coilWidth = coilMatch ? Number(coilMatch[1]) : NaN;
+  const instanceLines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('- '));
+  const planned = instanceLines.length;
+  const fullWidthCuts = Number.isFinite(coilWidth)
+    ? instanceLines.filter((l) => {
+        const m = l.match(/use\s*([0-9]+(?:\.[0-9]+)?)"\s*cutoff/i);
+        if (!m) return false;
+        const cutoff = Number(m[1]);
+        return Math.abs(cutoff - coilWidth) < 0.05;
+      }).length
+    : 0;
+  const fromOtherTrimCutoffs = Math.max(0, planned - fullWidthCuts);
+
+  return [
+    `Full-width cuts: ${fullWidthCuts}`,
+    `From other trim cutoffs: ${fromOtherTrimCutoffs} (source trim not listed in legacy notes — regenerate slitting plan and re-apply cut list to notes)`,
+  ].join('\n');
+}
+
 const TRIM_PREVIEW_SIZE = { width: 88, height: 48 };
 
 /** DB-approved value for "at job site". Must match material_items_status_check constraint. */
@@ -61,6 +102,7 @@ interface MaterialItem {
   length: string | null;
   color: string | null;
   usage: string | null;
+  notes?: string | null;
   status: string;
   _sheet_name?: string;
   trim_saved_config_id?: string | null;
@@ -100,46 +142,125 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
 
       console.log(`🔍 Loading ${status} materials for job:`, job.id);
 
-      // Get workbooks for this job
-      const { data: workbooksData, error: workbooksError } = await supabase
+      // Get workbooks for this job.
+      // Prefer working workbooks, but fall back to all workbooks so materials do not disappear
+      // when a job temporarily has no working copy linked.
+      // Load workbook rows with schema fallback for trim_flatstock_plan.
+      let workbooksData: any[] | null = null;
+      let workbooksError: any = null;
+      const wbRes = await supabase
         .from('material_workbooks')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('status', 'working');
+        .select('id, status, trim_flatstock_plan')
+        .eq('job_id', job.id);
+      workbooksData = wbRes.data;
+      workbooksError = wbRes.error;
+      if (
+        workbooksError &&
+        /schema cache|could not find|column.*does not exist|trim_flatstock_plan/i.test(
+          workbooksError.message
+        )
+      ) {
+        const wbFallback = await supabase
+          .from('material_workbooks')
+          .select('id, status')
+          .eq('job_id', job.id);
+        if (!wbFallback.error) {
+          workbooksData = (wbFallback.data || []).map((wb: any) => ({
+            ...wb,
+            trim_flatstock_plan: null,
+          }));
+          workbooksError = null;
+        } else {
+          workbooksError = wbFallback.error;
+        }
+      }
 
       if (workbooksError) throw workbooksError;
 
-      const workbookIds = (workbooksData || []).map(wb => wb.id);
+      const allWorkbooks = workbooksData || [];
+      const workingWorkbookIds = allWorkbooks
+        .filter((wb: any) => wb.status === 'working')
+        .map((wb: any) => wb.id);
+      const workbookIds = workingWorkbookIds.length > 0
+        ? workingWorkbookIds
+        : allWorkbooks.map((wb: any) => wb.id);
+      type TrimSortStats = {
+        minRank: number;
+        maxCutoffBefore: number;
+        hasPrimaryStart: boolean;
+        fullWidthStarts: number;
+      };
+      const trimSortStatsByItemId = new Map<string, TrimSortStats>();
+      for (const wb of workbooksData || []) {
+        if (!isTrimSlittingPlanV1((wb as any).trim_flatstock_plan)) continue;
+        const plan = (wb as any).trim_flatstock_plan;
+        const coilW = Number(plan.flatstockWidthInches) || 0;
+        for (const sh of plan.sheets || []) {
+          for (const st of sh.strips || []) {
+            if (!st?.materialItemId || !Number.isFinite(st?.cutOrder) || !Number.isFinite(sh?.sheetIndex)) continue;
+            const rank = (Number(sh.sheetIndex) * 10000) + Number(st.cutOrder);
+            const cutoffBefore = Number(st.cutoffBeforeWidthInches) || 0;
+            const isPrimaryStart = st.role === 'primary' || !st.usesCutoffFromStripInstanceId;
+            const isFullWidthStart = isPrimaryStart && coilW > 0 && Math.abs(cutoffBefore - coilW) < 0.05;
+            const prev = trimSortStatsByItemId.get(st.materialItemId);
+            if (!prev) {
+              trimSortStatsByItemId.set(st.materialItemId, {
+                minRank: rank,
+                maxCutoffBefore: cutoffBefore,
+                hasPrimaryStart: isPrimaryStart,
+                fullWidthStarts: isFullWidthStart ? 1 : 0,
+              });
+            } else {
+              prev.minRank = Math.min(prev.minRank, rank);
+              prev.maxCutoffBefore = Math.max(prev.maxCutoffBefore, cutoffBefore);
+              prev.hasPrimaryStart = prev.hasPrimaryStart || isPrimaryStart;
+              prev.fullWidthStarts += isFullWidthStart ? 1 : 0;
+            }
+          }
+        }
+      }
+      const sortByTrimBendOrder = (items: MaterialItem[]): MaterialItem[] => {
+        const withIdx = items.map((item, idx) => ({ item, idx }));
+        withIdx.sort((a, b) => {
+          const sa = trimSortStatsByItemId.get(a.item.id);
+          const sb = trimSortStatsByItemId.get(b.item.id);
+          const hasA = !!sa;
+          const hasB = !!sb;
+          // Only reorder items when both have trim slitting stats.
+          if (hasA && hasB) {
+            // More full-width starts means this trim should be cut earlier.
+            if (sa!.fullWidthStarts !== sb!.fullWidthStarts) return sb!.fullWidthStarts - sa!.fullWidthStarts;
+            // Full-sheet starters first, then widest cutoff stage, then plan rank.
+            if (sa!.hasPrimaryStart !== sb!.hasPrimaryStart) return sa!.hasPrimaryStart ? -1 : 1;
+            if (sa!.maxCutoffBefore !== sb!.maxCutoffBefore) return sb!.maxCutoffBefore - sa!.maxCutoffBefore;
+            if (sa!.minRank !== sb!.minRank) return sa!.minRank - sb!.minRank;
+          }
+          // Keep existing relative order for non-trim / unrated rows.
+          return a.idx - b.idx;
+        });
+        return withIdx.map((x) => x.item);
+      };
 
       if (workbookIds.length === 0) {
-        console.log('❌ No workbooks found for job');
-        setPackages([]);
-        setLoading(false);
-        return;
+        console.log('⚠️ No workbook rows found for job; will still load bundled materials by job_id');
       }
 
       // Get sheets for these workbooks
-      const { data: sheetsData, error: sheetsError } = await supabase
-        .from('material_sheets')
-        .select('id, sheet_name')
-        .in('workbook_id', workbookIds);
+      let sheetIds: string[] = [];
+      let sheetMap = new Map<string, string>();
+      if (workbookIds.length > 0) {
+        const { data: sheetsData, error: sheetsError } = await supabase
+          .from('material_sheets')
+          .select('id, sheet_name')
+          .in('workbook_id', workbookIds);
 
-      if (sheetsError) throw sheetsError;
-
-      const sheetIds = (sheetsData || []).map(s => s.id);
-      const sheetMap = new Map((sheetsData || []).map(s => [s.id, s.sheet_name]));
-
-      if (sheetIds.length === 0) {
-        console.log('❌ No sheets found for workbooks');
-        setPackages([]);
-        setLoading(false);
-        return;
+        if (sheetsError) throw sheetsError;
+        sheetIds = (sheetsData || []).map(s => s.id);
+        sheetMap = new Map((sheetsData || []).map(s => [s.id, s.sheet_name]));
       }
 
-      // Get material bundles for this job
-      const { data: bundlesData, error: bundlesError } = await supabase
-        .from('material_bundles')
-        .select(`
+      // Get material bundles for this job (with schema fallback for optional columns)
+      const bundleSelectFull = `
           id,
           name,
           description,
@@ -154,13 +275,59 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
               length,
               color,
               usage,
+              notes,
               status,
               trim_saved_config_id,
               quantity_ready_for_job
             )
           )
-        `)
+        `;
+      const bundleSelectMinimal = `
+          id,
+          name,
+          description,
+          bundle_items:material_bundle_items (
+            id,
+            material_item_id,
+            material_items (
+              id,
+              sheet_id,
+              material_name,
+              quantity,
+              length,
+              color,
+              usage,
+              notes,
+              status
+            )
+          )
+        `;
+      let bundlesData: any[] | null = null;
+      let bundlesError: any = null;
+      const bundleRes = await supabase
+        .from('material_bundles')
+        .select(bundleSelectFull)
         .eq('job_id', job.id);
+      bundlesData = bundleRes.data;
+      bundlesError = bundleRes.error;
+
+      if (
+        bundlesError &&
+        /schema cache|could not find|column.*does not exist|quantity_ready_for_job|trim_saved_config_id/i.test(
+          bundlesError.message
+        )
+      ) {
+        const fallback = await supabase
+          .from('material_bundles')
+          .select(bundleSelectMinimal)
+          .eq('job_id', job.id);
+        if (!fallback.error) {
+          bundlesData = fallback.data;
+          bundlesError = null;
+        } else {
+          bundlesError = fallback.error;
+        }
+      }
 
       if (bundlesError) throw bundlesError;
 
@@ -178,7 +345,9 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
         
         // Transform bundle items and handle Supabase nested response
         const bundleItems = (bundle.bundle_items || []).map((item: any) => {
-          const materialItem = item.material_items;
+          // Supabase relation can come back as object or single-item array.
+          const rawMaterial = item.material_items;
+          const materialItem = Array.isArray(rawMaterial) ? rawMaterial[0] : rawMaterial;
           
           if (!materialItem) {
             console.warn('⚠️ Bundle item missing material_items:', item);
@@ -236,6 +405,13 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
         })
         .filter(Boolean) as MaterialBundle[];
 
+      // Render package matches immediately so optional enrichment failures do not hide pull rows.
+      const basePackages = packagesWithStatusMaterials.map((p) => ({
+        ...p,
+        items: sortByTrimBendOrder(p.items),
+      }));
+      setPackages(basePackages);
+
       // Unbundled materials for this job with same status — group by sheet (same flow as packages)
       const bundleIdsForJob = (bundlesData || []).map((b: any) => b.id);
       let bundledItemIds = new Set<string>();
@@ -247,15 +423,43 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
         bundledItemIds = new Set((bundleItemRows || []).map((r: any) => r.material_item_id));
       }
 
-      const { data: unbundledRows } = await supabase
-        .from('material_items')
-        .select('id, sheet_id, material_name, quantity, length, color, usage, status, trim_saved_config_id, quantity_ready_for_job')
-        .in('sheet_id', sheetIds)
-        .eq('status', status);
+      let unbundledRows: any[] = [];
+      if (sheetIds.length > 0) {
+        const unbundledSelectFull = 'id, sheet_id, material_name, quantity, length, color, usage, notes, status, trim_saved_config_id, quantity_ready_for_job';
+        const unbundledSelectMinimal = 'id, sheet_id, material_name, quantity, length, color, usage, notes, status';
+        const unbundledRes = await supabase
+          .from('material_items')
+          .select(unbundledSelectFull)
+          .in('sheet_id', sheetIds)
+          .eq('status', status);
+        if (
+          unbundledRes.error &&
+          /schema cache|could not find|column.*does not exist|quantity_ready_for_job|trim_saved_config_id/i.test(
+            unbundledRes.error.message
+          )
+        ) {
+          const fallback = await supabase
+            .from('material_items')
+            .select(unbundledSelectMinimal)
+            .in('sheet_id', sheetIds)
+            .eq('status', status);
+          if (fallback.error) throw fallback.error;
+          unbundledRows = fallback.data || [];
+        } else if (unbundledRes.error) {
+          throw unbundledRes.error;
+        } else {
+          unbundledRows = unbundledRes.data || [];
+        }
+      }
 
-      const unbundled = (unbundledRows || []).filter((r: any) => !bundledItemIds.has(r.id));
+      // Pull tab should mirror package rows too, so include bundled items there as well.
+      // Ready tab keeps prior behavior (sheet list = non-packaged only) to avoid duplication.
+      const sheetListRows = status === 'pull_from_shop'
+        ? (unbundledRows || [])
+        : (unbundledRows || []).filter((r: any) => !bundledItemIds.has(r.id));
+
       const bySheet = new Map<string, MaterialItem[]>();
-      for (const item of unbundled) {
+      for (const item of sheetListRows) {
         const sheetName = sheetMap.get(item.sheet_id) || 'Unknown Sheet';
         const key = item.sheet_id;
         if (!bySheet.has(key)) bySheet.set(key, []);
@@ -291,14 +495,17 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
         }));
       const packagesEnriched = packagesWithStatusMaterials.map((p) => ({ ...p, items: enrichWithTrim(p.items) }));
       const sheetGroupsEnriched = sheetGroups.map((p) => ({ ...p, items: enrichWithTrim(p.items) }));
+      const packagesOrdered = packagesEnriched.map((p) => ({ ...p, items: sortByTrimBendOrder(p.items) }));
+      const sheetGroupsOrdered = sheetGroupsEnriched.map((p) => ({ ...p, items: sortByTrimBendOrder(p.items) }));
 
-      console.log(`✅ Found ${packagesEnriched.length} packages and ${sheetGroupsEnriched.length} sheet groups with ${status} materials`);
+      console.log(`✅ Found ${packagesOrdered.length} packages and ${sheetGroupsOrdered.length} sheet groups with ${status} materials`);
 
-      setPackages([...packagesEnriched, ...sheetGroupsEnriched]);
+      setPackages([...packagesOrdered, ...sheetGroupsOrdered]);
 
       setExpandedPackages(new Set());
     } catch (error: any) {
       console.error('❌ Error loading materials:', error);
+      toast.error(`Failed to load some materials: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -533,6 +740,8 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                   <div className="space-y-2">
                     {pkg.items.map((item) => {
                       const isMaterialExpanded = expandedMaterials.has(item.id);
+                      const cutListSnippet = extractFlatstockCutListSnippet(item.notes ?? null);
+                      const cutListSummary = cutListSnippet ? summarizeCutListSnippet(cutListSnippet) : null;
 
                       return (
                         <div 
@@ -606,6 +815,17 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                     <span className="text-xs text-muted-foreground">
                                       Cut length: {formatLengthInches(getCutLengthFromTrimConfig(item.trim_saved_configs))}
                                     </span>
+                                  </div>
+                                )}
+
+                                {cutListSummary && (
+                                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/60 p-2">
+                                    <p className="text-[11px] font-semibold text-amber-900 mb-1">
+                                      Shop cut order
+                                    </p>
+                                    <pre className="whitespace-pre-wrap text-[11px] leading-4 text-amber-950 font-medium">
+                                      {cutListSummary}
+                                    </pre>
                                   </div>
                                 )}
 

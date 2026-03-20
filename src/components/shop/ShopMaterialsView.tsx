@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { TrimDrawingPreview, getCutLengthFromTrimConfig, formatLengthInches, type LineSegment } from '@/components/office/TrimDrawingPreview';
 import { TrimDrawingFullScreenView } from '@/components/office/TrimDrawingFullScreenView';
 import { extractFlatstockCutListSnippet } from '@/lib/flatstockCutListNotes';
+import { isTrimSlittingPlanV1, type TrimSlittingPlanV1 } from '@/lib/trimFlatstockOptimize';
 
 function toNum(v: unknown): number {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -269,6 +270,15 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const [loadingTrimId, setLoadingTrimId] = useState<string | null>(null);
   /** For partial mark-ready: material_item_id -> input value string */
   const [partialQtyInput, setPartialQtyInput] = useState<Record<string, string>>({});
+
+  /** Shared trim slitting plan per workbook (loaded from material_workbooks.trim_flatstock_plan). */
+  const [trimPlansByWorkbookId, setTrimPlansByWorkbookId] = useState<Record<string, TrimSlittingPlanV1>>({});
+  /** For each trim material item, which other trim items must be cut_complete first. */
+  const [trimDepsByItemId, setTrimDepsByItemId] = useState<Record<string, string[]>>({});
+  /** Live trim cut state for gating + UI. */
+  const [trimCutStateById, setTrimCutStateById] = useState<Record<string, 'pending' | 'in_progress' | 'cut_complete'>>({});
+  /** Shared computed cut list snippet per item (used when notes haven't been applied yet). */
+  const [trimCutSnippetByItemId, setTrimCutSnippetByItemId] = useState<Record<string, string>>({});
 
   async function openTrimDrawing(trimConfigId: string) {
     if (!trimConfigId || loadingTrimId) return;
@@ -655,9 +665,95 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       const workbookIdsFromSheets = [...new Set((sheetsData || []).map((s: any) => s.workbook_id))];
       const { data: workbookJobs } = await supabase
         .from('material_workbooks')
-        .select('id, job_id')
+        .select('id, job_id, trim_flatstock_plan')
         .in('id', workbookIdsFromSheets);
       const wbToJob = new Map((workbookJobs || []).map((w: any) => [w.id, w.job_id]));
+
+      // Load shared trim slitting plans (if present) so shop sees the same cut order/cutoffs as office.
+      const planByWorkbookId: Record<string, TrimSlittingPlanV1> = {};
+      const planMaterialItemIds = new Set<string>();
+      for (const wb of workbookJobs || []) {
+        if (wb?.trim_flatstock_plan && isTrimSlittingPlanV1(wb.trim_flatstock_plan)) {
+          planByWorkbookId[wb.id] = wb.trim_flatstock_plan as TrimSlittingPlanV1;
+          for (const sh of wb.trim_flatstock_plan.sheets || []) {
+            for (const st of sh.strips || []) {
+              if (st?.materialItemId) planMaterialItemIds.add(st.materialItemId);
+            }
+          }
+        }
+      }
+
+      setTrimPlansByWorkbookId(planByWorkbookId);
+
+      // Fetch cut state for any trim item referenced by the plan(s), so gating is consistent.
+      const cutStateById: Record<string, 'pending' | 'in_progress' | 'cut_complete'> = {};
+      const depsByItemId: Record<string, string[]> = {};
+      const snippetByItemId: Record<string, string> = {};
+      if (planMaterialItemIds.size > 0) {
+        const { data: planItems } = await supabase
+          .from('material_items')
+          .select('id, trim_cut_state')
+          .in('id', [...planMaterialItemIds]);
+        for (const r of planItems || []) {
+          const v = r?.trim_cut_state;
+          if (v === 'pending' || v === 'in_progress' || v === 'cut_complete') {
+            cutStateById[r.id] = v;
+          }
+        }
+
+        for (const planWbId of Object.keys(planByWorkbookId)) {
+          const plan = planByWorkbookId[planWbId];
+          const strips = (plan.sheets || []).flatMap((sh) => sh.strips || []);
+          const byInstance = new Map<string, any>(strips.map((s: any) => [s.stripInstanceId, s]));
+          const itemIds = [...new Set(strips.map((s: any) => s.materialItemId).filter(Boolean))] as string[];
+
+          // Instance lines for displaying the shared cut list even when notes haven't been applied yet.
+          const instancesByItem: Record<string, string[]> = {};
+          const materialNameByItem: Record<string, string> = {};
+          const W = plan.flatstockWidthInches;
+          const stickFt = plan.stickLengthInches / 12;
+          for (const sh of plan.sheets || []) {
+            for (const st of sh.strips || []) {
+              if (!st?.materialItemId) continue;
+              const cutoffBeforeRounded = Math.round(st.cutoffBeforeWidthInches * 100) / 100;
+              const line = `Sheet ${sh.sheetIndex}, strip #${st.cutOrder}: use ${cutoffBeforeRounded}" cutoff to cut ${st.stretchOutInches.toFixed(2)}" strip (${stickFt}' long), then cut trim piece to ${st.pieceLengthInches.toFixed(2)}" length.`;
+              if (!instancesByItem[st.materialItemId]) instancesByItem[st.materialItemId] = [];
+              instancesByItem[st.materialItemId].push(line);
+              materialNameByItem[st.materialItemId] = st.materialName ?? materialNameByItem[st.materialItemId] ?? st.materialItemId;
+            }
+          }
+
+          for (const itemId of itemIds) {
+            const deps = new Set<string>();
+            const starts = strips.filter((s: any) => s.materialItemId === itemId);
+            for (const start of starts) {
+              let cur = start;
+              while (cur?.usesCutoffFromStripInstanceId) {
+                const parent = byInstance.get(cur.usesCutoffFromStripInstanceId);
+                if (!parent) break;
+                if (parent.materialItemId && parent.materialItemId !== itemId) deps.add(parent.materialItemId);
+                cur = parent;
+              }
+            }
+            depsByItemId[itemId] = [...deps];
+
+            const instances = instancesByItem[itemId] ?? [];
+            const materialName = materialNameByItem[itemId] ?? itemId;
+            snippetByItemId[itemId] = [
+              `Coil width: ${W}" (${stickFt}' slitting strips)`,
+              `Material: ${materialName}`,
+              `Planned strips: ${instances.length}`,
+              ...(instances.length
+                ? ['Instances (cut order, widest-first):', ...instances.map((x) => `- ${x}`)]
+                : ['Instances: none in current plan.']),
+            ].join('\n');
+          }
+        }
+      }
+
+      setTrimCutStateById(cutStateById);
+      setTrimDepsByItemId(depsByItemId);
+      setTrimCutSnippetByItemId(snippetByItemId);
 
       const { data: jobsData } = await supabase
         .from('jobs')
@@ -712,6 +808,32 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       toast.error(msg ? `Failed to load packages: ${msg}` : 'Failed to load packages. Check console for details.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateTrimCutState(materialItemId: string, newState: 'pending' | 'in_progress' | 'cut_complete') {
+    if (processingMaterials.has(materialItemId)) return;
+    setProcessingMaterials((prev) => new Set(prev).add(materialItemId));
+    try {
+      const { error } = await supabase
+        .from('material_items')
+        .update({ trim_cut_state: newState, updated_at: new Date().toISOString() })
+        .eq('id', materialItemId);
+      if (error) throw error;
+
+      setTrimCutStateById((prev) => ({
+        ...prev,
+        [materialItemId]: newState,
+      }));
+      toast.success(`Trim marked: ${String(newState).replace(/_/g, ' ')}`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update trim cut state');
+    } finally {
+      setProcessingMaterials((prev) => {
+        const next = new Set(prev);
+        next.delete(materialItemId);
+        return next;
+      });
     }
   }
 
@@ -1092,6 +1214,56 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                               )}
                                             </div>
                                           </div>
+                                          {(() => {
+                                            const cutSnippetFromNotes = extractFlatstockCutListSnippet(item.material_items.notes);
+                                            const cutSnippet = cutSnippetFromNotes ?? trimCutSnippetByItemId[item.material_items.id];
+                                            const isTrimMaterial =
+                                              item.material_items.category === 'Trim' ||
+                                              !!item.material_items.trim_saved_config_id ||
+                                              !!cutSnippet;
+                                            return (
+                                              <>
+                                                {cutSnippet && (
+                                                  <div className="mt-2 text-[11px] whitespace-pre-wrap bg-indigo-50 border border-indigo-100 rounded p-2 text-indigo-950/80">
+                                                    {cutSnippet}
+                                                  </div>
+                                                )}
+                                                {isTrimMaterial && (
+                                                  <div className="mt-2">
+                                                    <div className="text-[11px] text-muted-foreground mb-1">Trim cut state</div>
+                                                    <Select
+                                                      value={
+                                                        trimCutStateById[item.material_items.id] ??
+                                                        (item.material_items.trim_cut_state as any) ??
+                                                        'pending'
+                                                      }
+                                                      onValueChange={(v) => {
+                                                        const desired = v as 'pending' | 'in_progress' | 'cut_complete';
+                                                        const deps = trimDepsByItemId[item.material_items.id] ?? [];
+                                                        const canMark =
+                                                          desired === 'pending' ||
+                                                          deps.every((depId) => trimCutStateById[depId] === 'cut_complete');
+                                                        if (!canMark) {
+                                                          toast.error('Cut wider trims first (dependency not complete).');
+                                                          return;
+                                                        }
+                                                        void updateTrimCutState(item.material_items.id, desired);
+                                                      }}
+                                                    >
+                                                      <SelectTrigger className="h-8 text-xs w-[160px]">
+                                                        <SelectValue />
+                                                      </SelectTrigger>
+                                                      <SelectContent>
+                                                        <SelectItem value="pending">Pending</SelectItem>
+                                                        <SelectItem value="in_progress">In progress</SelectItem>
+                                                        <SelectItem value="cut_complete">Cut</SelectItem>
+                                                      </SelectContent>
+                                                    </Select>
+                                                  </div>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
                                           
                                           <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
                                             {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id || item.material_items.category === 'Trim') && (
@@ -1249,7 +1421,21 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                 <CardContent className="p-2 sm:p-3">
                                   <div className="space-y-2">
                                     {pullFromShopItems.map((item) => {
-                                      const cutSnippet = extractFlatstockCutListSnippet(item.material_items.notes);
+                                      const cutSnippetFromNotes = extractFlatstockCutListSnippet(item.material_items.notes);
+                                      const cutSnippet = cutSnippetFromNotes ?? trimCutSnippetByItemId[item.material_items.id];
+                                      const isTrimMaterial =
+                                        item.material_items.category === 'Trim' ||
+                                        !!item.material_items.trim_saved_config_id ||
+                                        !!cutSnippet;
+                                      const currentTrimState =
+                                        trimCutStateById[item.material_items.id] ??
+                                        (item.material_items.trim_cut_state as any) ??
+                                        'pending';
+                                      const deps = trimDepsByItemId[item.material_items.id] ?? [];
+                                      const canMarkCut = (desired: 'pending' | 'in_progress' | 'cut_complete') => {
+                                        if (desired === 'pending') return true;
+                                        return deps.every((depId) => trimCutStateById[depId] === 'cut_complete');
+                                      };
                                       return (
                                       <div
                                         key={item.id}
@@ -1292,6 +1478,33 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                           {cutSnippet && (
                                             <div className="mt-2 text-[11px] whitespace-pre-wrap bg-indigo-50 border border-indigo-100 rounded p-2 text-indigo-950/80">
                                               {cutSnippet}
+                                            </div>
+                                          )}
+                                          {isTrimMaterial && (
+                                            <div className="mt-2">
+                                              <div className="text-[11px] text-muted-foreground mb-1">
+                                                Trim cut state
+                                              </div>
+                                              <Select
+                                                value={currentTrimState}
+                                                onValueChange={(v) => {
+                                                  const desired = v as 'pending' | 'in_progress' | 'cut_complete';
+                                                  if (!canMarkCut(desired)) {
+                                                    toast.error('Cut wider trims first (dependency not complete).');
+                                                    return;
+                                                  }
+                                                  void updateTrimCutState(item.material_items.id, desired);
+                                                }}
+                                              >
+                                                <SelectTrigger className="h-8 text-xs w-[160px]">
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="pending">Pending</SelectItem>
+                                                  <SelectItem value="in_progress">In progress</SelectItem>
+                                                  <SelectItem value="cut_complete">Cut</SelectItem>
+                                                </SelectContent>
+                                              </Select>
                                             </div>
                                           )}
                                           </div>
