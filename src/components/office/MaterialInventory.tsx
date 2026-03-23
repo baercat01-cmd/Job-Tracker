@@ -88,6 +88,76 @@ interface Vendor {
   created_at: string;
 }
 
+function isImportedSku(sku: string | null | undefined): boolean {
+  if (!sku) return false;
+  return sku.trim().toLowerCase().startsWith('imported');
+}
+
+function inferPartLengthFromRawMetadata(rawMetadata: any): string | null {
+  const rejectUnitLike = /^(pcs|pc|bag|bags|lf|ft|piece|pieces|ea|each|units?|linear\s*ft)$/i;
+  const acceptValue = (v: unknown): string | null => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (!s || rejectUnitLike.test(s)) return null;
+    return s;
+  };
+
+  const fromObject = (obj: Record<string, unknown>): string | null => {
+    const directKeys = [
+      'part_length',
+      'partLength',
+      'Part Length',
+      'PART LENGTH',
+      'CF.Part Length',
+      'cf.part length',
+      'cf_part_length',
+      'part-length',
+    ];
+    for (const key of directKeys) {
+      const val = acceptValue(obj[key]);
+      if (val) return val;
+    }
+
+    if (Array.isArray(obj.custom_fields)) {
+      for (const field of obj.custom_fields as any[]) {
+        const label = String(field?.label || field?.name || field?.api_name || '')
+          .toLowerCase()
+          .replace(/[^a-z]/g, '');
+        if (label.includes('partlength')) {
+          const v = acceptValue(field?.value) ?? acceptValue(field?.value_formatted);
+          if (v) return v;
+        }
+      }
+    }
+
+    for (const [key, value] of Object.entries(obj)) {
+      const normalized = key.toLowerCase().replace(/[^a-z]/g, '');
+      if (normalized.includes('partlength')) {
+        const v = acceptValue(value);
+        if (v) return v;
+      }
+    }
+
+    return null;
+  };
+
+  if (Array.isArray(rawMetadata)) {
+    for (const entry of rawMetadata) {
+      if (entry && typeof entry === 'object') {
+        const v = fromObject(entry as Record<string, unknown>);
+        if (v) return v;
+      }
+    }
+    return null;
+  }
+
+  if (rawMetadata && typeof rawMetadata === 'object') {
+    return fromObject(rawMetadata as Record<string, unknown>);
+  }
+
+  return null;
+}
+
 export function MaterialInventory() {
   const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'catalog' | 'lumber' | 'rebar' | 'analytics'>('catalog');
@@ -176,9 +246,16 @@ export function MaterialInventory() {
   async function loadMaterials() {
     try {
       setLoading(true);
+      // Keep placeholder imported SKUs out of Martin Builder permanently.
+      await supabase
+        .from('materials_catalog')
+        .delete()
+        .ilike('sku', 'imported%');
+
       const { data, error } = await supabase
         .from('materials_catalog')
         .select('*')
+        .not('sku', 'ilike', 'imported%')
         .order('material_name', { ascending: true });
 
       if (error) throw error;
@@ -467,8 +544,10 @@ export function MaterialInventory() {
   const flatMaterials = useMemo(() => {
     return materials.map(material => ({
       ...material,
-      displayName: material.part_length && !isPackageUnit(material.part_length)
-        ? `${material.material_name} : ${material.part_length}`
+      effective_part_length: material.part_length || inferPartLengthFromRawMetadata(material.raw_metadata),
+      displayName: (material.part_length || inferPartLengthFromRawMetadata(material.raw_metadata)) &&
+        !isPackageUnit(material.part_length || inferPartLengthFromRawMetadata(material.raw_metadata))
+        ? `${material.material_name} : ${material.part_length || inferPartLengthFromRawMetadata(material.raw_metadata)}`
         : material.material_name
     }));
   }, [materials]);
@@ -601,7 +680,7 @@ export function MaterialInventory() {
       filtered = filtered.filter(m =>
         m.material_name.toLowerCase().includes(term) ||
         m.sku.toLowerCase().includes(term) ||
-        m.part_length?.toLowerCase().includes(term)
+        m.effective_part_length?.toLowerCase().includes(term)
       );
     }
 
@@ -609,7 +688,7 @@ export function MaterialInventory() {
     return filtered.sort((a, b) => {
       const nameCompare = a.material_name.localeCompare(b.material_name);
       if (nameCompare !== 0) return nameCompare;
-      return (a.part_length || '').localeCompare(b.part_length || '');
+      return (a.effective_part_length || '').localeCompare(b.effective_part_length || '');
     });
   }, [flatMaterials, selectedCategory, searchTerm]);
 
@@ -705,6 +784,7 @@ export function MaterialInventory() {
         const sku = values[skuIdx];
         
         if (!itemName || !sku) continue;
+        if (isImportedSku(sku)) continue;
 
         totalRows++;
 
@@ -850,6 +930,7 @@ export function MaterialInventory() {
   }
 
   const totalItems = materials.length;
+  const showDefaultTrimColumn = selectedCategory === 'Trim';
   
   async function exportMaterialsCatalog() {
     setExporting(true);
@@ -1119,7 +1200,7 @@ export function MaterialInventory() {
                 <TableHead className="bg-slate-50 font-bold">Length</TableHead>
                 <TableHead className="bg-slate-50 font-bold">SKU</TableHead>
                 <TableHead className="bg-slate-50 font-bold">Category</TableHead>
-                <TableHead className="bg-slate-50 font-bold">Default trim</TableHead>
+                {showDefaultTrimColumn && <TableHead className="bg-slate-50 font-bold">Default trim</TableHead>}
                 <TableHead className="text-right bg-slate-50 font-bold">Cost</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Markup %</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Price</TableHead>
@@ -1128,7 +1209,7 @@ export function MaterialInventory() {
             <TableBody>
               {filteredMaterials.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={showDefaultTrimColumn ? 8 : 7} className="text-center py-12 text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No materials found</p>
                   </TableCell>
@@ -1137,6 +1218,7 @@ export function MaterialInventory() {
                 filteredMaterials.map(material => {
                   const markupDisplay = getMarkupDisplay(material.purchase_cost, material.unit_price);
                   const trimName = material.default_trim_saved_config_id ? trimNameById[material.default_trim_saved_config_id] : null;
+                  const isTrimCategory = (cleanCategory(material.category) || '').toLowerCase() === 'trim';
                   return (
                     <TableRow key={material.sku} className="hover:bg-slate-50 border-b border-slate-100">
                       <TableCell className="font-medium text-slate-900">
@@ -1146,7 +1228,7 @@ export function MaterialInventory() {
                         </div>
                       </TableCell>
                       <TableCell className="font-semibold text-blue-700">
-                        {formatLength(material.part_length, material.category)}
+                        {formatLength(material.effective_part_length, material.category)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -1159,20 +1241,26 @@ export function MaterialInventory() {
                           <Badge variant="outline" className="font-medium">{cleanCategory(material.category)}</Badge>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            setAttachTrimForSku({ sku: material.sku, materialName: material.material_name });
-                            setSelectedDefaultTrimId(material.default_trim_saved_config_id ?? null);
-                          }}
-                        >
-                          <Ruler className="w-3 h-3 mr-1" />
-                          {trimName ?? 'Attach trim'}
-                        </Button>
-                      </TableCell>
+                      {showDefaultTrimColumn && (
+                        <TableCell>
+                          {isTrimCategory ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setAttachTrimForSku({ sku: material.sku, materialName: material.material_name });
+                                setSelectedDefaultTrimId(material.default_trim_saved_config_id ?? null);
+                              }}
+                            >
+                              <Ruler className="w-3 h-3 mr-1" />
+                              {trimName ?? 'Attach trim'}
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right font-semibold text-black">
                         ${(material.purchase_cost || 0).toFixed(2)}
                       </TableCell>

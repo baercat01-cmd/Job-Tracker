@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -96,6 +96,31 @@ export default function CustomerPortal() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get('token');
+
+  // If an office device resumes a stale customer portal URL, force it back to Jobs home.
+  // `portal_stay=1` allows intentional customer-portal preview/testing when needed.
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('portal_stay') === '1') return;
+    } catch {
+      return;
+    }
+
+    let lastRole: string | null = null;
+    let hasOfficeSession = false;
+    try {
+      lastRole = localStorage.getItem('mb_last_app_role');
+      hasOfficeSession =
+        localStorage.getItem('fieldtrack_user_id') !== null || localStorage.getItem('mb_profile') !== null;
+    } catch {
+      return;
+    }
+
+    if (lastRole !== 'office' && !hasOfficeSession) return;
+    window.location.replace(`${window.location.origin}/office?tab=jobs`);
+  }, []);
   
   const [loading, setLoading] = useState(true);
   const [validToken, setValidToken] = useState(false);

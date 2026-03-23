@@ -154,6 +154,8 @@ serve(async (req) => {
           const rows: any[] = [];
           let itemsSkipped = 0;
           const skippedItems: string[] = [];
+          let inactiveRemoved = 0;
+          const inactiveSkus: string[] = [];
 
           for (const item of items) {
             const sku =
@@ -163,15 +165,32 @@ serve(async (req) => {
               skippedItems.push(item.name || 'Unknown');
               continue;
             }
+            if (isImportedSkuValue(sku)) {
+              inactiveSkus.push(String(sku));
+              continue;
+            }
+            if (!isZohoItemActive(item)) {
+              inactiveSkus.push(String(sku));
+              continue;
+            }
             const unitPrice = parseFloat(item.rate || item.selling_price || item.sales_rate || item.price || '0');
             const purchaseCost = parseFloat(item.purchase_rate || item.purchase_cost || item.cost_price || item.cost || '0');
+            let partLength = getPartLengthFromZohoItem(item);
+            if (!partLength && (item.item_id || item.id)) {
+              try {
+                const fullItem = await fetchZohoItemDetails(accessToken, settings.countywide_org_id, String(item.item_id || item.id));
+                if (fullItem) partLength = getPartLengthFromZohoItem(fullItem);
+              } catch (e) {
+                console.warn(`Part length fetch for ${sku}:`, (e as Error).message);
+              }
+            }
             rows.push({
               sku,
               material_name: item.name || 'Unknown Material',
               category: getCategoryFromZohoItem(item, accountIdToName),
               unit_price: unitPrice,
               purchase_cost: purchaseCost,
-              part_length: getPartLengthFromZohoItem(item),
+              part_length: partLength,
               raw_metadata: item,
               updated_at: now,
               created_at: now,
@@ -184,6 +203,17 @@ serve(async (req) => {
               .from('materials_catalog')
               .upsert(rows, { onConflict: 'sku' });
             if (!uErr) itemsSynced = rows.length;
+          }
+          if (inactiveSkus.length > 0) {
+            const { error: dErr, count } = await supabase
+              .from('materials_catalog')
+              .delete({ count: 'exact' })
+              .in('sku', inactiveSkus);
+            if (dErr) {
+              console.warn('⚠️ Failed removing inactive SKUs from materials_catalog:', dErr.message);
+            } else {
+              inactiveRemoved = count ?? 0;
+            }
           }
 
           if (!hasMore) {
@@ -200,13 +230,14 @@ serve(async (req) => {
               nextPage: hasMore ? syncPage + 1 : undefined,
               message: hasMore
                 ? `Synced page ${syncPage} (${itemsSynced} materials). More pages to go...`
-                : `Synced ${itemsSynced} materials from Zoho Books (${itemsSkipped} skipped)`,
+                : `Synced ${itemsSynced} materials from Zoho Books (${itemsSkipped} skipped, ${inactiveRemoved} inactive removed)`,
               vendorsSynced: 0,
               itemsSynced,
               itemsInserted: itemsSynced,
               itemsUpdated: 0,
               itemsSkipped,
               skippedItems,
+              inactiveRemoved,
               insertedItems: [],
               updatedItems: [],
             }),
@@ -1001,19 +1032,28 @@ function getPartLengthFromZohoItem(item: any): string | null {
 
   // Top-level fields (some APIs expose custom fields as item["Part Length"])
   if (accept(item.part_length)) return accept(item.part_length);
+  if (accept(item.partLength)) return accept(item.partLength);
+  if (accept(item.cf_part_length)) return accept(item.cf_part_length);
+  if (accept(item.cf_partlength)) return accept(item.cf_partlength);
   if (accept(item.length)) return accept(item.length);
-  const partLengthKey = Object.keys(item || {}).find((k) => /part\s*length/i.test(k));
+  const partLengthKey = Object.keys(item || {}).find((k) => /part[\s_-]*length/i.test(k));
   if (partLengthKey && accept(item[partLengthKey])) return accept(item[partLengthKey]);
   if (item['Part Length'] != null && accept(item['Part Length'])) return accept(item['Part Length']);
 
   // custom_fields array (may have label, name, or only value)
   const customFields = item.custom_fields || [];
   for (const cf of customFields) {
-    const label = String(cf.label || cf.name || '').trim().toLowerCase();
+    const label = String(cf.label || cf.name || cf.api_name || '').trim().toLowerCase();
     const value = cf.value != null ? String(cf.value).trim() : '';
+    const valueFormatted = cf.value_formatted != null ? String(cf.value_formatted).trim() : '';
     if (!value) continue;
-    if (label === 'part length' || label === 'partlength') return unitLike.test(value) ? null : value;
+    if (label === 'part length' || label === 'partlength' || label === 'cf_part_length' || /part[\s_-]*length/.test(label)) {
+      if (!unitLike.test(value)) return value;
+      if (valueFormatted && !unitLike.test(valueFormatted)) return valueFormatted;
+      return null;
+    }
     if (looksLikeLength(value)) return value;
+    if (valueFormatted && looksLikeLength(valueFormatted)) return valueFormatted;
   }
   // If only one custom field and it looks like a length, use it (API often omits label in list)
   if (customFields.length === 1 && customFields[0].value != null) {
@@ -1026,6 +1066,21 @@ function getPartLengthFromZohoItem(item: any): string | null {
     if (value && /^\d+(\.\d+)?$/.test(value) && !unitLike.test(value)) return value;
   }
   return null;
+}
+
+/** Treat inactive Zoho items as not importable into materials catalog. */
+function isZohoItemActive(item: any): boolean {
+  if (!item || typeof item !== 'object') return true;
+  const status = String(item.status || '').trim().toLowerCase();
+  if (status === 'inactive') return false;
+  if (item.is_active === false) return false;
+  if (item.is_inactive === true) return false;
+  return true;
+}
+
+function isImportedSkuValue(sku: unknown): boolean {
+  if (sku == null) return false;
+  return String(sku).trim().toLowerCase().startsWith('imported');
 }
 
 /** Fetch full item details from Zoho (includes custom_fields). Use when list response omits them. */

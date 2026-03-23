@@ -213,14 +213,19 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     const perQuote = selectedQuoteIdForVisibility && link.visibility_by_quote && typeof link.visibility_by_quote === 'object' && !Array.isArray(link.visibility_by_quote)
       ? (link.visibility_by_quote as Record<string, any>)[selectedQuoteIdForVisibility]
       : null;
-    /** Per-quote JSON often only contains fields that were autosaved (e.g. show_section_prices). Missing keys must inherit link-level columns or toggles stay stuck off. */
-    const pqBool = (pq: Record<string, unknown> | null | undefined, key: string, linkFallback: boolean | undefined): boolean => {
-      if (pq && typeof pq === 'object' && key in pq) return pq[key] === true;
-      return linkFallback === true;
-    };
+    /** Per-quote JSON often only contains fields that were autosaved (e.g. show_section_prices). Missing keys must inherit link-level columns. */
     if (perQuote && typeof perQuote === 'object') {
       const pq = perQuote as Record<string, unknown>;
       const multiQuote = jobQuotes.length > 1;
+      const pqBool = (
+        key: string,
+        linkFallback: boolean | undefined
+      ): boolean => {
+        // Single-proposal jobs should follow link-level toggles, even if stale per-quote JSON exists.
+        if (!multiQuote) return linkFallback === true;
+        if (key in pq) return pq[key] === true;
+        return linkFallback === true;
+      };
       const lineFromLink = link.show_line_item_prices === true;
       const hasExplicitLine = 'show_line_item_prices' in pq;
       const lineFromPer = hasExplicitLine ? pq.show_line_item_prices === true : null;
@@ -234,14 +239,14 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           ? lineFromPer === true
           : lineFromLink || lineFromPer === true;
 
-      setShowProposal(pqBool(pq, 'show_proposal', link.show_proposal));
-      setShowPayments(pqBool(pq, 'show_payments', link.show_payments));
-      setShowSchedule(pqBool(pq, 'show_schedule', link.show_schedule));
-      setShowDocuments(pqBool(pq, 'show_documents', link.show_documents));
-      setShowPhotos(pqBool(pq, 'show_photos', link.show_photos));
-      setShowFinancialSummary(pqBool(pq, 'show_financial_summary', link.show_financial_summary));
+      setShowProposal(pqBool('show_proposal', link.show_proposal));
+      setShowPayments(pqBool('show_payments', link.show_payments));
+      setShowSchedule(pqBool('show_schedule', link.show_schedule));
+      setShowDocuments(pqBool('show_documents', link.show_documents));
+      setShowPhotos(pqBool('show_photos', link.show_photos));
+      setShowFinancialSummary(pqBool('show_financial_summary', link.show_financial_summary));
       setShowLineItemPrices(lineItemPricesSynced);
-      setShowMaterialItemsNoPrices(pqBool(pq, 'show_material_items_no_prices', link.show_material_items_no_prices));
+      setShowMaterialItemsNoPrices(pqBool('show_material_items_no_prices', link.show_material_items_no_prices));
       const raw =
         'show_section_prices' in pq && typeof pq.show_section_prices === 'object' && pq.show_section_prices !== null && !Array.isArray(pq.show_section_prices)
           ? pq.show_section_prices
@@ -1013,7 +1018,6 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           } as CustomerPortalLink;
         })
       );
-      await loadPortalLinks();
       toast.success('Setting saved — customer link will reflect this.');
     } catch (err: any) {
       console.error('Failed to auto-save visibility setting:', err);
@@ -2246,7 +2250,13 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                     <Label className="font-medium">Documents</Label>
                     <p className="text-sm text-muted-foreground">Show documents and drawings</p>
                   </div>
-                  <Switch checked={showDocuments} onCheckedChange={setShowDocuments} />
+                  <Switch
+                    checked={showDocuments}
+                    onCheckedChange={(v) => {
+                      setShowDocuments(v);
+                      autoSaveVisibility('show_documents', v);
+                    }}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg">

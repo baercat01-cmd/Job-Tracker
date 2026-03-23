@@ -231,6 +231,16 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
       ),
     [proposalData]
   );
+  const [activeMaterialSheetId, setActiveMaterialSheetId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!previewMainMaterialSheets.length) {
+      setActiveMaterialSheetId(null);
+      return;
+    }
+    if (!activeMaterialSheetId || !previewMainMaterialSheets.some((s: any) => s.id === activeMaterialSheetId)) {
+      setActiveMaterialSheetId(previewMainMaterialSheets[0].id);
+    }
+  }, [previewMainMaterialSheets, activeMaterialSheetId]);
 
   const previewCoMaterialSheets = useMemo(() => {
     const co = changeOrderProposalData;
@@ -342,13 +352,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {(() => {
-                    const baseShowPrice = !!(visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices);
-                    const sp: Record<string, boolean> | null = (typeof visibilitySettings?.show_section_prices === 'object' && visibilitySettings?.show_section_prices !== null && !Array.isArray(visibilitySettings?.show_section_prices)) ? visibilitySettings.show_section_prices : null;
-                    const showPriceForSection = (sectionId: string) => baseShowPrice && (sp == null || sp[sectionId] !== false);
-                    const totals = proposalData?.totals;
-                    const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
-                    // Summary line matching office: Proposal # | Materials | Labor | Subtotal | Tax | GRAND TOTAL
-                    const showSummary = visibilitySettings?.show_financial_summary && totals;
+                    const showPriceForSection = (_sectionId?: string) => false;
                     // Build sections: material sheets (section totals only), linked custom rows, standalone rows/subs
                     const proposalSheets = (proposalData?.materialSheets || []).filter(
                       (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
@@ -371,80 +375,10 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
 
                     return (
                       <>
-                        {showSummary && (
-                          <div className="text-sm font-medium text-slate-700 border-b border-slate-200 pb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <span>Proposal #{proposalNumber}</span>
-                            {(totals.materials != null || totals.labor != null) && (
-                              <>
-                                <span className="text-slate-400">|</span>
-                                {totals.materials != null && (
-                                  <span>Materials {typeof totals.materials === 'number' ? `$${totals.materials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}</span>
-                                )}
-                                {totals.labor != null && (
-                                  <span>Labor {typeof totals.labor === 'number' ? `$${totals.labor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}</span>
-                                )}
-                              </>
-                            )}
-                            <span className="text-slate-400">|</span>
-                            <span>Subtotal: ${(totals.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                            <span className="text-slate-400">|</span>
-                            <span>Tax (7%): ${(totals.tax ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                            <span className="text-slate-400">|</span>
-                            <span className="font-bold text-emerald-700">GRAND TOTAL: ${(totals.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
                         {allSections.map((section) => {
                       const showPrice = showPriceForSection(section.id);
                       if (section.type === 'material') {
-                        const sheet = section.data;
-                        const sheetMaterials = sheet._computedMaterials ?? 0;
-                        const sheetLabor = sheet._computedLabor ?? 0;
-                        const showSheetMoney =
-                          showPrice && !previewMaterialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
-                        return (
-                          <div key={sheet.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
-                              {sheet.description && (
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  <PortalMultilineText text={sheet.description} />
-                                </p>
-                              )}
-                              {showPrice &&
-                                !previewMaterialListNoPrices &&
-                                ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
-                                  <PortalSheetPricedLineItems sheet={sheet} />
-                                )}
-                              {previewMaterialListNoPrices && (
-                                <div className="mt-3 rounded-md border border-dashed border-emerald-600/40 bg-emerald-50/50 px-3 py-2 text-sm flex items-start gap-2">
-                                  <ExternalLink className="w-4 h-4 shrink-0 text-emerald-800 mt-0.5" />
-                                  <div>
-                                    <span className="font-medium text-emerald-900">Materials tab &amp; full page</span>
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                      Customers use the <strong>Materials</strong> tab for lists here, or open the full table in a new browser tab.
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            {showSheetMoney && (
-                              <div className="w-[100px] flex-shrink-0 text-right">
-                                {sheetMaterials > 0 && (
-                                  <>
-                                    <p className="text-sm text-slate-500">Materials</p>
-                                    <p className="text-base font-bold text-blue-700">${sheetMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                                  </>
-                                )}
-                                {sheetLabor > 0 && (
-                                  <>
-                                    <p className="text-sm text-slate-500 mt-2">Labor</p>
-                                    <p className="text-base font-bold text-amber-700">${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
+                        return null;
                       }
                       if (section.type === 'custom') {
                         const row = section.data;
@@ -484,24 +418,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                     );
                   })()}
 
-                  {visibilitySettings?.show_financial_summary && (
-                    <div className="border-t-2 pt-4 space-y-2">
-                      <div className="flex justify-between text-lg">
-                        <span className="font-medium">Subtotal:</span>
-                        <span>${(proposalData?.totals?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between text-lg">
-                        <span className="font-medium">Tax (7%):</span>
-                        <span>${(proposalData?.totals?.tax ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between text-2xl font-bold pt-2 border-t">
-                        <span>Grand Total:</span>
-                        <span className="text-emerald-700">
-                          ${(proposalData?.totals?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                  {/* Proposal view intentionally hides material sections and all pricing amounts. */}
                 </CardContent>
               </Card>
             )}
@@ -792,22 +709,40 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                   ) : previewMainMaterialSheets.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">No material sheets on this proposal.</p>
                   ) : (
-                    previewMainMaterialSheets.map((sheet: any) => (
-                      <div key={sheet.id} className="border rounded-lg p-4 space-y-3 bg-card">
-                        <div>
-                          <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
-                          {sheet.description?.trim() && (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              <PortalMultilineText text={sheet.description} />
+                    <Tabs
+                      value={activeMaterialSheetId ?? previewMainMaterialSheets[0]?.id}
+                      onValueChange={setActiveMaterialSheetId}
+                      className="w-full"
+                    >
+                      <TabsList
+                        className="grid w-full mb-4 h-auto"
+                        style={{ gridTemplateColumns: `repeat(${previewMainMaterialSheets.length}, minmax(0, 1fr))` }}
+                      >
+                        {previewMainMaterialSheets.map((sheet: any) => (
+                          <TabsTrigger key={sheet.id} value={sheet.id} className="truncate">
+                            {sheet.sheet_name}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                      {previewMainMaterialSheets.map((sheet: any) => (
+                        <TabsContent key={sheet.id} value={sheet.id}>
+                          <div className="border rounded-lg p-4 space-y-3 bg-card">
+                            <div>
+                              <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                              {sheet.description?.trim() && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  <PortalMultilineText text={sheet.description} />
+                                </p>
+                              )}
+                            </div>
+                            <PortalMaterialItemsTable items={sheet.items} />
+                            <p className="text-xs text-muted-foreground">
+                              Mirrors workbook grouping and order; pricing hidden.
                             </p>
-                          )}
-                        </div>
-                        <PortalMaterialItemsTable items={sheet.items} />
-                        <p className="text-xs text-muted-foreground">
-                          In the live portal, customers can open this sheet in a dedicated full-page view from here.
-                        </p>
-                      </div>
-                    ))
+                          </div>
+                        </TabsContent>
+                      ))}
+                    </Tabs>
                   )}
                 </CardContent>
               </Card>
