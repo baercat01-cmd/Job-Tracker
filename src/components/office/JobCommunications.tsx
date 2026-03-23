@@ -94,6 +94,30 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
     loadContacts();
   }, [job.id]);
 
+  // Keep office inbox updated with customer-portal messages in near real-time.
+  useEffect(() => {
+    if (!job?.id) return;
+    const channel = supabase
+      .channel(`job_emails_${job.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'job_emails', filter: `job_id=eq.${job.id}` },
+        () => {
+          void loadEmails();
+        }
+      )
+      .subscribe();
+
+    const poll = setInterval(() => {
+      void loadEmails();
+    }, 30000);
+
+    return () => {
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
+  }, [job?.id]);
+
   useEffect(() => {
     if (emails.length > 0) {
       organizeIntoThreads();

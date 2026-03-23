@@ -86,7 +86,7 @@ interface JobSummary {
 
 // Full select; fallback used when show_line_item_prices column is missing (PGRST204 / migration not run)
 const CUSTOMER_PORTAL_ACCESS_SELECT =
-  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,show_section_prices,visibility_by_quote,custom_message';
+  'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,show_line_item_prices,show_material_items_no_prices,show_section_prices,visibility_by_quote,custom_message';
 const CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
 
@@ -260,7 +260,26 @@ export default function CustomerPortal() {
         }
         if (Array.isArray(row) && row.length > 0) row = row[0];
         if (row && typeof row === 'object' && (row.job_id != null || row.id != null)) {
-          accessData = { ...row, show_line_item_prices: row.show_line_item_prices ?? false };
+          accessData = {
+            ...row,
+            show_line_item_prices: row.show_line_item_prices ?? false,
+            show_material_items_no_prices: row.show_material_items_no_prices,
+          };
+          // Some environments return stale RPC row shapes that omit this column.
+          // Backfill directly from table so Materials tab visibility resolves correctly.
+          if ((accessData as { show_material_items_no_prices?: unknown }).show_material_items_no_prices === undefined && accessData.id) {
+            const { data: directRow } = await supabase
+              .from('customer_portal_access')
+              .select('show_material_items_no_prices')
+              .eq('id', accessData.id)
+              .maybeSingle();
+            if (directRow && typeof directRow.show_material_items_no_prices === 'boolean') {
+              accessData.show_material_items_no_prices = directRow.show_material_items_no_prices;
+            }
+          }
+          if ((accessData as { show_material_items_no_prices?: unknown }).show_material_items_no_prices === undefined) {
+            accessData.show_material_items_no_prices = false;
+          }
         }
       }
       if (!accessData) {
@@ -289,7 +308,11 @@ export default function CustomerPortal() {
           setLoading(false);
           return;
         }
-        accessData = { ...accessData, show_line_item_prices: accessData.show_line_item_prices ?? false };
+        accessData = {
+          ...accessData,
+          show_line_item_prices: accessData.show_line_item_prices ?? false,
+          show_material_items_no_prices: accessData.show_material_items_no_prices ?? false,
+        };
       }
 
       // Check expiration
@@ -390,7 +413,19 @@ export default function CustomerPortal() {
           p_access_token: t.trim(),
           p_job_id: job.id,
         });
-        if (!rpcErr && Array.isArray(rpcDocs)) documentsData = rpcDocs;
+        if (!rpcErr && Array.isArray(rpcDocs)) {
+          documentsData = rpcDocs;
+        } else if (
+          rpcErr &&
+          /visible_to_customer_portal|column.*exist|schema cache|PGRST202|PGRST204/i.test(String(rpcErr.message || ''))
+        ) {
+          // Fallback when visibility column/function cache is stale: load all docs for this token-validated job.
+          const { data: rpcDocsAll, error: rpcAllErr } = await supabase.rpc('get_job_documents_for_customer_portal_any', {
+            p_access_token: t.trim(),
+            p_job_id: job.id,
+          });
+          if (!rpcAllErr && Array.isArray(rpcDocsAll)) documentsData = rpcDocsAll;
+        }
       }
       if (documentsData.length === 0 && !t?.trim()) {
         const { data: directDocs } = await supabase
@@ -654,7 +689,15 @@ function JobDetailView({
           ? (customerInfo.show_section_prices as Record<string, boolean>)
           : null);
   const showPriceForSection = (sectionId: string) => showFinancial && showLineItemPrices && (showSectionPrices == null || showSectionPrices[sectionId] !== false);
-  const showMaterialItemsNoPrices = readPerQuoteBool('show_material_items_no_prices', customerInfo?.show_material_items_no_prices === true);
+  const multiProposal = proposalQuotes.length > 1;
+  const materialListFromLink = customerInfo?.show_material_items_no_prices === true;
+  const hasExplicitMaterialListPerQuote = !!(perQuoteVisObj && 'show_material_items_no_prices' in perQuoteVisObj);
+  const materialListFromPerQuote = hasExplicitMaterialListPerQuote ? perQuoteVisObj!.show_material_items_no_prices === true : null;
+  // Single-proposal: link-level true should win over stale per-quote false.
+  const showMaterialItemsNoPrices =
+    multiProposal && hasExplicitMaterialListPerQuote
+      ? materialListFromPerQuote === true
+      : materialListFromLink || materialListFromPerQuote === true;
   const showProposal = customerInfo?.show_proposal === true;
   const showPayments = customerInfo?.show_payments === true;
   const showSchedule = customerInfo?.show_schedule === true;
@@ -664,6 +707,7 @@ function JobDetailView({
   const [emailBody, setEmailBody] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailSentInDialog, setEmailSentInDialog] = useState(false);
+  const [emailSendError, setEmailSendError] = useState<string | null>(null);
   const [signerName, setSignerName] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
@@ -972,16 +1016,20 @@ function JobDetailView({
   }
 
   async function sendEmailToJob() {
+    setEmailSendError(null);
     if (!emailBody.trim()) {
       toast.error('Please enter a message');
+      setEmailSendError('Please enter a message.');
       return;
     }
     if (!portalToken) {
       toast.error('Session expired or missing. Please refresh the page and use your portal link again.');
+      setEmailSendError('Session expired or missing. Please refresh the page and use your portal link again.');
       return;
     }
     if (!job?.id) {
       toast.error('Project not found. Please refresh the page.');
+      setEmailSendError('Project not found. Please refresh the page.');
       return;
     }
 
@@ -1001,11 +1049,36 @@ function JobDetailView({
       if (rpcError) {
         const msg = rpcError.message || 'Failed to send message';
         const isMissingRpc = /function.*does not exist|42883|PGRST202/i.test(String(msg));
-        toast.error(isMissingRpc
-          ? 'Sending messages is not set up yet. Your project manager needs to run the database migration for portal messages.'
-          : msg,
-          { duration: isMissingRpc ? 8000 : 5000 }
-        );
+        if (isMissingRpc) {
+          // Fallback for environments missing the RPC in schema cache.
+          const { error: insertErr } = await supabase.from('job_emails').insert({
+            job_id: job.id,
+            message_id: `customer-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            subject: defaultSubject,
+            from_email: (customerInfo?.customer_email || '').trim(),
+            from_name: fromName,
+            to_emails: ['office@company.com'],
+            cc_emails: [],
+            body_text: body,
+            email_date: new Date().toISOString(),
+            direction: 'inbound',
+            is_read: false,
+            entity_category: 'customer',
+          } as any);
+          if (!insertErr) {
+            toast.success('Message sent. The office will see it under this job’s Email Communications.');
+            setEmailBody('');
+            setEmailSentInDialog(true);
+            await onRefreshJobData?.();
+            return;
+          }
+          const fallbackMsg = insertErr.message || msg;
+          toast.error(`Failed to send message: ${fallbackMsg}`, { duration: 8000 });
+          setEmailSendError(`Failed to send message: ${fallbackMsg}`);
+          return;
+        }
+        toast.error(msg, { duration: 5000 });
+        setEmailSendError(msg);
         return;
       }
 
@@ -1017,6 +1090,7 @@ function JobDetailView({
     } catch (error: any) {
       console.error('Error sending email:', error);
       toast.error(error?.message ?? 'Failed to send message');
+      setEmailSendError(error?.message ?? 'Failed to send message');
     } finally {
       setSendingEmail(false);
     }
@@ -1089,6 +1163,16 @@ function JobDetailView({
       ),
     [proposalData]
   );
+  const [activeMaterialSheetId, setActiveMaterialSheetId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!mainMaterialSheetsForTab.length) {
+      setActiveMaterialSheetId(null);
+      return;
+    }
+    if (!activeMaterialSheetId || !mainMaterialSheetsForTab.some((s: any) => s.id === activeMaterialSheetId)) {
+      setActiveMaterialSheetId(mainMaterialSheetsForTab[0].id);
+    }
+  }, [mainMaterialSheetsForTab, activeMaterialSheetId]);
 
   const changeOrderMaterialSheetsForTab = useMemo(() => {
     const raw = changeOrderProposalData?.materialSheets;
@@ -2118,30 +2202,52 @@ function JobDetailView({
                 ) : mainMaterialSheetsForTab.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">No material sheets on this proposal.</p>
                 ) : (
-                  <div className="space-y-8">
-                    {mainMaterialSheetsForTab.map((sheet: any) => (
-                      <div key={sheet.id} className="border rounded-lg p-4 space-y-3 bg-card">
-                        <div>
-                          <h3 className="font-semibold text-base text-slate-900">{sheet.sheet_name}</h3>
-                          {sheet.description?.trim() && (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              <PortalMultilineText text={sheet.description} />
-                            </p>
-                          )}
-                        </div>
-                        <PortalMaterialItemsTable items={sheet.items} />
-                        <a
-                          href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: false })}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-800 hover:underline"
+                  <Tabs
+                    value={activeMaterialSheetId ?? mainMaterialSheetsForTab[0]?.id}
+                    onValueChange={setActiveMaterialSheetId}
+                    className="w-full"
+                  >
+                    <TabsList
+                      className="grid w-full mb-4 h-auto bg-slate-100/90 border border-slate-300 p-0 rounded-md"
+                      style={{ gridTemplateColumns: `repeat(${mainMaterialSheetsForTab.length}, minmax(0, 1fr))` }}
+                    >
+                      {mainMaterialSheetsForTab.map((sheet: any, idx: number) => (
+                        <TabsTrigger
+                          key={sheet.id}
+                          value={sheet.id}
+                          className={`h-auto min-h-10 px-3 py-2 text-xs sm:text-sm font-semibold text-center leading-snug whitespace-normal break-words rounded-none data-[state=inactive]:text-slate-700 data-[state=active]:bg-white data-[state=active]:text-emerald-900 data-[state=active]:shadow-sm ${
+                            idx < mainMaterialSheetsForTab.length - 1 ? 'border-r border-slate-300' : ''
+                          } ${idx === 0 ? 'rounded-l-md' : ''} ${idx === mainMaterialSheetsForTab.length - 1 ? 'rounded-r-md' : ''}`}
                         >
-                          <ExternalLink className="w-4 h-4 shrink-0" />
-                          Open full material list (new page)
-                        </a>
-                      </div>
+                          {sheet.sheet_name}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                    {mainMaterialSheetsForTab.map((sheet: any) => (
+                      <TabsContent key={sheet.id} value={sheet.id}>
+                        <div className="border rounded-lg p-4 space-y-3 bg-card">
+                          <div>
+                            <h3 className="font-semibold text-base text-slate-900">{sheet.sheet_name}</h3>
+                            {sheet.description?.trim() && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <PortalMultilineText text={sheet.description} />
+                              </p>
+                            )}
+                          </div>
+                          <PortalMaterialItemsTable items={sheet.items} />
+                          <a
+                            href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: false })}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-sm font-medium text-emerald-800 hover:underline"
+                          >
+                            <ExternalLink className="w-4 h-4 shrink-0" />
+                            Open full material list (new page)
+                          </a>
+                        </div>
+                      </TabsContent>
                     ))}
-                  </div>
+                  </Tabs>
                 )}
               </CardContent>
             </Card>
@@ -2453,7 +2559,10 @@ function JobDetailView({
       <Dialog
         open={showEmailDialog}
         onOpenChange={(open) => {
-          if (!open) setEmailSentInDialog(false);
+          if (!open) {
+            setEmailSentInDialog(false);
+            setEmailSendError(null);
+          }
           setShowEmailDialog(open);
         }}
       >
@@ -2487,12 +2596,18 @@ function JobDetailView({
                 <Textarea
                   id="email-body"
                   value={emailBody}
-                  onChange={(e) => setEmailBody(e.target.value)}
+                  onChange={(e) => {
+                    setEmailBody(e.target.value);
+                    if (emailSendError) setEmailSendError(null);
+                  }}
                   placeholder="Type your message here..."
                   rows={8}
                   className="mt-2"
                 />
               </div>
+              {emailSendError && (
+                <p className="text-sm text-red-600">{emailSendError}</p>
+              )}
               <div className="flex gap-2 pt-4">
                 <Button
                   type="button"

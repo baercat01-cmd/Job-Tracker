@@ -927,45 +927,13 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       show_section_prices: { ...showSectionPrices },
     };
 
-    const sectionPricesSafe = sectionPricesJsonForRpc(
-      eff.show_section_prices as Record<string, boolean> | null,
-      link.show_section_prices as Record<string, boolean> | null
-    );
-    let quoteIdForAutosave =
-      selectedQuoteIdForVisibility ?? (jobQuotes.length === 1 ? jobQuotes[0].id : null);
-    if (!quoteIdForAutosave) {
-      const { data: qr } = await supabase
-        .from('quotes')
-        .select('id')
-        .eq('job_id', jobId)
-        .order('created_at', { ascending: false })
-        .limit(2);
-      if (qr?.length === 1) quoteIdForAutosave = qr[0].id;
-    }
-    const visibilityPatch: Record<string, unknown> | undefined = quoteIdForAutosave
-      ? (mergeVisibilityForQuote(quoteIdForAutosave, { [field]: newValue } as any, eff) as Record<
-          string,
-          unknown
-        >)
-      : undefined;
-
-    const updated: Record<string, unknown> = {
-      show_financial_summary: eff.show_financial_summary,
-      show_proposal: eff.show_proposal,
-      show_payments: eff.show_payments,
-      show_schedule: eff.show_schedule,
-      show_documents: eff.show_documents,
-      show_photos: eff.show_photos,
-      show_line_item_prices: eff.show_line_item_prices,
-      show_material_items_no_prices: eff.show_material_items_no_prices,
-      show_section_prices: sectionPricesSafe,
-    };
-    if (visibilityPatch !== undefined) {
-      updated.visibility_by_quote = visibilityPatch;
-    }
+    // Keep autosave payload narrow: write only the toggled field (plus any dependent field).
+    // This avoids schema-cache false negatives from optional jsonb/portal columns during quick toggle saves.
+    const updated: Record<string, unknown> = { [field]: newValue };
+    if (coEnableFinancial) updated.show_financial_summary = true;
 
     try {
-      let { ok, error, visibilityByQuoteStripped } = await updateCustomerPortalAccessRowMinimal(
+      const { ok, error } = await updateCustomerPortalAccessRowMinimal(
         link.id,
         updated
       );
@@ -975,32 +943,12 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         toast.error(`Could not save: ${msg}`, { duration: 8000 });
         return;
       }
-
-      if (ok && visibilityByQuoteStripped && visibilityPatch !== undefined) {
-        const r2 = await updateCustomerPortalAccessRowMinimal(link.id, {
-          visibility_by_quote: visibilityPatch,
-        });
-        if (!r2.ok && r2.error) {
-          console.warn('[PortalMgmt] follow-up visibility_by_quote save failed', r2.error);
-        }
-      }
-
-      const nextVisibility =
-        visibilityPatch !== undefined ? visibilityPatch : link.visibility_by_quote;
       setPortalLinks((prev) =>
         prev.map((l) => {
           if (l.id !== link.id) return l;
-          const linePrices = updated.show_line_item_prices;
-          const matNo = updated.show_material_items_no_prices;
           return {
             ...l,
             ...updated,
-            show_line_item_prices: typeof linePrices === 'boolean' ? linePrices : l.show_line_item_prices,
-            show_material_items_no_prices:
-              typeof matNo === 'boolean' ? matNo : l.show_material_items_no_prices,
-            show_section_prices:
-              (updated.show_section_prices as Record<string, boolean>) ?? l.show_section_prices,
-            visibility_by_quote: nextVisibility as CustomerPortalLink['visibility_by_quote'],
           } as CustomerPortalLink;
         })
       );
@@ -1039,7 +987,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       : { show_section_prices: next };
 
     try {
-      let { error: resultError } = await updateCustomerPortalAccessRowMinimal(link.id, payload);
+      let { error: resultError, optionalColumnsStripped } = await updateCustomerPortalAccessRowMinimal(link.id, payload);
 
       if (resultError && isColumnError(resultError)) {
         setPortalLinks((prev) =>
@@ -1058,11 +1006,35 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           visibility_by_quote: (visibilityMerged ?? link.visibility_by_quote ?? {}) as Record<string, unknown>,
         });
         resultError = r2.error;
+        optionalColumnsStripped = r2.optionalColumnsStripped;
       }
       if (resultError) {
         toast.error(portalSaveErrorMessage(resultError), { duration: 10000 });
         setShowSectionPrices((prev) => ({ ...prev, [sectionId]: !show }));
         return;
+      }
+      if (optionalColumnsStripped) {
+        const r3 = await supabase.rpc('set_customer_portal_access_visibility', {
+          p_link_id: link.id,
+          p_show_proposal: showProposal,
+          p_show_payments: showPayments,
+          p_show_schedule: showSchedule,
+          p_show_documents: showDocuments,
+          p_show_photos: showPhotos,
+          p_show_financial_summary: showFinancialSummary,
+          p_show_line_item_prices: showLineItemPrices,
+          p_show_material_items_no_prices: showMaterialItemsNoPrices,
+          p_show_section_prices: sectionPricesJsonForRpc(next),
+          p_visibility_by_quote: visibilityMerged ?? link.visibility_by_quote ?? {},
+        });
+        if (r3.error || r3.data !== true) {
+          toast.error(
+            'Section price visibility could not be saved because portal visibility columns are missing in the database. Run latest Supabase migrations, then try again.',
+            { duration: 10000 }
+          );
+          setShowSectionPrices((prev) => ({ ...prev, [sectionId]: !show }));
+          return;
+        }
       }
       setPortalLinks((prev) =>
         prev.map((l) =>

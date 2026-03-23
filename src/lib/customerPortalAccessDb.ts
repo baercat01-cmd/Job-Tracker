@@ -112,11 +112,13 @@ export async function updateCustomerPortalAccessRow(
 export async function updateCustomerPortalAccessRowMinimal(
   linkId: string,
   patch: Record<string, unknown>
-): Promise<{ ok: boolean; error: unknown; visibilityByQuoteStripped?: boolean }> {
+): Promise<{ ok: boolean; error: unknown; visibilityByQuoteStripped?: boolean; optionalColumnsStripped?: boolean }> {
   const payload = portalPatchForRest({ ...patch, updated_at: new Date().toISOString() });
   let visibilityByQuoteStripped = false;
+  let optionalColumnsStripped = false;
   let res = await supabase.from('customer_portal_access').update(payload).eq('id', linkId).select('id');
   if (res.error && isPortalColumnOrSchemaError(res.error)) {
+    optionalColumnsStripped = true;
     res = await supabase
       .from('customer_portal_access')
       .update(portalPatchForRest(stripOptionalPortalColumns(payload)))
@@ -140,7 +142,7 @@ export async function updateCustomerPortalAccessRowMinimal(
       },
     };
   }
-  return { ok: true, error: null, visibilityByQuoteStripped };
+  return { ok: true, error: null, visibilityByQuoteStripped, optionalColumnsStripped };
 }
 
 export async function insertCustomerPortalAccessRow(

@@ -560,8 +560,24 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
           p_document_id: docId,
           p_visible: nextValue,
         });
-        if (rpcError) throw rpcError;
-        if (ok !== true) throw new Error('Portal visibility update was not applied.');
+        if (rpcError || ok !== true) {
+          // If RPC is missing in schema cache, retry direct table update as a final fallback.
+          const rpcMissing =
+            rpcError?.code === 'PGRST202' ||
+            /set_job_document_portal_visibility|Could not find the function|schema cache/i.test(
+              String(rpcError?.message || '')
+            );
+          if (!rpcMissing) throw rpcError ?? new Error('Portal visibility update was not applied.');
+
+          const { error: retryError } = await supabase
+            .from('job_documents')
+            .update({
+              visible_to_customer_portal: nextValue,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', docId);
+          if (retryError) throw retryError;
+        }
       }
 
       toast.success(nextValue ? 'Document is now visible in customer portal' : 'Document hidden from customer portal');
@@ -871,8 +887,8 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
                 {/* Info - right side */}
                 <div className="flex-1 min-w-0 flex flex-col p-4" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="min-w-0 flex-1">
+                  <div className="mb-2">
+                    <div className="min-w-0">
                       {isEditing ? (
                         <div className="space-y-2">
                           <Input
@@ -911,7 +927,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                         </>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1 mt-2">
                       {isEditing ? (
                         <>
                           <Button variant="default" size="sm" onClick={() => saveDocumentEdits(doc.id)}>
