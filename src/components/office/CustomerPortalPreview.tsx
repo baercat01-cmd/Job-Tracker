@@ -352,7 +352,15 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {(() => {
-                    const showPriceForSection = (_sectionId?: string) => false;
+                    const baseShowPrice = !!(visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices);
+                    const sp: Record<string, boolean> | null =
+                      typeof visibilitySettings?.show_section_prices === 'object' &&
+                      visibilitySettings?.show_section_prices !== null &&
+                      !Array.isArray(visibilitySettings?.show_section_prices)
+                        ? visibilitySettings.show_section_prices
+                        : null;
+                    const showPriceForSection = (sectionId?: string) =>
+                      !!sectionId && baseShowPrice && (sp == null || sp[sectionId] !== false);
                     // Build sections: material sheets (section totals only), linked custom rows, standalone rows/subs
                     const proposalSheets = (proposalData?.materialSheets || []).filter(
                       (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
@@ -378,7 +386,30 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                         {allSections.map((section) => {
                       const showPrice = showPriceForSection(section.id);
                       if (section.type === 'material') {
-                        return null;
+                        const sheet = section.data;
+                        const sheetMaterials = sheet._computedMaterials ?? 0;
+                        const sheetLabor = sheet._computedLabor ?? 0;
+                        const sectionTotal = sheetMaterials + sheetLabor;
+                        return (
+                          <div key={sheet.id} className="border rounded-lg p-4 flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
+                              {sheet.description && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  <PortalMultilineText text={sheet.description} />
+                                </p>
+                              )}
+                            </div>
+                            {showPrice && (
+                              <div className="w-[140px] shrink-0 text-right">
+                                <p className="text-xs text-slate-500">Section total</p>
+                                <p className="text-xl font-bold text-emerald-700">
+                                  ${sectionTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
                       }
                       if (section.type === 'custom') {
                         const row = section.data;
@@ -398,7 +429,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                 </p>
                               )}
                             </div>
-                            {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                            {showPrice && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                           </div>
                         );
                       }
@@ -410,7 +441,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                             <h3 className="font-bold text-lg">{est.company_name}</h3>
                             {est.scope_of_work && <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>}
                           </div>
-                          {showPrice && total > 0 && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                          {showPrice && <p className="text-xl font-bold text-emerald-700 shrink-0">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                         </div>
                       );
                     })}
@@ -418,7 +449,17 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                     );
                   })()}
 
-                  {/* Proposal view intentionally hides material sections and all pricing amounts. */}
+                  {/* Final price at bottom is controlled by "Show final price". */}
+                  {visibilitySettings?.show_financial_summary && (
+                    <div className="border-t-2 pt-4">
+                      <div className="flex justify-between text-2xl font-bold">
+                        <span>Final Price:</span>
+                        <span className="text-emerald-700">
+                          ${(proposalData?.totals?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -715,11 +756,17 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                       className="w-full"
                     >
                       <TabsList
-                        className="grid w-full mb-4 h-auto"
+                        className="grid w-full mb-4 h-auto bg-slate-100/90 border border-slate-300 p-0 rounded-md"
                         style={{ gridTemplateColumns: `repeat(${previewMainMaterialSheets.length}, minmax(0, 1fr))` }}
                       >
-                        {previewMainMaterialSheets.map((sheet: any) => (
-                          <TabsTrigger key={sheet.id} value={sheet.id} className="truncate">
+                        {previewMainMaterialSheets.map((sheet: any, idx: number) => (
+                          <TabsTrigger
+                            key={sheet.id}
+                            value={sheet.id}
+                            className={`h-auto min-h-10 px-3 py-2 text-xs sm:text-sm font-semibold text-center leading-snug whitespace-normal break-words rounded-none data-[state=inactive]:text-slate-700 data-[state=active]:bg-white data-[state=active]:text-emerald-900 data-[state=active]:shadow-sm ${
+                              idx < previewMainMaterialSheets.length - 1 ? 'border-r border-slate-300' : ''
+                            } ${idx === 0 ? 'rounded-l-md' : ''} ${idx === previewMainMaterialSheets.length - 1 ? 'rounded-r-md' : ''}`}
+                          >
                             {sheet.sheet_name}
                           </TabsTrigger>
                         ))}

@@ -539,21 +539,36 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
   async function togglePortalVisibility(docId: string, currentValue: boolean) {
     try {
+      const nextValue = !currentValue;
       const { error } = await supabase
         .from('job_documents')
         .update({
-          visible_to_customer_portal: !currentValue,
+          visible_to_customer_portal: nextValue,
           updated_at: new Date().toISOString(),
         })
         .eq('id', docId);
 
-      if (error) throw error;
+      if (error) {
+        const looksLikeSchemaCacheIssue =
+          error.code === 'PGRST204' ||
+          /visible_to_customer_portal|column.*exist|schema cache/i.test(error.message || '');
 
-      toast.success(!currentValue ? 'Document is now visible in customer portal' : 'Document hidden from customer portal');
+        if (!looksLikeSchemaCacheIssue) throw error;
+
+        // Fallback path for PostgREST schema cache mismatch: update via RPC.
+        const { data: ok, error: rpcError } = await supabase.rpc('set_job_document_portal_visibility', {
+          p_document_id: docId,
+          p_visible: nextValue,
+        });
+        if (rpcError) throw rpcError;
+        if (ok !== true) throw new Error('Portal visibility update was not applied.');
+      }
+
+      toast.success(nextValue ? 'Document is now visible in customer portal' : 'Document hidden from customer portal');
       loadDocuments();
     } catch (error: any) {
       console.error('Error toggling portal visibility:', error);
-      toast.error('Failed to update visibility');
+      toast.error(error?.message || 'Failed to update visibility');
     }
   }
 
@@ -881,7 +896,10 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                         </div>
                       ) : (
                         <>
-                          <CardTitle className="text-sm mb-1 truncate text-slate-900" title={doc.name}>
+                          <CardTitle
+                            className="text-sm mb-1 text-slate-900 leading-snug break-words line-clamp-2 pr-1"
+                            title={doc.name}
+                          >
                             {doc.name}
                           </CardTitle>
                           <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
@@ -1518,9 +1536,24 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
           </DialogHeader>
           <div className="flex-1 overflow-auto p-6 pt-4">
             {viewingDocument && (() => {
-              const fileExtension = viewingDocument.url.split('.').pop()?.toLowerCase();
-              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
-              const isPDF = fileExtension === 'pdf';
+              const extensionFromUrl = (() => {
+                try {
+                  const parsed = new URL(viewingDocument.url);
+                  const fileName = parsed.pathname.split('/').pop() || '';
+                  return fileName.includes('.') ? (fileName.split('.').pop() || '').toLowerCase() : '';
+                } catch {
+                  const clean = viewingDocument.url.split('?')[0].split('#')[0];
+                  const fileName = clean.split('/').pop() || '';
+                  return fileName.includes('.') ? (fileName.split('.').pop() || '').toLowerCase() : '';
+                }
+              })();
+              const extensionFromName = (() => {
+                const n = viewingDocument.name || '';
+                return n.includes('.') ? (n.split('.').pop() || '').toLowerCase() : '';
+              })();
+              const ext = extensionFromUrl || extensionFromName;
+              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '');
+              const isPDF = ext === 'pdf';
               
               if (isImage) {
                 return (
@@ -1534,11 +1567,17 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                 );
               } else if (isPDF) {
                 return (
-                  <iframe
-                    src={viewingDocument.url}
+                  <object
+                    data={viewingDocument.url}
+                    type="application/pdf"
                     className="w-full h-[70vh] rounded-lg border"
-                    title={viewingDocument.name}
-                  />
+                  >
+                    <iframe
+                      src={viewingDocument.url}
+                      className="w-full h-[70vh] rounded-lg border"
+                      title={viewingDocument.name}
+                    />
+                  </object>
                 );
               } else {
                 return (

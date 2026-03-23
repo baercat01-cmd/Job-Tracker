@@ -470,6 +470,12 @@ export function TrimPricingCalculator() {
     return true;
   }
 
+  /** Non-1/2" hems can be used as attachable returns even on corners. */
+  function canPlaceHemAtEnd(segmentId: string, atStart: boolean): boolean {
+    if (isSegmentEndOpen(segmentId, atStart)) return true;
+    return Math.abs(Math.max(0.125, hemDepthInches) - 0.5) > 1e-6;
+  }
+
   /** Get hem preview tip point in inch coords (for click-to-select hem option). */
   function getHemPreviewTipPoint(segment: LineSegment, hemAtStart: boolean, side: 'left' | 'right'): Point {
     const hemPoint = hemAtStart ? segment.start : segment.end;
@@ -825,15 +831,15 @@ export function TrimPricingCalculator() {
 
 
 
-    // Draw hem preview options only at open ends (not at corners)
+    // Draw hem preview options at open ends; allow corners when hem length is not 1/2"
     if (hemPreviewMode) {
       const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
       if (segment) {
-        if (isSegmentEndOpen(segment.id, true)) {
+        if (canPlaceHemAtEnd(segment.id, true)) {
           drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'left', undefined, drawing.segments);
           drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'right', undefined, drawing.segments);
         }
-        if (isSegmentEndOpen(segment.id, false)) {
+        if (canPlaceHemAtEnd(segment.id, false)) {
           drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'left', undefined, drawing.segments);
           drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'right', undefined, drawing.segments);
         }
@@ -947,10 +953,10 @@ export function TrimPricingCalculator() {
       const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
       if (segment) {
         const options: { hemAtStart: boolean; side: 'left' | 'right' }[] = [];
-        if (isSegmentEndOpen(segment.id, true)) {
+        if (canPlaceHemAtEnd(segment.id, true)) {
           options.push({ hemAtStart: true, side: 'left' }, { hemAtStart: true, side: 'right' });
         }
-        if (isSegmentEndOpen(segment.id, false)) {
+        if (canPlaceHemAtEnd(segment.id, false)) {
           options.push({ hemAtStart: false, side: 'left' }, { hemAtStart: false, side: 'right' });
         }
         for (const { hemAtStart, side } of options) {
@@ -998,9 +1004,20 @@ export function TrimPricingCalculator() {
       }
     }
 
-    // In drawing mode, when not placing a line: only open hem when clicking the *middle* of a segment (not the green dots)
-    const endpointSnapTolerance = 0.35;
+    // In drawing mode, when not placing a line: clicking near any attach point should start drawing,
+    // not toggle hem/segment selection.
+    const endpointSnapTolerance = 0.65;
+    let nearAnyConnectionPoint = false;
     if (isDrawingMode && !drawing.currentPoint) {
+      for (const seg of drawing.segments) {
+        const connectionPoints = getSegmentConnectionPoints(seg);
+        if (connectionPoints.some((p) => Math.sqrt((clickX - p.x) ** 2 + (clickY - p.y) ** 2) < endpointSnapTolerance)) {
+          nearAnyConnectionPoint = true;
+          break;
+        }
+      }
+    }
+    if (isDrawingMode && !drawing.currentPoint && !nearAnyConnectionPoint) {
       for (let i = drawing.segments.length - 1; i >= 0; i--) {
         const seg = drawing.segments[i];
         const distToLine = pointToLineDistance({ x: clickX, y: clickY }, seg.start, seg.end);
@@ -1020,12 +1037,12 @@ export function TrimPricingCalculator() {
           }));
           toast.success('Hem removed');
         } else {
-          const startOpen = isSegmentEndOpen(seg.id, true);
-          const endOpen = isSegmentEndOpen(seg.id, false);
-          if (startOpen || endOpen) {
+          const startAllowed = canPlaceHemAtEnd(seg.id, true);
+          const endAllowed = canPlaceHemAtEnd(seg.id, false);
+          if (startAllowed || endAllowed) {
             startHemPreview(seg.id);
           } else {
-            toast.info('This segment has no open end — hems can only be added at ends not attached to another line.');
+            toast.info('This segment has no open end. Use a non-1/2 hem length to allow corner hems, or pick an unattached end.');
           }
         }
         return;
@@ -1056,21 +1073,22 @@ export function TrimPricingCalculator() {
     
     // Drawing mode - add new points
     // First check if user clicked near an existing endpoint to snap to it
-    const snapTolerance = 0.35; // inches - generous so open end of closed U is easy to hit
+    const snapTolerance = 0.55; // inches - hem open/tip points are offset and need easier snapping
     let snappedToEndpoint = false;
     let point: Point = { x: 0, y: 0 };
-
+    let nearest: { p: Point; dist: number } | null = null;
     for (const seg of drawing.segments) {
       const connectionPoints = getSegmentConnectionPoints(seg);
       for (const p of connectionPoints) {
         const dist = Math.sqrt((clickX - p.x) ** 2 + (clickY - p.y) ** 2);
-        if (dist < snapTolerance) {
-          point = { x: p.x, y: p.y };
-          snappedToEndpoint = true;
-          break;
+        if (dist < snapTolerance && (!nearest || dist < nearest.dist)) {
+          nearest = { p, dist };
         }
       }
-      if (snappedToEndpoint) break;
+    }
+    if (nearest) {
+      point = { x: nearest.p.x, y: nearest.p.y };
+      snappedToEndpoint = true;
     }
 
     // If not snapped to endpoint, snap to grid
@@ -1356,18 +1374,18 @@ export function TrimPricingCalculator() {
       return;
     }
 
-    const startOpen = isSegmentEndOpen(segment.id, true);
-    const endOpen = isSegmentEndOpen(segment.id, false);
-    if (!startOpen && !endOpen) {
-      toast.error('This segment has no open end — hems can only be added at ends that are not attached to another line (no corners).');
+    const startAllowed = canPlaceHemAtEnd(segment.id, true);
+    const endAllowed = canPlaceHemAtEnd(segment.id, false);
+    if (!startAllowed && !endAllowed) {
+      toast.error('This segment has no open end. Set hem length above 1/2 to allow corner hems, or pick an unattached end.');
       return;
     }
 
     // Default to first available open end: prefer end, then start
-    const defaultAtStart = !endOpen && startOpen;
+    const defaultAtStart = !endAllowed && startAllowed;
     setDrawing(prev => ({ ...prev, selectedSegmentId: segmentId }));
     setHemPreviewMode({ segmentId, hemAtStart: defaultAtStart });
-    toast.info(`Click a purple hem on the drawing to choose open end and side, or use the buttons above`);
+    toast.info(`Click a purple hem on the drawing to choose end and side, or use the buttons above`);
   }
 
   function addHemToSide(side: 'left' | 'right', atStart?: boolean) {
@@ -2498,11 +2516,6 @@ export function TrimPricingCalculator() {
 
   return (
     <>
-    {linkToMaterialItemId && (
-      <div className="mx-auto mb-2 p-2 rounded-lg bg-amber-900/60 border border-amber-500 text-amber-200 text-sm text-center">
-        After you save this trim, it will be linked to the material item you selected. Shop will see the drawing in the pull form.
-      </div>
-    )}
     <div className="grid grid-cols-[2.2fr,0.8fr] gap-3 max-w-full mx-auto h-[calc(100vh-80px)] overflow-hidden p-2">
       {/* Drawing Tool - Left Side */}
       <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl flex flex-col h-full overflow-hidden">
@@ -2681,29 +2694,34 @@ export function TrimPricingCalculator() {
                 const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
                 const endOpen = segment ? isSegmentEndOpen(segment.id, false) : false;
                 const startOpen = segment ? isSegmentEndOpen(segment.id, true) : false;
+                const endAllowed = segment ? canPlaceHemAtEnd(segment.id, false) : false;
+                const startAllowed = segment ? canPlaceHemAtEnd(segment.id, true) : false;
+                const cornerMode = Math.abs(Math.max(0.125, hemDepthInches) - 0.5) > 1e-6;
                 return (
                 <>
                   <div className="flex items-center gap-2 px-2 py-1 bg-purple-100 border-2 border-purple-500 rounded">
-                    <span className="text-purple-700 font-bold text-xs">U Hem ({hemDepthInches === 0.5 ? '1/2"' : `${hemDepthInches}"`}) — open end only, then side:</span>
+                    <span className="text-purple-700 font-bold text-xs">
+                      U Hem ({hemDepthInches === 0.5 ? '1/2"' : `${hemDepthInches}"`}) — {cornerMode ? 'choose end (corner allowed), then side:' : 'open end only, then side:'}
+                    </span>
                   </div>
-                  {endOpen && (
+                  {endAllowed && (
                   <Button
                     onClick={() => setHemPreviewEnd(false)}
                     size="sm"
                     variant="outline"
                     className={`h-7 px-2 text-xs ${!hemPreviewMode.hemAtStart ? 'border-purple-600 bg-purple-100 text-purple-800 font-bold' : 'border-gray-400 text-gray-600 hover:bg-gray-100'}`}
                   >
-                    At end
+                    At end{!endOpen && cornerMode ? ' (corner)' : ''}
                   </Button>
                   )}
-                  {startOpen && (
+                  {startAllowed && (
                   <Button
                     onClick={() => setHemPreviewEnd(true)}
                     size="sm"
                     variant="outline"
                     className={`h-7 px-2 text-xs ${hemPreviewMode.hemAtStart ? 'border-purple-600 bg-purple-100 text-purple-800 font-bold' : 'border-gray-400 text-gray-600 hover:bg-gray-100'}`}
                   >
-                    At start
+                    At start{!startOpen && cornerMode ? ' (corner)' : ''}
                   </Button>
                   )}
                   <Button

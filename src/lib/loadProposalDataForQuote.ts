@@ -89,45 +89,63 @@ export async function loadProposalDataForQuote(
 
       let materialSheets: any[] = [];
       if (workbookData) {
+        const summarizeWorkbook = async (wbId: string) => {
+          const { data: wbSheetsData } = await supabase
+            .from('material_sheets')
+            .select('*')
+            .eq('workbook_id', wbId)
+            .order('order_index');
+          const wbSheets = (wbSheetsData || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
+          const wbSheetIds = wbSheets.map((s: any) => s.id);
+          let wbItemsCount = 0;
+          const wbDescribedSheetsCount = wbSheets.filter(
+            (s: any) => typeof s.description === 'string' && s.description.trim() !== ''
+          ).length;
+          if (wbSheetIds.length > 0) {
+            const { count } = await supabase
+              .from('material_items')
+              .select('id', { count: 'exact', head: true })
+              .in('sheet_id', wbSheetIds);
+            wbItemsCount = count ?? 0;
+          }
+          return {
+            wbId,
+            sheets: wbSheets,
+            sheetsCount: wbSheets.length,
+            describedSheetsCount: wbDescribedSheetsCount,
+            itemsCount: wbItemsCount,
+          };
+        };
+
         const { data: sheetsData } = await supabase
           .from('material_sheets')
           .select('*')
           .eq('workbook_id', workbookData.id)
           .order('order_index');
-        let sheets = sheetsData || [];
+        let sheets = (sheetsData || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
 
-        // When we have a quote-specific workbook with sheets, always use it. Do not fall back to
-        // another workbook just because material_items count is 0: sections can be description +
-        // line items only, and labor-only sheets (e.g. "Stain & Labor for ceiling") have no
-        // material_items and must still appear in the customer portal.
-        const doFallback = sheets.length === 0;
-        if (doFallback) {
-          const { data: allWbs } = await supabase
-            .from('material_workbooks')
-            .select('id')
-            .eq('job_id', jobId)
-            .order('status', { ascending: false })
-            .order('updated_at', { ascending: false });
-          for (const wb of allWbs || []) {
-            if (wb.id === workbookData.id) continue;
-            const { data: altSheets } = await supabase
-              .from('material_sheets')
-              .select('*')
-              .eq('workbook_id', wb.id)
-              .order('order_index');
-            if ((altSheets || []).length > 0) {
-              const altSheetIds = (altSheets || []).map((s: any) => s.id);
-              const { count: altCount } = await supabase
-                .from('material_items')
-                .select('id', { count: 'exact', head: true })
-                .in('sheet_id', altSheetIds);
-              if ((altCount ?? 0) > 0) {
-                sheets = (altSheets || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
-                workbookData = wb;
-                break;
-              }
-            }
-          }
+        // Always choose the richest workbook for this job (not only when empty), so portal
+        // proposal sections match what office users see in Proposal/Materials.
+        const { data: allWbs } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', jobId)
+          .order('status', { ascending: false })
+          .order('updated_at', { ascending: false });
+
+        // Prefer workbooks with more proposal sections/descriptions; item count is only a tie-breaker.
+        const score = (s: { describedSheetsCount: number; sheetsCount: number; itemsCount: number }) =>
+          (s.describedSheetsCount * 1_000_000) + (s.sheetsCount * 1_000) + s.itemsCount;
+        let best = await summarizeWorkbook(workbookData.id);
+        for (const wb of allWbs || []) {
+          if (wb.id === workbookData.id) continue;
+          const candidate = await summarizeWorkbook(wb.id);
+          if (score(candidate) > score(best)) best = candidate;
+        }
+
+        if (best.wbId !== workbookData.id) {
+          sheets = best.sheets;
+          workbookData = { id: best.wbId };
         }
 
         const sheetIds = sheets.map((s: any) => s.id);

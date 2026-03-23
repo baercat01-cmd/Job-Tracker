@@ -635,33 +635,31 @@ function JobDetailView({
   const proposalDataCacheRef = useRef<Record<string, any>>({});
   /** Totals from get_quote_proposal_totals RPC (written by JobFinancials) so Overview matches office exactly */
   const [quoteStoredTotals, setQuoteStoredTotals] = useState<{ subtotal: number; tax: number; grandTotal: number } | null>(null);
-  // Visibility: use per-proposal overrides when customer is viewing a specific quote, else top-level
+  // Visibility: use link-level columns as source-of-truth for core toggles.
+  // Per-quote JSON is only used for section-level map overrides.
   const perQuoteVis = selectedQuoteId && customerInfo?.visibility_by_quote && typeof customerInfo.visibility_by_quote === 'object' && !Array.isArray(customerInfo.visibility_by_quote)
     ? (customerInfo.visibility_by_quote as Record<string, any>)[selectedQuoteId]
     : null;
-  const vis = (perQuoteVis && typeof perQuoteVis === 'object') ? perQuoteVis : customerInfo;
-  const showFinancial = vis?.show_financial_summary === true;
-  const multiProposal = proposalQuotes.length > 1;
-  const lineFromLink = customerInfo?.show_line_item_prices === true;
-  const perQMain =
-    perQuoteVis && typeof perQuoteVis === 'object'
-      ? (perQuoteVis as Record<string, unknown>)
-      : null;
-  const hasExplicitLineMain = !!(perQMain && 'show_line_item_prices' in perQMain);
-  const lineFromPerMain = hasExplicitLineMain ? perQMain!.show_line_item_prices === true : null;
-  /** Match office portal: if only one main proposal, row column true beats stale false inside visibility_by_quote jsonb. */
-  const showLineItemPrices =
-    multiProposal && hasExplicitLineMain
-      ? lineFromPerMain === true
-      : lineFromLink || lineFromPerMain === true;
-  const showSectionPrices: Record<string, boolean> | null = (typeof vis?.show_section_prices === 'object' && vis?.show_section_prices !== null && !Array.isArray(vis?.show_section_prices)) ? vis.show_section_prices : null;
+  const perQuoteVisObj = perQuoteVis && typeof perQuoteVis === 'object' ? (perQuoteVis as Record<string, unknown>) : null;
+  const readPerQuoteBool = (key: string, fallback: boolean): boolean => {
+    if (perQuoteVisObj && key in perQuoteVisObj) return perQuoteVisObj[key] === true;
+    return fallback;
+  };
+  const showFinancial = readPerQuoteBool('show_financial_summary', customerInfo?.show_financial_summary === true);
+  const showLineItemPrices = readPerQuoteBool('show_line_item_prices', customerInfo?.show_line_item_prices === true);
+  const showSectionPrices: Record<string, boolean> | null =
+    perQuoteVisObj && typeof perQuoteVisObj.show_section_prices === 'object' && perQuoteVisObj.show_section_prices !== null && !Array.isArray(perQuoteVisObj.show_section_prices)
+      ? (perQuoteVisObj.show_section_prices as Record<string, boolean>)
+      : (typeof customerInfo?.show_section_prices === 'object' && customerInfo?.show_section_prices !== null && !Array.isArray(customerInfo?.show_section_prices)
+          ? (customerInfo.show_section_prices as Record<string, boolean>)
+          : null);
   const showPriceForSection = (sectionId: string) => showFinancial && showLineItemPrices && (showSectionPrices == null || showSectionPrices[sectionId] !== false);
-  const showMaterialItemsNoPrices = vis?.show_material_items_no_prices === true;
-  const showProposal = vis?.show_proposal === true;
-  const showPayments = vis?.show_payments === true;
-  const showSchedule = vis?.show_schedule === true;
-  const showDocuments = vis?.show_documents === true;
-  const showPhotos = vis?.show_photos === true;
+  const showMaterialItemsNoPrices = readPerQuoteBool('show_material_items_no_prices', customerInfo?.show_material_items_no_prices === true);
+  const showProposal = customerInfo?.show_proposal === true;
+  const showPayments = customerInfo?.show_payments === true;
+  const showSchedule = customerInfo?.show_schedule === true;
+  const showDocuments = customerInfo?.show_documents === true;
+  const showPhotos = customerInfo?.show_photos === true;
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [emailBody, setEmailBody] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -689,17 +687,8 @@ function JobDetailView({
       ? (customerInfo.visibility_by_quote as Record<string, any>)[changeOrderQuoteId]
       : null;
   const coVis = coQuoteVis && typeof coQuoteVis === 'object' ? coQuoteVis : customerInfo;
-  const showFinancialCo = coVis?.show_financial_summary === true;
-  const coPerObj =
-    coQuoteVis && typeof coQuoteVis === 'object'
-      ? (coQuoteVis as Record<string, unknown>)
-      : null;
-  const coHasExplicitLine = !!(coPerObj && 'show_line_item_prices' in coPerObj);
-  const lineFromPerCo = coHasExplicitLine ? coPerObj!.show_line_item_prices === true : null;
-  const showLineItemPricesCo =
-    multiProposal && coHasExplicitLine
-      ? lineFromPerCo === true
-      : lineFromLink || lineFromPerCo === true;
+  const showFinancialCo = coVis?.show_financial_summary === true || customerInfo?.show_financial_summary === true;
+  const showLineItemPricesCo = coVis?.show_line_item_prices === true || customerInfo?.show_line_item_prices === true;
   const showSectionPricesCo: Record<string, boolean> | null =
     typeof coVis?.show_section_prices === 'object' && coVis?.show_section_prices !== null && !Array.isArray(coVis?.show_section_prices)
       ? coVis.show_section_prices
@@ -1458,7 +1447,7 @@ function JobDetailView({
                             Include every material sheet (including labor-only sheets with no material items) and both
                             standalone and sheet-linked custom rows so section order matches the office proposal. */}
                         {(() => {
-                          const materialListNoPrices = vis?.show_material_items_no_prices === true;
+                          const materialListNoPrices = showMaterialItemsNoPrices;
                           const proposalSheets = (proposalData.materialSheets || []).filter(
                             (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
                           );

@@ -1,14 +1,11 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { PortalMultilineText } from '@/components/customer/PortalMultilineText';
 
-/** Format quantity and optional length (e.g. unit / size) for customer-facing lists — never includes price. */
+/** Format quantity only for customer-facing lists — never includes price. */
 export function formatPortalMaterialQty(item: { quantity?: unknown; length?: string | null }): string {
   const q = item.quantity;
   const num = q != null && q !== '' ? Number(q) : NaN;
-  const qtyStr = Number.isFinite(num) ? String(num) : q != null && String(q).trim() !== '' ? String(q) : '—';
-  const len = typeof item.length === 'string' ? item.length.trim() : '';
-  if (len) return `${qtyStr} × ${len}`;
-  return qtyStr;
+  return Number.isFinite(num) ? String(num) : q != null && String(q).trim() !== '' ? String(q) : '—';
 }
 
 type PortalItem = {
@@ -48,27 +45,33 @@ export function PortalMaterialItemsTable({
   });
 
   return (
-    <div className={`mt-3 space-y-4 ${className}`.trim()}>
-      {grouped.map((group) => (
-        <div key={group.category} className="overflow-x-auto rounded-md border border-border/80 bg-muted/20">
-          <div className="px-3 py-2 border-b bg-muted/50 text-xs font-semibold tracking-wide text-foreground/80 uppercase">
-            {group.category}
-          </div>
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-muted-foreground text-xs uppercase tracking-wide">
-                <th className="py-2 px-3 font-semibold">Material</th>
-                <th className="py-2 px-3 font-semibold whitespace-nowrap">Qty</th>
-                <th className="py-2 px-3 font-semibold">Usage / Notes</th>
+    <div className={`mt-3 overflow-x-auto rounded-md border border-border/80 bg-muted/20 ${className}`.trim()}>
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b bg-muted/40 text-left text-muted-foreground text-xs uppercase tracking-wide">
+            <th className="py-2 px-3 font-semibold">Material</th>
+            <th className="py-2 px-3 font-semibold whitespace-nowrap">Qty</th>
+            <th className="py-2 px-3 font-semibold whitespace-nowrap">Length</th>
+            <th className="py-2 px-3 font-semibold">Usage / Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grouped.map((group) => (
+            <Fragment key={group.category}>
+              <tr className="border-b bg-muted/50">
+                <td colSpan={4} className="py-2 px-3 text-xs font-semibold tracking-wide text-foreground/80 uppercase">
+                  {group.category}
+                </td>
               </tr>
-            </thead>
-            <tbody>
               {group.rows.map((item) => (
                 <tr key={item.id} className="border-b border-border/60 last:border-0">
                   <td className="py-2 px-3 align-top">
                     {item.material_name?.trim() ? <PortalMultilineText text={item.material_name} /> : '—'}
                   </td>
                   <td className="py-2 px-3 align-top tabular-nums whitespace-nowrap">{formatPortalMaterialQty(item)}</td>
+                  <td className="py-2 px-3 align-top whitespace-nowrap">
+                    {item.length != null && String(item.length).trim() !== '' ? String(item.length).trim() : '—'}
+                  </td>
                   <td className="py-2 px-3 align-top text-muted-foreground">
                     {item.usage != null && String(item.usage).trim() !== '' ? (
                       <PortalMultilineText text={item.usage as string} />
@@ -80,10 +83,10 @@ export function PortalMaterialItemsTable({
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

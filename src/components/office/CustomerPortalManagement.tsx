@@ -213,40 +213,18 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     const perQuote = selectedQuoteIdForVisibility && link.visibility_by_quote && typeof link.visibility_by_quote === 'object' && !Array.isArray(link.visibility_by_quote)
       ? (link.visibility_by_quote as Record<string, any>)[selectedQuoteIdForVisibility]
       : null;
-    /** Per-quote JSON often only contains fields that were autosaved (e.g. show_section_prices). Missing keys must inherit link-level columns. */
+    /** Use link-level columns as source-of-truth for core visibility toggles.
+     * Keep per-quote JSON only for per-section price visibility maps. */
     if (perQuote && typeof perQuote === 'object') {
       const pq = perQuote as Record<string, unknown>;
-      const multiQuote = jobQuotes.length > 1;
-      const pqBool = (
-        key: string,
-        linkFallback: boolean | undefined
-      ): boolean => {
-        // Single-proposal jobs should follow link-level toggles, even if stale per-quote JSON exists.
-        if (!multiQuote) return linkFallback === true;
-        if (key in pq) return pq[key] === true;
-        return linkFallback === true;
-      };
-      const lineFromLink = link.show_line_item_prices === true;
-      const hasExplicitLine = 'show_line_item_prices' in pq;
-      const lineFromPer = hasExplicitLine ? pq.show_line_item_prices === true : null;
-      /**
-       * Multi-quote: explicit per-proposal `show_line_item_prices` wins (so one proposal can differ).
-       * Single-quote (or only one proposal on the job): row column `true` wins over a stale `false` in
-       * jsonb (happens when a retry PATCH updated the column but not `visibility_by_quote`).
-       */
-      const lineItemPricesSynced =
-        multiQuote && hasExplicitLine
-          ? lineFromPer === true
-          : lineFromLink || lineFromPer === true;
-
-      setShowProposal(pqBool('show_proposal', link.show_proposal));
-      setShowPayments(pqBool('show_payments', link.show_payments));
-      setShowSchedule(pqBool('show_schedule', link.show_schedule));
-      setShowDocuments(pqBool('show_documents', link.show_documents));
-      setShowPhotos(pqBool('show_photos', link.show_photos));
-      setShowFinancialSummary(pqBool('show_financial_summary', link.show_financial_summary));
-      setShowLineItemPrices(lineItemPricesSynced);
-      setShowMaterialItemsNoPrices(pqBool('show_material_items_no_prices', link.show_material_items_no_prices));
+      setShowProposal(link.show_proposal === true);
+      setShowPayments(link.show_payments === true);
+      setShowSchedule(link.show_schedule === true);
+      setShowDocuments(link.show_documents === true);
+      setShowPhotos(link.show_photos === true);
+      setShowFinancialSummary(link.show_financial_summary === true);
+      setShowLineItemPrices(link.show_line_item_prices === true);
+      setShowMaterialItemsNoPrices(link.show_material_items_no_prices === true);
       const raw =
         'show_section_prices' in pq && typeof pq.show_section_prices === 'object' && pq.show_section_prices !== null && !Array.isArray(pq.show_section_prices)
           ? pq.show_section_prices
@@ -880,7 +858,11 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     }>,
     eff?: PortalVisibilityEff
   ) {
-    const link = portalLinks.find((l: any) => l.job_id === jobId);
+    const link =
+      selectedLink ??
+      (selectedLink?.access_token
+        ? portalLinks.find((l: any) => l.access_token === selectedLink.access_token)
+        : portalLinks.find((l: any) => l.job_id === jobId));
     const prev = cloneVisibilityByQuoteSafe(link?.visibility_by_quote);
     const e: PortalVisibilityEff =
       eff ??
@@ -916,7 +898,11 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     newValue: boolean,
     opts?: { alsoEnableFinancialSummary?: boolean }
   ) {
-    const link = portalLinks.find((l: any) => l.job_id === jobId);
+    const link =
+      selectedLink ??
+      (selectedLink?.access_token
+        ? portalLinks.find((l: any) => l.access_token === selectedLink.access_token)
+        : portalLinks.find((l: any) => l.job_id === jobId));
     if (!link) return; // No existing link yet — will be saved when "Save & create link" is clicked
 
     const coEnableFinancial =
@@ -1018,6 +1004,8 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           } as CustomerPortalLink;
         })
       );
+      // Do not immediately re-fetch after each toggle save.
+      // Some environments return a briefly stale row and can overwrite the just-updated UI state.
       toast.success('Setting saved — customer link will reflect this.');
     } catch (err: any) {
       console.error('Failed to auto-save visibility setting:', err);
@@ -1027,7 +1015,11 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
 
   /** Persist per-section price visibility (show/hide price for each section). */
   async function saveSectionPriceVisibility(sectionId: string, show: boolean) {
-    const link = portalLinks.find((l: any) => l.job_id === jobId);
+    const link =
+      selectedLink ??
+      (selectedLink?.access_token
+        ? portalLinks.find((l: any) => l.access_token === selectedLink.access_token)
+        : portalLinks.find((l: any) => l.job_id === jobId));
     if (!link) return;
     setShowSectionPrices((prev) => ({ ...prev, [sectionId]: show }));
     const next = { ...showSectionPrices, [sectionId]: show };
@@ -1079,6 +1071,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
             : l
         )
       );
+      // Do not immediately re-fetch after each section toggle save; keep optimistic state stable.
       toast.success('Section price visibility saved.');
     } catch (err: any) {
       console.error('Failed to save section price visibility:', err);
