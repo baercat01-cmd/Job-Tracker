@@ -46,8 +46,6 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
   const [editingAngleIndex, setEditingAngleIndex] = useState<number | null>(null);
   const [angleInputValue, setAngleInputValue] = useState('');
   const [anglePositions, setAnglePositions] = useState<{ index: number; x: number; y: number }[]>([]);
-  /** For each bend index: true = show (360 - interior angle), e.g. 270° instead of 90°; click toggles */
-  const [angleDisplayMode, setAngleDisplayMode] = useState<Record<number, boolean>>({});
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ w: 800, h: 500 });
 
@@ -55,7 +53,6 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
   useEffect(() => {
     setSegments(initialSegments);
     setEditingAngleIndex(null);
-    setAngleDisplayMode({});
   }, [initialSegments]);
 
   // Measure container and use TrimDrawingPreview (same component as thumbnail) so drawing always works
@@ -119,10 +116,9 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
             height={containerSize.h}
             showMeasurements
             onAnglePositions={setAnglePositions}
-            angleDisplayMode={angleDisplayMode}
             className="block w-full h-full"
           />
-          {/* Clickable overlay: single click toggles 90° ↔ 270°; double-click opens edit modal */}
+          {/* Clickable overlay: double-click opens edit modal */}
           <div className="absolute inset-0 pointer-events-none">
             {anglePositions.map(({ index, x, y }) => (
               <button
@@ -133,12 +129,7 @@ export function TrimDrawingFullScreenView({ title, segments: initialSegments, on
                   left: `${(x / containerSize.w) * 100}%`,
                   top: `${(y / containerSize.h) * 100}%`,
                 }}
-                title="Click to switch 90°↔270°; double-click to edit angle"
-                onClick={() => {
-                  if (index >= 1 && index < segments.length) {
-                    setAngleDisplayMode((prev) => ({ ...prev, [index]: !prev[index] }));
-                  }
-                }}
+                title="Double-click to edit angle"
                 onDoubleClick={(e) => {
                   e.preventDefault();
                   if (index >= 1 && index < segments.length) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, 
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDateLocal, getTodayString, parseDateLocal } from '@/lib/date-utils';
+import { isAbortLikeError } from '@/lib/error-handler';
 
 interface Task {
   id: string;
@@ -68,6 +69,8 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [showEventDialog, setShowEventDialog] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
+  /** Bumps on each load so stale async results (or Strict Mode double-invoke) don't clobber state. */
+  const loadTodayItemsGenRef = useRef(0);
 
   const todayStr = getTodayString();
 
@@ -99,6 +102,7 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
   }, []);
 
   async function loadTodayItems() {
+    const gen = ++loadTodayItemsGenRef.current;
     try {
       setLoading(true);
 
@@ -116,7 +120,11 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
         .neq('task_type', 'field')
         .in('jobs.status', ['active', 'prepping', 'quoting', 'on_hold']);
 
-      if (tasksError) throw tasksError;
+      if (tasksError) {
+        if (isAbortLikeError(tasksError)) return;
+        throw tasksError;
+      }
+      if (gen !== loadTodayItemsGenRef.current) return;
 
       // Sort tasks: high priority first, then by due date
       const priorityOrder = { 'high': 1, 'urgent': 1, 'medium': 2, 'low': 3 };
@@ -147,17 +155,29 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
         .in('jobs.status', ['active', 'prepping', 'quoting', 'on_hold'])
         .order('start_time', { ascending: true });
 
-      if (eventsError) throw eventsError;
+      if (eventsError) {
+        if (isAbortLikeError(eventsError)) {
+          // Tasks already loaded; only the second query was aborted (e.g. Strict Mode)
+          setTasks(filteredTasks);
+          return;
+        }
+        throw eventsError;
+      }
+      if (gen !== loadTodayItemsGenRef.current) return;
 
       const filteredEvents = eventsData || [];
 
       setTasks(filteredTasks);
       setEvents(filteredEvents);
     } catch (error) {
+      if (isAbortLikeError(error)) return;
+      if (gen !== loadTodayItemsGenRef.current) return;
       console.error('Error loading today items:', error);
       toast.error('Failed to load today\'s tasks');
     } finally {
-      setLoading(false);
+      if (gen === loadTodayItemsGenRef.current) {
+        setLoading(false);
+      }
     }
   }
 

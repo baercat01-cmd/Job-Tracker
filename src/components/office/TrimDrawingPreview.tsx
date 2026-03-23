@@ -13,21 +13,22 @@ export interface LineSegment {
   hasHem?: boolean;
   hemAtStart?: boolean;
   hemSide?: 'left' | 'right';
+  hemDepthInches?: number;
 }
 
 export function formatLengthInches(n: number): string {
-  const rounded = Math.round(n * 16) / 16;
-  if (rounded % 1 === 0) return `${rounded}"`;
+  const rounded = Math.round(n * 8) / 8;
+  if (rounded % 1 === 0) return `${rounded}`;
   const whole = Math.floor(rounded);
   const frac = rounded - whole;
-  const num = Math.round(frac * 16);
-  if (num === 0) return whole ? `${whole}"` : '0"';
-  if (num === 16) return `${whole + 1}"`;
+  const num = Math.round(frac * 8);
+  if (num === 0) return whole ? `${whole}` : '0';
+  if (num === 8) return `${whole + 1}`;
   const g = (a: number, b: number): number => (b ? g(b, a % b) : a);
-  const gcf = g(num, 16);
+  const gcf = g(num, 8);
   const n2 = num / gcf;
-  const d = 16 / gcf;
-  return whole ? `${whole} ${n2}/${d}"` : `${n2}/${d}"`;
+  const d = 8 / gcf;
+  return whole ? `${whole} ${n2}/${d}` : `${n2}/${d}`;
 }
 
 function interiorAngleDeg(seg1: LineSegment, seg2: LineSegment): number {
@@ -40,7 +41,8 @@ function interiorAngleDeg(seg1: LineSegment, seg2: LineSegment): number {
   let diff = a2 - a1;
   while (diff < 0) diff += 360;
   while (diff > 360) diff -= 360;
-  return 360 - diff;
+  // Smaller angle between directions (≤180°) — matches TrimPricingCalculator / avoids 270° vs 90° flip
+  return Math.min(diff, 360 - diff);
 }
 
 function centroid(segments: LineSegment[]): Point {
@@ -96,12 +98,22 @@ export function getTotalInchesFromSegments(segments: LineSegment[]): number {
 /** Default hem depth in inches when not stored on config (matches TrimPricingCalculator default). */
 const DEFAULT_HEM_DEPTH_INCHES = 0.5;
 
+function getSegmentHemDepth(seg: LineSegment, fallbackHemDepthInches: number): number {
+  if (typeof seg.hemDepthInches === 'number' && Number.isFinite(seg.hemDepthInches)) {
+    return Math.max(0.125, seg.hemDepthInches);
+  }
+  return Math.max(0.125, fallbackHemDepthInches);
+}
+
 /** Cut length = total lineal inches including hem(s). Each segment with hasHem adds hemDepthInches to the total. */
 export function getCutLengthFromSegments(segments: LineSegment[], hemDepthInches: number = DEFAULT_HEM_DEPTH_INCHES): number {
   if (!segments?.length) return 0;
   const segmentTotal = getTotalInchesFromSegments(segments);
-  const hemCount = segments.filter((s) => s.hasHem).length;
-  return segmentTotal + hemCount * Math.max(0.125, hemDepthInches);
+  const hemTotal = segments.reduce((sum, seg) => {
+    if (!seg.hasHem) return sum;
+    return sum + getSegmentHemDepth(seg, hemDepthInches);
+  }, 0);
+  return segmentTotal + hemTotal;
 }
 
 /** Total inches from a trim_saved_config: uses inches array if present, else computes from drawing_segments (excludes hem add-on). */
@@ -129,13 +141,18 @@ export function getCutLengthFromTrimConfig(config: { drawing_segments?: unknown 
   const segs = Array.isArray(raw) ? raw : null;
   if (!segs?.length) return 0;
   let total = 0;
-  let hemCount = 0;
+  let hemTotal = 0;
   segs.forEach((seg: any) => {
     const s = seg?.start && seg?.end ? { start: seg.start, end: seg.end } : null;
     if (s) total += segmentLengthInches(s);
-    if (seg?.hasHem === true) hemCount += 1;
+    if (seg?.hasHem === true) {
+      const depth = typeof seg?.hemDepthInches === 'number' && Number.isFinite(seg.hemDepthInches)
+        ? Math.max(0.125, seg.hemDepthInches)
+        : Math.max(0.125, hemDepthInches);
+      hemTotal += depth;
+    }
   });
-  return total + hemCount * Math.max(0.125, hemDepthInches);
+  return total + hemTotal;
 }
 
 /** Standard flatstock sheet length in inches (10'). */
@@ -192,14 +209,12 @@ interface TrimDrawingPreviewProps {
   showMeasurements?: boolean;
   /** Called with canvas-space (x,y) for each angle label when showMeasurements is true; used for click-to-edit overlay */
   onAnglePositions?: (positions: { index: number; x: number; y: number }[]) => void;
-  /** When true for bend index i, show (360 - interior angle) instead of interior angle (toggle 90° ↔ 270°) */
-  angleDisplayMode?: Record<number, boolean>;
   /** Hem depth in inches for drawing the U-hem (default 1/2"). Use when hem is longer than 1/2". */
   hemDepthInches?: number;
 }
 
 /** Draw trim profile from segments (no grid). Used in shop pull form and elsewhere. */
-export function TrimDrawingPreview({ segments, width = 280, height = 160, className, showMeasurements = false, onAnglePositions, angleDisplayMode, hemDepthInches = DEFAULT_HEM_DEPTH_INCHES }: TrimDrawingPreviewProps) {
+export function TrimDrawingPreview({ segments, width = 280, height = 160, className, showMeasurements = false, onAnglePositions, hemDepthInches = DEFAULT_HEM_DEPTH_INCHES }: TrimDrawingPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -224,7 +239,7 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         const lw = 0.03125 * 2;
         const baseX = hemPoint.x + perpX * lw;
         const baseY = hemPoint.y + perpY * lw;
-        const hemDepth = Math.max(0.125, hemDepthInches);
+        const hemDepth = getSegmentHemDepth(seg, hemDepthInches);
         points.push({ x: baseX + ux * hemDepth, y: baseY + uy * hemDepth });
       }
     });
@@ -233,7 +248,7 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
     const maxX = Math.max(...points.map((p) => p.x));
     const maxY = Math.max(...points.map((p) => p.y));
     // When showing measurements, add margin so labels (drawn off to the side) stay visible and drawing is shrunk
-    const labelMargin = showMeasurements ? 2.5 : 0;
+    const labelMargin = showMeasurements ? 1.25 : 0;
     const boxW = maxX - minX + 2 * pad + 2 * labelMargin;
     const boxH = maxY - minY + 2 * pad + 2 * labelMargin;
     const scale = Math.min((width - 2) / boxW, (height - 2) / boxH);
@@ -249,6 +264,8 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
     const lineWidth = Math.max(2, 3 * (scale / 80));
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = lineWidth;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
 
     segments.forEach((segment) => {
       const startX = segment.start.x * scale;
@@ -271,7 +288,7 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         const perpX = (segment.hemSide === 'right' ? uy : -uy);
         const perpY = (segment.hemSide === 'right' ? -ux : ux);
         const lw = 0.03125 * 2;
-        const hemDepth = Math.max(0.125, hemDepthInches);
+        const hemDepth = getSegmentHemDepth(segment, hemDepthInches);
         const baseX = (hemPoint.x + perpX * lw) * scale;
         const baseY = (hemPoint.y + perpY * lw) * scale;
         const p0x = hemPoint.x * scale;
@@ -284,6 +301,17 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         ctx.lineTo(p2x, p2y);
         ctx.lineTo(baseX, baseY);
         ctx.stroke();
+
+        if (Math.abs(hemDepth - DEFAULT_HEM_DEPTH_INCHES) > 1e-6) {
+          ctx.fillStyle = '#111827';
+          ctx.font = `bold ${Math.max(8, 9 * (scale / 80))}px sans-serif`;
+          const hemLabelOffsetPx = Math.max(4, 6 * (scale / 80));
+          const labelX = (baseX + p2x) / 2 + perpX * hemLabelOffsetPx;
+          const labelY = (baseY + p2y) / 2 + perpY * hemLabelOffsetPx;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`HEM ${formatLengthInches(hemDepth)}`, labelX, labelY);
+        }
       }
     });
 
@@ -291,8 +319,8 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
 
     if (showMeasurements && segments.length > 0) {
       const cent = centroid(segments);
-      const fontSize = Math.max(10, 12 * (scale / 80));
-      const fontBold = Math.max(12, 16 * (scale / 80));
+      const fontSize = Math.max(8, 9 * (scale / 80));
+      const fontBold = Math.max(10, 11 * (scale / 80));
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
@@ -321,19 +349,17 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
         const prev = segments[i - 1];
         const curr = segments[i];
         const interiorAngle = Math.round(interiorAngleDeg(prev, curr));
-        const showComplement = angleDisplayMode?.[i] === true;
-        const angle = showComplement ? 360 - interiorAngle : interiorAngle;
         const startX = curr.start.x * scale;
         const startY = curr.start.y * scale;
         const exteriorBisector = getExteriorBisector(prev, curr, centroidPoint);
-        const angleDistPx = 28 * (scale / 80);
+        const angleDistPx = 20 * (scale / 80);
         const labelX = startX + Math.cos(exteriorBisector) * angleDistPx;
         const labelY = startY + Math.sin(exteriorBisector) * angleDistPx;
         anglePositionsOut.push({ index: i, x: originX + labelX, y: originY + labelY });
         // Degree label: blue with ° symbol (standard trim drawing style)
         ctx.fillStyle = '#2563eb';
-        ctx.font = `bold ${Math.max(12, fontSize)}px sans-serif`;
-        ctx.fillText(`${angle}°`, labelX, labelY);
+        ctx.font = `bold ${Math.max(10, fontSize)}px sans-serif`;
+        ctx.fillText(`${interiorAngle}°`, labelX, labelY);
       }
     }
 
@@ -341,7 +367,7 @@ export function TrimDrawingPreview({ segments, width = 280, height = 160, classN
     if (showMeasurements && onAnglePositions && anglePositionsOut.length > 0) {
       onAnglePositions(anglePositionsOut);
     }
-  }, [segments, width, height, showMeasurements, onAnglePositions, angleDisplayMode, hemDepthInches]);
+  }, [segments, width, height, showMeasurements, onAnglePositions, hemDepthInches]);
 
   if (!segments?.length) return null;
 

@@ -48,6 +48,7 @@ import { ShopMaterialsDialog } from './ShopMaterialsDialog';
 import { Warehouse, ShoppingCart } from 'lucide-react';
 import { JobBudgetManagement } from './JobBudgetManagement';
 import { MaterialOrdersManagement } from './MaterialOrdersManagement';
+import { isAbortLikeError } from '@/lib/error-handler';
 
 interface JobsViewProps {
   showArchived?: boolean;
@@ -130,6 +131,15 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
     };
   }, []);
 
+  // PWA / bfcache: restoring the page can bring back an open job dialog; close so reopen lands on jobs home.
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) closeJobDetail();
+    };
+    window.addEventListener('pageshow', onPageShow as EventListener);
+    return () => window.removeEventListener('pageshow', onPageShow as EventListener);
+  }, []);
+
   // When dialog is closed, open the job for selectedJobId (e.g. from notification or calendar).
   // When dialog is already open, do NOT overwrite selectedJob — otherwise the detail view would
   // switch to another job (e.g. last created) and "Save & create link" would create for the wrong job.
@@ -162,7 +172,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         loadJobStats(job.id);
       }
     } catch (error) {
-      console.error('Error loading jobs:', error);
+      if (!isAbortLikeError(error)) console.error('Error loading jobs:', error);
     } finally {
       setLoading(false);
     }
@@ -356,7 +366,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
       setCrewOrderCounts(counts);
     } catch (error: any) {
-      console.error('Error loading crew order counts:', error);
+      if (!isAbortLikeError(error)) console.error('Error loading crew order counts:', error);
     }
   }
 
@@ -375,7 +385,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
       setJobBudgets(budgetsMap);
     } catch (error: any) {
-      console.error('Error loading job budgets:', error);
+      if (!isAbortLikeError(error)) console.error('Error loading job budgets:', error);
     }
   }
 
@@ -457,8 +467,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
       if (error) throw error;
       setRecentMessages((data || []) as any);
     } catch (error: any) {
-      console.error('Error loading recent messages:', error);
-      setRecentMessages([]);
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading recent messages:', error);
+        setRecentMessages([]);
+      }
     } finally {
       setLoadingMessages(false);
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,8 @@ import { useSearchParams } from 'react-router-dom';
 import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { isAbortLikeError } from '@/lib/error-handler';
+import { TrimDrawingPreview } from '@/components/office/TrimDrawingPreview';
 
 // Settings are now stored in database, not localStorage
 
@@ -64,6 +66,8 @@ interface LineSegment {
   hasHem: boolean;
   hemAtStart: boolean;
   hemSide?: 'left' | 'right'; // Which side the hem is on
+  /** Per-segment hem depth in inches. Falls back to global hemDepthInches for legacy rows. */
+  hemDepthInches?: number;
 }
 
 interface DrawingState {
@@ -186,6 +190,8 @@ export function TrimPricingCalculator() {
   const [angleDisplayMode, setAngleDisplayMode] = useState<Record<string, boolean>>({});
   const [lengthInput, setLengthInput] = useState('');
   const lengthInputRef = useRef<HTMLInputElement>(null);
+  /** Bumps on each loadSavedConfigs call so stale/aborted responses don't toast or overwrite state */
+  const loadSavedConfigsGenRef = useRef(0);
   const [previewConfig, setPreviewConfig] = useState<SavedConfig | null>(null);
   const [showPriceList, setShowPriceList] = useState(false);
   const [priceListMaterialId, setPriceListMaterialId] = useState<string>('');
@@ -201,6 +207,49 @@ export function TrimPricingCalculator() {
     return num.toFixed(decimals).replace(/\.?0+$/, '');
   }
 
+  function roundToNearestEighth(num: number): number {
+    return Math.round(num * 8) / 8;
+  }
+
+  function formatMeasurementToEighth(num: number): string {
+    return cleanNumber(roundToNearestEighth(num), 3);
+  }
+
+  /** Choose label side (+/- perpendicular) by available whitespace against nearby segments. */
+  function chooseLabelDirectionForSpace(
+    segment: LineSegment,
+    allSegments: LineSegment[],
+    preferredDirection: 1 | -1,
+    offsetInches: number
+  ): 1 | -1 {
+    const dx = segment.end.x - segment.start.x;
+    const dy = segment.end.y - segment.start.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+    const perpX = -dy / len;
+    const perpY = dx / len;
+    const mid: Point = {
+      x: (segment.start.x + segment.end.x) / 2,
+      y: (segment.start.y + segment.end.y) / 2,
+    };
+    const score = (dir: 1 | -1) => {
+      const candidate: Point = {
+        x: mid.x + perpX * offsetInches * dir,
+        y: mid.y + perpY * offsetInches * dir,
+      };
+      let minDist = Infinity;
+      for (const s of allSegments) {
+        if (s.id === segment.id) continue;
+        minDist = Math.min(minDist, pointToLineDistance(candidate, s.start, s.end));
+      }
+      return minDist;
+    };
+    const prefScore = score(preferredDirection);
+    const altDir = (preferredDirection === 1 ? -1 : 1) as 1 | -1;
+    const altScore = score(altDir);
+    if (altScore > prefScore + 0.02) return altDir;
+    return preferredDirection;
+  }
+
   // Helper function to draw a hem (optional lineWidthForExport: use same as main lines for PDF)
   function drawHem(
     ctx: CanvasRenderingContext2D, 
@@ -208,7 +257,8 @@ export function TrimPricingCalculator() {
     scale: number, 
     isPreview: boolean = false,
     previewSide?: 'left' | 'right',
-    lineWidthForExport?: number
+    lineWidthForExport?: number,
+    allSegments: LineSegment[] = []
   ) {
     const hemPoint = segment.hemAtStart ? segment.start : segment.end;
     const otherPoint = segment.hemAtStart ? segment.end : segment.start;
@@ -232,7 +282,7 @@ export function TrimPricingCalculator() {
     const perpY = side === 'right' ? perpLeftY : perpRightY;
     
     // Hem: configurable length along the trim, 180° double back; offset from trim by 2 line widths; ends connected
-    const hemDepth = Math.max(0.125, hemDepthInches);
+    const hemDepth = getHemDepthForSegment(segment);
     const oneLineWidth = 0.03125; // 1/32"
     const lineWidthOffset = oneLineWidth * 2; // offset more by one line width (2 total)
     const alongX = unitX;
@@ -252,10 +302,14 @@ export function TrimPricingCalculator() {
     if (isPreview) {
       ctx.strokeStyle = '#9333ea';
       ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.setLineDash([5, 5]);
     } else {
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = lineWidthForExport ?? 3;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.setLineDash([]);
     }
     
@@ -273,43 +327,70 @@ export function TrimPricingCalculator() {
     ctx.lineWidth = isPreview ? 2 : (lineWidthForExport ?? 3);
     
     // Label only in preview mode (no HEM / 0.5" text on final drawing)
+    // Small pixel offset from hem mid-leg (p1–p2). Do NOT multiply by `scale` here — perp is a unit
+    // vector and p1/p2 are already in canvas px; `perp * N * scale` was pushing labels far off-canvas.
+    const hemLabelOffsetPx = Math.max(4, 6 * (scale / 80));
     if (isPreview) {
       ctx.fillStyle = '#9333ea';
       ctx.font = 'bold 14px sans-serif';
-      const labelX = (p1x + p2x) / 2 + perpX * 10 * scale;
-      const labelY = (p1y + p2y) / 2 + perpY * 10 * scale;
+      const labelX = (p1x + p2x) / 2 + perpX * hemLabelOffsetPx * 1.5;
+      const labelY = (p1y + p2y) / 2 + perpY * hemLabelOffsetPx * 1.5;
       ctx.fillText(`${side.toUpperCase()}?`, labelX - 20, labelY + 5);
+    } else if (Math.abs(hemDepth - 0.5) > 1e-6) {
+      // For non-default hems, print explicit size on the drawing so shop sees custom hem depth.
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 10px sans-serif';
+      const midHemInches = { x: (baseX + (baseX + alongX * hemDepth)) / 2, y: (baseY + (baseY + alongY * hemDepth)) / 2 };
+      const offsetInches = hemLabelOffsetPx / scale;
+      const score = (sign: 1 | -1) => {
+        const candidate: Point = {
+          x: midHemInches.x + perpX * offsetInches * sign,
+          y: midHemInches.y + perpY * offsetInches * sign,
+        };
+        let minDist = Infinity;
+        for (const s of allSegments) {
+          if (s.id === segment.id) continue;
+          minDist = Math.min(minDist, pointToLineDistance(candidate, s.start, s.end));
+        }
+        return minDist;
+      };
+      const sign: 1 | -1 = score(1) >= score(-1) ? 1 : -1;
+      const labelX = (p1x + p2x) / 2 + perpX * hemLabelOffsetPx * sign;
+      const labelY = (p1y + p2y) / 2 + perpY * hemLabelOffsetPx * sign;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${cleanNumber(hemDepth)}"`, labelX, labelY);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
     }
   }
 
-  // Initialize canvas when showing drawing
-  useEffect(() => {
-    if (showDrawing) {
+  // Measure before paint so canvas doesn't flash at base size first.
+  // Also avoid resetting to "not ready" on Strict Mode re-runs.
+  useLayoutEffect(() => {
+    if (!showDrawing) {
       setCanvasReady(false);
       setContainerSize(null);
-      // Small delay to ensure canvas is mounted
-      setTimeout(() => setCanvasReady(true), 100);
-    } else {
-      setCanvasReady(false);
-      setContainerSize(null);
+      return;
     }
-  }, [showDrawing]);
-
-  // Measure canvas container so the grid fills the entire box (no white margin at bottom)
-  useEffect(() => {
-    if (!canvasReady || !canvasContainerRef.current) return;
     const el = canvasContainerRef.current;
+    if (!el) return;
     const updateSize = () => {
       if (!el) return;
       const w = el.clientWidth;
       const h = el.clientHeight;
-      if (w > 0 && h > 0) setContainerSize({ w, h });
+      if (w <= 0 || h <= 0) return;
+      setContainerSize((prev) => {
+        if (prev && Math.abs(prev.w - w) < 0.5 && Math.abs(prev.h - h) < 0.5) return prev;
+        return { w, h };
+      });
+      setCanvasReady(true);
     };
     updateSize();
     const ro = new ResizeObserver(updateSize);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [canvasReady]);
+  }, [showDrawing]);
 
   // Ctrl+scroll to zoom on canvas (non-passive listener so preventDefault works)
   useEffect(() => {
@@ -369,6 +450,12 @@ export function TrimPricingCalculator() {
 
   const POINT_MATCH_TOLERANCE = 0.02; // inches - endpoints within this are considered the same (corner)
 
+  function getHemDepthForSegment(segment: LineSegment): number {
+    const v = segment.hemDepthInches;
+    if (typeof v === 'number' && Number.isFinite(v)) return Math.max(0.125, v);
+    return Math.max(0.125, hemDepthInches);
+  }
+
   /** True if this end of the segment is not attached to another segment (open end). No hem allowed at corners. */
   function isSegmentEndOpen(segmentId: string, atStart: boolean): boolean {
     const segment = drawing.segments.find(s => s.id === segmentId);
@@ -398,7 +485,7 @@ export function TrimPricingCalculator() {
     const perpLeftY = -unitX;
     const perpX = side === 'right' ? perpLeftX : perpRightX;
     const perpY = side === 'right' ? perpLeftY : perpRightY;
-    const hemDepth = Math.max(0.125, hemDepthInches);
+    const hemDepth = getHemDepthForSegment(segment);
     const oneLineWidth = 0.03125 * 2;
     const baseX = hemPoint.x + perpX * oneLineWidth;
     const baseY = hemPoint.y + perpY * oneLineWidth;
@@ -427,11 +514,37 @@ export function TrimPricingCalculator() {
     };
   }
 
-  /** All points where a new line can attach: segment start, end, and hem open end (if any). */
+  /** Tip point of the doubled-back hem extension. */
+  function getHemTipPoint(segment: LineSegment): Point | null {
+    if (!segment.hasHem) return null;
+    const hemPoint = segment.hemAtStart ? segment.start : segment.end;
+    const otherPoint = segment.hemAtStart ? segment.end : segment.start;
+    const dx = otherPoint.x - hemPoint.x;
+    const dy = otherPoint.y - hemPoint.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return null;
+    const ux = dx / len;
+    const uy = dy / len;
+    const perpRightX = -uy;
+    const perpRightY = ux;
+    const perpLeftX = uy;
+    const perpLeftY = -ux;
+    const side = segment.hemSide || 'right';
+    const perpX = side === 'right' ? perpLeftX : perpRightX;
+    const perpY = side === 'right' ? perpLeftY : perpRightY;
+    const baseX = hemPoint.x + perpX * HEM_LINE_WIDTH_OFFSET;
+    const baseY = hemPoint.y + perpY * HEM_LINE_WIDTH_OFFSET;
+    const hemDepth = getHemDepthForSegment(segment);
+    return { x: baseX + ux * hemDepth, y: baseY + uy * hemDepth };
+  }
+
+  /** All points where a new line can attach: segment ends plus hem base/tip points. */
   function getSegmentConnectionPoints(segment: LineSegment): Point[] {
     const points: Point[] = [segment.start, segment.end];
     const hemOpen = getHemOpenEndPoint(segment);
     if (hemOpen) points.push(hemOpen);
+    const hemTip = getHemTipPoint(segment);
+    if (hemTip) points.push(hemTip);
     return points;
   }
 
@@ -523,13 +636,13 @@ export function TrimPricingCalculator() {
       
       // Background for measurement
       ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
-      ctx.fillRect(midX - 40, midY - 30, 80, 24);
+      ctx.fillRect(midX - 36, midY - 26, 72, 20);
       
       // Measurement text (no trailing zeros)
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`${cleanNumber(previewLength)}"`, midX, midY - 12);
+      ctx.fillText(`${formatMeasurementToEighth(previewLength)}`, midX, midY - 12);
       
       // Calculate and display preview angle (if not first segment)
       if (drawing.segments.length > 0) {
@@ -545,12 +658,13 @@ export function TrimPricingCalculator() {
         let angleDiff = angle2 - angle1;
         if (angleDiff < 0) angleDiff += 360;
         if (angleDiff > 360) angleDiff -= 360;
+        const previewInterior = Math.min(angleDiff, 360 - angleDiff);
         
         // Angle text: blue with degree symbol (match final trim drawing style)
         ctx.fillStyle = '#2563eb';
         ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(`${Math.round(angleDiff)}°`, startX + 10, startY - 22);
+        ctx.fillText(`${Math.round(previewInterior)}°`, startX + 10, startY - 22);
       }
       
       ctx.textAlign = 'left';
@@ -583,12 +697,20 @@ export function TrimPricingCalculator() {
         ctx.beginPath();
         ctx.arc(seg.end.x * scale, seg.end.y * scale, 8, 0, Math.PI * 2);
         ctx.fill();
-        // Highlight hem open end (where the closed U meets the segment) so user can attach lines there
+        // Highlight hem base and tip so user can attach lines to the doubled-back feature
         const hemOpen = getHemOpenEndPoint(seg);
         if (hemOpen) {
           ctx.fillStyle = '#059669'; // Slightly different green for hem open end
           ctx.beginPath();
           ctx.arc(hemOpen.x * scale, hemOpen.y * scale, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#10b981';
+        }
+        const hemTip = getHemTipPoint(seg);
+        if (hemTip) {
+          ctx.fillStyle = '#047857';
+          ctx.beginPath();
+          ctx.arc(hemTip.x * scale, hemTip.y * scale, 8, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = '#10b981';
         }
@@ -611,6 +733,8 @@ export function TrimPricingCalculator() {
       // Draw line
       ctx.strokeStyle = isSelected ? '#EAB308' : '#000000';
       ctx.lineWidth = isSelected ? 4 : 3;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
@@ -618,7 +742,7 @@ export function TrimPricingCalculator() {
 
       // Draw hem if exists (U-shaped fold - no exposed edge). No degree label at hems.
       if (segment.hasHem) {
-        drawHem(ctx, segment, scale, false);
+        drawHem(ctx, segment, scale, false, undefined, undefined, drawing.segments);
       }
 
       // Calculate measurements
@@ -645,33 +769,36 @@ export function TrimPricingCalculator() {
       
       // Dot product to determine which perpendicular direction is away from centroid
       const dotProduct = perpX * toCentroidX + perpY * toCentroidY;
-      const direction = dotProduct > 0 ? -1 : 1; // Flip if pointing toward centroid
+      const preferredDirection: 1 | -1 = (dotProduct > 0 ? -1 : 1); // Flip if pointing toward centroid
       
       // Adjusted perpendicular (pointing away from shape)
-      const outwardPerpX = perpX * direction;
-      const outwardPerpY = perpY * direction;
-      
-      // STACKED LABELS: Label on top, measurement below
-      // Use larger offset for short segments to avoid crowding
       const isShortSegment = lengthInInches < 1.0;
-      const stackOffset = isShortSegment ? 50 : 35; // Distance from line
-      const stackSpacing = 16; // Vertical spacing between label and measurement
+      const stackOffset = isShortSegment ? 26 : 18; // px perpendicular from segment midpoint
+      const chosenDirection = chooseLabelDirectionForSpace(
+        segment,
+        drawing.segments,
+        preferredDirection,
+        stackOffset / scale
+      );
+      const outwardPerpX = perpX * chosenDirection;
+      const outwardPerpY = perpY * chosenDirection;
       
+      // STACKED LABELS: Label on top, measurement below — keep close to the line (tighter than spec PDFs)
       // Base position (perpendicular from midpoint)
       const baseX = midX + outwardPerpX * stackOffset;
       const baseY = midY + outwardPerpY * stackOffset;
       
       // Draw segment label (lighter gray, smaller, on top)
       ctx.fillStyle = '#999999';
-      ctx.font = '12px sans-serif';
+      ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(segment.label, baseX, baseY - 8);
+      ctx.fillText(segment.label, baseX, baseY - 5);
       
-      // Draw measurement (bold black, larger, below label)
+      // Draw measurement (bold black, below label)
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`${cleanNumber(lengthInInches)}"`, baseX, baseY + 8);
+      ctx.fillText(`${formatMeasurementToEighth(lengthInInches)}`, baseX, baseY + 5);
       ctx.textAlign = 'left';
 
       // Draw angle label if not first segment - on outside of bend (side farther from profile centroid)
@@ -683,13 +810,13 @@ export function TrimPricingCalculator() {
         const displayAngle = useComplement ? (360 - angle) : angle;
         
         const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
-        const angleDistance = 28;
+        const angleDistance = 20;
         const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
         const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
 
         // Degree label: blue text with ° symbol (standard trim drawing style)
         ctx.fillStyle = '#2563eb';
-        ctx.font = 'bold 14px sans-serif';
+        ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
         ctx.textAlign = 'left';
@@ -703,12 +830,12 @@ export function TrimPricingCalculator() {
       const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
       if (segment) {
         if (isSegmentEndOpen(segment.id, true)) {
-          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'left');
-          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'right');
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'left', undefined, drawing.segments);
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: true }, scale, true, 'right', undefined, drawing.segments);
         }
         if (isSegmentEndOpen(segment.id, false)) {
-          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'left');
-          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'right');
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'left', undefined, drawing.segments);
+          drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'right', undefined, drawing.segments);
         }
       }
     }
@@ -754,23 +881,35 @@ export function TrimPricingCalculator() {
     return Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
   }
 
-  function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
+  /** Normalized CCW turn from seg1 direction to seg2 direction, degrees in [0, 360). */
+  function getRawTurnDegrees(seg1: LineSegment, seg2: LineSegment): number {
     const dx1 = seg1.end.x - seg1.start.x;
     const dy1 = seg1.end.y - seg1.start.y;
     const dx2 = seg2.end.x - seg2.start.x;
     const dy2 = seg2.end.y - seg2.start.y;
-    
     const angle1 = Math.atan2(dy1, dx1) * 180 / Math.PI;
     const angle2 = Math.atan2(dy2, dx2) * 180 / Math.PI;
-    
     let diff = angle2 - angle1;
     if (diff < 0) diff += 360;
     if (diff > 360) diff -= 360;
-    
-    // Invert to show interior angle (90° for L-bends, not 270°)
-    diff = 360 - diff;
-    
     return diff;
+  }
+
+  /** Smaller angle between the two segment directions (≤180°). Avoids showing 270° for a 90° bend. */
+  function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
+    const turn = getRawTurnDegrees(seg1, seg2);
+    return Math.min(turn, 360 - turn);
+  }
+
+  /** Map edited interior angle back to an actual path turn, preserving winding vs previous geometry. */
+  function resolveTurnFromInterior(prevTurn: number, interior: number): number {
+    const a = interior;
+    const b = 360 - interior;
+    const circularDist = (x: number, y: number) => {
+      const d = Math.abs(x - y) % 360;
+      return Math.min(d, 360 - d);
+    };
+    return circularDist(a, prevTurn) <= circularDist(b, prevTurn) ? a : b;
   }
 
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -876,7 +1015,7 @@ export function TrimPricingCalculator() {
           setDrawing(prev => ({
             ...prev,
             segments: prev.segments.map(s =>
-              s.id === seg.id ? { ...s, hasHem: false, hemAtStart: false, hemSide: undefined } : s
+              s.id === seg.id ? { ...s, hasHem: false, hemAtStart: false, hemSide: undefined, hemDepthInches: undefined } : s
             )
           }));
           toast.success('Hem removed');
@@ -1052,7 +1191,7 @@ export function TrimPricingCalculator() {
     
     setEditMode({
       segmentId,
-      measurement: measurement.toFixed(3),
+      measurement: formatMeasurementToEighth(measurement),
       angle: Math.round(angle).toString()
     });
   }
@@ -1060,10 +1199,11 @@ export function TrimPricingCalculator() {
   function applyEdit() {
     if (!editMode) return;
     
-    const newMeasurement = parseFloat(editMode.measurement);
+    const newMeasurementRaw = parseFloat(editMode.measurement);
+    const newMeasurement = roundToNearestEighth(newMeasurementRaw);
     let newAngle = parseFloat(editMode.angle);
     
-    if (isNaN(newMeasurement) || newMeasurement <= 0) {
+    if (isNaN(newMeasurementRaw) || newMeasurementRaw <= 0) {
       toast.error('Please enter a valid measurement');
       return;
     }
@@ -1091,12 +1231,14 @@ export function TrimPricingCalculator() {
       snappedEndX = Math.round(newEndX / gridSize) * gridSize;
       snappedEndY = Math.round(newEndY / gridSize) * gridSize;
     } else {
-      // Not first segment - direction = previous segment direction + interior angle (edit box value)
+      // Not first segment: interior is min(turn, 360-turn); recover actual path turn from previous geometry.
       const prevSegment = drawing.segments[segmentIndex - 1];
       const prevDx = prevSegment.end.x - prevSegment.start.x;
       const prevDy = prevSegment.end.y - prevSegment.start.y;
       const prevAngleRad = Math.atan2(prevDy, prevDx);
-      angleRadians = prevAngleRad + (newAngle * Math.PI / 180);
+      const prevTurn = getRawTurnDegrees(prevSegment, segment);
+      const turnDegrees = resolveTurnFromInterior(prevTurn, newAngle);
+      angleRadians = prevAngleRad + (turnDegrees * Math.PI / 180);
       const newEndX = segment.start.x + newMeasurement * Math.cos(angleRadians);
       const newEndY = segment.start.y + newMeasurement * Math.sin(angleRadians);
       snappedEndX = Math.round(newEndX / gridSize) * gridSize;
@@ -1136,9 +1278,10 @@ export function TrimPricingCalculator() {
 
   function handleLengthInput(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && drawing.currentPoint && mousePos) {
-      const targetLength = parseFloat(lengthInput);
+      const targetLengthRaw = parseFloat(lengthInput);
+      const targetLength = roundToNearestEighth(targetLengthRaw);
       
-      if (isNaN(targetLength) || targetLength <= 0) {
+      if (isNaN(targetLengthRaw) || targetLengthRaw <= 0) {
         toast.error('Please enter a valid length');
         return;
       }
@@ -1184,7 +1327,7 @@ export function TrimPricingCalculator() {
       }));
       
       setLengthInput('');
-      toast.success(`Line created: ${cleanNumber(targetLength)}"`);
+      toast.success(`Line created: ${formatMeasurementToEighth(targetLength)}`);
     }
   }
 
@@ -1205,7 +1348,7 @@ export function TrimPricingCalculator() {
         ...prev,
         segments: prev.segments.map(seg =>
           seg.id === segmentId
-            ? { ...seg, hasHem: false, hemAtStart: false, hemSide: undefined }
+            ? { ...seg, hasHem: false, hemAtStart: false, hemSide: undefined, hemDepthInches: undefined }
             : seg
         )
       }));
@@ -1236,7 +1379,7 @@ export function TrimPricingCalculator() {
       ...prev,
       segments: prev.segments.map(seg =>
         seg.id === mode.segmentId
-          ? { ...seg, hasHem: true, hemAtStart, hemSide: side }
+          ? { ...seg, hasHem: true, hemAtStart, hemSide: side, hemDepthInches: Math.max(0.125, hemDepthInches) }
           : seg
       )
     }));
@@ -1315,12 +1458,12 @@ export function TrimPricingCalculator() {
         const perpY = (seg.hemSide === 'right' ? -ux : ux);
         const lw = 0.03125 * 2;
         const baseX = hemPoint.x + perpX * lw, baseY = hemPoint.y + perpY * lw;
-        const hemDepth = Math.max(0.125, hemDepthInches);
+        const hemDepth = getHemDepthForSegment(seg);
         points.push({ x: baseX + ux * hemDepth, y: baseY + uy * hemDepth });
       }
     });
     // Include angle label position in bbox so degree is not cut off
-    const angleDistInches = 28 / 80; // offset for angle label so bbox includes it
+    const angleDistInches = 20 / 80; // offset for angle label so bbox includes it
     const centroid = calculateCentroid(segments);
     segments.forEach((segment, segmentIndex) => {
       if (segmentIndex > 0) {
@@ -1352,7 +1495,7 @@ export function TrimPricingCalculator() {
     ctx.translate(originX, originY);
 
     const mainLineWidth = Math.max(2, 3 * (scale / 80));
-    const labelMeasurementGap = 14; // more space between segment letter (A, B) and length
+    const labelMeasurementGap = 7; // px between segment letter (A, B) and length — tight to line
     segments.forEach((segment, segmentIndex) => {
       const startX = segment.start.x * scale;
       const startY = segment.start.y * scale;
@@ -1360,11 +1503,13 @@ export function TrimPricingCalculator() {
       const endY = segment.end.y * scale;
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = mainLineWidth;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
       ctx.stroke();
-      if (segment.hasHem) drawHem(ctx, segment, scale, false, undefined, mainLineWidth);
+      if (segment.hasHem) drawHem(ctx, segment, scale, false, undefined, mainLineWidth, segments);
 
       const dx = segment.end.x - segment.start.x;
       const dy = segment.end.y - segment.start.y;
@@ -1376,21 +1521,27 @@ export function TrimPricingCalculator() {
       const perpY = dx / length;
       const toCentroidX = centroid.x - (segment.start.x + segment.end.x) / 2;
       const toCentroidY = centroid.y - (segment.start.y + segment.end.y) / 2;
-      const direction = perpX * toCentroidX + perpY * toCentroidY > 0 ? -1 : 1;
-      const outwardPerpX = perpX * direction;
-      const outwardPerpY = perpY * direction;
-      const stackOffset = lengthInInches < 1.0 ? 50 : 35;
+      const stackOffset = lengthInInches < 1.0 ? 26 : 18;
+      const preferredDirection: 1 | -1 = (perpX * toCentroidX + perpY * toCentroidY > 0 ? -1 : 1);
+      const chosenDirection = chooseLabelDirectionForSpace(
+        segment,
+        segments,
+        preferredDirection,
+        stackOffset / scale
+      );
+      const outwardPerpX = perpX * chosenDirection;
+      const outwardPerpY = perpY * chosenDirection;
       const baseX = midX + outwardPerpX * stackOffset;
       const baseY = midY + outwardPerpY * stackOffset;
-      const fontSize = Math.max(10, 12 * (scale / 80));
-      const fontBold = Math.max(12, 16 * (scale / 80));
+      const fontSize = Math.max(8, 9 * (scale / 80));
+      const fontBold = Math.max(10, 11 * (scale / 80));
       ctx.fillStyle = '#999999';
       ctx.font = `${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillText(segment.label, baseX, baseY - labelMeasurementGap);
       ctx.fillStyle = '#000000';
       ctx.font = `bold ${fontBold}px sans-serif`;
-      ctx.fillText(`${cleanNumber(lengthInInches)}"`, baseX, baseY + labelMeasurementGap);
+      ctx.fillText(`${formatMeasurementToEighth(lengthInInches)}`, baseX, baseY + labelMeasurementGap);
 
       if (segmentIndex > 0) {
         const prevSegment = segments[segmentIndex - 1];
@@ -1398,12 +1549,12 @@ export function TrimPricingCalculator() {
         const useComplement = angleDisplayModeRecord[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
         const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
-        const angleDist = 28 * (scale / 80);
+        const angleDist = 20 * (scale / 80);
         const angleX = startX + Math.cos(exteriorBisector) * angleDist;
         const angleY = startY + Math.sin(exteriorBisector) * angleDist;
         // Degree label: blue text with ° symbol (match on-screen trim drawing style)
         ctx.fillStyle = '#2563eb';
-        ctx.font = `bold ${Math.max(12, fontSize)}px sans-serif`;
+        ctx.font = `bold ${Math.max(10, fontSize)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
       }
@@ -1459,7 +1610,7 @@ export function TrimPricingCalculator() {
       
       // Add hem length - U-shaped hem adds to material take-off (configurable depth)
       if (segment.hasHem) {
-        total += Math.max(0.125, hemDepthInches);
+        total += getHemDepthForSegment(segment);
       }
     });
     
@@ -1479,10 +1630,11 @@ export function TrimPricingCalculator() {
                   drawing.segments.filter(s => s.hasHem).length;
     
     // Set the values
-    setInchInputs([{ id: '1', value: totalLength.toFixed(2) }]);
+    const roundedTotalLength = roundToNearestEighth(totalLength);
+    setInchInputs([{ id: '1', value: roundedTotalLength.toFixed(3) }]);
     setNumberOfBends(bends.toString());
     
-    toast.success(`Applied: ${cleanNumber(totalLength, 2)}" with ${bends} bends`);
+    toast.success(`Applied: ${formatMeasurementToEighth(totalLength)} with ${bends} bends`);
     setShowDrawing(false);
   }
 
@@ -1504,60 +1656,120 @@ export function TrimPricingCalculator() {
 
   async function loadJobs() {
     try {
-      const { data, error } = await supabase
+      // Prefer active jobs, but fall back to broader/legacy schemas so the dialog never looks broken.
+      let data: any[] | null = null;
+      let error: any = null;
+      ({ data, error } = await supabase
         .from('jobs')
-        .select('id, name, job_number')
+        .select('id, name, job_number, status')
         .eq('status', 'active')
-        .order('name');
-      
-      if (error) throw error;
-      setJobs(data || []);
-    } catch (error) {
+        .order('name'));
+
+      if (error && /status|column|schema cache|could not find/i.test(String(error.message || ''))) {
+        ({ data, error } = await supabase
+          .from('jobs')
+          .select('id, name, job_number')
+          .order('name'));
+      }
+      if (!error && (!data || data.length === 0)) {
+        // Some accounts don't use "active" status; show all jobs instead of empty list.
+        ({ data, error } = await supabase
+          .from('jobs')
+          .select('id, name, job_number')
+          .order('name'));
+      }
+
+      if (error) {
+        if (isAbortLikeError(error)) return;
+        console.error('Error loading jobs:', error);
+        toast.error(`Failed to load jobs: ${error.message || 'Unknown error'}`);
+        setJobs([]);
+        return;
+      }
+
+      const normalized = (data || [])
+        .filter((j: any) => !!j?.id && !!j?.name)
+        .map((j: any) => ({
+          id: String(j.id),
+          name: String(j.name),
+          job_number: j.job_number ?? null,
+        }));
+      setJobs(normalized);
+    } catch (error: any) {
+      if (isAbortLikeError(error)) return;
       console.error('Error loading jobs:', error);
+      toast.error(`Failed to load jobs: ${error?.message || 'Unknown error'}`);
+      setJobs([]);
     }
   }
   
   async function loadTrimTypes() {
     try {
       console.log('🔄 Loading trim types from database...');
-      const { data, error } = await supabase
+      // Backward-compatible load: some deployments may not have active/cut_price yet.
+      let data: any[] | null = null;
+      let error: any = null;
+      ({ data, error } = await supabase
         .from('trim_types')
-        .select('*')
-        .eq('active', true)
-        .order('name');
-      
-      if (error) {
-        console.error('❌ Error loading trim types:', error);
-        toast.error('Failed to load trim types. Please check permissions.');
-        throw error;
+        .select('id,name,width_inches,cost_per_lf,price_per_bend,markup_percent,cut_price,active')
+        .order('name'));
+      if (error && /active|cut_price|column|schema cache|could not find/i.test(String(error.message || ''))) {
+        ({ data, error } = await supabase
+          .from('trim_types')
+          .select('id,name,width_inches,cost_per_lf,price_per_bend,markup_percent')
+          .order('name'));
       }
-      
-      console.log('✅ Loaded trim types:', data);
-      console.log('📊 Total trim types found:', data?.length || 0);
-      setTrimTypes(data || []);
+      if (error) {
+        if (isAbortLikeError(error)) return;
+        console.error('❌ Error loading trim types:', error);
+        toast.error(`Failed to load trim types: ${error.message || 'Unknown error'}`);
+        return;
+      }
+
+      const normalized: TrimType[] = (data || [])
+        .map((row: any) => ({
+          id: row.id,
+          name: row.name || 'Trim',
+          width_inches: Number(row.width_inches) || 0,
+          cost_per_lf: Number(row.cost_per_lf) || 0,
+          price_per_bend: Number(row.price_per_bend) || 0,
+          markup_percent: Number(row.markup_percent) || 0,
+          cut_price: Number(row.cut_price) || 0,
+          active: row.active !== false,
+        }))
+        .filter((row) => row.active)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      console.log('✅ Loaded trim types:', normalized);
+      console.log('📊 Total trim types found:', normalized.length || 0);
+      setTrimTypes(normalized);
       
       // Auto-select first type if none selected
-      if (data && data.length > 0 && !selectedTrimTypeId) {
-        setSelectedTrimTypeId(data[0].id);
-        console.log('✅ Auto-selected first trim type:', data[0].name);
+      if (normalized.length > 0 && !selectedTrimTypeId) {
+        setSelectedTrimTypeId(normalized[0].id);
+        console.log('✅ Auto-selected first trim type:', normalized[0].name);
       }
     } catch (error: any) {
+      if (isAbortLikeError(error)) return;
       console.error('❌ Error loading trim types:', error);
       toast.error(`Failed to load trim types: ${error.message || 'Unknown error'}`);
     }
   }
 
   async function loadSavedConfigs(silent = false) {
+    const gen = ++loadSavedConfigsGenRef.current;
     try {
       console.log('🔄 Loading saved trim configurations from database...');
-      console.log('Current user:', await supabase.auth.getUser());
-      
+
       const { data, error } = await supabase
         .from('trim_saved_configs')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
+      if (gen !== loadSavedConfigsGenRef.current) return;
+
       if (error) {
+        if (isAbortLikeError(error)) return;
         console.error('❌ Error loading saved configs:', error);
         console.error('Error details:', {
           message: error.message,
@@ -1565,10 +1777,12 @@ export function TrimPricingCalculator() {
           details: error.details,
           hint: error.hint
         });
-        toast.error(`Failed to load saved configurations: ${error.message}`);
-        throw error;
+        if (!silent) {
+          toast.error(`Failed to load saved configurations: ${error.message}`);
+        }
+        return;
       }
-      
+
       console.log('✅ Loaded saved configs:', data?.length || 0);
       if (data && data.length > 0) {
         console.log('📋 All configs:', data);
@@ -1583,11 +1797,15 @@ export function TrimPricingCalculator() {
       } else {
         console.warn('⚠️ No saved configurations found in database');
       }
-      
+
       setSavedConfigs(data || []);
     } catch (error: any) {
+      if (isAbortLikeError(error)) return;
+      if (gen !== loadSavedConfigsGenRef.current) return;
       console.error('❌ Unexpected error loading saved configs:', error);
-      toast.error(`Error: ${error.message || 'Unknown error'}`);
+      if (!silent) {
+        toast.error(`Error: ${error.message || 'Unknown error'}`);
+      }
     }
   }
 
@@ -1633,36 +1851,53 @@ export function TrimPricingCalculator() {
     try {
       if (editingTrimType) {
         // Update existing
-        const { error } = await supabase
+        const updatePayload: Record<string, unknown> = {
+          name: newTrimTypeName.trim(),
+          width_inches: width,
+          cost_per_lf: cost,
+          price_per_bend: bendPrice,
+          markup_percent: markup,
+          cut_price: cutPrice,
+          updated_at: new Date().toISOString()
+        };
+        let { error } = await supabase
           .from('trim_types')
-          .update({
-            name: newTrimTypeName.trim(),
-            width_inches: width,
-            cost_per_lf: cost,
-            price_per_bend: bendPrice,
-            markup_percent: markup,
-            cut_price: cutPrice,
-            updated_at: new Date().toISOString()
-          })
+          .update(updatePayload)
           .eq('id', editingTrimType.id);
+        if (error && /cut_price|updated_at|column|schema cache|could not find/i.test(String(error.message || ''))) {
+          const { cut_price: _dropCut, updated_at: _dropUpdated, ...legacyPayload } = updatePayload as any;
+          ({ error } = await supabase
+            .from('trim_types')
+            .update(legacyPayload)
+            .eq('id', editingTrimType.id));
+        }
         
         if (error) throw error;
         toast.success('Material type updated');
       } else {
         // Insert new
-        const { data, error } = await supabase
+        const insertPayload: Record<string, unknown> = {
+          name: newTrimTypeName.trim(),
+          width_inches: width,
+          cost_per_lf: cost,
+          price_per_bend: bendPrice,
+          markup_percent: markup,
+          cut_price: cutPrice,
+          active: true
+        };
+        let { data, error } = await supabase
           .from('trim_types')
-          .insert([{
-            name: newTrimTypeName.trim(),
-            width_inches: width,
-            cost_per_lf: cost,
-            price_per_bend: bendPrice,
-            markup_percent: markup,
-            cut_price: cutPrice,
-            active: true
-          }])
+          .insert([insertPayload])
           .select()
           .single();
+        if (error && /cut_price|active|column|schema cache|could not find/i.test(String(error.message || ''))) {
+          const { cut_price: _dropCut, active: _dropActive, ...legacyPayload } = insertPayload as any;
+          ({ data, error } = await supabase
+            .from('trim_types')
+            .insert([legacyPayload])
+            .select()
+            .single());
+        }
         
         if (error) throw error;
         
@@ -1687,7 +1922,7 @@ export function TrimPricingCalculator() {
       setEditingTrimType(null);
     } catch (error) {
       console.error('Error saving trim type:', error);
-      toast.error('Failed to save material type');
+      toast.error(`Failed to save material type: ${(error as any)?.message || 'Unknown error'}`);
     }
   }
   
@@ -1695,10 +1930,17 @@ export function TrimPricingCalculator() {
     if (!confirm('Delete this trim type?')) return;
     
     try {
-      const { error } = await supabase
+      let { error } = await supabase
         .from('trim_types')
         .update({ active: false })
         .eq('id', id);
+      if (error && /active|column|schema cache|could not find/i.test(String(error.message || ''))) {
+        // Older schema without active flag: hard-delete row as fallback.
+        ({ error } = await supabase
+          .from('trim_types')
+          .delete()
+          .eq('id', id));
+      }
       
       if (error) throw error;
       
@@ -2104,6 +2346,9 @@ export function TrimPricingCalculator() {
             hasHem: seg.hasHem === true,
             hemAtStart: seg.hemAtStart === true,
             hemSide: seg.hemSide === 'left' || seg.hemSide === 'right' ? seg.hemSide : 'right',
+            hemDepthInches: typeof seg.hemDepthInches === 'number' && Number.isFinite(seg.hemDepthInches)
+              ? Math.max(0.125, seg.hemDepthInches)
+              : undefined,
           }));
         }
       }
@@ -2383,13 +2628,32 @@ export function TrimPricingCalculator() {
                     type="number"
                     min={0.125}
                     step={0.125}
-                    value={hemDepthInches}
+                    value={(() => {
+                      const selected = drawing.selectedSegmentId
+                        ? drawing.segments.find((s) => s.id === drawing.selectedSegmentId)
+                        : null;
+                      if (selected?.hasHem) return getHemDepthForSegment(selected);
+                      return hemDepthInches;
+                    })()}
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
-                      if (!Number.isNaN(v) && v >= 0.125) setHemDepthInches(v);
+                      if (Number.isNaN(v) || v < 0.125) return;
+                      const selected = drawing.selectedSegmentId
+                        ? drawing.segments.find((s) => s.id === drawing.selectedSegmentId)
+                        : null;
+                      if (selected?.hasHem) {
+                        setDrawing((prev) => ({
+                          ...prev,
+                          segments: prev.segments.map((seg) =>
+                            seg.id === selected.id ? { ...seg, hemDepthInches: v } : seg
+                          ),
+                        }));
+                        return;
+                      }
+                      setHemDepthInches(v);
                     }}
-                    className="w-14 h-6 text-xs border border-gray-400 rounded px-1 text-center"
-                    title="Hem length in inches (default 1/2&quot;)"
+                    className="w-16 h-6 text-xs border border-gray-400 rounded px-1 text-center"
+                    title="Selected hem depth, or default depth for new hems"
                   />
                 </div>
               )}
@@ -2498,7 +2762,10 @@ export function TrimPricingCalculator() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span>{seg.label} {seg.hasHem && `(HEM-${seg.hemSide?.toUpperCase()})`}</span>
+                        <span>
+                          {seg.label}{' '}
+                          {seg.hasHem && `(HEM-${seg.hemSide?.toUpperCase()} ${cleanNumber(getHemDepthForSegment(seg))})`}
+                        </span>
                         {seg.id === drawing.selectedSegmentId && (
                           <div className="flex gap-1">
                             <Button
@@ -2600,7 +2867,7 @@ export function TrimPricingCalculator() {
                       <>
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-gray-600">∠{Math.round(displayAngle)}°</span>
-                          <span className="text-gray-800 font-semibold">{cleanNumber(length)}"</span>
+                          <span className="text-gray-800 font-semibold">{formatMeasurementToEighth(length)}</span>
                         </div>
                         <Input
                           ref={lengthInputRef}
@@ -3284,34 +3551,14 @@ export function TrimPricingCalculator() {
                       <div className="flex items-center gap-4 pr-8">
                         {/* Preview thumbnail if has drawing */}
                         {config.drawing_segments && config.drawing_segments.length > 0 && (
-                          <div className="w-24 h-24 shrink-0 bg-white rounded border-2 border-green-700">
-                            <svg viewBox="0 0 100 100" className="w-full h-full">
-                              {(() => {
-                                const allX = config.drawing_segments!.flatMap(s => [s.start.x, s.end.x]);
-                                const allY = config.drawing_segments!.flatMap(s => [s.start.y, s.end.y]);
-                                const minX = Math.min(...allX);
-                                const maxX = Math.max(...allX);
-                                const minY = Math.min(...allY);
-                                const maxY = Math.max(...allY);
-                                const width = maxX - minX;
-                                const height = maxY - minY;
-                                const padding = Math.max(width, height) * 0.1;
-                                const viewBoxWidth = width + 2 * padding;
-                                const viewBoxHeight = height + 2 * padding;
-                                const scaleX = 100 / viewBoxWidth;
-                                const scaleY = 100 / viewBoxHeight;
-                                const scale = Math.min(scaleX, scaleY);
-                                const offsetX = (100 - width * scale) / 2 - minX * scale;
-                                const offsetY = (100 - height * scale) / 2 - minY * scale;
-                                return (
-                                  <g transform={`translate(${offsetX}, ${offsetY}) scale(${scale})`}>
-                                    {config.drawing_segments!.map((seg, i) => (
-                                      <line key={i} x1={seg.start.x} y1={seg.start.y} x2={seg.end.x} y2={seg.end.y} stroke="#000000" strokeWidth={0.5 / scale} />
-                                    ))}
-                                  </g>
-                                );
-                              })()}
-                            </svg>
+                          <div className="w-24 h-24 shrink-0 bg-white rounded border-2 border-green-700 overflow-hidden">
+                            <TrimDrawingPreview
+                              segments={config.drawing_segments}
+                              width={96}
+                              height={96}
+                              hemDepthInches={hemDepthInches}
+                              className="w-full h-full"
+                            />
                           </div>
                         )}
 

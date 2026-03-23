@@ -308,3 +308,16 @@ try {
 } catch (e) {
   // Ignore
 }
+
+/**
+ * Supabase / fetch requests are aborted when React Strict Mode remounts, the route changes,
+ * or a newer request supersedes an older one. These are not user-actionable failures.
+ */
+export function isAbortLikeError(err: unknown): boolean {
+  if (err == null) return false;
+  const any = err as { name?: string; message?: string; details?: string };
+  const name = String(any?.name ?? '');
+  const msg = String(any?.message ?? any?.details ?? err);
+  if (name === 'AbortError') return true;
+  return /AbortError|aborted|signal is aborted/i.test(msg);
+}

@@ -53,6 +53,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       setProfile(data);
+      try {
+        localStorage.setItem('mb_last_app_role', data.role);
+      } catch { /* ignore */ }
       
       // Determine auth state based on PIN setup and authentication status
       if (!data.pin_hash) {
@@ -71,6 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       localStorage.removeItem('fieldtrack_user_id');
       localStorage.removeItem('fieldtrack_authenticated');
+      try {
+        localStorage.removeItem('mb_last_app_role');
+      } catch { /* ignore */ }
       setProfile(null);
       setAuthState('unauthenticated');
     } finally {
@@ -81,6 +87,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function selectUser(user: UserProfile) {
     localStorage.setItem('fieldtrack_user_id', user.id);
     localStorage.removeItem('fieldtrack_authenticated'); // Require authentication
+    try {
+      localStorage.setItem('mb_last_app_role', user.role);
+    } catch { /* ignore */ }
     setProfile(user);
     
     // Determine auth state
@@ -94,6 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function clearUser() {
     localStorage.removeItem('fieldtrack_user_id');
     localStorage.removeItem('fieldtrack_authenticated');
+    try {
+      localStorage.removeItem('mb_last_app_role');
+    } catch { /* ignore */ }
     // Clear user-specific data
     const userId = profile?.id;
     if (userId) {

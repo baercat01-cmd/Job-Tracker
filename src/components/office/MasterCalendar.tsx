@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { EventDetailsDialog } from './EventDetailsDialog';
 import { parseDateLocal } from '@/lib/date-utils';
+import { isAbortLikeError } from '@/lib/error-handler';
 import {
   Select,
   SelectContent,
@@ -135,7 +136,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
       if (error) throw error;
       setJobs(data || []);
     } catch (error) {
-      console.error('Error loading jobs:', error);
+      if (!isAbortLikeError(error)) console.error('Error loading jobs:', error);
     }
   }
 
@@ -150,7 +151,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
       if (error) throw error;
       setComponents(data || []);
     } catch (error) {
-      console.error('Error loading components:', error);
+      if (!isAbortLikeError(error)) console.error('Error loading components:', error);
     }
   }
 
@@ -167,7 +168,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
       if (error) throw error;
       setUnavailableDates(data || []);
     } catch (error) {
-      console.error('Error loading unavailable dates:', error);
+      if (!isAbortLikeError(error)) console.error('Error loading unavailable dates:', error);
     }
   }
 
@@ -454,8 +455,10 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
       setEvents(events);
     } catch (error: any) {
-      console.error('Error loading calendar events:', error);
-      toast.error('Failed to load calendar events');
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading calendar events:', error);
+        toast.error('Failed to load calendar events');
+      }
     } finally {
       setLoading(false);
     }

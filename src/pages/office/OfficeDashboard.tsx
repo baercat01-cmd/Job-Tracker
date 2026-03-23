@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign, Mail, Undo2 } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -47,7 +47,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useUndo } from '@/contexts/UndoContext';
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
@@ -60,27 +59,55 @@ export function OfficeDashboard() {
     return tabParam || 'jobs';
   });
 
-  // When the page loads or refreshes on /office, always open at jobs home (jobs tab, no job detail)
-  useEffect(() => {
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  /** Bump on every OfficeDashboard mount so JobsView remounts (clears open job dialog; avoids stale PWA/bfcache state). */
+  const [jobsViewEpoch, setJobsViewEpoch] = useState(0);
+
+  // Before paint: default to jobs only when URL has no explicit tab.
+  // Do not override deep links like ?tab=trim-calculator.
+  useLayoutEffect(() => {
     if (location.pathname !== '/office') return;
+    if (tabParam) return;
     navigate('/office?tab=jobs', { replace: true });
     setActiveTab('jobs');
     setSelectedJobId(null);
-    // Intentionally run only on mount so in-app tab switches are not overwritten
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setJobsViewEpoch((e) => e + 1);
+  }, [location.pathname, tabParam, navigate]);
+
+  // Installed PWA: reopening from the taskbar often resumes the same JS heap without remounting — reset jobs view.
+  const officeHiddenAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const isStandalone = () =>
+      window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        officeHiddenAtRef.current = Date.now();
+        return;
+      }
+      if (!isStandalone()) return;
+      const t = officeHiddenAtRef.current;
+      if (t != null && Date.now() - t > 1500) {
+        setSelectedJobId(null);
+        setJobsViewEpoch((e) => e + 1);
+      }
+      officeHiddenAtRef.current = null;
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
-  // When URL tab param changes (e.g. link from Materials "Open Trim Calculator"), switch to that tab
+  // When the URL tab changes (deep link, back/forward), sync state. Do NOT depend on `activeTab`:
+  // after a tab click, `activeTab` updates before `tabParam`, and the old effect would reset the tab
+  // to the previous URL value — rapid flashing between views.
   useEffect(() => {
-    if (tabParam && tabParam !== activeTab) setActiveTab(tabParam);
+    if (!tabParam) return;
+    setActiveTab((prev) => (prev === tabParam ? prev : tabParam));
   }, [tabParam]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [openMaterialsTab, setOpenMaterialsTab] = useState(false);
   const [materialsCount, setMaterialsCount] = useState(0);
   const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
-  const { canUndo, undo, lastLabel } = useUndo();
 
   // Save view state to localStorage and update URL
   // CRITICAL: Use replace: true to prevent scroll reset on URL changes
@@ -210,21 +237,6 @@ export function OfficeDashboard() {
             alt="Martin Builder" 
             className="h-8 w-auto flex-shrink-0 sm:h-10"
           />
-
-          {/* Undo - dedicated slot so it never overlaps other header items and stays clickable */}
-          <div className="flex-shrink-0 min-w-[72px] sm:min-w-[88px] flex justify-center" aria-label="Undo">
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm w-full min-w-0 max-w-[88px]"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); undo(); }}
-              disabled={!canUndo}
-              title={canUndo ? (lastLabel ? `Undo: ${lastLabel}` : 'Undo (Ctrl+Z)') : 'Nothing to undo'}
-            >
-              <Undo2 className="w-4 h-4 sm:mr-1.5 shrink-0" />
-              <span className="hidden sm:inline truncate">Undo</span>
-            </Button>
-          </div>
 
           {/* Navigation Tabs - mobile: 44px touch targets, smooth scroll; desktop: unchanged */}
           <div className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide overflow-y-hidden py-1 -my-1 md:gap-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x [&>button]:min-h-[44px] [&>button]:min-w-[44px] md:[&>button]:min-h-0 md:[&>button]:min-w-0">
@@ -464,6 +476,7 @@ export function OfficeDashboard() {
         {activeTab === 'jobs' && (
           <div className="space-y-6">
             <JobsView 
+              key={jobsViewEpoch}
               selectedJobId={selectedJobId} 
               openMaterialsTab={openMaterialsTab}
               onAddTask={() => setShowCreateTaskDialog(true)}

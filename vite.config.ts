@@ -33,7 +33,7 @@ export default defineConfig({
         short_name: "Martin OS",
         name: "Martin Builder Operations OS",
         description: "Martin Builder Operations OS",
-        start_url: "/",
+        start_url: "/office?tab=jobs",
         display: "standalone",
         background_color: "#000000",
         theme_color: "#4179bc",

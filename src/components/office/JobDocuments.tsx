@@ -210,12 +210,30 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
         ? []
         : await Promise.all(
             list.map(async (doc: any) => {
-              const { data: latestRevision } = await supabase
+              // Prefer revision matching current_version. If missing/mismatched, fall back to highest version.
+              let latestRevision: { file_url?: string | null } | null = null;
+              const currentVersion = Number(doc.current_version ?? 1);
+
+              const currentRes = await supabase
                 .from('job_document_revisions')
                 .select('file_url')
                 .eq('document_id', doc.id)
-                .eq('version_number', doc.current_version ?? 1)
+                .eq('version_number', currentVersion)
                 .maybeSingle();
+              if (!currentRes.error && currentRes.data?.file_url) {
+                latestRevision = currentRes.data as any;
+              } else {
+                const fallbackRes = await supabase
+                  .from('job_document_revisions')
+                  .select('file_url')
+                  .eq('document_id', doc.id)
+                  .order('version_number', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                if (!fallbackRes.error && fallbackRes.data?.file_url) {
+                  latestRevision = fallbackRes.data as any;
+                }
+              }
 
               return {
                 ...doc,
@@ -863,10 +881,10 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                         </div>
                       ) : (
                         <>
-                          <CardTitle className="text-sm mb-1 truncate" title={doc.name}>
+                          <CardTitle className="text-sm mb-1 truncate text-slate-900" title={doc.name}>
                             {doc.name}
                           </CardTitle>
-                          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
                             <Badge variant="outline" className="text-xs">
                               {doc.category}
                             </Badge>
@@ -955,14 +973,14 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                   {isOffice && (
                     <div className="flex flex-col gap-2 mt-3 pt-3 border-t">
                       <div className="flex items-center justify-between gap-4">
-                        <Label className="text-xs font-normal text-muted-foreground cursor-pointer">Visible to crew</Label>
+                        <Label className="text-xs font-normal text-slate-600 cursor-pointer">Visible to crew</Label>
                         <Switch
                           checked={!!doc.visible_to_crew}
                           onCheckedChange={() => toggleCrewVisibility(doc.id, doc.visible_to_crew)}
                         />
                       </div>
                       <div className="flex items-center justify-between gap-4">
-                        <Label className="text-xs font-normal text-muted-foreground cursor-pointer flex items-center gap-1.5">
+                        <Label className="text-xs font-normal text-slate-600 cursor-pointer flex items-center gap-1.5">
                           <Globe className="w-3.5 h-3.5" />
                           Visible to customer portal
                         </Label>
