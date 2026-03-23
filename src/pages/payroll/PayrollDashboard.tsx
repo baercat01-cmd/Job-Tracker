@@ -21,6 +21,7 @@ import {
   Calendar, 
   Users, 
   Clock, 
+  Plus,
   LogOut,
   ChevronDown,
   ChevronRight,
@@ -112,10 +113,22 @@ export function PayrollDashboard() {
   const [jobHoursData, setJobHoursData] = useState<any[]>([]);
   const [loadingJobHours, setLoadingJobHours] = useState(false);
   const [exportingJobHours, setExportingJobHours] = useState(false);
+  const [payrollUsers, setPayrollUsers] = useState<{ id: string; username: string | null; email?: string | null }[]>([]);
+  const [showAddTimeDialog, setShowAddTimeDialog] = useState(false);
+  const [savingAddTime, setSavingAddTime] = useState(false);
+  const [addTimeForm, setAddTimeForm] = useState({
+    userId: '',
+    jobId: '',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '',
+    endTime: '',
+    notes: '',
+  });
 
   useEffect(() => {
     generatePeriodOptions();
     loadJobs();
+    loadPayrollUsers();
   }, [periodType]);
 
   useEffect(() => {
@@ -145,6 +158,74 @@ export function PayrollDashboard() {
       setJobs(data || []);
     } catch (error: any) {
       console.error('Error loading jobs:', error);
+    }
+  }
+
+  async function loadPayrollUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, username, email')
+        .order('username');
+
+      if (error) throw error;
+      setPayrollUsers(data || []);
+    } catch (error: any) {
+      console.error('Error loading payroll users:', error);
+    }
+  }
+
+  async function addTimeEntryForUser() {
+    if (!addTimeForm.userId || !addTimeForm.jobId || !addTimeForm.date || !addTimeForm.startTime || !addTimeForm.endTime) {
+      toast.error('Please complete all required fields');
+      return;
+    }
+
+    const startDateTime = new Date(`${addTimeForm.date}T${addTimeForm.startTime}`);
+    const endDateTime = new Date(`${addTimeForm.date}T${addTimeForm.endTime}`);
+    const totalHours = (endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60);
+
+    if (totalHours <= 0) {
+      toast.error('End time must be after start time');
+      return;
+    }
+
+    setSavingAddTime(true);
+    try {
+      const { error } = await supabase
+        .from('time_entries')
+        .insert({
+          user_id: addTimeForm.userId,
+          job_id: addTimeForm.jobId,
+          component_id: null, // Payroll should create clock-in style entries
+          start_time: startDateTime.toISOString(),
+          end_time: endDateTime.toISOString(),
+          total_hours: totalHours,
+          crew_count: 1,
+          worker_names: null,
+          notes: addTimeForm.notes.trim() || null,
+          is_manual: true,
+          is_active: false,
+        });
+
+      if (error) throw error;
+
+      toast.success('Time entry added');
+      setShowAddTimeDialog(false);
+      setAddTimeForm({
+        userId: '',
+        jobId: '',
+        date: new Date().toISOString().split('T')[0],
+        startTime: '',
+        endTime: '',
+        notes: '',
+      });
+      loadPeriodData();
+    } catch (error: any) {
+      console.error('Error adding time entry:', error);
+      toast.error(error.message || 'Failed to add time entry');
+    } finally {
+      setSavingAddTime(false);
     }
   }
 
@@ -446,7 +527,7 @@ export function PayrollDashboard() {
         });
       });
 
-      // Add time entries (excluding weekends)
+      // Add time entries (include Saturday; exclude Sunday only)
       (timeEntries || []).forEach((entry: any) => {
         const userData = userMap.get(entry.user_id);
         if (userData) {
@@ -454,8 +535,8 @@ export function PayrollDashboard() {
           const date = new Date(entry.start_time);
           const dayOfWeek = date.getDay();
           
-          // Skip Saturday (6) and Sunday (0)
-          if (dayOfWeek === 0 || dayOfWeek === 6) {
+          // Skip Sunday (0)
+          if (dayOfWeek === 0) {
             return;
           }
           
@@ -489,7 +570,7 @@ export function PayrollDashboard() {
         }
       });
 
-      // Add time off entries for users who have time off but no time entries (weekdays only)
+      // Add time off entries for users who have time off but no time entries (exclude Sunday only)
       (timeOffDates || []).forEach((timeOff: any) => {
         const userData = userMap.get(timeOff.user_id);
         if (!userData) return;
@@ -501,8 +582,8 @@ export function PayrollDashboard() {
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
           const dayOfWeek = d.getDay();
           
-          // Skip Saturday (6) and Sunday (0)
-          if (dayOfWeek === 0 || dayOfWeek === 6) {
+          // Skip Sunday (0)
+          if (dayOfWeek === 0) {
             continue;
           }
           
@@ -951,14 +1032,20 @@ export function PayrollDashboard() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button
-                onClick={exportWeekToPDF}
-                disabled={loading || !weekData || filteredUsers.length === 0}
-                className="gradient-primary"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export to PDF
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowAddTimeDialog(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Time Entry
+                </Button>
+                <Button
+                  onClick={exportWeekToPDF}
+                  disabled={loading || !weekData || filteredUsers.length === 0}
+                  className="gradient-primary"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export to PDF
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1319,6 +1406,98 @@ export function PayrollDashboard() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog open={showAddTimeDialog} onOpenChange={setShowAddTimeDialog}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Add Time Entry</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Employee *</Label>
+              <Select
+                value={addTimeForm.userId}
+                onValueChange={(value) => setAddTimeForm(prev => ({ ...prev, userId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  {payrollUsers.map(user => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.username || user.email || 'Unknown User'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Job *</Label>
+              <Select
+                value={addTimeForm.jobId}
+                onValueChange={(value) => setAddTimeForm(prev => ({ ...prev, jobId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select job" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs.map(job => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.name} - {job.client_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input
+                  type="date"
+                  value={addTimeForm.date}
+                  onChange={(e) => setAddTimeForm(prev => ({ ...prev, date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Start *</Label>
+                <Input
+                  type="time"
+                  value={addTimeForm.startTime}
+                  onChange={(e) => setAddTimeForm(prev => ({ ...prev, startTime: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>End *</Label>
+                <Input
+                  type="time"
+                  value={addTimeForm.endTime}
+                  onChange={(e) => setAddTimeForm(prev => ({ ...prev, endTime: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={addTimeForm.notes}
+                onChange={(e) => setAddTimeForm(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Reason or payroll note"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddTimeDialog(false)} disabled={savingAddTime}>
+              Cancel
+            </Button>
+            <Button onClick={addTimeEntryForUser} disabled={savingAddTime}>
+              {savingAddTime ? 'Saving...' : 'Add Time'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={!!editingEntry} onOpenChange={() => setEditingEntry(null)}>
