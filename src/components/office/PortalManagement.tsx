@@ -22,6 +22,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
+import { insertPortalJobAccess, deletePortalJobAccess } from '@/lib/portalJobAccess';
 import {
   Select,
   SelectContent,
@@ -180,21 +181,19 @@ export function PortalManagement() {
     }
 
     try {
-      const { error } = await supabase
-        .from('portal_job_access')
-        .insert([{
-          portal_user_id: selectedUser.id,
-          job_id: selectedJobId,
-          can_view_schedule: canViewSchedule,
-          can_view_documents: canViewDocuments,
-          can_view_photos: canViewPhotos,
-          can_view_financials: canViewFinancials,
-          can_view_proposal: canViewProposal,
-          can_view_materials: canViewMaterials,
-          can_edit_schedule: canEditSchedule,
-          notes: accessNotes || null,
-          created_by: profile?.id,
-        }]);
+      const { error } = await insertPortalJobAccess(supabase, {
+        portal_user_id: selectedUser.id,
+        job_id: selectedJobId,
+        can_view_schedule: canViewSchedule,
+        can_view_documents: canViewDocuments,
+        can_view_photos: canViewPhotos,
+        can_view_financials: canViewFinancials,
+        can_view_proposal: canViewProposal,
+        can_view_materials: canViewMaterials,
+        can_edit_schedule: canEditSchedule,
+        notes: accessNotes || null,
+        created_by: profile?.id,
+      });
 
       if (error) throw error;
 
@@ -211,10 +210,7 @@ export function PortalManagement() {
     if (!confirm('Remove access to this job?')) return;
 
     try {
-      const { error } = await supabase
-        .from('portal_job_access')
-        .delete()
-        .eq('id', accessId);
+      const { error } = await deletePortalJobAccess(supabase, accessId);
 
       if (error) throw error;
 

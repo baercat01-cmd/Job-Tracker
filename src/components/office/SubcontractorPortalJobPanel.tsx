@@ -21,6 +21,7 @@ import { Copy, Link2, Plus, Trash2, Pencil, Briefcase, Key } from 'lucide-react'
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
+import { insertPortalJobAccess, updatePortalJobAccess, deletePortalJobAccess } from '@/lib/portalJobAccess';
 
 interface PortalUserRow {
   id: string;
@@ -58,15 +59,12 @@ function formatSupabaseError(err: unknown): string {
   return parts.join(' — ') || 'Request failed';
 }
 
-function isPortalJobAccessOptionalColumnError(err: unknown): boolean {
-  const msg = String((err as { message?: string })?.message ?? '');
-  return /can_edit_schedule|can_view_proposal|can_view_materials|schema cache|PGRST204/i.test(msg);
-}
-
-function isRlsError(err: unknown): boolean {
+function isLikelyPortalJobAccessRls(err: unknown): boolean {
   const code = (err as { code?: string })?.code;
   const msg = String((err as { message?: string })?.message ?? '');
-  return code === '42501' || code === 'PGRST301' || /row-level security|permission|denied|RLS/i.test(msg);
+  if (/row-level security|RLS policy|violates row-level/i.test(msg)) return true;
+  if (code === '42501' && /row-level security|rls/i.test(msg)) return true;
+  return false;
 }
 
 export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPortalJobPanelProps) {
@@ -201,15 +199,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
         notes: accessNotes || null,
         created_by: profile?.id,
       };
-      let { error } = await supabase.from('portal_job_access').insert([payload]);
-      if (error && isPortalJobAccessOptionalColumnError(error)) {
-        const { can_view_proposal, can_view_materials, can_edit_schedule, ...fallbackPayload } = payload;
-        void can_view_proposal;
-        void can_view_materials;
-        void can_edit_schedule;
-        const fallback = await supabase.from('portal_job_access').insert([fallbackPayload]);
-        error = fallback.error;
-      }
+      const { error } = await insertPortalJobAccess(supabase, payload);
       if (error) throw error;
       toast.success('Access granted for this job');
       setGrantOpen(false);
@@ -217,13 +207,16 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       setAccessNotes('');
       await load();
     } catch (err: unknown) {
-      const msg = (err as { message?: string })?.message ?? 'Grant failed';
-      if (isRlsError(err)) {
-        toast.error('Database blocked portal_job_access write (RLS). Run scripts/fix-portal-job-access-rls.sql in Supabase SQL Editor.', { duration: 12000 });
+      const msg = formatSupabaseError(err);
+      if (isLikelyPortalJobAccessRls(err)) {
+        toast.error(
+          `Could not save job access: ${msg}. Deploy Edge Function portal-job-access (supabase/functions/portal-job-access) or fix RLS on portal_job_access.`,
+          { duration: 18000 }
+        );
       } else if (/duplicate|unique/i.test(msg)) {
         toast.error('This user already has access to this job');
       } else {
-        toast.error(msg);
+        toast.error(msg || 'Grant failed', { duration: 12000 });
       }
     }
   }
@@ -302,15 +295,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
         can_edit_schedule: editRow.can_edit_schedule ?? false,
         notes: editRow.notes,
       };
-      let { error } = await supabase.from('portal_job_access').update(payload).eq('id', editRow.id);
-      if (error && isPortalJobAccessOptionalColumnError(error)) {
-        const { can_view_proposal, can_view_materials, can_edit_schedule, ...fallbackPayload } = payload;
-        void can_view_proposal;
-        void can_view_materials;
-        void can_edit_schedule;
-        const fallback = await supabase.from('portal_job_access').update(fallbackPayload).eq('id', editRow.id);
-        error = fallback.error;
-      }
+      const { error } = await updatePortalJobAccess(supabase, editRow.id, payload);
       if (error) throw error;
       toast.success('Access updated');
       setEditRow(null);
@@ -323,7 +308,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
   async function revoke(accessId: string) {
     if (!confirm('Remove this subcontractor’s access to this job?')) return;
     try {
-      const { error } = await supabase.from('portal_job_access').delete().eq('id', accessId);
+      const { error } = await deletePortalJobAccess(supabase, accessId);
       if (error) throw error;
       toast.success('Access removed');
       await load();

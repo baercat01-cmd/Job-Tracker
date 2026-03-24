@@ -1438,24 +1438,50 @@ function JobDetailView({
     return () => { cancelled = true; };
   }, [selectedQuoteId]);
 
+  /** CO quote workbook sheets + any CO-typed sheets on the main workbook (must be above standalone sheet resolver). */
+  const proposalCoSheets = useMemo(() => {
+    const fromBundle = ((proposalData?.changeOrderSheets ?? []) as any[]).filter(
+      (s: any) => s.sheet_type === 'change_order'
+    );
+    const mainCo = ((proposalData?.materialSheets ?? []) as any[]).filter(
+      (s: any) => !isFieldRequestSheetName(s.sheet_name) && s.sheet_type === 'change_order'
+    );
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const s of [...fromBundle, ...mainCo]) {
+      if (!s?.id || seen.has(s.id)) continue;
+      seen.add(s.id);
+      out.push(s);
+    }
+    out.sort((a: any, b: any) => {
+      const sa = Number(a.change_order_seq) || 0;
+      const sb = Number(b.change_order_seq) || 0;
+      if (sa !== sb) return sa - sb;
+      return (a.order_index ?? 0) - (b.order_index ?? 0);
+    });
+    return out;
+  }, [proposalData]);
+
   const standaloneMaterialSheet = useMemo(() => {
     if (!sheetIdFromUrl) return null;
     if (materialSheetPageIsCo) {
-      const sheets = (changeOrderProposalData?.materialSheets || []).filter(
-        (s: any) => !isFieldRequestSheetName(s.sheet_name)
+      const fromDedicated = (changeOrderProposalData?.materialSheets || []).filter(
+        (s: any) => !isFieldRequestSheetName(s.sheet_name) && s.sheet_type === 'change_order'
       );
-      return sheets.find((s: any) => s.id === sheetIdFromUrl) ?? null;
+      const hitDedicated = fromDedicated.find((s: any) => s.id === sheetIdFromUrl);
+      if (hitDedicated) return hitDedicated;
+      return proposalCoSheets.find((s: any) => s.id === sheetIdFromUrl) ?? null;
     }
     const sheets = (proposalData?.materialSheets || []).filter(
       (s: any) => !isFieldRequestSheetName(s.sheet_name)
     );
     return sheets.find((s: any) => s.id === sheetIdFromUrl) ?? null;
-  }, [sheetIdFromUrl, materialSheetPageIsCo, changeOrderProposalData, proposalData]);
+  }, [sheetIdFromUrl, materialSheetPageIsCo, changeOrderProposalData, proposalData, proposalCoSheets]);
 
   const mainMaterialSheetsForTab = useMemo(
     () =>
       (proposalData?.materialSheets || []).filter(
-        (s: any) => !isFieldRequestSheetName(s.sheet_name)
+        (s: any) => !isFieldRequestSheetName(s.sheet_name) && s.sheet_type !== 'change_order'
       ),
     [proposalData]
   );
@@ -1475,9 +1501,7 @@ function JobDetailView({
     const raw = changeOrderProposalData?.materialSheets;
     if (!raw?.length) return [];
     let sheets = (raw as any[]).filter(
-      (s: any) =>
-        !isFieldRequestSheetName(s.sheet_name) &&
-        (s.sheet_type === 'change_order' || s.sheet_type == null)
+      (s: any) => !isFieldRequestSheetName(s.sheet_name) && s.sheet_type === 'change_order'
     );
     sheets = [...sheets].sort((a: any, b: any) => {
       const sa = Number(a.change_order_seq) || 0;
@@ -1488,12 +1512,51 @@ function JobDetailView({
     return sheets;
   }, [changeOrderProposalData]);
 
+  const portalCoMaterialSheetsList =
+    changeOrderMaterialSheetsForTab.length > 0 ? changeOrderMaterialSheetsForTab : proposalCoSheets;
+
+  const hasChangeOrderPortal = proposalCoSheets.length > 0 || !!changeOrderQuote;
+
+  const effectiveCoPortalBundle = useMemo(() => {
+    const coSent = changeOrderQuote ? !!(changeOrderQuote as any).sent_at : true;
+    if (changeOrderQuote && !coSent) return null;
+    if (changeOrderQuote && coSent) {
+      if (changeOrderProposalData) return changeOrderProposalData;
+      if (proposalCoSheets.length > 0 && proposalData) {
+        const taxEx = !!(changeOrderQuote as any)?.tax_exempt;
+        const sub = proposalCoSheets.reduce((acc, sh) => acc + (Number(sh._computedTotal) || 0), 0);
+        const tax = taxEx
+          ? 0
+          : proposalCoSheets.reduce((acc, sh) => acc + (Number(sh._computedMaterials) || 0) * 0.07, 0);
+        return {
+          ...proposalData,
+          materialSheets: proposalCoSheets,
+          totals: { subtotal: sub, tax, grandTotal: sub + tax },
+        };
+      }
+      return null;
+    }
+    if (!proposalCoSheets.length || !proposalData) return null;
+    const taxEx = !!(selectedQuote as any)?.tax_exempt;
+    const sub = proposalCoSheets.reduce((acc, sh) => acc + (Number(sh._computedTotal) || 0), 0);
+    const tax = taxEx
+      ? 0
+      : proposalCoSheets.reduce((acc, sh) => acc + (Number(sh._computedMaterials) || 0) * 0.07, 0);
+    return {
+      ...proposalData,
+      materialSheets: proposalCoSheets,
+      totals: { subtotal: sub, tax, grandTotal: sub + tax },
+    };
+  }, [changeOrderQuote, changeOrderProposalData, proposalCoSheets, proposalData, selectedQuote]);
+
   const showMaterialsTab = showMaterialItemsNoPrices;
   const showCoMaterialsInMaterialsTab =
-    !!changeOrderQuote && showMaterialItemsNoPricesCo && !!(changeOrderQuote as any)?.sent_at;
+    (!!changeOrderQuote && showMaterialItemsNoPricesCo && !!(changeOrderQuote as any)?.sent_at) ||
+    (!changeOrderQuote && proposalCoSheets.length > 0 && showMaterialItemsNoPrices);
   const isOptionalFlag = (value: any) => value === true || value === 'true' || value === 1;
   const optionalProposalSheets = ((proposalData?.materialSheets || []) as any[]).filter(
-    (s: any) => !isFieldRequestSheetName(s.sheet_name) && isOptionalFlag(s.is_option)
+    (s: any) =>
+      !isFieldRequestSheetName(s.sheet_name) && s.sheet_type !== 'change_order' && isOptionalFlag(s.is_option)
   );
   const optionalStandaloneSubs = ((proposalData?.subcontractorEstimates || []) as any[]).filter(
     (est: any) => !est.sheet_id && !est.row_id && isOptionalFlag(est.is_option)
@@ -1551,7 +1614,7 @@ function JobDetailView({
   const viewOptions = [
     { value: 'overview', label: 'Overview', icon: LayoutDashboard },
     ...(hasOptionsTab ? [{ value: 'options' as const, label: 'Options', icon: ClipboardList }] : []),
-    ...(showProposal && changeOrderQuote
+    ...(showProposal && hasChangeOrderPortal
       ? [{ value: 'change-orders' as const, label: 'Change orders', icon: ClipboardList }]
       : []),
     ...(showMaterialsTab
@@ -1576,6 +1639,7 @@ function JobDetailView({
     showProposal,
     showMaterialItemsNoPrices,
     changeOrderQuote?.id,
+    hasChangeOrderPortal,
     activeTab,
   ]);
 
@@ -1606,8 +1670,8 @@ function JobDetailView({
   }, [activeTab, sheetIdFromUrl]);
 
   useEffect(() => {
-    if (activeTab === 'change-orders' && !changeOrderQuote) setActiveTab('overview');
-  }, [activeTab, changeOrderQuote]);
+    if (activeTab === 'change-orders' && !hasChangeOrderPortal) setActiveTab('overview');
+  }, [activeTab, hasChangeOrderPortal]);
   const shouldAutoPrintSheet = searchParams?.get('print') === '1';
   useEffect(() => {
     if (!sheetIdFromUrl || !shouldAutoPrintSheet) return;
@@ -1623,8 +1687,16 @@ function JobDetailView({
 
   /** Dedicated page: material name / qty / usage only (same visibility as “Material list (no prices)”) */
   if (sheetIdFromUrl) {
-    const standaloneLoading = materialSheetPageIsCo ? changeOrderDataLoading : proposalDataLoading;
-    const standaloneAllowed = materialSheetPageIsCo ? showMaterialItemsNoPricesCo : showMaterialItemsNoPrices;
+    const standaloneLoading = materialSheetPageIsCo
+      ? changeOrderQuoteId
+        ? changeOrderDataLoading
+        : proposalDataLoading
+      : proposalDataLoading;
+    const standaloneAllowed = materialSheetPageIsCo
+      ? changeOrderQuoteId
+        ? showMaterialItemsNoPricesCo
+        : showMaterialItemsNoPrices
+      : showMaterialItemsNoPrices;
     const backHref = materialSheetPageIsCo
       ? buildPortalUrlWithoutSheet({ openChangeOrdersTab: true })
       : buildPortalUrlWithoutSheet();
@@ -1904,7 +1976,8 @@ function JobDetailView({
                         {(() => {
                           const materialListNoPrices = showMaterialItemsNoPrices;
                           const proposalSheets = (proposalData.materialSheets || []).filter(
-                            (s: any) => !isFieldRequestSheetName(s.sheet_name)
+                            (s: any) =>
+                              !isFieldRequestSheetName(s.sheet_name) && s.sheet_type !== 'change_order'
                           );
                           const requiredSheetIds = new Set(
                             proposalSheets
@@ -2063,6 +2136,40 @@ function JobDetailView({
                             );
                           });
                         })()}
+
+                        {hasChangeOrderPortal && proposalCoSheets.length > 0 && (
+                          <div className="border border-orange-200 bg-orange-50/40 rounded-lg p-4 space-y-3">
+                            <div className="flex items-start gap-2">
+                              <ClipboardList className="w-5 h-5 text-orange-800 shrink-0 mt-0.5" />
+                              <div className="min-w-0 space-y-2">
+                                <h4 className="font-semibold text-orange-950">Change orders</h4>
+                                <p className="text-sm text-slate-700">
+                                  {changeOrderQuote && !(changeOrderQuote as any)?.sent_at
+                                    ? 'Your contractor is preparing a change order. It will appear in the Change orders tab once it has been sent to you.'
+                                    : 'This project includes additional scope priced as change orders. Open the Change orders tab to review line items, totals, and sign.'}
+                                </p>
+                                <ul className="text-sm text-slate-600 list-disc pl-5 space-y-0.5">
+                                  {proposalCoSheets.slice(0, 6).map((s: any) => (
+                                    <li key={s.id}>{s.sheet_name || 'Change order'}</li>
+                                  ))}
+                                </ul>
+                                {proposalCoSheets.length > 6 && (
+                                  <p className="text-xs text-muted-foreground">
+                                    +{proposalCoSheets.length - 6} more in Change orders
+                                  </p>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="border-orange-300 text-orange-900"
+                                  onClick={() => setActiveTab('change-orders')}
+                                >
+                                  Open Change orders
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Totals — only shown when showFinancial is enabled. Prefer proposalData.totals; fall back to RPC/quote when proposalData not yet loaded. */}
                         {showFinancial && (() => {
@@ -2346,8 +2453,7 @@ function JobDetailView({
           </TabsContent>
 
           <TabsContent value="change-orders" className="space-y-6">
-            {changeOrderQuote ? (
-              !(changeOrderQuote as any)?.sent_at ? (
+            {!hasChangeOrderPortal ? null : changeOrderQuote && !(changeOrderQuote as any)?.sent_at ? (
                 <Card className="border-orange-200 bg-orange-50/30">
                   <CardContent className="py-8 text-center text-muted-foreground">
                     <ClipboardList className="w-10 h-10 mx-auto mb-3 opacity-50 text-orange-700" />
@@ -2355,8 +2461,16 @@ function JobDetailView({
                     <p className="text-sm mt-1">When your project manager sends a change order, it will appear here for you to review and sign.</p>
                   </CardContent>
                 </Card>
-              ) : (
+            ) : changeOrderQuote && (changeOrderQuote as any).sent_at && changeOrderDataLoading && !effectiveCoPortalBundle ? (
+                <div className="flex items-center justify-center py-8 text-muted-foreground">
+                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                  Loading change orders…
+                </div>
+            ) : !effectiveCoPortalBundle ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">No change order line items yet.</p>
+            ) : (
                 <div className="space-y-6">
+                  {changeOrderQuote && (changeOrderQuote as any).sent_at ? (
                   <Card className="border-orange-100 bg-orange-50/50">
                     <CardContent className="pt-6 space-y-4">
                       <p className="text-sm text-slate-700">
@@ -2390,21 +2504,30 @@ function JobDetailView({
                       </div>
                     </CardContent>
                   </Card>
-                  {changeOrderDataLoading && !changeOrderProposalData ? (
-                    <div className="flex items-center justify-center py-8 text-muted-foreground">
-                      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
-                      Loading change orders…
-                    </div>
-                  ) : changeOrderProposalData ? (
-                    (() => {
-                      const coData = changeOrderProposalData;
+                  ) : (
+                  <Card className="border-orange-100 bg-orange-50/50">
+                    <CardContent className="pt-6">
+                      <p className="text-sm text-slate-700">
+                        <strong>Change orders</strong> — additional scope and pricing for this project.
+                      </p>
+                      {!showFinancial && (
+                        <p className="text-sm text-muted-foreground mt-2">Pricing appears when your contractor shares it.</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                  )}
+                    {(() => {
+                      const coData = effectiveCoPortalBundle;
+                      const showMatNoPricesTab = changeOrderQuoteId ? showMaterialItemsNoPricesCo : showMaterialItemsNoPrices;
+                      const showFinCoTab = changeOrderQuoteId ? showFinancialCo : showFinancial;
+                      const showLineCoTab = changeOrderQuoteId ? showLineItemPricesCo : showLineItemPrices;
+                      const showPriceCoTab = (_sectionId: string) => showFinCoTab && showLineCoTab;
                       const rawSigs = (changeOrderQuote as any)?.change_order_signatures;
                       const coSigs: Record<string, { signed_at?: string; signed_name?: string }> =
                         rawSigs && typeof rawSigs === 'object' && !Array.isArray(rawSigs) ? rawSigs : {};
                       let sheets = (coData.materialSheets || []).filter(
                         (s: any) =>
-                          !isFieldRequestSheetName(s.sheet_name) &&
-                          (s.sheet_type === 'change_order' || s.sheet_type == null)
+                          !isFieldRequestSheetName(s.sheet_name) && s.sheet_type === 'change_order'
                       );
                       sheets = [...sheets].sort((a: any, b: any) => {
                         const sa = Number(a.change_order_seq) || 0;
@@ -2419,8 +2542,16 @@ function JobDetailView({
                           </p>
                         );
                       }
-                      const displayTotals =
-                        coData.totals ?? coQuoteStoredTotals ?? { subtotal: 0, tax: 0, grandTotal: 0 };
+                      const taxExForCoTotals = changeOrderQuote
+                        ? !!(changeOrderQuote as any)?.tax_exempt
+                        : !!(selectedQuote as any)?.tax_exempt;
+                      const displayTotals = (() => {
+                        const sub = sheets.reduce((acc, sh) => acc + (Number(sh._computedTotal) || 0), 0);
+                        const tax = taxExForCoTotals
+                          ? 0
+                          : sheets.reduce((acc, sh) => acc + (Number(sh._computedMaterials) || 0) * 0.07, 0);
+                        return { subtotal: sub, tax, grandTotal: sub + tax };
+                      })();
                       return (
                         <>
                           {sheets.map((sheet: any, idx: number) => {
@@ -2435,7 +2566,9 @@ function JobDetailView({
                               .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
                             const sheetMat = sheet._computedMaterials ?? 0;
                             const sheetLab = sheet._computedLabor ?? 0;
-                            const taxEx = !!(changeOrderQuote as any)?.tax_exempt;
+                            const taxEx = changeOrderQuote
+                              ? !!(changeOrderQuote as any)?.tax_exempt
+                              : !!(selectedQuote as any)?.tax_exempt;
                             const lineTax = taxEx ? 0 : sheetMat * 0.07;
                             const lineGrand = sheetMat + sheetLab + lineTax;
                             const signed = !!(sig?.signed_at);
@@ -2448,6 +2581,7 @@ function JobDetailView({
                                     </Badge>
                                     <CardTitle className="text-lg text-orange-950 pt-1">{sheet.sheet_name}</CardTitle>
                                   </div>
+                                  {changeOrderQuote ? (
                                   <Button
                                     type="button"
                                     variant="outline"
@@ -2458,6 +2592,7 @@ function JobDetailView({
                                     <Printer className="w-4 h-4 mr-2" />
                                     View document
                                   </Button>
+                                  ) : null}
                                 </CardHeader>
                                 <CardContent className="space-y-4 pt-4">
                                   {sheet.description && (
@@ -2465,7 +2600,7 @@ function JobDetailView({
                                       <PortalMultilineText text={sheet.description} />
                                     </p>
                                   )}
-                                  {showMaterialItemsNoPricesCo && (
+                                  {showMatNoPricesTab && (
                                     <div className="mt-2">
                                       <a
                                         href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
@@ -2479,8 +2614,8 @@ function JobDetailView({
                                       <p className="text-xs text-muted-foreground mt-1.5">Opens in a new tab — name, quantity, and usage only.</p>
                                     </div>
                                   )}
-                                  {showPriceForCoSection(sheet.id) &&
-                                    !showMaterialItemsNoPricesCo &&
+                                  {showPriceCoTab(sheet.id) &&
+                                    !showMatNoPricesTab &&
                                     ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
                                       <PortalSheetPricedLineItems sheet={sheet} variant="changeOrder" />
                                     )}
@@ -2499,7 +2634,7 @@ function JobDetailView({
                                                 {isLabor ? 'Labor: ' : ''}
                                                 {item.description || 'Line'}
                                               </span>
-                                              {!showMaterialItemsNoPricesCo && showPriceForCoSection(sheet.id) && lineTotal > 0 && (
+                                              {!showMatNoPricesTab && showPriceCoTab(sheet.id) && lineTotal > 0 && (
                                                 <span className="font-medium tabular-nums">
                                                   ${lineTotal.toLocaleString('en-US', {
                                                     minimumFractionDigits: 2,
@@ -2520,7 +2655,7 @@ function JobDetailView({
                                           <PortalMultilineText text={row.notes} />
                                         </p>
                                       )}
-                                      {!showMaterialItemsNoPricesCo && showPriceForCoSection(row.id) && (row._computedTotal ?? 0) > 0 && (
+                                      {!showMatNoPricesTab && showPriceCoTab(row.id) && (row._computedTotal ?? 0) > 0 && (
                                         <p className="text-sm font-semibold text-orange-800 mt-1">
                                           $
                                           {(row._computedTotal as number).toLocaleString('en-US', {
@@ -2540,9 +2675,9 @@ function JobDetailView({
                                       )}
                                     </div>
                                   ))}
-                                  {showFinancialCo && showLineItemPricesCo && !showMaterialItemsNoPricesCo && (
+                                  {showFinCoTab && showLineCoTab && (
                                     <div className="border-t pt-3 space-y-1 text-sm">
-                                      {sheetMat > 0 && (
+                                      {!showMatNoPricesTab && sheetMat > 0 && (
                                         <div className="flex justify-between">
                                           <span>Materials</span>
                                           <span className="font-semibold">
@@ -2554,7 +2689,7 @@ function JobDetailView({
                                           </span>
                                         </div>
                                       )}
-                                      {sheetLab > 0 && (
+                                      {!showMatNoPricesTab && sheetLab > 0 && (
                                         <div className="flex justify-between">
                                           <span>Labor</span>
                                           <span className="font-semibold">
@@ -2590,62 +2725,65 @@ function JobDetailView({
                                       </div>
                                     </div>
                                   )}
-                                  {signed ? (
-                                    <div className="border-t pt-4 space-y-2">
-                                      <div className="flex items-center gap-2 text-emerald-800 font-medium">
-                                        <CheckCircle className="w-5 h-5 shrink-0" />
-                                        Signed — {coLabel}
+                                  {changeOrderQuote ? (
+                                    signed ? (
+                                      <div className="border-t pt-4 space-y-2">
+                                        <div className="flex items-center gap-2 text-emerald-800 font-medium">
+                                          <CheckCircle className="w-5 h-5 shrink-0" />
+                                          Signed — {coLabel}
+                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                          {sig.signed_name ? `${sig.signed_name} · ` : ''}
+                                          {sig.signed_at
+                                            ? new Date(sig.signed_at).toLocaleDateString('en-US', {
+                                                dateStyle: 'medium',
+                                              })
+                                            : ''}
+                                        </p>
+                                        <MartinBuilderContractSeal />
                                       </div>
-                                      <p className="text-sm text-muted-foreground">
-                                        {sig.signed_name ? `${sig.signed_name} · ` : ''}
-                                        {sig.signed_at
-                                          ? new Date(sig.signed_at).toLocaleDateString('en-US', {
-                                              dateStyle: 'medium',
-                                            })
-                                          : ''}
-                                      </p>
-                                      <MartinBuilderContractSeal />
-                                    </div>
-                                  ) : (
-                                    <div className="border-t pt-4 space-y-3">
-                                      <p className="text-sm font-medium text-slate-800">Sign to authorize {coLabel}</p>
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          id={`co-agree-${sheet.id}`}
-                                          checked={!!coAgreeBySheet[sheet.id]}
-                                          onChange={(e) =>
-                                            setCoAgreeBySheet((p) => ({
-                                              ...p,
-                                              [sheet.id]: e.target.checked,
-                                            }))
+                                    ) : (
+                                      <div className="border-t pt-4 space-y-3">
+                                        <p className="text-sm font-medium text-slate-800">Sign to authorize {coLabel}</p>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="checkbox"
+                                            id={`co-agree-${sheet.id}`}
+                                            checked={!!coAgreeBySheet[sheet.id]}
+                                            onChange={(e) =>
+                                              setCoAgreeBySheet((p) => ({
+                                                ...p,
+                                                [sheet.id]: e.target.checked,
+                                              }))
+                                            }
+                                            className="rounded border-slate-300"
+                                          />
+                                          <Label htmlFor={`co-agree-${sheet.id}`} className="text-sm font-normal cursor-pointer">
+                                            I authorize this change order ({coLabel}) and agree to the price shown.
+                                          </Label>
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          onClick={(e) => handleSignChangeOrderSheet(sheet.id, e)}
+                                          disabled={
+                                            coSigningSheetId === sheet.id ||
+                                            !coAgreeBySheet[sheet.id] ||
+                                            !coSignerName.trim() ||
+                                            !coSignerEmail.trim()
                                           }
-                                          className="rounded border-slate-300"
-                                        />
-                                        <Label htmlFor={`co-agree-${sheet.id}`} className="text-sm font-normal cursor-pointer">
-                                          I authorize this change order ({coLabel}) and agree to the price shown.
-                                        </Label>
+                                          className="bg-orange-700 hover:bg-orange-800"
+                                        >
+                                          {coSigningSheetId === sheet.id ? 'Signing…' : `Sign ${coLabel}`}
+                                        </Button>
                                       </div>
-                                      <Button
-                                        type="button"
-                                        onClick={(e) => handleSignChangeOrderSheet(sheet.id, e)}
-                                        disabled={
-                                          coSigningSheetId === sheet.id ||
-                                          !coAgreeBySheet[sheet.id] ||
-                                          !coSignerName.trim() ||
-                                          !coSignerEmail.trim()
-                                        }
-                                        className="bg-orange-700 hover:bg-orange-800"
-                                      >
-                                        {coSigningSheetId === sheet.id ? 'Signing…' : `Sign ${coLabel}`}
-                                      </Button>
-                                    </div>
-                                  )}
+                                    )
+                                  )
+                                  : null}
                                 </CardContent>
                               </Card>
                             );
                           })}
-                          {showFinancialCo && (
+                          {showFinCoTab && (
                             <Card className="border-slate-200 bg-slate-50/50">
                               <CardContent className="pt-4 text-sm text-muted-foreground">
                                 <span className="font-medium text-slate-700">All change orders combined: </span>
@@ -2660,11 +2798,9 @@ function JobDetailView({
                           )}
                         </>
                       );
-                    })()
-                  ) : null}
+                    })()}
                 </div>
-              )
-            ) : null}
+            )}
           </TabsContent>
 
           {/* Materials (no prices) — same visibility as office "Material list (no prices)" */}
@@ -2766,15 +2902,15 @@ function JobDetailView({
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {changeOrderDataLoading && !changeOrderProposalData ? (
+                  {changeOrderQuoteId && changeOrderDataLoading && !changeOrderProposalData ? (
                     <div className="flex items-center justify-center py-8 text-muted-foreground">
                       <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-2" />
                       Loading change order materials…
                     </div>
-                  ) : !changeOrderProposalData || changeOrderMaterialSheetsForTab.length === 0 ? (
+                  ) : portalCoMaterialSheetsList.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No material sheets on the change order.</p>
                   ) : (
-                    changeOrderMaterialSheetsForTab.map((sheet: any) => (
+                    portalCoMaterialSheetsList.map((sheet: any) => (
                       <div key={sheet.id} className="border border-orange-200 rounded-lg p-4 space-y-3 bg-white">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">

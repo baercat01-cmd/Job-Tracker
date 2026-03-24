@@ -1,6 +1,5 @@
--- OnSpace / PIN office login: no Supabase Auth session (auth.uid() is null).
--- Edge Functions are not served at *.backend.onspace.ai — RPC must work for anon.
--- Subcontractor portal: list access + jobs without relying on Edge.
+-- Office app: grant/update/revoke subcontractor job access when RLS blocks direct PostgREST writes.
+-- Requires public.portal_job_access (see 20260324115000_create_portal_job_access.sql).
 
 CREATE OR REPLACE FUNCTION public.office_insert_portal_job_access(
   p_portal_user_id uuid,
@@ -23,6 +22,10 @@ AS $$
 DECLARE
   v_id uuid;
 BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
   IF to_regclass('public.portal_job_access') IS NULL THEN
     RAISE EXCEPTION 'Table portal_job_access does not exist';
   END IF;
@@ -75,6 +78,10 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
   UPDATE public.portal_job_access
   SET
     can_view_schedule = p_can_view_schedule,
@@ -97,61 +104,20 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  DELETE FROM public.portal_job_access WHERE id = p_id;
-END;
-$$;
-
--- Subcontractor portal list (anon): one round-trip with nested job JSON.
-CREATE OR REPLACE FUNCTION public.office_list_portal_job_access_for_sub(p_portal_user_id uuid)
-RETURNS json
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-STABLE
-AS $$
-DECLARE
-  result json;
-BEGIN
-  IF to_regclass('public.portal_job_access') IS NULL THEN
-    RETURN '[]'::json;
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  SELECT coalesce(json_agg(row_to_json(q)), '[]'::json) INTO result
-  FROM (
-    SELECT
-      pja.id,
-      pja.portal_user_id,
-      pja.job_id,
-      pja.can_view_schedule,
-      pja.can_view_documents,
-      pja.can_view_photos,
-      pja.can_view_financials,
-      pja.can_view_proposal,
-      pja.can_view_materials,
-      pja.can_edit_schedule,
-      pja.notes,
-      pja.created_by,
-      pja.created_at,
-      pja.updated_at,
-      CASE WHEN j.id IS NULL THEN NULL ELSE row_to_json(j) END AS jobs
-    FROM public.portal_job_access pja
-    LEFT JOIN public.jobs j ON j.id = pja.job_id
-    WHERE pja.portal_user_id = p_portal_user_id
-    ORDER BY pja.created_at
-  ) q;
-
-  RETURN result;
+  DELETE FROM public.portal_job_access WHERE id = p_id;
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.office_insert_portal_job_access(
   uuid, uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean, text, uuid
-) TO anon, authenticated;
+) TO authenticated;
 
 GRANT EXECUTE ON FUNCTION public.office_update_portal_job_access(
   uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean, text
-) TO anon, authenticated;
+) TO authenticated;
 
-GRANT EXECUTE ON FUNCTION public.office_delete_portal_job_access(uuid) TO anon, authenticated;
-
-GRANT EXECUTE ON FUNCTION public.office_list_portal_job_access_for_sub(uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.office_delete_portal_job_access(uuid) TO authenticated;

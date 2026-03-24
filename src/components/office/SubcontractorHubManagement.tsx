@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { insertPortalJobAccess, deletePortalJobAccess } from '@/lib/portalJobAccess';
 
 interface SubcontractorRow {
   id: string;
@@ -42,15 +43,19 @@ interface AccessRow {
   jobs?: JobRow | null;
 }
 
-function isPortalJobAccessOptionalColumnError(err: unknown): boolean {
-  const msg = String((err as { message?: string })?.message ?? '');
-  return /can_edit_schedule|can_view_proposal|can_view_materials|schema cache|PGRST204/i.test(msg);
+function formatSupabaseErr(err: unknown): string {
+  const e = err as { message?: string; details?: string; hint?: string };
+  const parts = [e.message, e.details, e.hint].filter(Boolean);
+  return parts.join(' — ') || 'Request failed';
 }
 
-function isRlsError(err: unknown): boolean {
+/** Avoid treating generic "permission denied" as RLS — that hides RPC / wrong-project / schema-cache issues. */
+function isLikelyPortalJobAccessRls(err: unknown): boolean {
   const code = (err as { code?: string })?.code;
   const msg = String((err as { message?: string })?.message ?? '');
-  return code === '42501' || code === 'PGRST301' || /row-level security|permission|denied|RLS/i.test(msg);
+  if (/row-level security|RLS policy|violates row-level/i.test(msg)) return true;
+  if (code === '42501' && /row-level security|rls/i.test(msg)) return true;
+  return false;
 }
 
 export function SubcontractorHubManagement() {
@@ -193,15 +198,7 @@ export function SubcontractorHubManagement() {
         notes: notes.trim() || null,
         created_by: profile?.id ?? null,
       };
-      let { error } = await supabase.from('portal_job_access').insert(payload);
-      if (error && isPortalJobAccessOptionalColumnError(error)) {
-        const { can_view_proposal, can_view_materials, can_edit_schedule, ...fallbackPayload } = payload;
-        void can_view_proposal;
-        void can_view_materials;
-        void can_edit_schedule;
-        const fallback = await supabase.from('portal_job_access').insert(fallbackPayload);
-        error = fallback.error;
-      }
+      const { error } = await insertPortalJobAccess(supabase, payload);
       if (error) throw error;
       toast.success('Access granted');
       setGrantOpen(false);
@@ -209,10 +206,14 @@ export function SubcontractorHubManagement() {
       setNotes('');
       await loadAccess(selectedSubId);
     } catch (e: any) {
-      if (isRlsError(e)) {
-        toast.error('Database blocked portal_job_access write (RLS). Run scripts/fix-portal-job-access-rls.sql in Supabase SQL Editor.', { duration: 12000 });
+      const detail = formatSupabaseErr(e);
+      if (isLikelyPortalJobAccessRls(e)) {
+        toast.error(
+          `Could not save job access: ${detail}. Deploy Edge Function portal-job-access (see supabase/functions/portal-job-access/README.md), or run scripts/portal-job-access-emergency-rls-off.sql and NOTIFY pgrst, 'reload schema';.`,
+          { duration: 18000 }
+        );
       } else {
-        toast.error(e?.message || 'Failed to grant access');
+        toast.error(detail || 'Failed to grant access', { duration: 12000 });
       }
     }
   }
@@ -220,7 +221,7 @@ export function SubcontractorHubManagement() {
   async function revokeAccess(accessId: string) {
     if (!confirm('Remove access for this job?')) return;
     try {
-      const { error } = await supabase.from('portal_job_access').delete().eq('id', accessId);
+      const { error } = await deletePortalJobAccess(supabase, accessId);
       if (error) throw error;
       toast.success('Access removed');
       await loadAccess(selectedSubId);

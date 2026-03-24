@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { loadProposalDataForQuote } from '@/lib/loadProposalDataForQuote';
 import { buildProposalHtmlForPortal } from '@/lib/proposalPortalHtml';
 import { isFieldRequestSheetName } from '@/lib/materialWorkbook';
+import { fetchPortalJobAccessRowsForSubcontractor } from '@/lib/portalJobAccess';
 
 interface PortalUser {
   id: string;
@@ -65,16 +66,19 @@ export default function SubcontractorPortal() {
   const [proposalLoading, setProposalLoading] = useState(false);
 
   const loadJobsForSub = useCallback(async (portalUserId: string): Promise<JobWithAccess[]> => {
-    const { data: accessData, error: accessError } = await supabase
-      .from('portal_job_access')
-      .select('*, jobs(*)')
-      .eq('portal_user_id', portalUserId);
-    if (accessError) throw accessError;
+    const { rows: accessList, error: accessErr } = await fetchPortalJobAccessRowsForSubcontractor(
+      supabase,
+      portalUserId
+    );
+    if (accessErr) throw accessErr;
 
     const rows = await Promise.all(
-      (accessData || []).map(async (row: Record<string, unknown>) => {
+      accessList.map(async (row: Record<string, unknown>) => {
         const access = normalizeAccess(row);
-        const job = row.jobs as Record<string, unknown>;
+        const job = row.jobs as Record<string, unknown> | null | undefined;
+        if (!job || job.id == null) {
+          return null;
+        }
         const jobId = String(job.id);
 
         let documents: any[] = [];
@@ -132,8 +136,9 @@ export default function SubcontractorPortal() {
       })
     );
 
-    setJobs(rows);
-    return rows;
+    const validRows = rows.filter((r): r is JobWithAccess => r != null);
+    setJobs(validRows);
+    return validRows;
   }, []);
 
   useEffect(() => {

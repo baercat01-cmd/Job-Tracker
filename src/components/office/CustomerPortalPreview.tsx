@@ -185,18 +185,11 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
   const changeOrderQuote = jobData.changeOrderQuote ?? null;
   const changeOrderProposalData = jobData.changeOrderProposalData ?? null;
   const showProposalTab = !!visibilitySettings?.show_proposal;
-  const hasChangeOrderTab = showProposalTab && !!changeOrderQuote;
   /** Declare before effects — `useEffect` below reads `showMaterialsTab` (TDZ if defined later). */
   const previewMaterialListNoPrices = visibilitySettings?.show_material_items_no_prices === true;
   const showMaterialsTab = showProposalTab && previewMaterialListNoPrices;
 
   const [activeTab, setActiveTab] = useState(() => (showProposalTab ? 'proposal' : 'overview'));
-  useEffect(() => {
-    if (showProposalTab && activeTab === 'overview') setActiveTab('proposal');
-    if (!showProposalTab && activeTab === 'proposal') setActiveTab('overview');
-    if (activeTab === 'change-orders' && !hasChangeOrderTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
-    if (activeTab === 'materials' && !showMaterialsTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
-  }, [showProposalTab, hasChangeOrderTab, showMaterialsTab, activeTab]);
 
   const proposalDataByQuoteId = jobData.proposalDataByQuoteId || {};
   const defaultQuoteId = proposalQuotes[0]?.id ?? null;
@@ -218,6 +211,39 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
     selectedQuoteId && proposalDataByQuoteId[selectedQuoteId]
       ? proposalDataByQuoteId[selectedQuoteId]
       : jobData.proposalData;
+
+  const proposalCoSheetsPreview = useMemo(() => {
+    const fromBundle = ((proposalData?.changeOrderSheets ?? []) as any[]).filter(
+      (s: any) => s.sheet_type === 'change_order'
+    );
+    const mainCo = ((proposalData?.materialSheets ?? []) as any[]).filter(
+      (s: any) => !isFieldRequestSheetName(s.sheet_name) && s.sheet_type === 'change_order'
+    );
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const s of [...fromBundle, ...mainCo]) {
+      if (!s?.id || seen.has(s.id)) continue;
+      seen.add(s.id);
+      out.push(s);
+    }
+    out.sort((a: any, b: any) => {
+      const sa = Number(a.change_order_seq) || 0;
+      const sb = Number(b.change_order_seq) || 0;
+      if (sa !== sb) return sa - sb;
+      return (a.order_index ?? 0) - (b.order_index ?? 0);
+    });
+    return out;
+  }, [proposalData]);
+
+  const hasChangeOrderTab = showProposalTab && (!!changeOrderQuote || proposalCoSheetsPreview.length > 0);
+
+  useEffect(() => {
+    if (showProposalTab && activeTab === 'overview') setActiveTab('proposal');
+    if (!showProposalTab && activeTab === 'proposal') setActiveTab('overview');
+    if (activeTab === 'change-orders' && !hasChangeOrderTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
+    if (activeTab === 'materials' && !showMaterialsTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
+  }, [showProposalTab, hasChangeOrderTab, showMaterialsTab, activeTab]);
+
   const isOptionalFlag = (value: any) => value === true || value === 'true' || value === 1;
   const optionalProposalSheets = ((proposalData?.materialSheets || []) as any[]).filter(
     (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name) && isOptionalFlag(s.is_option)
@@ -254,9 +280,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
     const co = changeOrderProposalData;
     if (!co?.materialSheets?.length) return [];
     let sheets = (co.materialSheets as any[]).filter(
-      (s: any) =>
-        !isFieldRequestSheetName(s.sheet_name) &&
-        (s.sheet_type === 'change_order' || s.sheet_type == null)
+      (s: any) => !isFieldRequestSheetName(s.sheet_name) && s.sheet_type === 'change_order'
     );
     sheets = [...sheets].sort((a: any, b: any) => {
       const sa = Number(a.change_order_seq) || 0;
@@ -268,7 +292,12 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
   }, [changeOrderProposalData]);
 
   const previewShowCoMaterials =
-    hasChangeOrderTab && previewMaterialListNoPrices && !!(changeOrderQuote as any)?.sent_at;
+    hasChangeOrderTab &&
+    previewMaterialListNoPrices &&
+    (!!changeOrderQuote ? !!(changeOrderQuote as any)?.sent_at : proposalCoSheetsPreview.length > 0);
+
+  const previewPortalCoMaterialSheets =
+    previewCoMaterialSheets.length > 0 ? previewCoMaterialSheets : proposalCoSheetsPreview;
 
   const visibleTabs = [
     ...(showProposalTab
@@ -643,7 +672,28 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {(() => {
-                    const co = changeOrderProposalData;
+                    const coFallback =
+                      proposalCoSheetsPreview.length > 0 && proposalData
+                        ? (() => {
+                            const taxEx = !!(selectedQuote as any)?.tax_exempt;
+                            const sub = proposalCoSheetsPreview.reduce(
+                              (acc, sh) => acc + (Number(sh._computedTotal) || 0),
+                              0
+                            );
+                            const tax = taxEx
+                              ? 0
+                              : proposalCoSheetsPreview.reduce(
+                                  (acc, sh) => acc + (Number(sh._computedMaterials) || 0) * 0.07,
+                                  0
+                                );
+                            return {
+                              ...proposalData,
+                              materialSheets: proposalCoSheetsPreview,
+                              totals: { subtotal: sub, tax, grandTotal: sub + tax },
+                            };
+                          })()
+                        : null;
+                    const co = changeOrderProposalData ?? coFallback;
                     if (!co) {
                       return (
                         <p className="text-sm text-muted-foreground py-4">Loading change order…</p>
@@ -657,14 +707,26 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                         ? visibilitySettings.show_section_prices
                         : null;
                     const showPriceForSection = (sectionId: string) => baseShowPrice && (sp == null || sp[sectionId] !== false);
-                    const totals = co.totals;
                     const coNum =
                       (changeOrderQuote as any)?.proposal_number ||
                       (changeOrderQuote as any)?.quote_number ||
+                      (selectedQuote as any)?.proposal_number ||
+                      (selectedQuote as any)?.quote_number ||
                       'Change order';
-                    const sheets = (co.materialSheets || []).filter((s: any) => !isFieldRequestSheetName(s.sheet_name));
+                    const sheets = (co.materialSheets || []).filter(
+                      (s: any) => !isFieldRequestSheetName(s.sheet_name) && s.sheet_type === 'change_order'
+                    );
+                    const taxExCoPreview = changeOrderQuote
+                      ? !!(changeOrderQuote as any)?.tax_exempt
+                      : !!(selectedQuote as any)?.tax_exempt;
+                    const totals = (() => {
+                      const sub = sheets.reduce((acc, sh) => acc + (Number(sh._computedTotal) || 0), 0);
+                      const tax = taxExCoPreview
+                        ? 0
+                        : sheets.reduce((acc, sh) => acc + (Number(sh._computedMaterials) || 0) * 0.07, 0);
+                      return { subtotal: sub, tax, grandTotal: sub + tax };
+                    })();
                     const customRows = co.customRows || [];
-                    const standaloneCustomRows = customRows.filter((r: any) => !r.sheet_id);
                     const sheetSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [];
                     sheets.forEach((sheet: any) => {
                       const sheetOrder = sheet.order_index ?? 0;
@@ -681,23 +743,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                           });
                         });
                     });
-                    const allSections = [
-                      ...sheetSections,
-                      ...standaloneCustomRows.map((r: any) => ({
-                        type: 'custom' as const,
-                        id: r.id,
-                        orderIndex: (r.order_index ?? 0) * 1000,
-                        data: r,
-                      })),
-                      ...(co.subcontractorEstimates || [])
-                        .filter((e: any) => !e.sheet_id && !e.row_id)
-                        .map((e: any) => ({
-                          type: 'subcontractor' as const,
-                          id: e.id,
-                          orderIndex: (e.order_index ?? 0) * 1000,
-                          data: e,
-                        })),
-                    ].sort((a, b) => a.orderIndex - b.orderIndex);
+                    const allSections = [...sheetSections].sort((a, b) => a.orderIndex - b.orderIndex);
 
                     if (allSections.length === 0) {
                       return (
@@ -728,8 +774,14 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                             const sheet = section.data;
                             const sheetMaterials = sheet._computedMaterials ?? 0;
                             const sheetLabor = sheet._computedLabor ?? 0;
-                            const showSheetMoney =
+                            const taxEx = changeOrderQuote
+                              ? !!(changeOrderQuote as any)?.tax_exempt
+                              : !!(selectedQuote as any)?.tax_exempt;
+                            const lineTax = taxEx ? 0 : sheetMaterials * 0.07;
+                            const lineGrand = sheetMaterials + sheetLabor + lineTax;
+                            const showSheetBreakdown =
                               showPrice && !previewMaterialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
+                            const showSheetTotal = showPrice;
                             return (
                               <div
                                 key={sheet.id}
@@ -757,9 +809,9 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                     </div>
                                   )}
                                 </div>
-                                {showSheetMoney && (
-                                  <div className="w-[100px] flex-shrink-0 text-right">
-                                    {sheetMaterials > 0 && (
+                                {(showSheetBreakdown || showSheetTotal) && (
+                                  <div className="w-[120px] flex-shrink-0 text-right">
+                                    {showSheetBreakdown && sheetMaterials > 0 && (
                                       <>
                                         <p className="text-sm text-slate-500">Materials</p>
                                         <p className="text-base font-bold text-blue-700">
@@ -767,7 +819,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                         </p>
                                       </>
                                     )}
-                                    {sheetLabor > 0 && (
+                                    {showSheetBreakdown && sheetLabor > 0 && (
                                       <>
                                         <p className="text-sm text-slate-500 mt-2">Labor</p>
                                         <p className="text-base font-bold text-amber-700">
@@ -775,6 +827,20 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                         </p>
                                       </>
                                     )}
+                                    {!taxEx && lineTax > 0 && (
+                                      <>
+                                        <p className={`text-sm text-slate-500 ${showSheetBreakdown ? 'mt-2' : ''}`}>Tax (est.)</p>
+                                        <p className="text-base font-bold text-slate-700">
+                                          ${lineTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                      </>
+                                    )}
+                                    <p className={`text-[11px] text-slate-500 ${showSheetBreakdown || (!taxEx && lineTax > 0) ? 'mt-2' : ''}`}>
+                                      Section total
+                                    </p>
+                                    <p className="text-sm font-bold text-orange-800">
+                                      ${lineGrand.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
                                   </div>
                                 )}
                               </div>
@@ -921,10 +987,10 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {!changeOrderProposalData || previewCoMaterialSheets.length === 0 ? (
+                    {previewPortalCoMaterialSheets.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">No material sheets on the change order.</p>
                     ) : (
-                      previewCoMaterialSheets.map((sheet: any) => (
+                      previewPortalCoMaterialSheets.map((sheet: any) => (
                         <div key={sheet.id} className="border border-orange-200 rounded-lg p-4 space-y-3 bg-white">
                           <div>
                             <h3 className="font-semibold text-base text-orange-950">{sheet.sheet_name}</h3>
