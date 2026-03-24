@@ -547,6 +547,8 @@ export default function CustomerPortal() {
               rows = [];
             }
           }
+          // Safety filter: hide soft-cleared rows even if RPC still returns them.
+          rows = rows.filter((m: any) => !m?.hidden_at);
           // Keep existing UI shape for now.
           emailsData = rows.map((m: any) => ({
             id: m.id,
