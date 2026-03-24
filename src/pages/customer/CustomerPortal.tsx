@@ -58,7 +58,10 @@ import { quoteHasActiveContract } from '@/lib/quoteProposalLock';
 import { MartinBuilderContractSeal } from '@/components/customer/MartinBuilderContractSeal';
 import { PortalMaterialItemsTable } from '@/components/customer/PortalMaterialItemsTable';
 import { PortalMultilineText } from '@/components/customer/PortalMultilineText';
-import { PortalSheetPricedLineItems } from '@/components/customer/PortalSheetPricedLineItems';
+import {
+  PortalSheetPricedLineItems,
+  portalSheetLinkedItemSellingAmount,
+} from '@/components/customer/PortalSheetPricedLineItems';
 import {
   readEffectiveMaterialListVisibility,
   stripMaterialVisibilityMarker,
@@ -497,20 +500,16 @@ export default function CustomerPortal() {
           p_access_token: t.trim(),
           p_job_id: job.id,
         });
-        // JSONB RPC payloads are not always `Array.isArray` (e.g. stringified JSON); normalize before use.
         if (!rpcErr) {
           documentsData = parseRpcJsonbArray(rpcDocs) as any[];
-        } else if (
-          /visible_to_customer_portal|column.*exist|schema cache|PGRST202|PGRST204/i.test(String(rpcErr.message || ''))
-        ) {
-          // Fallback when visibility column/function cache is stale: load rows for this token-validated job.
-          const { data: rpcDocsAll, error: rpcAllErr } = await supabase.rpc('get_job_documents_for_customer_portal_any', {
+        } else {
+          // Same payload shape as primary after migration 20260325120000 (jsonb + revisions); use when primary RPC errors.
+          const { data: rpcDocsAny, error: rpcAnyErr } = await supabase.rpc('get_job_documents_for_customer_portal_any', {
             p_access_token: t.trim(),
             p_job_id: job.id,
           });
-          if (!rpcAllErr) {
-            const rows = parseRpcJsonbArray(rpcDocsAll) as any[];
-            documentsData = rows.filter((d) => d?.visible_to_customer_portal === true);
+          if (!rpcAnyErr) {
+            documentsData = parseRpcJsonbArray(rpcDocsAny) as any[];
           }
         }
       }
@@ -1224,17 +1223,14 @@ function JobDetailView({
     const sigs =
       raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, any>) : {};
     const sig = sigs[sheet.id] as { signed_name?: string; signed_at?: string } | undefined;
-    const lineItems: Array<{ description: string; amount?: number; isLabor?: boolean }> = [];
+    const lineItems: Array<{ description: string; amount?: number }> = [];
     (sheet.sheetLinkedItems || [])
       .filter((item: any) => !item.hide_from_customer)
       .forEach((item: any) => {
-        const isLabor = (item.item_type || 'material') === 'labor';
-        const amt =
-          (Number(item.total_cost) || 0) * (1 + (Number(item.markup_percent) || 0) / 100);
+        const amt = portalSheetLinkedItemSellingAmount(item, sheet);
         lineItems.push({
           description: item.description || 'Line item',
           amount: amt > 0 ? amt : undefined,
-          isLabor,
         });
       });
     const sheetMat = sheet._computedMaterials ?? 0;
@@ -2502,6 +2498,7 @@ function JobDetailView({
                       const showFinCoTab = changeOrderQuoteId ? showFinancialCo : showFinancial;
                       const showLineCoTab = changeOrderQuoteId ? showLineItemPricesCo : showLineItemPrices;
                       const showPriceCoTab = (_sectionId: string) => showFinCoTab && showLineCoTab;
+                      const showCoSectionTotals = showFinCoTab && !showMatNoPricesTab;
                       const rawSigs = (changeOrderQuote as any)?.change_order_signatures;
                       const coSigs: Record<string, { signed_at?: string; signed_name?: string }> =
                         rawSigs && typeof rawSigs === 'object' && !Array.isArray(rawSigs) ? rawSigs : {};
@@ -2574,137 +2571,169 @@ function JobDetailView({
                                   </Button>
                                   ) : null}
                                 </CardHeader>
-                                <CardContent className="space-y-4 pt-4">
-                                  {sheet.description && (
-                                    <p className="text-sm text-muted-foreground">
-                                      <PortalMultilineText text={sheet.description} />
-                                    </p>
-                                  )}
-                                  {showMatNoPricesTab && (
-                                    <div className="mt-2">
-                                      <a
-                                        href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 text-sm font-medium text-orange-800 hover:underline"
-                                      >
-                                        <ExternalLink className="w-4 h-4 shrink-0" />
-                                        Open full material list (new page)
-                                      </a>
-                                      <p className="text-xs text-muted-foreground mt-1.5">Opens in a new tab — name, quantity, and usage only.</p>
-                                    </div>
-                                  )}
-                                  {showPriceCoTab(sheet.id) &&
-                                    !showMatNoPricesTab &&
-                                    ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
-                                      <PortalSheetPricedLineItems sheet={sheet} variant="changeOrder" />
-                                    )}
-                                  {(sheet.sheetLinkedItems || []).filter((x: any) => !x.hide_from_customer).length > 0 && (
-                                    <ul className="text-sm space-y-1 border-t border-orange-100 pt-3">
-                                      {(sheet.sheetLinkedItems || [])
-                                        .filter((item: any) => !item.hide_from_customer)
-                                        .map((item: any) => {
-                                          const isLabor = (item.item_type || 'material') === 'labor';
-                                          const lineTotal =
-                                            (Number(item.total_cost) || 0) *
-                                            (1 + (Number(item.markup_percent) || 0) / 100);
-                                          return (
-                                            <li key={item.id} className="flex justify-between gap-2">
-                                              <span>
-                                                {isLabor ? 'Labor: ' : ''}
-                                                {item.description || 'Line'}
-                                              </span>
-                                              {!showMatNoPricesTab && showPriceCoTab(sheet.id) && lineTotal > 0 && (
-                                                <span className="font-medium tabular-nums">
-                                                  ${lineTotal.toLocaleString('en-US', {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  })}
-                                                </span>
-                                              )}
-                                            </li>
-                                          );
-                                        })}
-                                    </ul>
-                                  )}
-                                  {linkedRows.map((row: any) => (
-                                    <div key={row.id} className="border-t border-orange-50 pt-2">
-                                      <p className="font-medium text-sm">{row.description || row.category}</p>
-                                      {row.notes?.trim() && (
+                                <CardContent className="pt-4 space-y-4">
+                                  <div className="flex flex-col sm:flex-row gap-4 items-start">
+                                    <div className="min-w-0 flex-1 space-y-4">
+                                      {sheet.description && (
                                         <p className="text-sm text-muted-foreground">
-                                          <PortalMultilineText text={row.notes} />
+                                          <PortalMultilineText text={sheet.description} />
                                         </p>
                                       )}
-                                      {!showMatNoPricesTab && showPriceCoTab(row.id) && (row._computedTotal ?? 0) > 0 && (
-                                        <p className="text-sm font-semibold text-orange-800 mt-1">
-                                          $
-                                          {(row._computedTotal as number).toLocaleString('en-US', {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                          })}
-                                        </p>
+                                      {showMatNoPricesTab && (
+                                        <div className="mt-2">
+                                          <a
+                                            href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 text-sm font-medium text-orange-800 hover:underline"
+                                          >
+                                            <ExternalLink className="w-4 h-4 shrink-0" />
+                                            Open full material list (new page)
+                                          </a>
+                                          <p className="text-xs text-muted-foreground mt-1.5">
+                                            Opens in a new tab — name, quantity, and usage only.
+                                          </p>
+                                        </div>
                                       )}
+                                      {showPriceCoTab(sheet.id) &&
+                                        !showMatNoPricesTab &&
+                                        ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
+                                          <PortalSheetPricedLineItems sheet={sheet} variant="changeOrder" />
+                                        )}
+                                      {(() => {
+                                        const linkedVisible = (sheet.sheetLinkedItems || [])
+                                          .filter((item: any) => !item.hide_from_customer)
+                                          .filter((item: any) => {
+                                            if ((item.item_type || 'material') === 'labor' && (sheet.laborRows || []).length > 0) {
+                                              return false;
+                                            }
+                                            return true;
+                                          });
+                                        if (linkedVisible.length === 0) return null;
+                                        return (
+                                          <ul className="text-sm space-y-1 border-t border-orange-100 pt-3">
+                                            {linkedVisible.map((item: any) => {
+                                              const lineAmt = portalSheetLinkedItemSellingAmount(item, sheet);
+                                              return (
+                                                <li key={item.id} className="flex justify-between gap-2">
+                                                  <span>{item.description || 'Line'}</span>
+                                                  {showCoSectionTotals && lineAmt > 0 && (
+                                                    <span className="font-medium tabular-nums">
+                                                      ${lineAmt.toLocaleString('en-US', {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                      })}
+                                                    </span>
+                                                  )}
+                                                </li>
+                                              );
+                                            })}
+                                          </ul>
+                                        );
+                                      })()}
+                                      {linkedRows.map((row: any) => (
+                                        <div key={row.id} className="border-t border-orange-50 pt-2">
+                                          <p className="font-medium text-sm">{row.description || row.category}</p>
+                                          {row.notes?.trim() && (
+                                            <p className="text-sm text-muted-foreground">
+                                              <PortalMultilineText text={row.notes} />
+                                            </p>
+                                          )}
+                                          {showCoSectionTotals && (row._computedTotal ?? 0) > 0 && (
+                                            <p className="text-sm font-semibold text-orange-800 mt-1">
+                                              $
+                                              {(row._computedTotal as number).toLocaleString('en-US', {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              })}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
+                                      {linkedSubs.map((est: any) => (
+                                        <div
+                                          key={est.id}
+                                          className="text-sm flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 border-t border-orange-50 pt-2"
+                                        >
+                                          <div className="text-muted-foreground min-w-0">
+                                            {est.scope_of_work && (
+                                              <p>
+                                                <PortalMultilineText text={est.scope_of_work} />
+                                              </p>
+                                            )}
+                                          </div>
+                                          {showCoSectionTotals && (Number(est._computedTotal) || 0) > 0 && (
+                                            <p className="font-semibold text-orange-800 tabular-nums shrink-0">
+                                              $
+                                              {Number(est._computedTotal).toLocaleString('en-US', {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              })}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
                                     </div>
-                                  ))}
-                                  {linkedSubs.map((est: any) => (
-                                    <div key={est.id} className="text-sm text-muted-foreground">
-                                      {est.scope_of_work && (
-                                        <p>
-                                          <PortalMultilineText text={est.scope_of_work} />
+                                    {showCoSectionTotals && (
+                                      <div className="w-full sm:w-[120px] flex-shrink-0 sm:text-right border-t sm:border-t-0 border-orange-100 pt-3 sm:pt-0 space-y-0 text-sm">
+                                        {sheetMat > 0 && (
+                                          <>
+                                            <p className="text-sm text-slate-500">Materials</p>
+                                            <p className="text-base font-bold text-blue-700">
+                                              $
+                                              {sheetMat.toLocaleString('en-US', {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              })}
+                                            </p>
+                                          </>
+                                        )}
+                                        {sheetLab > 0 && (
+                                          <>
+                                            <p className={`text-sm text-slate-500 ${sheetMat > 0 ? 'mt-2' : ''}`}>Services</p>
+                                            <p className="text-base font-bold text-amber-700">
+                                              $
+                                              {sheetLab.toLocaleString('en-US', {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              })}
+                                            </p>
+                                          </>
+                                        )}
+                                        {!taxEx && lineTax > 0 && (
+                                          <>
+                                            <p
+                                              className={`text-sm text-slate-500 ${sheetMat > 0 || sheetLab > 0 ? 'mt-2' : ''}`}
+                                            >
+                                              Tax (est.)
+                                            </p>
+                                            <p className="font-semibold text-slate-700">
+                                              $
+                                              {lineTax.toLocaleString('en-US', {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              })}
+                                            </p>
+                                          </>
+                                        )}
+                                        <p
+                                          className={`text-[11px] text-slate-500 ${
+                                            sheetMat > 0 || sheetLab > 0 || (!taxEx && lineTax > 0) ? 'mt-2' : ''
+                                          }`}
+                                        >
+                                          Section total
                                         </p>
-                                      )}
-                                    </div>
-                                  ))}
-                                  {showFinCoTab && showLineCoTab && (
-                                    <div className="border-t pt-3 space-y-1 text-sm">
-                                      {!showMatNoPricesTab && sheetMat > 0 && (
-                                        <div className="flex justify-between">
-                                          <span>Materials</span>
-                                          <span className="font-semibold">
-                                            $
-                                            {sheetMat.toLocaleString('en-US', {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                            })}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {!showMatNoPricesTab && sheetLab > 0 && (
-                                        <div className="flex justify-between">
-                                          <span>Labor</span>
-                                          <span className="font-semibold">
-                                            $
-                                            {sheetLab.toLocaleString('en-US', {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                            })}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {!taxEx && lineTax > 0 && (
-                                        <div className="flex justify-between text-muted-foreground">
-                                          <span>Tax (est.)</span>
-                                          <span>
-                                            $
-                                            {lineTax.toLocaleString('en-US', {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                            })}
-                                          </span>
-                                        </div>
-                                      )}
-                                      <div className="flex justify-between text-base font-bold text-orange-900 pt-1">
-                                        <span>Total ({coLabel})</span>
-                                        <span>
+                                        <p className="text-sm font-bold text-orange-900">
                                           $
                                           {lineGrand.toLocaleString('en-US', {
                                             minimumFractionDigits: 2,
                                             maximumFractionDigits: 2,
                                           })}
-                                        </span>
+                                        </p>
+                                        <p className="text-[10px] text-muted-foreground font-normal mt-1">{coLabel}</p>
                                       </div>
-                                    </div>
-                                  )}
+                                    )}
+                                  </div>
                                   {changeOrderQuote ? (
                                     signed ? (
                                       <div className="border-t pt-4 space-y-2">

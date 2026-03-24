@@ -124,14 +124,9 @@ export function SubcontractorHubManagement() {
     try {
       const { portalUserId, error: resErr } = await resolvePortalUserIdForSubcontractor(supabase, subId);
       if (resErr) throw resErr;
-      if (!portalUserId) {
-        setAccessRows([]);
-        return;
-      }
-      const { data, error } = await supabase
-        .from('portal_job_access')
-        .select('*, jobs(id,name,client_name)')
-        .eq('portal_user_id', portalUserId);
+      const q = supabase.from('portal_job_access').select('*, jobs(id,name,client_name)');
+      const idForAccess = portalUserId ?? subId;
+      const { data, error } = await q.eq('portal_user_id', idForAccess);
       if (error) throw error;
       setAccessRows((data || []) as AccessRow[]);
     } catch (e: any) {

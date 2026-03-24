@@ -547,7 +547,22 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
   function portalVisibilityRpcSucceeded(data: unknown, rpcError: { message?: string } | null): boolean {
     if (rpcError) return false;
-    return data === true || data === 'true' || data === 't';
+    return (
+      data === true ||
+      data === 'true' ||
+      data === 't' ||
+      data === 1 ||
+      data === '1'
+    );
+  }
+
+  function isMissingPortalDocRpcError(err: unknown): boolean {
+    const e = err as { code?: string; message?: string };
+    const msg = String(e?.message || '');
+    return (
+      e?.code === 'PGRST202' ||
+      /Could not find the function|function .* does not exist|404/.test(msg)
+    );
   }
 
   async function togglePortalVisibility(docId: string, currentValue: boolean) {
@@ -562,18 +577,10 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       });
 
       if (!portalVisibilityRpcSucceeded(rpcOk, rpcError)) {
-        const re = String((rpcError as { message?: string } | null)?.message || '');
-        const rpcMissing = !!(
-          rpcError &&
-          ((rpcError as { code?: string }).code === 'PGRST202' ||
-            /Could not find the function|function public\.set_job_document_portal_visibility|does not exist/i.test(re))
-        );
-
-        if (rpcError && !rpcMissing) {
+        if (rpcError) {
           throw rpcError;
         }
-
-        if (rpcOk === false && !rpcError) {
+        if (rpcOk === false) {
           throw new Error('Document not found or could not be updated.');
         }
 
@@ -597,10 +604,16 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     } catch (error: any) {
       console.error('Error toggling portal visibility:', error);
       const msg = String(error?.message || '');
-      if (isPostgrestSchemaCacheOrMissingColumnError(error)) {
+      if (isMissingPortalDocRpcError(error)) {
+        toast.error('Portal document functions are not installed (or PostgREST is stale)', {
+          description:
+            'In Supabase → SQL Editor run the full script: scripts/fix-job-documents-customer-portal-complete.sql (adds column, RPCs, NOTIFY pgrst).',
+          duration: 18_000,
+        });
+      } else if (isPostgrestSchemaCacheOrMissingColumnError(error)) {
         toast.error('Database API cache is out of date', {
           description:
-            'In Supabase → SQL Editor run: NOTIFY pgrst, \'reload schema\'; Or apply scripts/notify-pgrst-reload-schema.sql',
+            'In Supabase → SQL Editor run: NOTIFY pgrst, \'reload schema\'; Or run scripts/fix-job-documents-customer-portal-complete.sql end-to-end.',
           duration: 14_000,
         });
       } else {

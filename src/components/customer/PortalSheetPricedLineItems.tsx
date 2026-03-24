@@ -12,9 +12,33 @@ function isItemOptionalFlag(i: any): boolean {
   return i.is_optional === true || i.is_optional === 'true' || i.is_optional === 1;
 }
 
-function laborRowAmount(lr: any): number {
+export function laborRowAmount(lr: any): number {
   if (lr.total_labor_cost != null && lr.total_labor_cost !== '') return Number(lr.total_labor_cost);
   return (Number(lr.estimated_hours) || 0) * (Number(lr.hourly_rate) || 0);
+}
+
+/**
+ * Selling amount for sheet-linked custom_financial_row_items (portal).
+ * When total_cost is empty but the line is labor, use material_sheet_labor row(s) so the portal
+ * matches _computedLabor (office often stores labor on the sheet, not on the linked row).
+ */
+export function portalSheetLinkedItemSellingAmount(item: any, sheet: any): number {
+  const base = (Number(item.total_cost) || 0) * (1 + (Number(item.markup_percent) || 0) / 100);
+  if (base > 0) return base;
+  if ((item.item_type || 'material') !== 'labor') return 0;
+  const rows = [...(sheet.laborRows || [])].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+  if (rows.length === 1) return laborRowAmount(rows[0]);
+  const want = String(item.description || '').trim().toLowerCase();
+  if (want) {
+    const exact = rows.find((r: any) => String(r.description || '').trim().toLowerCase() === want);
+    if (exact) return laborRowAmount(exact);
+    const partial = rows.find((r: any) => {
+      const d = String(r.description || '').trim().toLowerCase();
+      return d && (d.includes(want) || want.includes(d));
+    });
+    if (partial) return laborRowAmount(partial);
+  }
+  return 0;
 }
 
 /**
@@ -116,7 +140,9 @@ export function PortalSheetPricedLineItems({
 
       {laborRows.length > 0 && (
         <div className={`rounded-md border ${tableBorder} bg-muted/10 overflow-hidden`}>
-          <div className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${catHead}`}>Labor</div>
+          <div className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${catHead}`}>
+            {isCo ? 'Details' : 'Labor'}
+          </div>
           <table className="w-full text-sm">
             <thead>
               <tr className={`text-left text-xs text-muted-foreground ${isCo ? 'bg-orange-50/50' : ''}`}>
@@ -127,7 +153,8 @@ export function PortalSheetPricedLineItems({
             <tbody>
               {laborRows.map((lr: any) => {
                 const line = laborRowAmount(lr);
-                const desc = [lr.description?.trim(), lr.notes?.trim()].filter(Boolean).join(' — ') || 'Labor';
+                const desc =
+                  [lr.description?.trim(), lr.notes?.trim()].filter(Boolean).join(' — ') || (isCo ? 'Line item' : 'Labor');
                 return (
                   <tr key={lr.id} className={`border-t ${isCo ? 'border-orange-100/80' : 'border-border/50'}`}>
                     <td className="py-2 px-3 align-top">

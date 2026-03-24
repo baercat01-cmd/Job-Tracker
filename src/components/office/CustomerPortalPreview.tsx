@@ -779,9 +779,11 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                               : !!(selectedQuote as any)?.tax_exempt;
                             const lineTax = taxEx ? 0 : sheetMaterials * 0.07;
                             const lineGrand = sheetMaterials + sheetLabor + lineTax;
+                            const showFinPreview = !!visibilitySettings?.show_financial_summary;
+                            const showLinePreview = !!visibilitySettings?.show_line_item_prices;
                             const showSheetBreakdown =
-                              showPrice && !previewMaterialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
-                            const showSheetTotal = showPrice;
+                              showFinPreview && !previewMaterialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
+                            const showSheetTotal = showFinPreview && !previewMaterialListNoPrices;
                             return (
                               <div
                                 key={sheet.id}
@@ -794,7 +796,8 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                       <PortalMultilineText text={sheet.description} />
                                     </p>
                                   )}
-                                  {showPrice &&
+                                  {showFinPreview &&
+                                    showLinePreview &&
                                     !previewMaterialListNoPrices &&
                                     ((sheet.items || []).length > 0 || (sheet.laborRows || []).length > 0) && (
                                       <PortalSheetPricedLineItems sheet={sheet} variant="changeOrder" />
@@ -821,7 +824,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                     )}
                                     {showSheetBreakdown && sheetLabor > 0 && (
                                       <>
-                                        <p className="text-sm text-slate-500 mt-2">Labor</p>
+                                        <p className="text-sm text-slate-500 mt-2">Services</p>
                                         <p className="text-base font-bold text-amber-700">
                                           ${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </p>

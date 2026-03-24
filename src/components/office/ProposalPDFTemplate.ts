@@ -932,7 +932,7 @@ export function generateChangeOrderDocumentHTML(data: {
   job: { client_name: string; address: string; name: string };
   scopeTitle: string;
   scopeDescription: string;
-  lineItems: Array<{ description: string; amount?: number; isLabor?: boolean }>;
+  lineItems: Array<{ description: string; amount?: number }>;
   materialsTotal: number;
   laborTotal: number;
   subtotal: number;
@@ -966,7 +966,7 @@ export function generateChangeOrderDocumentHTML(data: {
     lineItems.length > 0
       ? lineItems
           .map((li) => {
-            const desc = `${li.isLabor ? '<em>Labor:</em> ' : ''}${li.description || '—'}`;
+            const desc = li.description || '—';
             const amt =
               li.amount != null && li.amount > 0 ? money(li.amount) : '—';
             return showPrices
@@ -1007,7 +1007,7 @@ export function generateChangeOrderDocumentHTML(data: {
   </table>
   <div class="totals">
     ${materialsTotal > 0 ? `<div>Materials: ${money(materialsTotal)}</div>` : ''}
-    ${laborTotal > 0 ? `<div>Labor: ${money(laborTotal)}</div>` : ''}
+    ${laborTotal > 0 ? `<div>Services: ${money(laborTotal)}</div>` : ''}
     <div><strong>Subtotal:</strong> ${money(subtotal)}</div>
     ${taxExempt ? '<div>Tax exempt</div>' : `<div>Tax (7%): ${money(tax)}</div>`}
     <div class="grand">Total: ${money(grandTotal)}</div>
