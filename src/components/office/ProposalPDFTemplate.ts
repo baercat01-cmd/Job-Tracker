@@ -1006,9 +1006,7 @@ export function generateChangeOrderDocumentHTML(data: {
     <tbody>${lines}</tbody>
   </table>
   <div class="totals">
-    ${materialsTotal > 0 ? `<div>Materials: ${money(materialsTotal)}</div>` : ''}
-    ${laborTotal > 0 ? `<div>Services: ${money(laborTotal)}</div>` : ''}
-    <div><strong>Subtotal:</strong> ${money(subtotal)}</div>
+    ${subtotal > 0 ? `<div><strong>Subtotal:</strong> ${money(subtotal)}</div>` : ''}
     ${taxExempt ? '<div>Tax exempt</div>' : `<div>Tax (7%): ${money(tax)}</div>`}
     <div class="grand">Total: ${money(grandTotal)}</div>
   </div>` : `<table><thead><tr><th>Description</th></tr></thead><tbody>${lines}</tbody></table><p style="color:#64748b;margin-top:12px;">Pricing omitted — contact your project manager for the amount.</p>`}

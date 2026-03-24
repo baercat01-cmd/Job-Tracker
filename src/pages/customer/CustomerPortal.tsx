@@ -2676,24 +2676,12 @@ function JobDetailView({
                                     </div>
                                     {showCoSectionTotals && (
                                       <div className="w-full sm:w-[120px] flex-shrink-0 sm:text-right border-t sm:border-t-0 border-orange-100 pt-3 sm:pt-0 space-y-0 text-sm">
-                                        {sheetMat > 0 && (
+                                        {sheetMat + sheetLab > 0 && (
                                           <>
-                                            <p className="text-sm text-slate-500">Materials</p>
-                                            <p className="text-base font-bold text-blue-700">
+                                            <p className="text-sm text-slate-500">Subtotal</p>
+                                            <p className="text-base font-bold text-emerald-800">
                                               $
-                                              {sheetMat.toLocaleString('en-US', {
-                                                minimumFractionDigits: 2,
-                                                maximumFractionDigits: 2,
-                                              })}
-                                            </p>
-                                          </>
-                                        )}
-                                        {sheetLab > 0 && (
-                                          <>
-                                            <p className={`text-sm text-slate-500 ${sheetMat > 0 ? 'mt-2' : ''}`}>Services</p>
-                                            <p className="text-base font-bold text-amber-700">
-                                              $
-                                              {sheetLab.toLocaleString('en-US', {
+                                              {(sheetMat + sheetLab).toLocaleString('en-US', {
                                                 minimumFractionDigits: 2,
                                                 maximumFractionDigits: 2,
                                               })}
@@ -2703,7 +2691,7 @@ function JobDetailView({
                                         {!taxEx && lineTax > 0 && (
                                           <>
                                             <p
-                                              className={`text-sm text-slate-500 ${sheetMat > 0 || sheetLab > 0 ? 'mt-2' : ''}`}
+                                              className={`text-sm text-slate-500 ${sheetMat + sheetLab > 0 ? 'mt-2' : ''}`}
                                             >
                                               Tax (est.)
                                             </p>
@@ -2718,7 +2706,7 @@ function JobDetailView({
                                         )}
                                         <p
                                           className={`text-[11px] text-slate-500 ${
-                                            sheetMat > 0 || sheetLab > 0 || (!taxEx && lineTax > 0) ? 'mt-2' : ''
+                                            sheetMat + sheetLab > 0 || (!taxEx && lineTax > 0) ? 'mt-2' : ''
                                           }`}
                                         >
                                           Section total

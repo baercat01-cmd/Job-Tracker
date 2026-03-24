@@ -782,7 +782,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                             const showFinPreview = !!visibilitySettings?.show_financial_summary;
                             const showLinePreview = !!visibilitySettings?.show_line_item_prices;
                             const showSheetBreakdown =
-                              showFinPreview && !previewMaterialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
+                              showFinPreview && !previewMaterialListNoPrices && sheetMaterials + sheetLabor > 0;
                             const showSheetTotal = showFinPreview && !previewMaterialListNoPrices;
                             return (
                               <div
@@ -814,31 +814,37 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                                 </div>
                                 {(showSheetBreakdown || showSheetTotal) && (
                                   <div className="w-[120px] flex-shrink-0 text-right">
-                                    {showSheetBreakdown && sheetMaterials > 0 && (
+                                    {showSheetBreakdown && sheetMaterials + sheetLabor > 0 && (
                                       <>
-                                        <p className="text-sm text-slate-500">Materials</p>
-                                        <p className="text-base font-bold text-blue-700">
-                                          ${sheetMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </p>
-                                      </>
-                                    )}
-                                    {showSheetBreakdown && sheetLabor > 0 && (
-                                      <>
-                                        <p className="text-sm text-slate-500 mt-2">Services</p>
-                                        <p className="text-base font-bold text-amber-700">
-                                          ${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <p className="text-sm text-slate-500">Subtotal</p>
+                                        <p className="text-base font-bold text-emerald-800">
+                                          $
+                                          {(sheetMaterials + sheetLabor).toLocaleString('en-US', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}
                                         </p>
                                       </>
                                     )}
                                     {!taxEx && lineTax > 0 && (
                                       <>
-                                        <p className={`text-sm text-slate-500 ${showSheetBreakdown ? 'mt-2' : ''}`}>Tax (est.)</p>
+                                        <p
+                                          className={`text-sm text-slate-500 ${
+                                            showSheetBreakdown && sheetMaterials + sheetLabor > 0 ? 'mt-2' : ''
+                                          }`}
+                                        >
+                                          Tax (est.)
+                                        </p>
                                         <p className="text-base font-bold text-slate-700">
                                           ${lineTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </p>
                                       </>
                                     )}
-                                    <p className={`text-[11px] text-slate-500 ${showSheetBreakdown || (!taxEx && lineTax > 0) ? 'mt-2' : ''}`}>
+                                    <p
+                                      className={`text-[11px] text-slate-500 ${
+                                        showSheetBreakdown || (!taxEx && lineTax > 0) ? 'mt-2' : ''
+                                      }`}
+                                    >
                                       Section total
                                     </p>
                                     <p className="text-sm font-bold text-orange-800">
