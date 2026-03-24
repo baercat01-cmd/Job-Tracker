@@ -688,6 +688,11 @@ function JobDetailView({
   const [hasPortalUpdates, setHasPortalUpdates] = useState(false);
   const notificationSnapshotRef = useRef<string | null>(null);
   const previousUnreadTeamMessagesRef = useRef(0);
+  const portalMessageSeenKey = useMemo(
+    () => `customer_portal_last_seen_message_at_${job?.id ?? 'unknown'}_${customerInfo?.id ?? 'anon'}`,
+    [job?.id, customerInfo?.id]
+  );
+  const [lastSeenTeamMessageAt, setLastSeenTeamMessageAt] = useState<number>(0);
 
   /** Main contract proposals only — change order is its own quote and portal tab */
   const proposalQuotes = useMemo(
@@ -805,10 +810,38 @@ function JobDetailView({
   const showSchedule = customerInfo?.show_schedule === true;
   const showDocuments = customerInfo?.show_documents === true;
   const showPhotos = customerInfo?.show_photos === true;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(portalMessageSeenKey);
+      const n = raw ? Number(raw) : 0;
+      setLastSeenTeamMessageAt(Number.isFinite(n) ? n : 0);
+    } catch {
+      setLastSeenTeamMessageAt(0);
+    }
+  }, [portalMessageSeenKey]);
   const unreadTeamMessages = useMemo(
-    () => emails.filter((e: any) => !e.is_read && e.direction === 'sent').length,
-    [emails]
+    () =>
+      emails.filter((e: any) => {
+        if (e.direction !== 'sent') return false;
+        const ts = new Date(e.email_date).getTime();
+        return Number.isFinite(ts) && ts > lastSeenTeamMessageAt;
+      }).length,
+    [emails, lastSeenTeamMessageAt]
   );
+  const markPortalMessagesSeen = useCallback(() => {
+    const newestTeamMessageTs = emails
+      .filter((e: any) => e.direction === 'sent')
+      .reduce((max: number, e: any) => {
+        const ts = new Date(e.email_date).getTime();
+        return Number.isFinite(ts) && ts > max ? ts : max;
+      }, Date.now());
+    setLastSeenTeamMessageAt(newestTeamMessageTs);
+    try {
+      localStorage.setItem(portalMessageSeenKey, String(newestTeamMessageTs));
+    } catch {
+      // ignore storage errors
+    }
+  }, [emails, portalMessageSeenKey]);
   const messageDayKey = (iso: string) => {
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -827,6 +860,11 @@ function JobDetailView({
     if (!messageThreadRef.current) return;
     messageThreadRef.current.scrollTop = messageThreadRef.current.scrollHeight;
   }, [activeTab, threadMessages.length]);
+  useEffect(() => {
+    if (activeTab === 'emails') {
+      markPortalMessagesSeen();
+    }
+  }, [activeTab, markPortalMessagesSeen]);
   const notificationSnapshot = useMemo(() => {
     const latest = (rows: any[], key: string) =>
       rows.reduce((max: number, row: any) => {
@@ -1821,9 +1859,6 @@ function JobDetailView({
                                       <p className="text-sm text-muted-foreground mt-1">
                                         <PortalMultilineText text={sheet.description} />
                                       </p>
-                                    )}
-                                    {materialListNoPrices && (
-                                      <PortalMaterialItemsTable items={sheet.items} />
                                     )}
                                     {linkedSubs.map((est: any) => (
                                       <div key={est.id} className="mt-2">
