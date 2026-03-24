@@ -1,5 +1,5 @@
--- Subcontractor hub: create portal_job_access if missing, then allow office app to read/write via PostgREST.
--- Run in Supabase -> SQL Editor when granting job access fails (missing table, RLS, or permissions).
+-- Subcontractor (and legacy portal user) access to jobs: one row per user+job with permission flags.
+-- portal_user_id references public.portal_users(id) and/or public.subcontractors(id) depending on app flow — no FK.
 
 CREATE TABLE IF NOT EXISTS public.portal_job_access (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -39,29 +39,3 @@ END $pja_fk$;
 
 CREATE INDEX IF NOT EXISTS idx_portal_job_access_portal_user_id ON public.portal_job_access (portal_user_id);
 CREATE INDEX IF NOT EXISTS idx_portal_job_access_job_id ON public.portal_job_access (job_id);
-
-DO $$
-DECLARE
-  pol RECORD;
-BEGIN
-  IF to_regclass('public.portal_job_access') IS NULL THEN
-    RETURN;
-  END IF;
-
-  FOR pol IN
-    SELECT policyname
-    FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'portal_job_access'
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.portal_job_access', pol.policyname);
-  END LOOP;
-END $$;
-
-ALTER TABLE public.portal_job_access DISABLE ROW LEVEL SECURITY;
-
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.portal_job_access TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.portal_job_access TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.portal_job_access TO service_role;
-
-COMMENT ON TABLE public.portal_job_access IS 'Subcontractor-to-job visibility mapping; RLS disabled for office app writes.';

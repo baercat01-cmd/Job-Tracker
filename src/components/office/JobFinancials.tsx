@@ -243,6 +243,26 @@ async function fetchMaterialWorkbooksFullForQuote(quoteId: string) {
   return { data: null, error: lastErr };
 }
 
+/** Internal / crew workbooks — not shown in the proposal section list but share the same quote workbook. */
+const PROPOSAL_TOTALS_EXCLUDED_SHEET_NAMES = ['Field Request', 'Field Requests', 'Crew Orders'] as const;
+
+function isInternalWorkbookSheetName(sheetName: unknown): boolean {
+  const n = String(sheetName ?? '').trim();
+  return (PROPOSAL_TOTALS_EXCLUDED_SHEET_NAMES as readonly string[]).includes(n);
+}
+
+/** Sections that contribute to sticky Materials / Labor / Subtotal (matches non-optional proposal workbook rows). */
+function materialSheetCountsTowardProposalSubtotal(sheet: {
+  sheetName?: string;
+  sheetType?: string;
+  isOptional?: boolean;
+}): boolean {
+  if ((sheet as any).isOptional) return false;
+  if (((sheet as any).sheetType ?? 'proposal') === 'change_order') return false;
+  if (isInternalWorkbookSheetName((sheet as any).sheetName)) return false;
+  return true;
+}
+
 /** Linked subcontractor line items split by item_type (material vs labor) for section totals. */
 function sumLinkedSubMaterialsFromSubs(
   linkedSubs: any[],
@@ -385,6 +405,7 @@ function SortableRow({
     materialsBreakdown = { sheetBreakdowns: [], totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 } },
     externalPriceLookup = new Map<string, Record<string, number>>(),
     onSheetSelect = () => {},
+    setOptionalSheetOverlay = (() => {}) as React.Dispatch<React.SetStateAction<Record<string, boolean>>>,
   } = props;
 
   const content = (() => {
@@ -2438,7 +2459,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   // Export dialog state
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLineItems, setShowLineItems] = useState(false); // Default to false - no row pricing by default
-  const [exportViewType, setExportViewType] = useState<'customer' | 'office'>('customer');
+  const [exportViewType, setExportViewType] = useState<'customer' | 'office' | 'descriptions_only'>('customer');
   const [exportTheme, setExportTheme] = useState<'default' | 'premium'>('default'); // default = black & white; premium = dark green + gold
   const [exporting, setExporting] = useState(false);
   const [showPdfView, setShowPdfView] = useState(false);
@@ -7866,6 +7887,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
 
       // Generate HTML using the template
       const isOfficeView = exportViewType === 'office';
+      const descriptionsOnly = exportViewType === 'descriptions_only';
       const html = generateProposalHTML({
         proposalNumber,
         date: new Date().toLocaleDateString(),
@@ -7884,9 +7906,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           tax: proposalTotalTax,
           grandTotal: proposalGrandTotal,
         },
-        showLineItems: isOfficeView ? true : showLineItems,
-        showSectionPrices: isOfficeView ? false : showLineItems, // Customer version: controlled by checkbox, Office view: always false
-        showInternalDetails: isOfficeView,
+        descriptionsOnly,
+        showLineItems: descriptionsOnly ? false : isOfficeView ? true : showLineItems,
+        showSectionPrices: descriptionsOnly ? false : isOfficeView ? false : showLineItems, // Customer version: controlled by checkbox, Office view: always false
+        showInternalDetails: descriptionsOnly ? false : isOfficeView,
         theme: exportTheme,
         taxExempt: taxExemptChecked,
       });
@@ -8145,9 +8168,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   let materialSheetsTaxableOnly = 0;
   
   materialsBreakdown.sheetBreakdowns.forEach(sheet => {
-    // Skip optional sections — they are shown but not included in totals
-    if ((sheet as any).isOptional) return;
-    // Exclude change order sheets from proposal totals (they are shown in a separate section)
+    // Same scope as visible proposal sections (excludes optional/C.O./Field Request workbooks)
+    if (!materialSheetCountsTowardProposalSubtotal(sheet as any)) return;
     const ms = materialSheets.find((m: any) => m.id === sheet.sheetId);
     if (ms?.sheet_type === 'change_order') return;
 
@@ -8283,7 +8305,11 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   ])).filter(id => {
     if (!id || optionalSheetIds.has(id)) return false;
     const ms = materialSheets.find((m: any) => m.id === id);
-    return ms?.sheet_type !== 'change_order';
+    if (ms?.sheet_type === 'change_order') return false;
+    const bd = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === id);
+    if (bd) return materialSheetCountsTowardProposalSubtotal(bd);
+    if (ms && isInternalWorkbookSheetName(ms.sheet_name)) return false;
+    return true;
   });
   const totalSheetLaborCost = allSheetIds.reduce((sum, sheetId) => {
     const labor = sheetLabor[sheetId];
@@ -8342,7 +8368,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   // Also exclude rows that are linked to optional sheets.
   const totalCustomRowLaborCost = Object.entries(customRowLabor).reduce((sum: number, [rowId, labor]: [string, any]) => {
     const row = customRows.find(r => r.id === rowId);
-    if (row && optionalSheetIds.has((row as any).sheet_id)) return sum;
+    const rowSheetId = row ? (row as any).sheet_id : null;
+    if (rowSheetId) {
+      if (optionalSheetIds.has(rowSheetId)) return sum;
+      const bd = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === rowSheetId);
+      if (bd) {
+        if (!materialSheetCountsTowardProposalSubtotal(bd)) return sum;
+      } else {
+        const ms = materialSheets.find((m: any) => m.id === rowSheetId);
+        if (ms?.sheet_type === 'change_order') return sum;
+        if (ms && isInternalWorkbookSheetName(ms.sheet_name)) return sum;
+      }
+    }
     const lineItems = customRowLineItems[rowId] || [];
     const hasLaborLineItems = lineItems.some((item: any) => (item.item_type || 'material') === 'labor');
     if (hasLaborLineItems) return sum;
@@ -8389,9 +8426,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   };
 
   // Create unified list: proposal workbook sections vs change orders (separate category; not mixed into contract scope)
-  const FIELD_REQUEST_NAMES = ['Field Request', 'Field Requests', 'Crew Orders'];
   const isProposalSheet = (sheet: { sheetName: string; sheetType?: string }) =>
-    !FIELD_REQUEST_NAMES.includes(sheet.sheetName) && (sheet as any).sheetType !== 'change_order';
+    !isInternalWorkbookSheetName(sheet.sheetName) && (sheet as any).sheetType !== 'change_order';
   const isChangeOrderSheet = (sheet: { sheetType?: string }) => (sheet as any).sheetType === 'change_order';
 
   const proposalSheetBreakdowns = materialsBreakdown.sheetBreakdowns.filter(isProposalSheet);
@@ -8442,7 +8478,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   // Optional categories (section-level options): list for the "Options" block at bottom of proposal
   const optionalCategoriesList: { sheetName: string; categoryName: string; totalCost: number; priceWithMarkup: number }[] = [];
   materialsBreakdown.sheetBreakdowns.forEach((sheet: any) => {
-    if (FIELD_REQUEST_NAMES.includes(sheet.sheetName)) return;
+    if (isInternalWorkbookSheetName(sheet.sheetName)) return;
     (sheet.categories || []).forEach((cat: any) => {
       const isOptional = cat.items?.every((i: any) => i.isOptional) ?? false;
       if (!isOptional) return;
@@ -9033,6 +9069,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                         materialsBreakdown={materialsBreakdown}
                         externalPriceLookup={externalPriceLookup}
                         setOptionalCategoryOverlay={setOptionalCategoryOverlay}
+                        setOptionalSheetOverlay={setOptionalSheetOverlay}
                         onSheetSelect={onSheetSelect}
                         onOpenCopyToChangeOrder={
                           !isReadOnly && quote && !(quote as any).is_change_order_proposal && jobHasContract
@@ -9149,6 +9186,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                               materialsBreakdown={materialsBreakdown}
                               externalPriceLookup={externalPriceLookup}
                               setOptionalCategoryOverlay={setOptionalCategoryOverlay}
+                              setOptionalSheetOverlay={setOptionalSheetOverlay}
                               onSheetSelect={onSheetSelect}
                               onOpenCopyToChangeOrder={
                           !isReadOnly && quote && !(quote as any).is_change_order_proposal && jobHasContract
@@ -9265,6 +9303,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                               materialsBreakdown={materialsBreakdown}
                               externalPriceLookup={externalPriceLookup}
                               setOptionalCategoryOverlay={setOptionalCategoryOverlay}
+                              setOptionalSheetOverlay={setOptionalSheetOverlay}
                               onSheetSelect={onSheetSelect}
                             />
                           ))}
@@ -10141,19 +10180,20 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           <DialogHeader>
             <DialogTitle>Export Proposal as PDF</DialogTitle>
             <DialogDescription>
-              Choose the version to export: Customer version for clients or Office view with detailed pricing.
+              Choose the version to export: customer-facing proposal, internal office view, or descriptions only (no pricing or terms).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label className="mb-2 block">Export Version</Label>
-              <Select value={exportViewType} onValueChange={(v) => setExportViewType(v as 'customer' | 'office')}>
+              <Select value={exportViewType} onValueChange={(v) => setExportViewType(v as 'customer' | 'office' | 'descriptions_only')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="customer">Customer Version</SelectItem>
                   <SelectItem value="office">Office View (Internal)</SelectItem>
+                  <SelectItem value="descriptions_only">Descriptions only</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -10196,6 +10236,15 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                     <li>Internal use only - NOT for customer distribution</li>
                   </ul>
                 </>
+              ) : exportViewType === 'descriptions_only' ? (
+                <>
+                  <p className="font-semibold text-blue-900 mb-1">Descriptions only includes:</p>
+                  <ul className="list-disc list-inside text-blue-800 space-y-0.5">
+                    <li>Section names and scope/description text only</li>
+                    <li>No customer or job contact details, proposal number, or dates</li>
+                    <li>No prices, totals, payment language, signatures, or terms</li>
+                  </ul>
+                </>
               ) : (
                 <>
                   <p className="font-semibold text-blue-900 mb-1">Customer Version includes:</p>
@@ -10222,7 +10271,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                 ) : (
                   <>
                     <Download className="w-4 h-4 mr-2" />
-                    Export {exportViewType === 'office' ? 'Office View' : 'Customer PDF'}
+                    Export{' '}
+                    {exportViewType === 'office'
+                      ? 'Office View'
+                      : exportViewType === 'descriptions_only'
+                        ? 'descriptions'
+                        : 'Customer PDF'}
                   </>
                 )}
               </Button>

@@ -37,11 +37,26 @@ export function generateProposalHTML(data: {
   showLineItems: boolean;
   showSectionPrices?: boolean;
   showInternalDetails?: boolean;
+  /** Scope text only: section titles + descriptions. No customer/job info, pricing, totals, payment, signatures, or terms. */
+  descriptionsOnly?: boolean;
   templateSettings?: any; // Template customization settings
   theme?: 'default' | 'premium'; // premium = dark green + gold modern look
   taxExempt?: boolean; // when true, show "Tax Exempt" on printout and tax amount is 0
 }): string {
-  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false, templateSettings, theme = 'default', taxExempt = false } = data;
+  const {
+    proposalNumber,
+    date,
+    job,
+    sections,
+    totals,
+    showLineItems,
+    showSectionPrices = false,
+    showInternalDetails = false,
+    descriptionsOnly = false,
+    templateSettings,
+    theme = 'default',
+    taxExempt = false,
+  } = data;
   const isPremium = theme === 'premium';
 
   // Apply template settings or use defaults
@@ -458,6 +473,20 @@ export function generateProposalHTML(data: {
         </style>
       </head>
       <body class="${isPremium ? 'theme-premium' : ''}">
+        ${
+          descriptionsOnly
+            ? sections
+                .map((section: any) => {
+                  const optSuffix = section.optional
+                    ? ' <span style="font-weight: 400; font-size: 10pt; color: #666;">(Optional)</span>'
+                    : '';
+                  return `<div class="section-wrapper" style="display: block; width: 100%; page-break-inside: avoid; margin-bottom: 16px;">
+            <div class="section-title" style="display: block; margin-top: 0;">${section.name}${optSuffix}</div>
+            ${section.description ? `<div class="section-content">${section.description}</div>` : ''}
+          </div>`;
+                })
+                .join('')
+            : `
         ${isPremium ? `
         <!-- Premium theme: header with triangular twist (green, gold, cream) and clear structure -->
         <div class="premium-header-wrapper">
@@ -889,6 +918,7 @@ export function generateProposalHTML(data: {
               </div>
             </div>
           </div>
+        `}
         `}
       </body>
     </html>
