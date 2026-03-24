@@ -1668,8 +1668,8 @@ function JobDetailView({
 
     const sh = standaloneMaterialSheet;
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="bg-gradient-to-r from-zinc-900 via-emerald-950 to-zinc-900 text-white shadow-xl border-b-2 border-amber-500/40">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 print:bg-white">
+        <div className="bg-gradient-to-r from-zinc-900 via-emerald-950 to-zinc-900 text-white shadow-xl border-b-2 border-amber-500/40 print:hidden">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
               <Button asChild variant="ghost" className="text-amber-200 hover:text-white hover:bg-white/10 -ml-2 h-9 px-2">
@@ -1697,14 +1697,21 @@ function JobDetailView({
             </div>
           </div>
         </div>
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-4 print:py-0">
+          <div className="hidden print:block">
+            <h1 className="text-xl font-semibold text-black">{sh.sheet_name}</h1>
+            {sh.description?.trim() && (
+              <p className="text-sm text-black/80 mt-1">
+                <PortalMultilineText text={sh.description} />
+              </p>
+            )}
+          </div>
           {sh.description?.trim() && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground print:hidden">
               <PortalMultilineText text={sh.description} />
             </p>
           )}
           <PortalMaterialItemsTable items={sh.items} />
-          <p className="text-xs text-muted-foreground">Quantities and usage only — pricing is not shown on this page.</p>
         </div>
       </div>
     );
@@ -2586,16 +2593,27 @@ function JobDetailView({
                     {mainMaterialSheetsForTab.map((sheet: any) => (
                       <TabsContent key={sheet.id} value={sheet.id}>
                         <div className="border rounded-lg p-4 space-y-3 bg-card">
-                          <div>
-                            <h3 className="font-semibold text-base text-slate-900">{sheet.sheet_name}</h3>
-                            {sheet.description?.trim() && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                <PortalMultilineText text={sheet.description} />
-                              </p>
-                            )}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h3 className="font-semibold text-base text-slate-900">{sheet.sheet_name}</h3>
+                              {sheet.description?.trim() && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  <PortalMultilineText text={sheet.description} />
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0 print:hidden"
+                              onClick={() => openAndPrintMaterialSheet(sheet.id, { changeOrder: false })}
+                            >
+                              <Printer className="w-4 h-4 mr-2" />
+                              Print page
+                            </Button>
                           </div>
-                          <PortalMaterialItemsTable items={sheet.items} />
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="print:hidden">
                             <a
                               href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: false })}
                               target="_blank"
@@ -2605,16 +2623,8 @@ function JobDetailView({
                               <ExternalLink className="w-4 h-4 shrink-0" />
                               Open full material list (new page)
                             </a>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openAndPrintMaterialSheet(sheet.id, { changeOrder: false })}
-                            >
-                              <Printer className="w-4 h-4 mr-2" />
-                              Print page
-                            </Button>
                           </div>
+                          <PortalMaterialItemsTable items={sheet.items} />
                         </div>
                       </TabsContent>
                     ))}
@@ -2645,16 +2655,27 @@ function JobDetailView({
                   ) : (
                     changeOrderMaterialSheetsForTab.map((sheet: any) => (
                       <div key={sheet.id} className="border border-orange-200 rounded-lg p-4 space-y-3 bg-white">
-                        <div>
-                          <h3 className="font-semibold text-base text-orange-950">{sheet.sheet_name}</h3>
-                          {sheet.description?.trim() && (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              <PortalMultilineText text={sheet.description} />
-                            </p>
-                          )}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-base text-orange-950">{sheet.sheet_name}</h3>
+                            {sheet.description?.trim() && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <PortalMultilineText text={sheet.description} />
+                              </p>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0 print:hidden"
+                            onClick={() => openAndPrintMaterialSheet(sheet.id, { changeOrder: true })}
+                          >
+                            <Printer className="w-4 h-4 mr-2" />
+                            Print page
+                          </Button>
                         </div>
-                        <PortalMaterialItemsTable items={sheet.items} />
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="print:hidden">
                           <a
                             href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
                             target="_blank"
@@ -2664,16 +2685,8 @@ function JobDetailView({
                             <ExternalLink className="w-4 h-4 shrink-0" />
                             Open full material list (new page)
                           </a>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openAndPrintMaterialSheet(sheet.id, { changeOrder: true })}
-                          >
-                            <Printer className="w-4 h-4 mr-2" />
-                            Print page
-                          </Button>
                         </div>
+                        <PortalMaterialItemsTable items={sheet.items} />
                       </div>
                     ))
                   )}
