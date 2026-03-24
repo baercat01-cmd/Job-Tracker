@@ -23,7 +23,7 @@ OnSpace automatically provides:
 
 **These are auto-generated and should already be set correctly.**
 
-**Subcontractor hub / portal job access:** URLs like `https://xxx.backend.onspace.ai` **do not run Supabase Edge Functions** (calls to `/functions/v1/...` return 404). The app uses **database RPCs** instead. After deploying app updates, run **`scripts/portal-job-access-onspace-rpcs.sql`** in your SQL Editor (same database as OnSpace), which defines `office_insert_portal_job_access` (no `auth.uid()` requirement) and **`office_list_portal_job_access_for_sub`** so the subcontractor link can load jobs. Optionally also run **`scripts/portal-job-access-emergency-rls-off.sql`** if inserts still hit RLS.
+**Subcontractor hub / portal job access:** URLs like `https://xxx.backend.onspace.ai` **do not run Supabase Edge Functions** (calls to `/functions/v1/...` return 404). The app uses **database RPCs** instead. If PostgREST reports **“Could not find … office_insert_portal_job_access … in the schema cache”**, run **`scripts/portal-job-access-json-rpcs.sql`** — it adds **single-argument `jsonb` RPCs** (`office_portal_job_access_insert_json`, `office_portal_job_access_list_json`, etc.) that OnSpace/PostgREST exposes reliably; then **`NOTIFY pgrst, 'reload schema';`** (included at end of that script). You can still run **`scripts/portal-job-access-onspace-rpcs.sql`** for the multi-arg versions. If inserts hit **RLS**, run **`scripts/portal-job-access-emergency-rls-off.sql`** on the same database.
 
 **Optional** — if you host Edge Functions on a separate `*.supabase.co` project that shares the same data, set **`VITE_SUPABASE_FUNCTIONS_URL`** to that API origin (e.g. `https://abcdefghijklmnop.supabase.co`) so portal-job-access can still be invoked.
 

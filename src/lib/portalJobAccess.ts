@@ -32,6 +32,19 @@ function isOptionalColumnError(err: unknown): boolean {
   return /can_edit_schedule|can_view_proposal|can_view_materials|schema cache|PGRST204/i.test(msg);
 }
 
+/** PostgREST rejects the body when JSON keys do not match the function parameter names (e.g. `p_row` vs `payload`). */
+function isRpcArgMismatch(err: unknown): boolean {
+  const m = String((err as { message?: string })?.message ?? '');
+  return /PGRST301|PGRST202|42883|argument|Could not choose|Could not find the function|does not exist/i.test(m);
+}
+
+/** Data/constraint errors: retrying legacy RPC or direct insert will not help. */
+function isNonRetryablePortalJobAccessErr(msg: string): boolean {
+  return /violates foreign key|foreign key constraint|23503|unique constraint|23505|duplicate key/i.test(
+    msg
+  );
+}
+
 type EdgeJson = { ok?: boolean; error?: string; id?: string | null; rows?: Record<string, unknown>[] };
 
 /**
@@ -127,28 +140,115 @@ async function callPortalJobAccessEdge(
     return { ok: false, error: new Error(EDGE_SKIP) };
   }
   const a = await callPortalJobAccessEdgeFetch(invokeUrl, body);
-  if (a.ok) return a;
+  if (a.ok === true) {
+    return a;
+  }
+  const errA = a.error;
   const b = await callPortalJobAccessEdgeSdk(client, body);
-  if (b.ok) return b;
-  return { ok: false, error: new Error([a.error.message, b.error.message].filter(Boolean).join(' | ')) };
+  if (b.ok === true) {
+    return b;
+  }
+  const errB = b.error;
+  return { ok: false, error: new Error([errA.message, errB.message].filter(Boolean).join(' | ')) };
 }
 
 function isEdgeSkippedErr(e: Error): boolean {
   return e.message === EDGE_SKIP;
 }
 
-function parseListRpcPayload(data: unknown): Record<string, unknown>[] | null {
-  if (data == null) return null;
-  if (Array.isArray(data)) return data as Record<string, unknown>[];
+function unwrapRpcJsonb(data: unknown): unknown {
   if (typeof data === 'string') {
     try {
-      const p = JSON.parse(data) as unknown;
+      return JSON.parse(data) as unknown;
+    } catch {
+      return data;
+    }
+  }
+  return data;
+}
+
+function parseListRpcPayload(data: unknown): Record<string, unknown>[] | null {
+  const u = unwrapRpcJsonb(data);
+  if (u == null) return null;
+  if (Array.isArray(u)) return u as Record<string, unknown>[];
+  if (typeof u === 'object' && u !== null) {
+    const o = u as Record<string, unknown>;
+    if (Array.isArray(o.rows)) return o.rows as Record<string, unknown>[];
+  }
+  if (typeof u === 'string') {
+    try {
+      const p = JSON.parse(u) as unknown;
       return Array.isArray(p) ? (p as Record<string, unknown>[]) : null;
     } catch {
       return null;
     }
   }
   return null;
+}
+
+async function rpcPortalJobAccessInsertJson(
+  client: SupabaseClient,
+  payload: PortalJobAccessInsertPayload
+): Promise<{ error: Error | null }> {
+  const p_row = {
+    portal_user_id: payload.portal_user_id,
+    job_id: payload.job_id,
+    can_view_schedule: payload.can_view_schedule,
+    can_view_documents: payload.can_view_documents,
+    can_view_photos: payload.can_view_photos,
+    can_view_financials: payload.can_view_financials,
+    can_view_proposal: payload.can_view_proposal,
+    can_view_materials: payload.can_view_materials,
+    can_edit_schedule: payload.can_edit_schedule,
+    notes: payload.notes,
+    created_by: payload.created_by ?? null,
+  };
+  let { data, error } = await client.rpc('office_portal_job_access_insert_json', { p_row });
+  if (error && isRpcArgMismatch(error)) {
+    ({ data, error } = await client.rpc('office_portal_job_access_insert_json', {
+      payload: p_row,
+    }));
+  }
+  if (error) return { error: error as Error };
+  const d = unwrapRpcJsonb(data) as { ok?: boolean; error?: string } | null;
+  if (d?.ok === true) return { error: null };
+  return { error: new Error(d?.error || 'office_portal_job_access_insert_json failed') };
+}
+
+async function rpcPortalJobAccessUpdateJson(
+  client: SupabaseClient,
+  id: string,
+  payload: PortalJobAccessUpdatePayload
+): Promise<{ error: Error | null }> {
+  const p_patch = { ...payload };
+  let { data, error } = await client.rpc('office_portal_job_access_update_json', {
+    p_id: id,
+    p_patch,
+  });
+  if (error && isRpcArgMismatch(error)) {
+    ({ data, error } = await client.rpc('office_portal_job_access_update_json', {
+      id,
+      payload: p_patch,
+    }));
+  }
+  if (error) return { error: error as Error };
+  const d = unwrapRpcJsonb(data) as { ok?: boolean; error?: string } | null;
+  if (d?.ok === true) return { error: null };
+  return { error: new Error(d?.error || 'office_portal_job_access_update_json failed') };
+}
+
+async function rpcPortalJobAccessDeleteJson(
+  client: SupabaseClient,
+  id: string
+): Promise<{ error: Error | null }> {
+  let { data, error } = await client.rpc('office_portal_job_access_delete_json', { p_id: id });
+  if (error && isRpcArgMismatch(error)) {
+    ({ data, error } = await client.rpc('office_portal_job_access_delete_json', { id }));
+  }
+  if (error) return { error: error as Error };
+  const d = unwrapRpcJsonb(data) as { ok?: boolean; error?: string } | null;
+  if (d?.ok === true) return { error: null };
+  return { error: new Error(d?.error || 'office_portal_job_access_delete_json failed') };
 }
 
 async function insertPortalJobAccessDirect(
@@ -190,7 +290,20 @@ export async function insertPortalJobAccess(
   payload: PortalJobAccessInsertPayload
 ): Promise<{ error: Error | null }> {
   const edge = await callPortalJobAccessEdge(client, { action: 'insert', payload });
-  if (edge.ok) return { error: null };
+  if (edge.ok === true) {
+    return { error: null };
+  }
+  const edgeInsertErr = edge.error;
+
+  const jsonRpc = await rpcPortalJobAccessInsertJson(client, payload);
+  if (!jsonRpc.error) return { error: null };
+  if (isNonRetryablePortalJobAccessErr(jsonRpc.error.message)) {
+    return {
+      error: new Error(
+        `${jsonRpc.error.message} | If granting from Subcontractor Hub, ensure a portal user exists for this subcontractor (the app creates one automatically after this update).`
+      ),
+    };
+  }
 
   const { error: rpcError } = await client.rpc('office_insert_portal_job_access', insertRpcArgs(payload));
   if (!rpcError) return { error: null };
@@ -199,13 +312,14 @@ export async function insertPortalJobAccess(
   if (!direct.error) return { error: null };
 
   const parts: string[] = [];
-  if (!isEdgeSkippedErr(edge.error)) parts.push(edge.error.message);
+  if (!isEdgeSkippedErr(edgeInsertErr)) parts.push(edgeInsertErr.message);
+  parts.push(jsonRpc.error.message);
   parts.push(rpcError.message);
   parts.push(direct.error.message);
   let msg = parts.filter(Boolean).join(' | ');
   if (/schema cache|Could not find the function/i.test(msg)) {
     msg +=
-      ' | Run scripts/portal-job-access-onspace-rpcs.sql in your project SQL Editor, then NOTIFY pgrst, \'reload schema\';';
+      ' | Run scripts/portal-job-access-json-rpcs.sql (single-arg jsonb RPCs), then NOTIFY pgrst, \'reload schema\'; and/or scripts/portal-job-access-emergency-rls-off.sql if RLS blocks inserts.';
   }
   return { error: new Error(msg) };
 }
@@ -233,7 +347,13 @@ export async function updatePortalJobAccess(
   payload: PortalJobAccessUpdatePayload
 ): Promise<{ error: Error | null }> {
   const edge = await callPortalJobAccessEdge(client, { action: 'update', id, payload });
-  if (edge.ok) return { error: null };
+  if (edge.ok === true) {
+    return { error: null };
+  }
+  const edgeUpdateErr = edge.error;
+
+  const jsonRpc = await rpcPortalJobAccessUpdateJson(client, id, payload);
+  if (!jsonRpc.error) return { error: null };
 
   const { error: rpcError } = await client.rpc('office_update_portal_job_access', {
     p_id: id,
@@ -252,7 +372,8 @@ export async function updatePortalJobAccess(
   if (!direct.error) return { error: null };
 
   const parts: string[] = [];
-  if (!isEdgeSkippedErr(edge.error)) parts.push(edge.error.message);
+  if (!isEdgeSkippedErr(edgeUpdateErr)) parts.push(edgeUpdateErr.message);
+  parts.push(jsonRpc.error.message);
   parts.push(rpcError.message);
   parts.push(direct.error.message);
   return { error: new Error(parts.filter(Boolean).join(' | ')) };
@@ -260,7 +381,13 @@ export async function updatePortalJobAccess(
 
 export async function deletePortalJobAccess(client: SupabaseClient, id: string): Promise<{ error: Error | null }> {
   const edge = await callPortalJobAccessEdge(client, { action: 'delete', id });
-  if (edge.ok) return { error: null };
+  if (edge.ok === true) {
+    return { error: null };
+  }
+  const edgeDeleteErr = edge.error;
+
+  const jsonRpc = await rpcPortalJobAccessDeleteJson(client, id);
+  if (!jsonRpc.error) return { error: null };
 
   const { error: rpcError } = await client.rpc('office_delete_portal_job_access', { p_id: id });
   if (!rpcError) return { error: null };
@@ -269,13 +396,14 @@ export async function deletePortalJobAccess(client: SupabaseClient, id: string):
   if (!directError) return { error: null };
 
   const parts: string[] = [];
-  if (!isEdgeSkippedErr(edge.error)) parts.push(edge.error.message);
+  if (!isEdgeSkippedErr(edgeDeleteErr)) parts.push(edgeDeleteErr.message);
+  parts.push(jsonRpc.error.message);
   parts.push(rpcError.message);
   parts.push(directError.message);
   return { error: new Error(parts.filter(Boolean).join(' | ')) };
 }
 
-/** Subcontractor portal (anon): Edge list, then RPC list, then direct select. */
+/** Subcontractor portal (anon): Edge list, then json RPC list, then legacy RPC, then direct select. */
 export async function fetchPortalJobAccessRowsForSubcontractor(
   client: SupabaseClient,
   portalUserId: string
@@ -284,8 +412,32 @@ export async function fetchPortalJobAccessRowsForSubcontractor(
     action: 'list_for_subcontractor',
     portal_user_id: portalUserId,
   });
-  if (edge.ok && Array.isArray(edge.rows)) {
+  if (edge.ok === true && Array.isArray(edge.rows)) {
     return { rows: edge.rows, error: null };
+  }
+  let edgeListErr: Error | null = null;
+  if (edge.ok === false) {
+    edgeListErr = edge.error;
+  }
+
+  let listJsonData: unknown;
+  const firstList = await client.rpc('office_portal_job_access_list_json', {
+    p_portal_user_id: portalUserId,
+  });
+  listJsonData = firstList.data;
+  let listJsonErr = firstList.error;
+  if (listJsonErr && isRpcArgMismatch(listJsonErr)) {
+    const second = await client.rpc('office_portal_job_access_list_json', {
+      portal_user_id: portalUserId,
+    });
+    listJsonData = second.data;
+    listJsonErr = second.error;
+  }
+  if (!listJsonErr) {
+    const parsed = parseListRpcPayload(listJsonData);
+    if (parsed) {
+      return { rows: parsed, error: null };
+    }
   }
 
   const { data: rpcData, error: rpcError } = await client.rpc('office_list_portal_job_access_for_sub', {
@@ -304,7 +456,8 @@ export async function fetchPortalJobAccessRowsForSubcontractor(
     .eq('portal_user_id', portalUserId);
   if (error) {
     const parts: string[] = [];
-    if (!isEdgeSkippedErr(edge.error)) parts.push(edge.error.message);
+    if (edgeListErr && !isEdgeSkippedErr(edgeListErr)) parts.push(edgeListErr.message);
+    if (listJsonErr) parts.push(listJsonErr.message);
     if (rpcError) parts.push(rpcError.message);
     parts.push(error.message);
     return { rows: [], error: new Error(parts.filter(Boolean).join(' | ')) };

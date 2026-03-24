@@ -11,6 +11,7 @@ import { loadProposalDataForQuote } from '@/lib/loadProposalDataForQuote';
 import { buildProposalHtmlForPortal } from '@/lib/proposalPortalHtml';
 import { isFieldRequestSheetName } from '@/lib/materialWorkbook';
 import { fetchPortalJobAccessRowsForSubcontractor } from '@/lib/portalJobAccess';
+import { resolvePortalUserIdForSubcontractor } from '@/lib/subcontractorPortalUser';
 
 interface PortalUser {
   id: string;
@@ -163,7 +164,8 @@ export default function SubcontractorPortal() {
             company_name: subFromSubs.company_name ?? null,
             is_active: subFromSubs.active !== false,
           });
-          await loadJobsForSub(subId);
+          const { portalUserId } = await resolvePortalUserIdForSubcontractor(supabase, subId);
+          await loadJobsForSub(portalUserId ?? subId);
           return;
         }
 

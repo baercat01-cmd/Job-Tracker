@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { insertPortalJobAccess, updatePortalJobAccess, deletePortalJobAccess } from '@/lib/portalJobAccess';
+import { getOrCreatePortalUserForSubcontractor } from '@/lib/subcontractorPortalUser';
 
 interface PortalUserRow {
   id: string;
@@ -171,7 +172,9 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
 
   async function copyPortalUrlForUser(userId: string, name?: string | null) {
     try {
-      const url = `${window.location.origin}/subcontractor-portal?sub=${encodeURIComponent(userId)}`;
+      const { portalUserId, error } = await getOrCreatePortalUserForSubcontractor(supabase, userId, profile?.id);
+      if (error || !portalUserId) throw error ?? new Error('Could not resolve portal user');
+      const url = `${window.location.origin}/subcontractor-portal?sub=${encodeURIComponent(portalUserId)}`;
       await navigator.clipboard.writeText(url);
       toast.success(`${name || 'Subcontractor'} multi-job link copied`);
     } catch (err: unknown) {
@@ -186,8 +189,15 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       return;
     }
     try {
+      const { portalUserId, error: puErr } = await getOrCreatePortalUserForSubcontractor(
+        supabase,
+        selectedUserId,
+        profile?.id
+      );
+      if (puErr || !portalUserId) throw puErr ?? new Error('Could not resolve portal user for subcontractor');
+
       const payload = {
-        portal_user_id: selectedUserId,
+        portal_user_id: portalUserId,
         job_id: jobId,
         can_view_schedule: canViewSchedule,
         can_view_documents: canViewDocuments,

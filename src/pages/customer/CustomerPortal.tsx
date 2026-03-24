@@ -59,6 +59,11 @@ import { MartinBuilderContractSeal } from '@/components/customer/MartinBuilderCo
 import { PortalMaterialItemsTable } from '@/components/customer/PortalMaterialItemsTable';
 import { PortalMultilineText } from '@/components/customer/PortalMultilineText';
 import { PortalSheetPricedLineItems } from '@/components/customer/PortalSheetPricedLineItems';
+import {
+  readEffectiveMaterialListVisibility,
+  stripMaterialVisibilityMarker,
+} from '@/lib/customerPortalMaterialListVisibility';
+import { parseRpcJsonbArray, resolveLatestJobDocumentRevision } from '@/lib/portalRpcPayload';
 
 interface Job {
   id: string;
@@ -91,15 +96,6 @@ const CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
 
 export const CUSTOMER_PORTAL_TOKEN_KEY = 'customer_portal_token';
-const MATERIAL_VIS_MARKER_RE = /^\s*\[\[MB_MATERIALS:(0|1)\]\]\s*/i;
-function readMaterialVisibilityMarker(customMessage: unknown): boolean | null {
-  const m = String(customMessage ?? '').match(MATERIAL_VIS_MARKER_RE);
-  if (!m) return null;
-  return m[1] === '1';
-}
-function stripMaterialVisibilityMarker(customMessage: unknown): string {
-  return String(customMessage ?? '').replace(MATERIAL_VIS_MARKER_RE, '');
-}
 
 export default function CustomerPortal() {
   const [searchParams] = useSearchParams();
@@ -307,6 +303,18 @@ export default function CustomerPortal() {
           scheduleReload();
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'job_documents',
+          filter: `job_id=eq.${customerInfo.job_id}`,
+        },
+        () => {
+          scheduleReload();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -353,8 +361,8 @@ export default function CustomerPortal() {
             }
           }
           if ((accessData as { show_material_items_no_prices?: unknown }).show_material_items_no_prices === undefined) {
-            // Fail-open when schema cache omits this field so customer can still view materials.
-            accessData.show_material_items_no_prices = true;
+            // Fail-closed: column default is false; stale RPC shapes must not expose materials.
+            accessData.show_material_items_no_prices = false;
           }
         }
       }
@@ -387,8 +395,7 @@ export default function CustomerPortal() {
         accessData = {
           ...accessData,
           show_line_item_prices: accessData.show_line_item_prices ?? false,
-          // Fail-open when field is unavailable in stale schema responses.
-          show_material_items_no_prices: accessData.show_material_items_no_prices ?? true,
+          show_material_items_no_prices: accessData.show_material_items_no_prices ?? false,
         };
       }
 
@@ -490,18 +497,21 @@ export default function CustomerPortal() {
           p_access_token: t.trim(),
           p_job_id: job.id,
         });
-        if (!rpcErr && Array.isArray(rpcDocs)) {
-          documentsData = rpcDocs;
+        // JSONB RPC payloads are not always `Array.isArray` (e.g. stringified JSON); normalize before use.
+        if (!rpcErr) {
+          documentsData = parseRpcJsonbArray(rpcDocs) as any[];
         } else if (
-          rpcErr &&
           /visible_to_customer_portal|column.*exist|schema cache|PGRST202|PGRST204/i.test(String(rpcErr.message || ''))
         ) {
-          // Fallback when visibility column/function cache is stale: load all docs for this token-validated job.
+          // Fallback when visibility column/function cache is stale: load rows for this token-validated job.
           const { data: rpcDocsAll, error: rpcAllErr } = await supabase.rpc('get_job_documents_for_customer_portal_any', {
             p_access_token: t.trim(),
             p_job_id: job.id,
           });
-          if (!rpcAllErr && Array.isArray(rpcDocsAll)) documentsData = rpcDocsAll;
+          if (!rpcAllErr) {
+            const rows = parseRpcJsonbArray(rpcDocsAll) as any[];
+            documentsData = rows.filter((d) => d?.visible_to_customer_portal === true);
+          }
         }
       }
       if (documentsData.length === 0 && !t?.trim()) {
@@ -822,39 +832,7 @@ function JobDetailView({
     }
     return 0;
   };
-  const hasLinkMaterialField = typeof customerInfo?.show_material_items_no_prices === 'boolean';
-  const materialListFromLink = customerInfo?.show_material_items_no_prices === true;
-  const materialListFromMarker = readMaterialVisibilityMarker(customerInfo?.custom_message);
-  const globalVis =
-    customerInfo?.visibility_by_quote &&
-    typeof customerInfo.visibility_by_quote === 'object' &&
-    !Array.isArray(customerInfo.visibility_by_quote) &&
-    (customerInfo.visibility_by_quote as Record<string, unknown>).__global &&
-    typeof (customerInfo.visibility_by_quote as Record<string, unknown>).__global === 'object' &&
-    !Array.isArray((customerInfo.visibility_by_quote as Record<string, unknown>).__global)
-      ? ((customerInfo.visibility_by_quote as Record<string, unknown>).__global as Record<string, unknown>)
-      : null;
-  const hasGlobalMaterialList = !!(globalVis && 'show_material_items_no_prices' in globalVis);
-  const materialListFromGlobal = hasGlobalMaterialList
-    ? globalVis!.show_material_items_no_prices === true
-    : null;
-  const hasExplicitMaterialListPerQuote = !!(perQuoteVisObj && 'show_material_items_no_prices' in perQuoteVisObj);
-  const materialListFromPerQuote = hasExplicitMaterialListPerQuote ? perQuoteVisObj!.show_material_items_no_prices === true : null;
-  const linkLevelMaterialsOff = hasLinkMaterialField && customerInfo?.show_material_items_no_prices === false;
-  // Priority: per-quote override -> global visibility flag -> link-level column.
-  // Marker is only a last-resort fallback when link-level field is missing in stale schema responses.
-  const showMaterialItemsNoPrices =
-    linkLevelMaterialsOff
-      ? false
-      : hasExplicitMaterialListPerQuote
-        ? materialListFromPerQuote === true
-        : hasGlobalMaterialList
-          ? materialListFromGlobal === true
-          : hasLinkMaterialField
-            ? materialListFromLink
-            : materialListFromMarker != null
-              ? materialListFromMarker === true
-              : false;
+  const showMaterialItemsNoPrices = readEffectiveMaterialListVisibility(customerInfo, selectedQuoteId);
   const showProposal = customerInfo?.show_proposal === true;
   const showPayments = customerInfo?.show_payments === true;
   const showSchedule = customerInfo?.show_schedule === true;
@@ -1006,7 +984,9 @@ function JobDetailView({
       : null;
   const showPriceForCoSection = (_sectionId: string) =>
     showFinancialCo && showLineItemPricesCo;
-  const showMaterialItemsNoPricesCo = coVis?.show_material_items_no_prices === true;
+  const showMaterialItemsNoPricesCo = changeOrderQuoteId
+    ? readEffectiveMaterialListVisibility(customerInfo, changeOrderQuoteId)
+    : false;
 
   useEffect(() => {
     if (!job?.id || !changeOrderQuoteId) {
@@ -1874,11 +1854,11 @@ function JobDetailView({
           {/* Overview Tab – order matches portal settings: custom message, drawings, proposal */}
           <TabsContent value="overview" className="space-y-6">
             {/* Custom welcome message (from Portal settings) */}
-            {stripMaterialVisibilityMarker(customerInfo?.custom_message).trim() && (
+            {stripMaterialVisibilityMarker(customerInfo?.custom_message).cleanText.trim() && (
               <Card className="border-amber-200 bg-amber-50/50">
                 <CardContent className="pt-6">
                   <p className="text-slate-800">
-                    <PortalMultilineText text={stripMaterialVisibilityMarker(customerInfo.custom_message)} />
+                    <PortalMultilineText text={stripMaterialVisibilityMarker(customerInfo.custom_message).cleanText} />
                   </p>
                 </CardContent>
               </Card>
@@ -3059,7 +3039,7 @@ function JobDetailView({
                 {documents.length > 0 ? (
                   <div className="space-y-3">
                     {documents.map((doc: any) => {
-                      const latestRevision = doc.job_document_revisions?.[doc.job_document_revisions.length - 1];
+                      const latestRevision = resolveLatestJobDocumentRevision(doc);
                       return (
                         <div key={doc.id} className="flex items-center justify-between p-4 border rounded-lg">
                           <div className="flex items-center gap-3">

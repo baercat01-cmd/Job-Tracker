@@ -23,6 +23,10 @@ import type { Job } from '@/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CustomerPortalPreview } from './CustomerPortalPreview';
+import {
+  readEffectiveMaterialListVisibility,
+  stripMaterialVisibilityMarker,
+} from '@/lib/customerPortalMaterialListVisibility';
 
 interface CustomerPortalLink {
   id: string;
@@ -121,65 +125,9 @@ function withGlobalMaterialVisibility(
   return out;
 }
 
-const MATERIAL_VIS_MARKER_RE = /^\s*\[\[MB_MATERIALS:(0|1)\]\]\s*/i;
-function stripMaterialVisibilityMarker(text: string | null | undefined): { cleanText: string; markerValue: boolean | null } {
-  const source = String(text ?? '');
-  const m = source.match(MATERIAL_VIS_MARKER_RE);
-  if (!m) return { cleanText: source, markerValue: null };
-  return { cleanText: source.replace(MATERIAL_VIS_MARKER_RE, ''), markerValue: m[1] === '1' };
-}
 function withMaterialVisibilityMarker(text: string | null | undefined, enabled: boolean): string {
   const { cleanText } = stripMaterialVisibilityMarker(text);
   return `[[MB_MATERIALS:${enabled ? '1' : '0'}]] ${cleanText}`.trim();
-}
-
-function readEffectiveMaterialListVisibility(
-  link: CustomerPortalLink,
-  selectedQuoteId: string | null
-): boolean {
-  const hasLinkLevelField = typeof (link as any).show_material_items_no_prices === 'boolean';
-  // Link-level OFF is a hard kill-switch so customer Materials always hide.
-  if (hasLinkLevelField && link.show_material_items_no_prices === false) {
-    return false;
-  }
-
-  const byQuote =
-    selectedQuoteId &&
-    link.visibility_by_quote &&
-    typeof link.visibility_by_quote === 'object' &&
-    !Array.isArray(link.visibility_by_quote)
-      ? (link.visibility_by_quote as Record<string, any>)[selectedQuoteId]
-      : null;
-  if (
-    byQuote &&
-    typeof byQuote === 'object' &&
-    !Array.isArray(byQuote) &&
-    'show_material_items_no_prices' in (byQuote as Record<string, unknown>)
-  ) {
-    return (byQuote as Record<string, unknown>).show_material_items_no_prices === true;
-  }
-
-  const global =
-    link.visibility_by_quote &&
-    typeof link.visibility_by_quote === 'object' &&
-    !Array.isArray(link.visibility_by_quote) &&
-    (link.visibility_by_quote as Record<string, unknown>).__global &&
-    typeof (link.visibility_by_quote as Record<string, unknown>).__global === 'object' &&
-    !Array.isArray((link.visibility_by_quote as Record<string, unknown>).__global)
-      ? ((link.visibility_by_quote as Record<string, unknown>).__global as Record<string, unknown>)
-      : null;
-  if (global && 'show_material_items_no_prices' in global) {
-    return global.show_material_items_no_prices === true;
-  }
-
-  if (hasLinkLevelField) {
-    return link.show_material_items_no_prices === true;
-  }
-
-  const marker = stripMaterialVisibilityMarker(link.custom_message || '').markerValue;
-  if (marker != null) return marker === true;
-
-  return false;
 }
 
 interface CustomerPortalManagementProps {

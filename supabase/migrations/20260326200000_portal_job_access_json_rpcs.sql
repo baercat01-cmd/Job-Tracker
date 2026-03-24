@@ -1,13 +1,3 @@
--- ============================================================
--- Portal Job Access JSON RPCs (manual / OnSpace SQL Editor)
--- ============================================================
--- OnSpace (*.backend.onspace.ai) does not host Edge Functions; use these
--- SECURITY DEFINER RPCs so PostgREST sees stable signatures (jsonb / uuid+jsonb).
--- Canonical copy: supabase/migrations/20260326200000_portal_job_access_json_rpcs.sql
---
--- After run: NOTIFY pgrst, 'reload schema';
--- ============================================================
-
 -- PostgREST / OnSpace: single-parameter RPCs (jsonb) show up in schema cache more reliably
 -- than 11-argument office_insert_portal_job_access.
 
@@ -192,5 +182,3 @@ GRANT EXECUTE ON FUNCTION public.office_portal_job_access_insert_json(jsonb) TO 
 GRANT EXECUTE ON FUNCTION public.office_portal_job_access_update_json(uuid, jsonb) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.office_portal_job_access_delete_json(uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.office_portal_job_access_list_json(uuid) TO anon, authenticated;
-
-NOTIFY pgrst, 'reload schema';

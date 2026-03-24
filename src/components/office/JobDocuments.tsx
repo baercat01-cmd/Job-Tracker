@@ -537,54 +537,75 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     }
   }
 
+  function isPostgrestSchemaCacheOrMissingColumnError(err: { code?: string; message?: string } | null): boolean {
+    const msg = String(err?.message || '');
+    return (
+      err?.code === 'PGRST204' ||
+      /visible_to_customer_portal|schema cache|not find.*column|PGRST204/i.test(msg)
+    );
+  }
+
+  function portalVisibilityRpcSucceeded(data: unknown, rpcError: { message?: string } | null): boolean {
+    if (rpcError) return false;
+    return data === true || data === 'true' || data === 't';
+  }
+
   async function togglePortalVisibility(docId: string, currentValue: boolean) {
     try {
       const nextValue = !currentValue;
-      const { error } = await supabase
-        .from('job_documents')
-        .update({
-          visible_to_customer_portal: nextValue,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', docId);
 
-      if (error) {
-        const looksLikeSchemaCacheIssue =
-          error.code === 'PGRST204' ||
-          /visible_to_customer_portal|column.*exist|schema cache/i.test(error.message || '');
+      // Prefer SECURITY DEFINER RPC first: PostgREST often lags the DB after migrations and rejects REST
+      // updates with "Could not find the 'visible_to_customer_portal' column ... in the schema cache".
+      const { data: rpcOk, error: rpcError } = await supabase.rpc('set_job_document_portal_visibility', {
+        p_document_id: docId,
+        p_visible: nextValue,
+      });
 
-        if (!looksLikeSchemaCacheIssue) throw error;
+      if (!portalVisibilityRpcSucceeded(rpcOk, rpcError)) {
+        const re = String((rpcError as { message?: string } | null)?.message || '');
+        const rpcMissing = !!(
+          rpcError &&
+          ((rpcError as { code?: string }).code === 'PGRST202' ||
+            /Could not find the function|function public\.set_job_document_portal_visibility|does not exist/i.test(re))
+        );
 
-        // Fallback path for PostgREST schema cache mismatch: update via RPC.
-        const { data: ok, error: rpcError } = await supabase.rpc('set_job_document_portal_visibility', {
-          p_document_id: docId,
-          p_visible: nextValue,
-        });
-        if (rpcError || ok !== true) {
-          // If RPC is missing in schema cache, retry direct table update as a final fallback.
-          const rpcMissing =
-            rpcError?.code === 'PGRST202' ||
-            /set_job_document_portal_visibility|Could not find the function|schema cache/i.test(
-              String(rpcError?.message || '')
-            );
-          if (!rpcMissing) throw rpcError ?? new Error('Portal visibility update was not applied.');
-
-          const { error: retryError } = await supabase
-            .from('job_documents')
-            .update({
-              visible_to_customer_portal: nextValue,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', docId);
-          if (retryError) throw retryError;
+        if (rpcError && !rpcMissing) {
+          throw rpcError;
         }
+
+        if (rpcOk === false && !rpcError) {
+          throw new Error('Document not found or could not be updated.');
+        }
+
+        const { error: restError } = await supabase
+          .from('job_documents')
+          .update({
+            visible_to_customer_portal: nextValue,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', docId);
+
+        if (restError) throw restError;
       }
 
       toast.success(nextValue ? 'Document is now visible in customer portal' : 'Document hidden from customer portal');
-      loadDocuments();
+      await loadDocuments();
+      // If GET responses omit visible_to_customer_portal until PostgREST reloads, keep the switch in sync.
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, visible_to_customer_portal: nextValue } : d))
+      );
     } catch (error: any) {
       console.error('Error toggling portal visibility:', error);
-      toast.error(error?.message || 'Failed to update visibility');
+      const msg = String(error?.message || '');
+      if (isPostgrestSchemaCacheOrMissingColumnError(error)) {
+        toast.error('Database API cache is out of date', {
+          description:
+            'In Supabase → SQL Editor run: NOTIFY pgrst, \'reload schema\'; Or apply scripts/notify-pgrst-reload-schema.sql',
+          duration: 14_000,
+        });
+      } else {
+        toast.error(msg || 'Failed to update visibility');
+      }
     }
   }
 

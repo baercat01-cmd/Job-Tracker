@@ -13,6 +13,10 @@ import { toast } from 'sonner';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { insertPortalJobAccess, deletePortalJobAccess } from '@/lib/portalJobAccess';
+import {
+  getOrCreatePortalUserForSubcontractor,
+  resolvePortalUserIdForSubcontractor,
+} from '@/lib/subcontractorPortalUser';
 
 interface SubcontractorRow {
   id: string;
@@ -118,10 +122,16 @@ export function SubcontractorHubManagement() {
 
   async function loadAccess(subId: string) {
     try {
+      const { portalUserId, error: resErr } = await resolvePortalUserIdForSubcontractor(supabase, subId);
+      if (resErr) throw resErr;
+      if (!portalUserId) {
+        setAccessRows([]);
+        return;
+      }
       const { data, error } = await supabase
         .from('portal_job_access')
         .select('*, jobs(id,name,client_name)')
-        .eq('portal_user_id', subId);
+        .eq('portal_user_id', portalUserId);
       if (error) throw error;
       setAccessRows((data || []) as AccessRow[]);
     } catch (e: any) {
@@ -131,12 +141,18 @@ export function SubcontractorHubManagement() {
 
   async function copySubLink() {
     if (!selectedSubId) return;
-    const url = `${window.location.origin}/subcontractor-portal?sub=${encodeURIComponent(selectedSubId)}`;
     try {
+      const { portalUserId, error } = await getOrCreatePortalUserForSubcontractor(
+        supabase,
+        selectedSubId,
+        profile?.id
+      );
+      if (error || !portalUserId) throw error ?? new Error('No portal user id');
+      const url = `${window.location.origin}/subcontractor-portal?sub=${encodeURIComponent(portalUserId)}`;
       await navigator.clipboard.writeText(url);
       toast.success('Subcontractor hub link copied');
-    } catch {
-      toast.error('Could not copy link');
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not copy link');
     }
   }
 
@@ -185,8 +201,15 @@ export function SubcontractorHubManagement() {
       return;
     }
     try {
+      const { portalUserId, error: puErr } = await getOrCreatePortalUserForSubcontractor(
+        supabase,
+        selectedSubId,
+        profile?.id
+      );
+      if (puErr || !portalUserId) throw puErr ?? new Error('Could not resolve portal user for subcontractor');
+
       const payload = {
-        portal_user_id: selectedSubId,
+        portal_user_id: portalUserId,
         job_id: jobIdToGrant,
         can_view_schedule: canViewSchedule,
         can_view_documents: canViewDocuments,
