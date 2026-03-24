@@ -152,6 +152,7 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
         .from('job_messages')
         .select('id, sender_role, sender_name, sender_contact, message_text, is_read, created_at')
         .eq('job_id', job.id)
+        .is('hidden_at', null)
         .order('created_at', { ascending: false });
 
       const mappedMessages: Email[] = (messagesData || []).map((m: any) => ({

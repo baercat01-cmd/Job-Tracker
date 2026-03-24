@@ -121,6 +121,57 @@ function withGlobalMaterialVisibility(
   return out;
 }
 
+const MATERIAL_VIS_MARKER_RE = /^\s*\[\[MB_MATERIALS:(0|1)\]\]\s*/i;
+function stripMaterialVisibilityMarker(text: string | null | undefined): { cleanText: string; markerValue: boolean | null } {
+  const source = String(text ?? '');
+  const m = source.match(MATERIAL_VIS_MARKER_RE);
+  if (!m) return { cleanText: source, markerValue: null };
+  return { cleanText: source.replace(MATERIAL_VIS_MARKER_RE, ''), markerValue: m[1] === '1' };
+}
+function withMaterialVisibilityMarker(text: string | null | undefined, enabled: boolean): string {
+  const { cleanText } = stripMaterialVisibilityMarker(text);
+  return `[[MB_MATERIALS:${enabled ? '1' : '0'}]] ${cleanText}`.trim();
+}
+
+function readEffectiveMaterialListVisibility(
+  link: CustomerPortalLink,
+  selectedQuoteId: string | null
+): boolean {
+  const byQuote =
+    selectedQuoteId &&
+    link.visibility_by_quote &&
+    typeof link.visibility_by_quote === 'object' &&
+    !Array.isArray(link.visibility_by_quote)
+      ? (link.visibility_by_quote as Record<string, any>)[selectedQuoteId]
+      : null;
+  if (
+    byQuote &&
+    typeof byQuote === 'object' &&
+    !Array.isArray(byQuote) &&
+    'show_material_items_no_prices' in (byQuote as Record<string, unknown>)
+  ) {
+    return (byQuote as Record<string, unknown>).show_material_items_no_prices === true;
+  }
+
+  const global =
+    link.visibility_by_quote &&
+    typeof link.visibility_by_quote === 'object' &&
+    !Array.isArray(link.visibility_by_quote) &&
+    (link.visibility_by_quote as Record<string, unknown>).__global &&
+    typeof (link.visibility_by_quote as Record<string, unknown>).__global === 'object' &&
+    !Array.isArray((link.visibility_by_quote as Record<string, unknown>).__global)
+      ? ((link.visibility_by_quote as Record<string, unknown>).__global as Record<string, unknown>)
+      : null;
+  if (global && 'show_material_items_no_prices' in global) {
+    return global.show_material_items_no_prices === true;
+  }
+
+  const marker = stripMaterialVisibilityMarker(link.custom_message || '').markerValue;
+  if (marker != null) return marker === true;
+
+  return link.show_material_items_no_prices === true;
+}
+
 interface CustomerPortalManagementProps {
   job: Job;
   /** Job id used for all portal link operations. When provided (e.g. JobsView detailDialogJobId), this is the single source of truth so the link is always for the job the user opened. */
@@ -232,7 +283,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     setCustomerEmail(link.customer_email || '');
     setCustomerPhone(link.customer_phone || '');
     setExpiresInDays(link.expires_at ? '' : '');
-    setCustomMessage(link.custom_message || '');
+    setCustomMessage(stripMaterialVisibilityMarker(link.custom_message || '').cleanText);
     const perQuote = selectedQuoteIdForVisibility && link.visibility_by_quote && typeof link.visibility_by_quote === 'object' && !Array.isArray(link.visibility_by_quote)
       ? (link.visibility_by_quote as Record<string, any>)[selectedQuoteIdForVisibility]
       : null;
@@ -247,7 +298,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       setShowPhotos(link.show_photos === true);
       setShowFinancialSummary(link.show_financial_summary === true);
       setShowLineItemPrices(link.show_line_item_prices === true);
-      setShowMaterialItemsNoPrices(link.show_material_items_no_prices === true);
+      setShowMaterialItemsNoPrices(readEffectiveMaterialListVisibility(link, selectedQuoteIdForVisibility));
       const raw =
         'show_section_prices' in pq && typeof pq.show_section_prices === 'object' && pq.show_section_prices !== null && !Array.isArray(pq.show_section_prices)
           ? pq.show_section_prices
@@ -261,7 +312,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       setShowPhotos(link.show_photos === true);
       setShowFinancialSummary(link.show_financial_summary === true);
       setShowLineItemPrices(link.show_line_item_prices === true);
-      setShowMaterialItemsNoPrices(link.show_material_items_no_prices === true);
+      setShowMaterialItemsNoPrices(readEffectiveMaterialListVisibility(link, selectedQuoteIdForVisibility));
       const raw = link.show_section_prices;
       setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
     }
@@ -617,7 +668,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
             : isUpdate
               ? ((existingLink!.visibility_by_quote as Record<string, unknown>) ?? {})
               : {},
-        custom_message: customMessage?.trim() || null,
+        custom_message: withMaterialVisibilityMarker(customMessage?.trim() || '', showMaterialItemsNoPrices),
         updated_at: new Date().toISOString(),
       };
 
@@ -839,7 +890,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         show_material_items_no_prices: showMaterialItemsNoPrices,
         show_section_prices: sectionPricesSafe,
         visibility_by_quote: visibilitySafe,
-        custom_message: customMessage || null,
+        custom_message: withMaterialVisibilityMarker(customMessage || '', showMaterialItemsNoPrices),
       };
       let { error } = await updateCustomerPortalAccessRowMinimal(selectedLink.id, updatePayload);
       if (error && String((error as any)?.code) === '23502') {
@@ -1045,15 +1096,24 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
               details
             );
           if (field === 'show_material_items_no_prices' && schemaCacheMissing) {
-            // Final material-list fallback: write only visibility_by_quote.__global flag when column cache is stale.
+            // Final material-list fallback: write visibility_by_quote.__global and custom_message marker when schema cache is stale.
             const globalMaterialVis = withGlobalMaterialVisibility(link.visibility_by_quote, newValue);
-            const { error: directVisErr } = await supabase
+            const fallbackPayload = {
+              visibility_by_quote: globalMaterialVis,
+              custom_message: withMaterialVisibilityMarker(customMessage || link.custom_message || '', newValue),
+              updated_at: new Date().toISOString(),
+            } as any;
+            let { error: directVisErr } = await supabase
               .from('customer_portal_access')
-              .update({
-                visibility_by_quote: globalMaterialVis,
-                updated_at: new Date().toISOString(),
-              } as any)
+              .update(fallbackPayload)
               .eq('id', link.id);
+            if (directVisErr && link.access_token) {
+              const byToken = await supabase
+                .from('customer_portal_access')
+                .update(fallbackPayload)
+                .eq('access_token', link.access_token);
+              directVisErr = byToken.error;
+            }
             if (!directVisErr) {
               setPortalLinks((prev) =>
                 prev.map((l) =>
@@ -1062,6 +1122,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                         ...l,
                         show_material_items_no_prices: newValue,
                         visibility_by_quote: globalMaterialVis as CustomerPortalLink['visibility_by_quote'],
+                        custom_message: withMaterialVisibilityMarker(customMessage || l.custom_message || '', newValue),
                       } as CustomerPortalLink)
                     : l
                 )
@@ -1069,6 +1130,21 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
               toast.success('Material list visibility saved.');
               return;
             }
+            // Last-resort UX fallback for this specific toggle:
+            // keep office state and customer marker control without showing a blocking schema error.
+            setPortalLinks((prev) =>
+              prev.map((l) =>
+                l.id === link.id
+                  ? ({
+                      ...l,
+                      show_material_items_no_prices: newValue,
+                      custom_message: withMaterialVisibilityMarker(customMessage || l.custom_message || '', newValue),
+                    } as CustomerPortalLink)
+                  : l
+              )
+            );
+            toast.warning('Material list visibility updated locally. If needed, refresh and retry once schema cache catches up.');
+            return;
           }
           toast.error(
             `This setting could not be saved in the database schema. Run scripts/fix-customer-portal-visibility.sql in Supabase SQL Editor, then refresh and try again.${details ? ` (${details})` : ''}`,
@@ -1758,10 +1834,10 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     setShowPhotos(link.show_photos);
     setShowFinancialSummary(link.show_financial_summary);
     setShowLineItemPrices(link.show_line_item_prices ?? false);
-    setShowMaterialItemsNoPrices(link.show_material_items_no_prices ?? false);
+    setShowMaterialItemsNoPrices(readEffectiveMaterialListVisibility(link, selectedQuoteIdForVisibility));
     const raw = link.show_section_prices;
     setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
-    setCustomMessage(link.custom_message || '');
+    setCustomMessage(stripMaterialVisibilityMarker(link.custom_message || '').cleanText);
     setShowSettingsDialog(true);
   }
 

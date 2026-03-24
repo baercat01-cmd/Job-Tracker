@@ -526,6 +526,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
       const { data: directMessages } = await supabase
         .from('job_messages')
         .select('id, job_id, sender_role, sender_name, sender_contact, message_text, created_at')
+        .is('hidden_at', null)
         .order('created_at', { ascending: false })
         .limit(25);
       const directJobIds = [...new Set((directMessages || []).map((m: any) => m.job_id).filter(Boolean))];

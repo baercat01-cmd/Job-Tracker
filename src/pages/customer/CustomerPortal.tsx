@@ -91,6 +91,15 @@ const CUSTOMER_PORTAL_ACCESS_SELECT_FALLBACK =
   'id,job_id,customer_identifier,access_token,customer_name,customer_email,customer_phone,is_active,expires_at,last_accessed_at,created_by,created_at,updated_at,show_proposal,show_payments,show_schedule,show_documents,show_photos,show_financial_summary,custom_message';
 
 export const CUSTOMER_PORTAL_TOKEN_KEY = 'customer_portal_token';
+const MATERIAL_VIS_MARKER_RE = /^\s*\[\[MB_MATERIALS:(0|1)\]\]\s*/i;
+function readMaterialVisibilityMarker(customMessage: unknown): boolean | null {
+  const m = String(customMessage ?? '').match(MATERIAL_VIS_MARKER_RE);
+  if (!m) return null;
+  return m[1] === '1';
+}
+function stripMaterialVisibilityMarker(customMessage: unknown): string {
+  return String(customMessage ?? '').replace(MATERIAL_VIS_MARKER_RE, '');
+}
 
 export default function CustomerPortal() {
   const [searchParams] = useSearchParams();
@@ -553,12 +562,26 @@ export default function CustomerPortal() {
         }
       }
       if (emailsData == null) {
-        const { data: directMessages } = await supabase
+        let directMessages: any[] | null = null;
+        const primary = await supabase
           .from('job_messages')
           .select('*')
           .eq('job_id', job.id)
+          .is('hidden_at', null)
           .order('created_at', { ascending: false })
           .limit(200);
+        if (!primary.error) {
+          directMessages = primary.data || [];
+        } else {
+          // Backward compatibility for databases that do not yet have hidden_at.
+          const fallback = await supabase
+            .from('job_messages')
+            .select('*')
+            .eq('job_id', job.id)
+            .order('created_at', { ascending: false })
+            .limit(200);
+          directMessages = fallback.data || [];
+        }
         emailsData = (directMessages || []).map((m: any) => ({
           id: m.id,
           subject: m.sender_role === 'customer' ? 'Message from You' : 'Message from Project Team',
@@ -811,6 +834,7 @@ function JobDetailView({
     return 0;
   };
   const materialListFromLink = customerInfo?.show_material_items_no_prices === true;
+  const materialListFromMarker = readMaterialVisibilityMarker(customerInfo?.custom_message);
   const globalVis =
     customerInfo?.visibility_by_quote &&
     typeof customerInfo.visibility_by_quote === 'object' &&
@@ -833,7 +857,9 @@ function JobDetailView({
       ? materialListFromPerQuote === true
       : hasGlobalMaterialList
         ? materialListFromGlobal === true
-        : materialListFromLink;
+        : materialListFromMarker != null
+          ? materialListFromMarker === true
+          : materialListFromLink;
   const showProposal = customerInfo?.show_proposal === true;
   const showPayments = customerInfo?.show_payments === true;
   const showSchedule = customerInfo?.show_schedule === true;
@@ -1057,6 +1083,28 @@ function JobDetailView({
       return u.toString();
     },
     [portalToken, selectedQuoteId]
+  );
+  const openAndPrintMaterialSheet = useCallback(
+    (sheetId: string, opts: { changeOrder: boolean }) => {
+      const url = buildMaterialSheetFullUrl(sheetId, opts);
+      if (!url || url === '#') {
+        toast.error('Material sheet link is not available yet.');
+        return;
+      }
+      try {
+        const u = new URL(url);
+        u.searchParams.set('print', '1');
+        const win = window.open(u.toString(), '_blank');
+        if (!win) {
+          toast.error('Allow popups to print material sheets.');
+          return;
+        }
+        toast.info('Opening print view for this material sheet…');
+      } catch {
+        toast.error('Could not open material sheet print view.');
+      }
+    },
+    [buildMaterialSheetFullUrl]
   );
 
   const buildPortalUrlWithoutSheet = useCallback(
@@ -1472,7 +1520,8 @@ function JobDetailView({
       showFinancial,
       showLineItemPrices,
       showSectionPrices,
-      showMaterialItemsNoPrices,
+      // "Print proposal" should always print the proposal document view, not material-sheet mode.
+      showMaterialItemsNoPrices: false,
       quoteStoredTotals: quoteStoredTotals ?? undefined,
     });
 
@@ -1555,6 +1604,18 @@ function JobDetailView({
   useEffect(() => {
     if (activeTab === 'change-orders' && !changeOrderQuote) setActiveTab('overview');
   }, [activeTab, changeOrderQuote]);
+  const shouldAutoPrintSheet = searchParams?.get('print') === '1';
+  useEffect(() => {
+    if (!sheetIdFromUrl || !shouldAutoPrintSheet) return;
+    const timer = setTimeout(() => {
+      try {
+        window.print();
+      } catch {
+        // ignore
+      }
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [sheetIdFromUrl, shouldAutoPrintSheet, standaloneMaterialSheet?.id]);
 
   /** Dedicated page: material name / qty / usage only (same visibility as “Material list (no prices)”) */
   if (sheetIdFromUrl) {
@@ -1608,9 +1669,21 @@ function JobDetailView({
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <div className="bg-gradient-to-r from-zinc-900 via-emerald-950 to-zinc-900 text-white shadow-xl border-b-2 border-amber-500/40">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-3">
-            <Button asChild variant="ghost" className="text-amber-200 hover:text-white hover:bg-white/10 -ml-2 h-9 px-2">
-              <a href={backHref}>← Back to project</a>
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button asChild variant="ghost" className="text-amber-200 hover:text-white hover:bg-white/10 -ml-2 h-9 px-2">
+                <a href={backHref}>← Back to project</a>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-amber-400/50 text-amber-200 bg-transparent hover:bg-white/10 hover:text-white"
+                onClick={() => window.print()}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Print this page
+              </Button>
+            </div>
             <div>
               <p className="text-emerald-100/90 text-sm">{job.client_name}</p>
               <h1 className="text-2xl sm:text-3xl font-bold text-amber-400 mt-1">{job.name}</h1>
@@ -1718,11 +1791,11 @@ function JobDetailView({
           {/* Overview Tab – order matches portal settings: custom message, drawings, proposal */}
           <TabsContent value="overview" className="space-y-6">
             {/* Custom welcome message (from Portal settings) */}
-            {customerInfo?.custom_message && (
+            {stripMaterialVisibilityMarker(customerInfo?.custom_message).trim() && (
               <Card className="border-amber-200 bg-amber-50/50">
                 <CardContent className="pt-6">
                   <p className="text-slate-800">
-                    <PortalMultilineText text={customerInfo.custom_message} />
+                    <PortalMultilineText text={stripMaterialVisibilityMarker(customerInfo.custom_message)} />
                   </p>
                 </CardContent>
               </Card>
@@ -2520,15 +2593,26 @@ function JobDetailView({
                             )}
                           </div>
                           <PortalMaterialItemsTable items={sheet.items} />
-                          <a
-                            href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: false })}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 text-sm font-medium text-emerald-800 hover:underline"
-                          >
-                            <ExternalLink className="w-4 h-4 shrink-0" />
-                            Open full material list (new page)
-                          </a>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <a
+                              href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: false })}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 text-sm font-medium text-emerald-800 hover:underline"
+                            >
+                              <ExternalLink className="w-4 h-4 shrink-0" />
+                              Open full material list (new page)
+                            </a>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openAndPrintMaterialSheet(sheet.id, { changeOrder: false })}
+                            >
+                              <Printer className="w-4 h-4 mr-2" />
+                              Print page
+                            </Button>
+                          </div>
                         </div>
                       </TabsContent>
                     ))}
@@ -2568,15 +2652,26 @@ function JobDetailView({
                           )}
                         </div>
                         <PortalMaterialItemsTable items={sheet.items} />
-                        <a
-                          href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 text-sm font-medium text-orange-800 hover:underline"
-                        >
-                          <ExternalLink className="w-4 h-4 shrink-0" />
-                          Open full material list (new page)
-                        </a>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <a
+                            href={buildMaterialSheetFullUrl(sheet.id, { changeOrder: true })}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-sm font-medium text-orange-800 hover:underline"
+                          >
+                            <ExternalLink className="w-4 h-4 shrink-0" />
+                            Open full material list (new page)
+                          </a>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openAndPrintMaterialSheet(sheet.id, { changeOrder: true })}
+                          >
+                            <Printer className="w-4 h-4 mr-2" />
+                            Print page
+                          </Button>
+                        </div>
                       </div>
                     ))
                   )}
