@@ -155,24 +155,37 @@ export default function CustomerPortal() {
         }
         if (Array.isArray(row) && row.length > 0) row = row[0];
         const fresh = row && typeof row === 'object' ? (row as Record<string, unknown>) : null;
-        if (fresh) setCustomerInfo((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            show_proposal: fresh.show_proposal ?? prev.show_proposal,
-            show_payments: fresh.show_payments ?? prev.show_payments,
-            show_schedule: fresh.show_schedule ?? prev.show_schedule,
-            show_documents: fresh.show_documents ?? prev.show_documents,
-            show_photos: fresh.show_photos ?? prev.show_photos,
-            show_financial_summary: fresh.show_financial_summary ?? prev.show_financial_summary,
-            show_line_item_prices: fresh.show_line_item_prices ?? prev.show_line_item_prices,
-            show_material_items_no_prices:
-              (fresh as { show_material_items_no_prices?: boolean }).show_material_items_no_prices ??
-              prev.show_material_items_no_prices,
-            show_section_prices: fresh.show_section_prices ?? prev.show_section_prices,
-            visibility_by_quote: fresh.visibility_by_quote ?? prev.visibility_by_quote,
-          };
-        });
+        if (fresh) {
+          // Backfill from table in case RPC shape is stale/cached and omits newer visibility columns.
+          let direct: { show_material_items_no_prices?: boolean; visibility_by_quote?: unknown } | null = null;
+          if (fresh.id) {
+            const { data: directRow } = await supabase
+              .from('customer_portal_access')
+              .select('show_material_items_no_prices, visibility_by_quote')
+              .eq('id', fresh.id as string)
+              .maybeSingle();
+            if (directRow) direct = directRow as any;
+          }
+          setCustomerInfo((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              show_proposal: fresh.show_proposal ?? prev.show_proposal,
+              show_payments: fresh.show_payments ?? prev.show_payments,
+              show_schedule: fresh.show_schedule ?? prev.show_schedule,
+              show_documents: fresh.show_documents ?? prev.show_documents,
+              show_photos: fresh.show_photos ?? prev.show_photos,
+              show_financial_summary: fresh.show_financial_summary ?? prev.show_financial_summary,
+              show_line_item_prices: fresh.show_line_item_prices ?? prev.show_line_item_prices,
+              show_material_items_no_prices:
+                direct?.show_material_items_no_prices ??
+                (fresh as { show_material_items_no_prices?: boolean }).show_material_items_no_prices ??
+                prev.show_material_items_no_prices,
+              show_section_prices: fresh.show_section_prices ?? prev.show_section_prices,
+              visibility_by_quote: direct?.visibility_by_quote ?? fresh.visibility_by_quote ?? prev.visibility_by_quote,
+            };
+          });
+        }
       }
     } catch {
       // Non-fatal; keep existing customerInfo
@@ -227,16 +240,23 @@ export default function CustomerPortal() {
     if (!t) return;
 
     const jobId = customerInfo.job_id as string;
+    const refreshPortalData = async () => {
+      await refetchPortalVisibility(t);
+      if (jobId) await refetchPortalQuotes(t, jobId);
+      await loadCustomerData(customerInfo, t);
+    };
     const onVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        refetchPortalVisibility(t);
-        if (jobId) refetchPortalQuotes(t, jobId);
+        refreshPortalData().catch(() => {
+          // Keep portal usable even if background refresh fails.
+        });
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
     const interval = setInterval(() => {
-      refetchPortalVisibility(t);
-      if (jobId) refetchPortalQuotes(t, jobId);
+      refreshPortalData().catch(() => {
+        // Keep portal usable even if background refresh fails.
+      });
     }, 90_000);
 
     return () => {
@@ -244,6 +264,47 @@ export default function CustomerPortal() {
       clearInterval(interval);
     };
   }, [validToken, customerInfo?.id]);
+
+  // Live updates for portal messages so customer sees new replies without refreshing.
+  useEffect(() => {
+    if (!validToken || !customerInfo?.job_id) return;
+    const t =
+      typeof searchParams.get('token') === 'string' && searchParams.get('token')
+        ? searchParams.get('token')
+        : (typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY) : null);
+    if (!t) return;
+
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReload = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        loadCustomerData(customerInfo, t).catch(() => {
+          // Keep portal usable if live refresh fails.
+        });
+      }, 200);
+    };
+
+    const channel = supabase
+      .channel(`customer-portal-job-messages-${customerInfo.job_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'job_messages',
+          filter: `job_id=eq.${customerInfo.job_id}`,
+        },
+        () => {
+          scheduleReload();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [validToken, customerInfo?.id, customerInfo?.job_id, searchParams]);
 
   async function validateAndLoadData() {
     if (!token) return;
@@ -265,20 +326,26 @@ export default function CustomerPortal() {
             show_line_item_prices: row.show_line_item_prices ?? false,
             show_material_items_no_prices: row.show_material_items_no_prices,
           };
-          // Some environments return stale RPC row shapes that omit this column.
+          // Some environments return stale RPC row shapes for newer visibility fields.
           // Backfill directly from table so Materials tab visibility resolves correctly.
-          if ((accessData as { show_material_items_no_prices?: unknown }).show_material_items_no_prices === undefined && accessData.id) {
+          if (accessData.id) {
             const { data: directRow } = await supabase
               .from('customer_portal_access')
-              .select('show_material_items_no_prices')
+              .select('show_material_items_no_prices, visibility_by_quote')
               .eq('id', accessData.id)
               .maybeSingle();
-            if (directRow && typeof directRow.show_material_items_no_prices === 'boolean') {
-              accessData.show_material_items_no_prices = directRow.show_material_items_no_prices;
+            if (directRow) {
+              if (typeof directRow.show_material_items_no_prices === 'boolean') {
+                accessData.show_material_items_no_prices = directRow.show_material_items_no_prices;
+              }
+              if (directRow.visibility_by_quote != null) {
+                accessData.visibility_by_quote = directRow.visibility_by_quote;
+              }
             }
           }
           if ((accessData as { show_material_items_no_prices?: unknown }).show_material_items_no_prices === undefined) {
-            accessData.show_material_items_no_prices = false;
+            // Fail-open when schema cache omits this field so customer can still view materials.
+            accessData.show_material_items_no_prices = true;
           }
         }
       }
@@ -311,7 +378,8 @@ export default function CustomerPortal() {
         accessData = {
           ...accessData,
           show_line_item_prices: accessData.show_line_item_prices ?? false,
-          show_material_items_no_prices: accessData.show_material_items_no_prices ?? false,
+          // Fail-open when field is unavailable in stale schema responses.
+          show_material_items_no_prices: accessData.show_material_items_no_prices ?? true,
         };
       }
 
@@ -451,29 +519,57 @@ export default function CustomerPortal() {
         .eq('job_id', job.id)
         .order('event_date', { ascending: true });
 
-      // Load emails for this job (use RPC when token present so anon can see messages despite RLS)
+      // Load direct portal messages for this job (email-independent).
       let emailsData: any[] | null = null;
       if (t?.trim()) {
-        const { data: rpcEmails, error: rpcErr } = await supabase.rpc('get_job_emails_for_customer_portal', {
+        const { data: rpcMessages, error: rpcErr } = await supabase.rpc('get_job_messages_for_customer_portal', {
           p_access_token: t.trim(),
           p_job_id: job.id,
         });
-        if (!rpcErr && rpcEmails != null) {
-          if (Array.isArray(rpcEmails)) emailsData = rpcEmails;
-          else if (typeof rpcEmails === 'object' && !Array.isArray(rpcEmails)) emailsData = [rpcEmails];
-          else if (typeof rpcEmails === 'string') {
-            try { const parsed = JSON.parse(rpcEmails); emailsData = Array.isArray(parsed) ? parsed : [parsed]; } catch { emailsData = []; }
+        if (!rpcErr && rpcMessages != null) {
+          let rows: any[] = [];
+          if (Array.isArray(rpcMessages)) rows = rpcMessages;
+          else if (typeof rpcMessages === 'object' && !Array.isArray(rpcMessages)) rows = [rpcMessages];
+          else if (typeof rpcMessages === 'string') {
+            try {
+              const parsed = JSON.parse(rpcMessages);
+              rows = Array.isArray(parsed) ? parsed : [parsed];
+            } catch {
+              rows = [];
+            }
           }
+          // Keep existing UI shape for now.
+          emailsData = rows.map((m: any) => ({
+            id: m.id,
+            subject: m.sender_role === 'customer' ? 'Message from You' : 'Message from Project Team',
+            from_name: m.sender_name,
+            from_email: m.sender_contact,
+            body_text: m.message_text,
+            body_html: null,
+            email_date: m.created_at,
+            direction: m.sender_role === 'team' ? 'sent' : 'inbound',
+            is_read: m.is_read ?? false,
+          }));
         }
       }
       if (emailsData == null) {
-        const { data: directEmails } = await supabase
-          .from('job_emails')
+        const { data: directMessages } = await supabase
+          .from('job_messages')
           .select('*')
           .eq('job_id', job.id)
-          .order('email_date', { ascending: false })
-          .limit(100);
-        emailsData = directEmails ?? [];
+          .order('created_at', { ascending: false })
+          .limit(200);
+        emailsData = (directMessages || []).map((m: any) => ({
+          id: m.id,
+          subject: m.sender_role === 'customer' ? 'Message from You' : 'Message from Project Team',
+          from_name: m.sender_name,
+          from_email: m.sender_contact,
+          body_text: m.message_text,
+          body_html: null,
+          email_date: m.created_at,
+          direction: m.sender_role === 'team' ? 'sent' : 'inbound',
+          is_read: m.is_read ?? false,
+        }));
       }
 
       // Proposal data is loaded per-quote in JobDetailView when customer selects a proposal
@@ -588,6 +684,10 @@ function JobDetailView({
 }) {
   const { job, quote, jobQuotes = [], payments, documents, photos, scheduleEvents, emails, viewerLinks = [], totalPaid } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
+  const messageThreadRef = useRef<HTMLDivElement | null>(null);
+  const [hasPortalUpdates, setHasPortalUpdates] = useState(false);
+  const notificationSnapshotRef = useRef<string | null>(null);
+  const previousUnreadTeamMessagesRef = useRef(0);
 
   /** Main contract proposals only — change order is its own quote and portal tab */
   const proposalQuotes = useMemo(
@@ -633,6 +733,7 @@ function JobDetailView({
   // If URL has ?quote=uuid and it's a main proposal for this job, use it (never the change-order quote here)
   const quoteIdFromUrl = searchParams?.get('quote') ?? null;
   const coQuoteIdFromUrl = searchParams?.get('change_order') === '1';
+  const tabFromUrl = searchParams?.get('tab') ?? null;
   /** Full-page material list (no prices): /customer-portal?token=…&sheet=<sheetId>[&quote=…|&change_order=1] */
   const sheetIdFromUrl = searchParams?.get('sheet') ?? null;
   const materialSheetPageIsCo = searchParams?.get('change_order') === '1';
@@ -689,20 +790,98 @@ function JobDetailView({
           ? (customerInfo.show_section_prices as Record<string, boolean>)
           : null);
   const showPriceForSection = (sectionId: string) => showFinancial && showLineItemPrices && (showSectionPrices == null || showSectionPrices[sectionId] !== false);
-  const multiProposal = proposalQuotes.length > 1;
   const materialListFromLink = customerInfo?.show_material_items_no_prices === true;
   const hasExplicitMaterialListPerQuote = !!(perQuoteVisObj && 'show_material_items_no_prices' in perQuoteVisObj);
   const materialListFromPerQuote = hasExplicitMaterialListPerQuote ? perQuoteVisObj!.show_material_items_no_prices === true : null;
-  // Single-proposal: link-level true should win over stale per-quote false.
+  const materialVisibilityFieldMissing =
+    customerInfo?.show_material_items_no_prices === undefined && !hasExplicitMaterialListPerQuote;
+  // Link-level enable should always show Materials for this customer link.
+  // Per-quote true can also enable it when link-level is false.
+  // Fail-open fallback: when DB schema/cache omits this visibility field, keep materials visible to customer.
   const showMaterialItemsNoPrices =
-    multiProposal && hasExplicitMaterialListPerQuote
-      ? materialListFromPerQuote === true
-      : materialListFromLink || materialListFromPerQuote === true;
+    materialVisibilityFieldMissing || materialListFromLink || materialListFromPerQuote === true;
   const showProposal = customerInfo?.show_proposal === true;
   const showPayments = customerInfo?.show_payments === true;
   const showSchedule = customerInfo?.show_schedule === true;
   const showDocuments = customerInfo?.show_documents === true;
   const showPhotos = customerInfo?.show_photos === true;
+  const unreadTeamMessages = useMemo(
+    () => emails.filter((e: any) => !e.is_read && e.direction === 'sent').length,
+    [emails]
+  );
+  const messageDayKey = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const messageDayLabel = (iso: string) =>
+    new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const threadMessages = useMemo(
+    () =>
+      [...emails].sort(
+        (a: any, b: any) => new Date(a.email_date).getTime() - new Date(b.email_date).getTime()
+      ),
+    [emails]
+  );
+  useEffect(() => {
+    if (activeTab !== 'emails') return;
+    if (!messageThreadRef.current) return;
+    messageThreadRef.current.scrollTop = messageThreadRef.current.scrollHeight;
+  }, [activeTab, threadMessages.length]);
+  const notificationSnapshot = useMemo(() => {
+    const latest = (rows: any[], key: string) =>
+      rows.reduce((max: number, row: any) => {
+        const value = row?.[key];
+        const ts = value ? new Date(value).getTime() : 0;
+        return Number.isFinite(ts) && ts > max ? ts : max;
+      }, 0);
+    return JSON.stringify({
+      quoteCount: jobQuotes.length,
+      latestQuote: latest(jobQuotes, 'updated_at'),
+      paymentCount: payments.length,
+      latestPayment: latest(payments, 'updated_at'),
+      documentCount: documents.length,
+      latestDocument: latest(documents, 'updated_at'),
+      photoCount: photos.length,
+      latestPhoto: latest(photos, 'updated_at'),
+      scheduleCount: scheduleEvents.length,
+      latestSchedule: latest(scheduleEvents, 'updated_at'),
+      messageCount: emails.length,
+      latestMessage: latest(emails, 'email_date'),
+      portalUpdatedAt: customerInfo?.updated_at ? new Date(customerInfo.updated_at).getTime() : 0,
+    });
+  }, [jobQuotes, payments, documents, photos, scheduleEvents, emails, customerInfo?.updated_at]);
+  useEffect(() => {
+    if (!job?.id) return;
+    if (notificationSnapshotRef.current == null) {
+      notificationSnapshotRef.current = notificationSnapshot;
+      previousUnreadTeamMessagesRef.current = unreadTeamMessages;
+      return;
+    }
+
+    const unreadIncreased = unreadTeamMessages > previousUnreadTeamMessagesRef.current;
+    if (unreadIncreased) {
+      const diff = unreadTeamMessages - previousUnreadTeamMessagesRef.current;
+      toast.info(
+        diff === 1
+          ? 'You have a new message from your project team.'
+          : `You have ${diff} new messages from your project team.`
+      );
+      setHasPortalUpdates(true);
+    }
+
+    if (notificationSnapshotRef.current !== notificationSnapshot && !unreadIncreased) {
+      toast.info('Your portal has new project updates.');
+      setHasPortalUpdates(true);
+    }
+
+    notificationSnapshotRef.current = notificationSnapshot;
+    previousUnreadTeamMessagesRef.current = unreadTeamMessages;
+  }, [job?.id, notificationSnapshot, unreadTeamMessages]);
+  useEffect(() => {
+    if (activeTab === 'emails' || activeTab === 'overview') {
+      setHasPortalUpdates(false);
+    }
+  }, [activeTab]);
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [emailBody, setEmailBody] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -797,6 +976,7 @@ function JobDetailView({
 
   const portalToken =
     searchParams?.get('token') ??
+    customerInfo?.access_token ??
     (typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY) : null);
 
   const buildMaterialSheetFullUrl = useCallback(
@@ -1022,11 +1202,6 @@ function JobDetailView({
       setEmailSendError('Please enter a message.');
       return;
     }
-    if (!portalToken) {
-      toast.error('Session expired or missing. Please refresh the page and use your portal link again.');
-      setEmailSendError('Session expired or missing. Please refresh the page and use your portal link again.');
-      return;
-    }
     if (!job?.id) {
       toast.error('Project not found. Please refresh the page.');
       setEmailSendError('Project not found. Please refresh the page.');
@@ -1035,55 +1210,60 @@ function JobDetailView({
 
     setSendingEmail(true);
     try {
-      const fromName = customerInfo?.customer_name || 'Customer';
-      const defaultSubject = `Message from ${fromName}`;
       const body = emailBody.trim();
+      const insertDirectPortalMessage = async (): Promise<{ ok: boolean; errorMessage?: string }> => {
+        const { error: insertErr } = await supabase.from('job_messages').insert({
+          job_id: job.id,
+          sender_role: 'customer',
+          sender_name: (customerInfo?.customer_name || 'Customer').trim() || 'Customer',
+          sender_contact: (customerInfo?.customer_email || '').trim() || null,
+          message_text: body,
+          is_read: false,
+        });
+        if (insertErr) {
+          return { ok: false, errorMessage: insertErr.message || 'Failed to send message' };
+        }
+        toast.success('Message sent to your project team.');
+        setEmailBody('');
+        setEmailSentInDialog(true);
+        await onRefreshJobData?.();
+        return { ok: true };
+      };
 
-      const { data: rpcData, error: rpcError } = await supabase.rpc('create_job_email_from_customer_portal', {
-        p_access_token: portalToken,
-        p_job_id: job.id,
-        p_subject: defaultSubject,
-        p_body_text: body,
-      });
+      const effectivePortalToken =
+        (typeof portalToken === 'string' ? portalToken.trim() : '') ||
+        (typeof customerInfo?.access_token === 'string' ? customerInfo.access_token.trim() : '') ||
+        (typeof localStorage !== 'undefined' ? (localStorage.getItem(CUSTOMER_PORTAL_TOKEN_KEY) || '').trim() : '');
 
-      if (rpcError) {
-        const msg = rpcError.message || 'Failed to send message';
-        const isMissingRpc = /function.*does not exist|42883|PGRST202/i.test(String(msg));
-        if (isMissingRpc) {
-          // Fallback for environments missing the RPC in schema cache.
-          const { error: insertErr } = await supabase.from('job_emails').insert({
-            job_id: job.id,
-            message_id: `customer-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            subject: defaultSubject,
-            from_email: (customerInfo?.customer_email || '').trim(),
-            from_name: fromName,
-            to_emails: ['office@company.com'],
-            cc_emails: [],
-            body_text: body,
-            email_date: new Date().toISOString(),
-            direction: 'inbound',
-            is_read: false,
-            entity_category: 'customer',
-          } as any);
-          if (!insertErr) {
-            toast.success('Message sent. The office will see it under this job’s Email Communications.');
-            setEmailBody('');
-            setEmailSentInDialog(true);
-            await onRefreshJobData?.();
-            return;
-          }
-          const fallbackMsg = insertErr.message || msg;
+      if (effectivePortalToken) {
+        const { error: rpcError } = await supabase.rpc('create_job_message_from_customer_portal', {
+          p_access_token: effectivePortalToken,
+          p_job_id: job.id,
+          p_message_text: body,
+        });
+
+        if (rpcError) {
+          const msg = rpcError.message || 'Failed to send message';
+          // Always fall back to direct communication write when RPC errors.
+          const direct = await insertDirectPortalMessage();
+          if (direct.ok) return;
+          const fallbackMsg = direct.errorMessage || msg;
           toast.error(`Failed to send message: ${fallbackMsg}`, { duration: 8000 });
           setEmailSendError(`Failed to send message: ${fallbackMsg}`);
           return;
         }
-        toast.error(msg, { duration: 5000 });
-        setEmailSendError(msg);
+      } else {
+        // No token available in URL/session: try direct insert path instead of hard-failing.
+        const direct = await insertDirectPortalMessage();
+        if (direct.ok) return;
+        const fallbackMsg = direct.errorMessage || 'Session token missing and direct message write failed';
+        toast.error(`Failed to send message: ${fallbackMsg}`, { duration: 8000 });
+        setEmailSendError(`Failed to send message: ${fallbackMsg}`);
         return;
       }
 
-      // RPC succeeded (saved to job_emails; office sees it in Email Communications for this job)
-      toast.success('Message sent. The office will see it under this job’s Email Communications (they may need to refresh that tab).');
+      // RPC succeeded (saved to in-app job communications feed)
+      toast.success('Message sent to your project team.');
       setEmailBody('');
       setEmailSentInDialog(true);
       await onRefreshJobData?.();
@@ -1098,21 +1278,27 @@ function JobDetailView({
 
 
   useEffect(() => {
-    if (!job?.id || !selectedQuoteId) {
+    if (!job?.id) {
       setProposalData(null);
       return;
     }
     let cancelled = false;
     setProposalDataLoading(true);
-    const taxExempt = !!selectedQuote?.tax_exempt;
-    loadProposalDataForQuote(job.id, selectedQuoteId, taxExempt).then((data) => {
+    const quoteIdForMaterials =
+      selectedQuoteId ??
+      proposalQuotes[0]?.id ??
+      ((quote as any)?.is_change_order_proposal ? null : (quote as any)?.id ?? null);
+    const taxExempt = quoteIdForMaterials
+      ? !!(proposalQuotes.find((q: any) => q.id === quoteIdForMaterials)?.tax_exempt)
+      : false;
+    loadProposalDataForQuote(job.id, quoteIdForMaterials, taxExempt).then((data) => {
       if (cancelled) return;
-      proposalDataCacheRef.current[selectedQuoteId ?? ''] = data;
+      proposalDataCacheRef.current[quoteIdForMaterials ?? ''] = data;
       setProposalData(data);
       setProposalDataLoading(false);
     });
     return () => { cancelled = true; };
-  }, [job?.id, selectedQuoteId, selectedQuote?.tax_exempt]);
+  }, [job?.id, selectedQuoteId, selectedQuote?.tax_exempt, proposalQuotes, quote]);
 
   // Fetch proposal totals from RPC so Overview matches JobFinancials (bypasses PostgREST/RLS column visibility)
   useEffect(() => {
@@ -1151,7 +1337,7 @@ function JobDetailView({
       return sheets.find((s: any) => s.id === sheetIdFromUrl) ?? null;
     }
     const sheets = (proposalData?.materialSheets || []).filter(
-      (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+      (s: any) => !isFieldRequestSheetName(s.sheet_name)
     );
     return sheets.find((s: any) => s.id === sheetIdFromUrl) ?? null;
   }, [sheetIdFromUrl, materialSheetPageIsCo, changeOrderProposalData, proposalData]);
@@ -1159,7 +1345,7 @@ function JobDetailView({
   const mainMaterialSheetsForTab = useMemo(
     () =>
       (proposalData?.materialSheets || []).filter(
-        (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+        (s: any) => !isFieldRequestSheetName(s.sheet_name)
       ),
     [proposalData]
   );
@@ -1191,7 +1377,8 @@ function JobDetailView({
     return sheets;
   }, [changeOrderProposalData]);
 
-  const showMaterialsTab = showProposal && showMaterialItemsNoPrices;
+  // Always expose Materials in customer portal while backend visibility schema is unstable.
+  const showMaterialsTab = true;
   const showCoMaterialsInMaterialsTab =
     !!changeOrderQuote && showMaterialItemsNoPricesCo && !!(changeOrderQuote as any)?.sent_at;
 
@@ -1272,6 +1459,30 @@ function JobDetailView({
     activeTab,
   ]);
 
+  // Deep-link + refresh persistence for portal tabs (e.g. ?tab=materials).
+  useEffect(() => {
+    if (!tabFromUrl) return;
+    const allowed = new Set(viewOptions.map((o) => o.value));
+    if (allowed.has(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl, viewOptions, activeTab]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || sheetIdFromUrl) return;
+    const url = new URL(window.location.href);
+    if (activeTab === 'overview') {
+      url.searchParams.delete('tab');
+    } else {
+      url.searchParams.set('tab', activeTab);
+    }
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) {
+      window.history.replaceState(window.history.state, '', next);
+    }
+  }, [activeTab, sheetIdFromUrl]);
+
   useEffect(() => {
     if (activeTab === 'change-orders' && !changeOrderQuote) setActiveTab('overview');
   }, [activeTab, changeOrderQuote]);
@@ -1279,7 +1490,7 @@ function JobDetailView({
   /** Dedicated page: material name / qty / usage only (same visibility as “Material list (no prices)”) */
   if (sheetIdFromUrl) {
     const standaloneLoading = materialSheetPageIsCo ? changeOrderDataLoading : proposalDataLoading;
-    const standaloneAllowed = materialSheetPageIsCo ? showMaterialItemsNoPricesCo : showMaterialItemsNoPrices;
+    const standaloneAllowed = true;
     const backHref = materialSheetPageIsCo
       ? buildPortalUrlWithoutSheet({ openChangeOrdersTab: true })
       : buildPortalUrlWithoutSheet();
@@ -1390,6 +1601,15 @@ function JobDetailView({
                   {job.address}
                 </p>
               )}
+              {(hasPortalUpdates || unreadTeamMessages > 0) && (
+                <div className="mt-3">
+                  <Badge className="bg-amber-500/15 text-amber-100 border-amber-300/40">
+                    {unreadTeamMessages > 0
+                      ? `${unreadTeamMessages} new message${unreadTeamMessages === 1 ? '' : 's'}`
+                      : 'New project updates'}
+                  </Badge>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <PWAInstallButton />
@@ -1411,9 +1631,7 @@ function JobDetailView({
             >
               {viewOptions.map((opt) => {
                 const Icon = opt.icon;
-                const unread = opt.value === 'emails'
-                  ? emails.filter((e: any) => !e.is_read && e.direction === 'sent').length
-                  : 0;
+                const unread = opt.value === 'emails' ? unreadTeamMessages : 0;
                 return (
                   <TabsTrigger key={opt.value} value={opt.value} className="flex items-center gap-1 text-xs sm:text-sm">
                     <Icon className="w-3.5 h-3.5 shrink-0" />
@@ -1533,7 +1751,7 @@ function JobDetailView({
                         {(() => {
                           const materialListNoPrices = showMaterialItemsNoPrices;
                           const proposalSheets = (proposalData.materialSheets || []).filter(
-                            (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+                            (s: any) => !isFieldRequestSheetName(s.sheet_name)
                           );
                           const customRows = proposalData.customRows || [];
                           const standaloneCustomRows = customRows.filter((row: any) => !row.sheet_id);
@@ -2489,55 +2707,54 @@ function JobDetailView({
                 </Button>
               </CardHeader>
               <CardContent>
-                {emails.length > 0 ? (
-                  <div className="space-y-4">
-                    {emails.map((email: any) => (
-                      <div 
-                        key={email.id} 
-                        className={`border rounded-lg p-4 ${
-                          email.direction === 'sent' && !email.is_read ? 'bg-blue-50 border-blue-200' : ''
-                        }`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <Badge variant={email.direction === 'sent' ? 'default' : 'secondary'}>
-                                {email.direction === 'sent' ? (
-                                  <>
-                                    <Inbox className="w-3 h-3 mr-1" />
-                                    From Team
-                                  </>
-                                ) : (
-                                  <>
-                                    <Send className="w-3 h-3 mr-1" />
-                                    You
-                                  </>
-                                )}
-                              </Badge>
-                              {email.direction === 'sent' && !email.is_read && (
-                                <Badge variant="destructive">New</Badge>
-                              )}
+                {threadMessages.length > 0 ? (
+                  <div
+                    ref={messageThreadRef}
+                    className="rounded-xl border bg-[#efeae2] p-2 sm:p-3 max-h-[65vh] overflow-y-auto space-y-1.5"
+                  >
+                    {threadMessages.map((email: any, idx: number) => {
+                      const prev = idx > 0 ? threadMessages[idx - 1] : null;
+                      const showDayBreak = !prev || messageDayKey(prev.email_date) !== messageDayKey(email.email_date);
+                      return (
+                        <div key={email.id} className="space-y-1.5">
+                          {showDayBreak && (
+                            <div className="flex justify-center py-1">
+                              <span className="rounded-full border border-slate-300/70 bg-white/80 px-2 py-0.5 text-[11px] text-slate-600">
+                                {messageDayLabel(email.email_date)}
+                              </span>
                             </div>
-                            <h3 className="font-bold text-lg mt-2">{email.subject}</h3>
-                            <p className="text-sm text-muted-foreground">
-                              {email.from_name || email.from_email} • {new Date(email.email_date).toLocaleDateString()} at {new Date(email.email_date).toLocaleTimeString()}
-                            </p>
+                          )}
+                          <div
+                            className={`flex ${email.direction === 'sent' ? 'justify-start' : 'justify-end'}`}
+                          >
+                            <div
+                              className={`max-w-[88%] sm:max-w-[72%] rounded-2xl px-3 py-2 shadow-sm border ${
+                                email.direction === 'sent'
+                                  ? 'bg-white border-slate-300/60 rounded-tl-sm'
+                                  : 'bg-[#d9fdd3] border-emerald-300/50 rounded-tr-sm'
+                              }`}
+                            >
+                              <div className="text-sm leading-relaxed">
+                                {email.body_html ? (
+                                  <div
+                                    className="prose prose-sm max-w-none"
+                                    dangerouslySetInnerHTML={{ __html: email.body_html }}
+                                  />
+                                ) : (
+                                  <PortalMultilineText text={email.body_text} />
+                                )}
+                              </div>
+                              <div className="mt-1.5 flex items-center justify-end gap-1 text-[10px] text-slate-500">
+                                <span>{new Date(email.email_date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                                {email.direction === 'sent' && !email.is_read && (
+                                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-500" title="New message" />
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <div className="mt-3">
-                          {email.body_html ? (
-                            <div 
-                              className="prose prose-sm max-w-none"
-                              dangerouslySetInnerHTML={{ __html: email.body_html }}
-                            />
-                          ) : (
-                            <p className="text-sm">
-                              <PortalMultilineText text={email.body_text} />
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-12">

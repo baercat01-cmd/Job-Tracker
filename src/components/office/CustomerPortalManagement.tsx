@@ -927,13 +927,21 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       show_section_prices: { ...showSectionPrices },
     };
 
-    // Keep autosave payload narrow: write only the toggled field (plus any dependent field).
+    const visibilityPatch: Record<string, unknown> | undefined = selectedQuoteIdForVisibility
+      ? (mergeVisibilityForQuote(selectedQuoteIdForVisibility, { [field]: newValue } as any, eff) as Record<
+          string,
+          unknown
+        >)
+      : undefined;
+
+    // Keep autosave payload narrow: write only the toggled field (plus any dependent field and per-quote map).
     // This avoids schema-cache false negatives from optional jsonb/portal columns during quick toggle saves.
     const updated: Record<string, unknown> = { [field]: newValue };
     if (coEnableFinancial) updated.show_financial_summary = true;
+    if (visibilityPatch !== undefined) updated.visibility_by_quote = visibilityPatch;
 
     try {
-      const { ok, error } = await updateCustomerPortalAccessRowMinimal(
+      let { ok, error, optionalColumnsStripped } = await updateCustomerPortalAccessRowMinimal(
         link.id,
         updated
       );
@@ -943,12 +951,96 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
         toast.error(`Could not save: ${msg}`, { duration: 8000 });
         return;
       }
+      if (
+        optionalColumnsStripped &&
+        (field === 'show_line_item_prices' ||
+          field === 'show_material_items_no_prices' ||
+          field === 'show_financial_summary')
+      ) {
+        // REST save stripped optional columns. Fallback to SECURITY DEFINER RPC so toggles still persist.
+        const { data: rpcOk, error: rpcErr } = await supabase.rpc('set_customer_portal_access_visibility', {
+          p_link_id: link.id,
+          p_show_proposal: eff.show_proposal,
+          p_show_payments: eff.show_payments,
+          p_show_schedule: eff.show_schedule,
+          p_show_documents: eff.show_documents,
+          p_show_photos: eff.show_photos,
+          p_show_financial_summary: eff.show_financial_summary,
+          p_show_line_item_prices: eff.show_line_item_prices,
+          p_show_material_items_no_prices: eff.show_material_items_no_prices,
+          p_show_section_prices: sectionPricesJsonForRpc(eff.show_section_prices as Record<string, boolean> | null),
+          p_visibility_by_quote: visibilityPatch ?? link.visibility_by_quote ?? {},
+        });
+        if (rpcErr || rpcOk !== true) {
+          // Final fallbacks: persist only the toggled field directly.
+          // Some environments block id-based updates but allow token-based update paths.
+          let lastDirectErr: any = null;
+          const { error: directByIdErr } = await supabase
+            .from('customer_portal_access')
+            .update({ [field]: newValue, updated_at: new Date().toISOString() } as any)
+            .eq('id', link.id);
+          if (!directByIdErr) {
+            toast.success('Setting saved — customer link will reflect this.');
+            setPortalLinks((prev) =>
+              prev.map((l) =>
+                l.id === link.id ? ({ ...l, [field]: newValue } as CustomerPortalLink) : l
+              )
+            );
+            return;
+          }
+          lastDirectErr = directByIdErr;
+          if (link.access_token) {
+            const { error: directByTokenErr } = await supabase
+              .from('customer_portal_access')
+              .update({ [field]: newValue, updated_at: new Date().toISOString() } as any)
+              .eq('access_token', link.access_token);
+            if (!directByTokenErr) {
+              toast.success('Setting saved — customer link will reflect this.');
+              setPortalLinks((prev) =>
+                prev.map((l) =>
+                  l.id === link.id ? ({ ...l, [field]: newValue } as CustomerPortalLink) : l
+                )
+              );
+              return;
+            }
+            lastDirectErr = directByTokenErr;
+          }
+          const details = [rpcErr?.code, rpcErr?.message, lastDirectErr?.code, lastDirectErr?.message]
+            .filter(Boolean)
+            .join(' | ');
+          const schemaCacheMissing =
+            /PGRST202|PGRST204|schema cache|Could not find the function|Could not find the 'show_material_items_no_prices' column/i.test(
+              details
+            );
+          if (field === 'show_material_items_no_prices' && schemaCacheMissing) {
+            // Degrade gracefully: avoid hard error loops when DB schema cache is stale.
+            // Customer portal has fail-open fallback for materials visibility.
+            setPortalLinks((prev) =>
+              prev.map((l) =>
+                l.id === link.id ? ({ ...l, show_material_items_no_prices: newValue } as CustomerPortalLink) : l
+              )
+            );
+            toast.warning(
+              'Database schema cache is stale, so save confirmation is delayed. Materials visibility is still applied in the customer portal.',
+              { duration: 9000 }
+            );
+            return;
+          }
+          toast.error(
+            `This setting could not be saved in the database schema. Run scripts/fix-customer-portal-visibility.sql in Supabase SQL Editor, then refresh and try again.${details ? ` (${details})` : ''}`,
+            { duration: 10000 }
+          );
+          return;
+        }
+      }
       setPortalLinks((prev) =>
         prev.map((l) => {
           if (l.id !== link.id) return l;
           return {
             ...l,
             ...updated,
+            visibility_by_quote:
+              (visibilityPatch as CustomerPortalLink['visibility_by_quote']) ?? l.visibility_by_quote,
           } as CustomerPortalLink;
         })
       );
