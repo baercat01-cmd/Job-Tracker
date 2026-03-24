@@ -42,6 +42,7 @@ interface JobCommunicationsProps {
 
 interface Email {
   id: string;
+  source?: 'email' | 'message';
   message_id: string;
   in_reply_to: string | null;
   subject: string;
@@ -97,11 +98,21 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
   // Keep office inbox updated with customer-portal messages in near real-time.
   useEffect(() => {
     if (!job?.id) return;
-    const channel = supabase
+    const emailChannel = supabase
       .channel(`job_emails_${job.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'job_emails', filter: `job_id=eq.${job.id}` },
+        () => {
+          void loadEmails();
+        }
+      )
+      .subscribe();
+    const messageChannel = supabase
+      .channel(`job_messages_${job.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'job_messages', filter: `job_id=eq.${job.id}` },
         () => {
           void loadEmails();
         }
@@ -114,7 +125,8 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
 
     return () => {
       clearInterval(poll);
-      supabase.removeChannel(channel);
+      supabase.removeChannel(emailChannel);
+      supabase.removeChannel(messageChannel);
     };
   }, [job?.id]);
 
@@ -136,7 +148,35 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
         .order('email_date', { ascending: false });
 
       if (error) throw error;
-      setEmails(data || []);
+      const { data: messagesData } = await supabase
+        .from('job_messages')
+        .select('id, sender_role, sender_name, sender_contact, message_text, is_read, created_at')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false });
+
+      const mappedMessages: Email[] = (messagesData || []).map((m: any) => ({
+        id: m.id,
+        source: 'message',
+        message_id: `msg-${m.id}`,
+        in_reply_to: null,
+        subject: m.sender_role === 'customer' ? 'Message from customer' : 'Message from project team',
+        from_email: m.sender_contact ?? '',
+        from_name: m.sender_name ?? null,
+        to_emails: [],
+        cc_emails: [],
+        body_text: m.message_text ?? '',
+        body_html: null,
+        email_date: m.created_at,
+        direction: m.sender_role === 'customer' ? 'inbound' : 'outbound',
+        is_read: m.is_read ?? false,
+        attachments: [],
+        entity_category: 'customer',
+        contact_id: null,
+      }));
+
+      const all = ([...(data || []).map((e: any) => ({ ...e, source: 'email' as const })), ...mappedMessages] as Email[])
+        .sort((a, b) => new Date(b.email_date).getTime() - new Date(a.email_date).getTime());
+      setEmails(all);
     } catch (error: any) {
       console.error('Error loading emails:', error);
       toast.error('Failed to load emails');
@@ -241,10 +281,19 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
     if (unreadEmailIds.length === 0) return;
 
     try {
-      await supabase
-        .from('job_emails')
-        .update({ is_read: true })
-        .in('id', unreadEmailIds);
+      const emailIds = thread.emails
+        .filter(e => !e.is_read && e.direction === 'inbound' && (e.source ?? 'email') === 'email')
+        .map(e => e.id);
+      const messageIds = thread.emails
+        .filter(e => !e.is_read && e.direction === 'inbound' && e.source === 'message')
+        .map(e => e.id);
+
+      if (emailIds.length > 0) {
+        await supabase.from('job_emails').update({ is_read: true }).in('id', emailIds);
+      }
+      if (messageIds.length > 0) {
+        await supabase.from('job_messages').update({ is_read: true, updated_at: new Date().toISOString() }).in('id', messageIds);
+      }
 
       await loadEmails();
     } catch (error: any) {
@@ -300,6 +349,20 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
 
   function openInThunderbird(email: string) {
     window.location.href = `mailto:${email}`;
+  }
+
+  function dayKey(value: string) {
+    const d = new Date(value);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+
+  function dayLabel(value: string) {
+    return new Date(value).toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   }
 
   async function handleSendEmail() {
@@ -489,27 +552,20 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <CardContent className="pt-0">
-                          <div className="space-y-4 border-l-2 border-slate-200 pl-4 ml-2">
+                          <div className="space-y-3 border-l-2 border-slate-200 pl-4 ml-2">
                             {thread.emails.map((email, idx) => (
                               <div key={email.id} className="space-y-2">
-                                <div className="flex items-start justify-between">
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <p className="font-medium">
-                                        {email.direction === 'inbound' 
-                                          ? (email.from_name || email.from_email)
-                                          : 'You'}
-                                      </p>
-                                      {email.entity_category && (
-                                        <Badge variant="outline" className={`text-xs ${getEntityColor(email.entity_category)}`}>
-                                          {getEntityIcon(email.entity_category)}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <p className="text-sm text-muted-foreground">
-                                      {new Date(email.email_date).toLocaleString()}
-                                    </p>
+                                {(idx === 0 || dayKey(thread.emails[idx - 1].email_date) !== dayKey(email.email_date)) && (
+                                  <div className="flex justify-center py-1">
+                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[11px] text-slate-600 border">
+                                      {dayLabel(email.email_date)}
+                                    </span>
                                   </div>
+                                )}
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(email.email_date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                  </p>
                                   {email.direction === 'inbound' && (
                                     <div className="flex gap-2">
                                       <Button size="sm" variant="outline" onClick={() => handleReply(email)}>
@@ -527,7 +583,7 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
                                     </div>
                                   )}
                                 </div>
-                                <div className="bg-muted/50 rounded-lg p-3">
+                                <div className={`rounded-lg p-3 ${email.direction === 'inbound' ? 'bg-slate-100' : 'bg-emerald-50 border border-emerald-200'}`}>
                                   <p className="whitespace-pre-wrap text-sm">{email.body_text}</p>
                                 </div>
                                 {email.attachments && email.attachments.length > 0 && (

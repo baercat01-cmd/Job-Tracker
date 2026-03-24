@@ -451,9 +451,21 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
 
                   {/* Final price at bottom is controlled by "Show final price". */}
                   {visibilitySettings?.show_financial_summary && (
-                    <div className="border-t-2 pt-4">
-                      <div className="flex justify-between text-2xl font-bold">
-                        <span>Final Price:</span>
+                    <div className="border-t-2 pt-4 space-y-2">
+                      <div className="flex justify-between text-lg">
+                        <span className="font-medium">Price before tax:</span>
+                        <span>
+                          ${(proposalData?.totals?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-lg">
+                        <span className="font-medium">Tax:</span>
+                        <span>
+                          ${(proposalData?.totals?.tax ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-2xl font-bold pt-2 border-t">
+                        <span>Final Price (after tax):</span>
                         <span className="text-emerald-700">
                           ${(proposalData?.totals?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>

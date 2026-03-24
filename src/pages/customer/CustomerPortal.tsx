@@ -794,17 +794,46 @@ function JobDetailView({
       : (typeof customerInfo?.show_section_prices === 'object' && customerInfo?.show_section_prices !== null && !Array.isArray(customerInfo?.show_section_prices)
           ? (customerInfo.show_section_prices as Record<string, boolean>)
           : null);
-  const showPriceForSection = (sectionId: string) => showFinancial && showLineItemPrices && (showSectionPrices == null || showSectionPrices[sectionId] !== false);
+  const showPriceForSection = (_sectionId: string) => showFinancial && showLineItemPrices;
+  const readSectionTotal = (entity: any, fallback = 0) => {
+    const candidates = [
+      entity?._computedTotal,
+      entity?.section_total,
+      entity?.total,
+      entity?.total_price,
+      entity?.price,
+      fallback,
+    ];
+    for (const c of candidates) {
+      const n = Number(c);
+      if (Number.isFinite(n)) return n;
+    }
+    return 0;
+  };
   const materialListFromLink = customerInfo?.show_material_items_no_prices === true;
+  const globalVis =
+    customerInfo?.visibility_by_quote &&
+    typeof customerInfo.visibility_by_quote === 'object' &&
+    !Array.isArray(customerInfo.visibility_by_quote) &&
+    (customerInfo.visibility_by_quote as Record<string, unknown>).__global &&
+    typeof (customerInfo.visibility_by_quote as Record<string, unknown>).__global === 'object' &&
+    !Array.isArray((customerInfo.visibility_by_quote as Record<string, unknown>).__global)
+      ? ((customerInfo.visibility_by_quote as Record<string, unknown>).__global as Record<string, unknown>)
+      : null;
+  const hasGlobalMaterialList = !!(globalVis && 'show_material_items_no_prices' in globalVis);
+  const materialListFromGlobal = hasGlobalMaterialList
+    ? globalVis!.show_material_items_no_prices === true
+    : null;
   const hasExplicitMaterialListPerQuote = !!(perQuoteVisObj && 'show_material_items_no_prices' in perQuoteVisObj);
   const materialListFromPerQuote = hasExplicitMaterialListPerQuote ? perQuoteVisObj!.show_material_items_no_prices === true : null;
-  const materialVisibilityFieldMissing =
-    customerInfo?.show_material_items_no_prices === undefined && !hasExplicitMaterialListPerQuote;
-  // Link-level enable should always show Materials for this customer link.
-  // Per-quote true can also enable it when link-level is false.
-  // Fail-open fallback: when DB schema/cache omits this visibility field, keep materials visible to customer.
+  // Priority: per-quote override -> global visibility flag -> link-level column.
+  // If fields are unavailable due to stale schema cache, default to hidden (office can still enable via __global fallback).
   const showMaterialItemsNoPrices =
-    materialVisibilityFieldMissing || materialListFromLink || materialListFromPerQuote === true;
+    hasExplicitMaterialListPerQuote
+      ? materialListFromPerQuote === true
+      : hasGlobalMaterialList
+        ? materialListFromGlobal === true
+        : materialListFromLink;
   const showProposal = customerInfo?.show_proposal === true;
   const showPayments = customerInfo?.show_payments === true;
   const showSchedule = customerInfo?.show_schedule === true;
@@ -954,8 +983,8 @@ function JobDetailView({
     typeof coVis?.show_section_prices === 'object' && coVis?.show_section_prices !== null && !Array.isArray(coVis?.show_section_prices)
       ? coVis.show_section_prices
       : null;
-  const showPriceForCoSection = (sectionId: string) =>
-    showFinancialCo && showLineItemPricesCo && (showSectionPricesCo == null || showSectionPricesCo[sectionId] !== false);
+  const showPriceForCoSection = (_sectionId: string) =>
+    showFinancialCo && showLineItemPricesCo;
   const showMaterialItemsNoPricesCo = coVis?.show_material_items_no_prices === true;
 
   useEffect(() => {
@@ -1388,6 +1417,7 @@ function JobDetailView({
     [proposalData]
   );
   const [activeMaterialSheetId, setActiveMaterialSheetId] = useState<string | null>(null);
+  const didInitTabFromUrlRef = useRef(false);
   useEffect(() => {
     if (!mainMaterialSheetsForTab.length) {
       setActiveMaterialSheetId(null);
@@ -1415,8 +1445,7 @@ function JobDetailView({
     return sheets;
   }, [changeOrderProposalData]);
 
-  // Always expose Materials in customer portal while backend visibility schema is unstable.
-  const showMaterialsTab = true;
+  const showMaterialsTab = showMaterialItemsNoPrices;
   const showCoMaterialsInMaterialsTab =
     !!changeOrderQuote && showMaterialItemsNoPricesCo && !!(changeOrderQuote as any)?.sent_at;
 
@@ -1499,6 +1528,8 @@ function JobDetailView({
 
   // Deep-link + refresh persistence for portal tabs (e.g. ?tab=materials).
   useEffect(() => {
+    if (didInitTabFromUrlRef.current) return;
+    didInitTabFromUrlRef.current = true;
     if (!tabFromUrl) return;
     const allowed = new Set(viewOptions.map((o) => o.value));
     if (allowed.has(tabFromUrl) && tabFromUrl !== activeTab) {
@@ -1528,7 +1559,7 @@ function JobDetailView({
   /** Dedicated page: material name / qty / usage only (same visibility as “Material list (no prices)”) */
   if (sheetIdFromUrl) {
     const standaloneLoading = materialSheetPageIsCo ? changeOrderDataLoading : proposalDataLoading;
-    const standaloneAllowed = true;
+    const standaloneAllowed = materialSheetPageIsCo ? showMaterialItemsNoPricesCo : showMaterialItemsNoPrices;
     const backHref = materialSheetPageIsCo
       ? buildPortalUrlWithoutSheet({ openChangeOrdersTab: true })
       : buildPortalUrlWithoutSheet();
@@ -1839,11 +1870,12 @@ function JobDetailView({
                               const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === sheet.id);
                               const sheetMaterials = sheet._computedMaterials ?? 0;
                               const sheetLabor = sheet._computedLabor ?? 0;
-                              const sheetTotal = sheet._computedTotal ?? (sheetMaterials + sheetLabor);
+                              const sheetTotal = readSectionTotal(sheet, sheetMaterials + sheetLabor);
                               const isOptional = sheet.is_option === true || sheet.is_option === 'true' || sheet.is_option === 1;
                               const showPrice = showPriceForSection(sheet.id);
-                              const showSheetMoney =
+                              const showSheetBreakdown =
                                 showPrice && !materialListNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
+                              const showSheetTotal = showPrice;
                               return (
                                 <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
                                   <div className="min-w-0 flex-1">
@@ -1870,23 +1902,23 @@ function JobDetailView({
                                       </div>
                                     ))}
                                   </div>
-                                  {showSheetMoney && (
+                                  {(showSheetBreakdown || showSheetTotal) && (
                                     <div className="w-[100px] flex-shrink-0 text-right">
-                                      {sheetMaterials > 0 && (
+                                      {showSheetBreakdown && sheetMaterials > 0 && (
                                         <>
                                           <p className="text-sm text-slate-500">Materials</p>
                                           <p className="text-base font-bold text-blue-700">${sheetMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                                         </>
                                       )}
-                                      {sheetLabor > 0 && (
+                                      {showSheetBreakdown && sheetLabor > 0 && (
                                         <>
                                           <p className="text-sm text-slate-500 mt-2">Labor</p>
                                           <p className="text-base font-bold text-amber-700">${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                                         </>
                                       )}
-                                      {isOptional && sheetTotal > 0 && (
+                                      {showSheetTotal && (
                                         <>
-                                          <p className="text-[11px] text-slate-500 mt-2">Section total</p>
+                                          <p className={`text-[11px] text-slate-500 ${showSheetBreakdown ? 'mt-2' : ''}`}>Section total</p>
                                           <p className="text-sm font-bold text-emerald-700">
                                             ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                           </p>
@@ -1914,9 +1946,9 @@ function JobDetailView({
                                       </p>
                                     )}
                                   </div>
-                                  {showPriceForSection(row.id) && (row._computedTotal ?? 0) > 0 && (
+                                  {showPriceForSection(row.id) && (
                                     <p className="text-base font-bold text-emerald-700 shrink-0">
-                                      ${(row._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      ${readSectionTotal(row).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </p>
                                   )}
                                 </div>
@@ -1932,9 +1964,9 @@ function JobDetailView({
                                     <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
                                   )}
                                 </div>
-                                {showPriceForSection(est.id) && (est._computedTotal ?? 0) > 0 && (
+                                {showPriceForSection(est.id) && (
                                   <p className="text-base font-bold text-emerald-700 shrink-0">
-                                    ${(est._computedTotal as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${readSectionTotal(est).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </p>
                                 )}
                               </div>

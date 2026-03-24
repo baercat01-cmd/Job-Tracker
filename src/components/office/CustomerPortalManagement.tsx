@@ -105,6 +105,22 @@ function cloneVisibilityByQuoteSafe(raw: unknown): Record<string, Record<string,
   return out;
 }
 
+function withGlobalMaterialVisibility(
+  raw: unknown,
+  enabled: boolean
+): Record<string, Record<string, unknown>> {
+  const out = cloneVisibilityByQuoteSafe(raw);
+  const prevGlobal =
+    out.__global && typeof out.__global === 'object' && !Array.isArray(out.__global)
+      ? (out.__global as Record<string, unknown>)
+      : {};
+  out.__global = {
+    ...prevGlobal,
+    show_material_items_no_prices: enabled,
+  };
+  return out;
+}
+
 interface CustomerPortalManagementProps {
   job: Job;
   /** Job id used for all portal link operations. When provided (e.g. JobsView detailDialogJobId), this is the single source of truth so the link is always for the job the user opened. */
@@ -203,7 +219,14 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
 
   // When a saved link is found, sync the form from it (use per-quote visibility if editing that proposal)
   useEffect(() => {
-    const link = portalLinks.find(l => l.job_id === jobId);
+    const link =
+      (selectedLink?.id
+        ? portalLinks.find((l) => l.id === selectedLink.id)
+        : null) ??
+      (selectedLink?.access_token
+        ? portalLinks.find((l) => l.access_token === selectedLink.access_token)
+        : null) ??
+      portalLinks.find((l) => l.job_id === jobId);
     if (!link) return;
     setCustomerName(link.customer_name ?? '');
     setCustomerEmail(link.customer_email || '');
@@ -242,7 +265,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
       const raw = link.show_section_prices;
       setShowSectionPrices(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {});
     }
-  }, [portalLinks, selectedQuoteIdForVisibility]);
+  }, [portalLinks, selectedQuoteIdForVisibility, selectedLink?.id, selectedLink?.access_token, jobId]);
 
   useEffect(() => {
     if (!jobId || !portalLinks.some(l => l.job_id === jobId)) return;
@@ -933,12 +956,21 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           unknown
         >)
       : undefined;
+    const visibilityPatchWithGlobalMaterial =
+      field === 'show_material_items_no_prices'
+        ? (withGlobalMaterialVisibility(
+            visibilityPatch ?? (link.visibility_by_quote as Record<string, unknown> | null) ?? {},
+            newValue
+          ) as Record<string, unknown>)
+        : visibilityPatch;
 
     // Keep autosave payload narrow: write only the toggled field (plus any dependent field and per-quote map).
     // This avoids schema-cache false negatives from optional jsonb/portal columns during quick toggle saves.
     const updated: Record<string, unknown> = { [field]: newValue };
     if (coEnableFinancial) updated.show_financial_summary = true;
-    if (visibilityPatch !== undefined) updated.visibility_by_quote = visibilityPatch;
+    if (visibilityPatchWithGlobalMaterial !== undefined) {
+      updated.visibility_by_quote = visibilityPatchWithGlobalMaterial;
+    }
 
     try {
       let { ok, error, optionalColumnsStripped } = await updateCustomerPortalAccessRowMinimal(
@@ -969,7 +1001,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
           p_show_line_item_prices: eff.show_line_item_prices,
           p_show_material_items_no_prices: eff.show_material_items_no_prices,
           p_show_section_prices: sectionPricesJsonForRpc(eff.show_section_prices as Record<string, boolean> | null),
-          p_visibility_by_quote: visibilityPatch ?? link.visibility_by_quote ?? {},
+          p_visibility_by_quote: visibilityPatchWithGlobalMaterial ?? link.visibility_by_quote ?? {},
         });
         if (rpcErr || rpcOk !== true) {
           // Final fallbacks: persist only the toggled field directly.
@@ -1013,18 +1045,30 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
               details
             );
           if (field === 'show_material_items_no_prices' && schemaCacheMissing) {
-            // Degrade gracefully: avoid hard error loops when DB schema cache is stale.
-            // Customer portal has fail-open fallback for materials visibility.
-            setPortalLinks((prev) =>
-              prev.map((l) =>
-                l.id === link.id ? ({ ...l, show_material_items_no_prices: newValue } as CustomerPortalLink) : l
-              )
-            );
-            toast.warning(
-              'Database schema cache is stale, so save confirmation is delayed. Materials visibility is still applied in the customer portal.',
-              { duration: 9000 }
-            );
-            return;
+            // Final material-list fallback: write only visibility_by_quote.__global flag when column cache is stale.
+            const globalMaterialVis = withGlobalMaterialVisibility(link.visibility_by_quote, newValue);
+            const { error: directVisErr } = await supabase
+              .from('customer_portal_access')
+              .update({
+                visibility_by_quote: globalMaterialVis,
+                updated_at: new Date().toISOString(),
+              } as any)
+              .eq('id', link.id);
+            if (!directVisErr) {
+              setPortalLinks((prev) =>
+                prev.map((l) =>
+                  l.id === link.id
+                    ? ({
+                        ...l,
+                        show_material_items_no_prices: newValue,
+                        visibility_by_quote: globalMaterialVis as CustomerPortalLink['visibility_by_quote'],
+                      } as CustomerPortalLink)
+                    : l
+                )
+              );
+              toast.success('Material list visibility saved.');
+              return;
+            }
           }
           toast.error(
             `This setting could not be saved in the database schema. Run scripts/fix-customer-portal-visibility.sql in Supabase SQL Editor, then refresh and try again.${details ? ` (${details})` : ''}`,
@@ -1040,7 +1084,7 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
             ...l,
             ...updated,
             visibility_by_quote:
-              (visibilityPatch as CustomerPortalLink['visibility_by_quote']) ?? l.visibility_by_quote,
+              (visibilityPatchWithGlobalMaterial as CustomerPortalLink['visibility_by_quote']) ?? l.visibility_by_quote,
           } as CustomerPortalLink;
         })
       );
@@ -1775,7 +1819,14 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     return <div className="text-center py-4">Loading portal links...</div>;
   }
 
-  const currentLink = portalLinks.find(l => l.job_id === jobId);
+  const currentLink =
+    (selectedLink?.id
+      ? portalLinks.find((l) => l.id === selectedLink.id)
+      : null) ??
+    (selectedLink?.access_token
+      ? portalLinks.find((l) => l.access_token === selectedLink.access_token)
+      : null) ??
+    portalLinks.find((l) => l.job_id === jobId);
   // Only show a URL when we have a saved link for THIS job. Never show a pendingToken URL (not in DB yet).
   const portalUrl = currentLink ? `${window.location.origin}/customer-portal?token=${currentLink.access_token}` : null;
   const visibilitySettings = {

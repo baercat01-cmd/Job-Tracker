@@ -91,7 +91,7 @@ type PeriodType = 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly' | '
 export function PayrollDashboard() {
   const { profile, clearUser } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [periodType, setPeriodType] = useState<PeriodType>('biweekly');
+  const [periodType, setPeriodType] = useState<PeriodType>('weekly');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [periodOptions, setPeriodOptions] = useState<{ value: string; label: string }[]>([]);
   const [customStartDate, setCustomStartDate] = useState<string>('');

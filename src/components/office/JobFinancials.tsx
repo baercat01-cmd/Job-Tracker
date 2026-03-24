@@ -265,6 +265,7 @@ function SortableRow({
     toggleSubcontractorLineItemTaxable,
     toggleSubcontractorLineItemType,
     unlinkSubcontractor,
+    toggleSubcontractorOptional = async () => {},
     deleteSubcontractorSection = async () => {},
     updateSubcontractorMarkup,
     updateCustomRowMarkup,
@@ -1937,6 +1938,11 @@ function SortableRow({
               ) : (
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-bold text-slate-900 truncate">{est.company_name}</h3>
+                  {(est as any).is_option && (
+                    <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
+                      Optional
+                    </Badge>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1968,6 +1974,20 @@ function SortableRow({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {!est.sheet_id && !est.row_id && (
+                    (est as any).is_option ? (
+                      <DropdownMenuItem onSelect={() => toggleSubcontractorOptional(est.id, false)}>
+                        <Check className="w-3 h-3 mr-2 text-green-600" />
+                        Include in Total
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onSelect={() => toggleSubcontractorOptional(est.id, true)}>
+                        <Eye className="w-3 h-3 mr-2 text-amber-600" />
+                        Mark as Optional (exclude from total)
+                      </DropdownMenuItem>
+                    )
+                  )}
+                  {!est.sheet_id && !est.row_id && <DropdownMenuSeparator />}
                   <DropdownMenuItem
                     className="text-red-600 focus:text-red-600"
                     onSelect={() => deleteSubcontractorSection(est.id)}
@@ -6251,6 +6271,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             markup_percent: markup,
             scope_of_work: notes || null,
             order_index: maxOrderIndex + 1,
+            is_option: false,
             sheet_id: linkedSheetId || null,
             extraction_status: 'completed',
           }])
@@ -7253,6 +7274,29 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     }
   }
 
+  async function toggleSubcontractorOptional(estimateId: string, isOptional: boolean) {
+    if (isReadOnly) {
+      toast.error('Cannot edit in historical view');
+      return;
+    }
+    // Optimistic UI update so section moves immediately between main/optional lists.
+    setSubcontractorEstimates((prev) =>
+      prev.map((est: any) => (est.id === estimateId ? { ...est, is_option: isOptional } : est))
+    );
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimates')
+        .update({ is_option: isOptional } as any)
+        .eq('id', estimateId);
+      if (error) throw error;
+      await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error updating subcontractor optional state:', error);
+      // Keep local state if DB schema is behind so user can keep working.
+      toast.error(error?.message || 'Saved locally only. Run latest migration to persist optional state.');
+    }
+  }
+
   async function updateSubcontractorMarkup(estimateId: string, newMarkup: number) {
     try {
       const { error } = await supabase
@@ -7673,6 +7717,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             name: est.company_name,
             description: est.scope_of_work || '',
             price: finalPrice,
+            optional: (est as any).is_option ?? false,
             items: showLineItems ? lineItems
               .filter((item: any) => !item.excluded)
               .map((li: any) => ({
@@ -8044,7 +8089,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   
   // Subcontractors: only standalone estimates (not linked to sheets/rows)
   // Material type items go to materials, labor type items go to labor
-  const standaloneSubcontractors = subcontractorEstimates.filter(est => !est.sheet_id && !est.row_id);
+  const standaloneSubcontractors = subcontractorEstimates.filter(
+    est => !est.sheet_id && !est.row_id && !(est as any).is_option
+  );
   let subcontractorMaterialsPrice = 0;
   let subcontractorMaterialsTaxableOnly = 0;
   let subcontractorLaborPrice = 0;
@@ -8221,8 +8268,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   })).sort((a, b) => a.orderIndex - b.orderIndex);
 
   // Split into required (included in total) and optional (excluded from total) for separate rendering
-  const allItems = allItemsUnsorted.filter(item => !(item.type === 'material' && (item.data as any).isOptional));
-  const optionalItems = allItemsUnsorted.filter(item => item.type === 'material' && (item.data as any).isOptional);
+  const allItems = allItemsUnsorted.filter(
+    item =>
+      !(
+        (item.type === 'material' && (item.data as any).isOptional) ||
+        (item.type === 'subcontractor' && (item.data as any).is_option)
+      )
+  );
+  const optionalItems = allItemsUnsorted.filter(
+    item =>
+      (item.type === 'material' && (item.data as any).isOptional) ||
+      (item.type === 'subcontractor' && (item.data as any).is_option)
+  );
 
   // Optional categories (section-level options): list for the "Options" block at bottom of proposal
   const optionalCategoriesList: { sheetName: string; categoryName: string; totalCost: number; priceWithMarkup: number }[] = [];
@@ -8793,6 +8850,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                         toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
                         toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                         unlinkSubcontractor={unlinkSubcontractor}
+                        toggleSubcontractorOptional={toggleSubcontractorOptional}
                         deleteSubcontractorSection={deleteSubcontractorSection}
                         updateSubcontractorMarkup={updateSubcontractorMarkup}
                         updateCustomRowMarkup={updateCustomRowMarkup}
@@ -8858,7 +8916,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                   </div>
                 )}
 
-                {/* Optional Items Section (whole sheets marked optional) */}
+                {/* Optional Items Section (sections marked optional) */}
                 {optionalItems.length > 0 && (
                   <div className="mt-4">
                     <div className="flex items-center gap-2 py-2 px-3 mb-2 rounded-lg bg-amber-50 border border-amber-200">
@@ -8908,6 +8966,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                               toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
                               toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                               unlinkSubcontractor={unlinkSubcontractor}
+                              toggleSubcontractorOptional={toggleSubcontractorOptional}
                               deleteSubcontractorSection={deleteSubcontractorSection}
                               updateSubcontractorMarkup={updateSubcontractorMarkup}
                               updateCustomRowMarkup={updateCustomRowMarkup}
@@ -9023,6 +9082,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                               toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
                               toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                               unlinkSubcontractor={unlinkSubcontractor}
+                              toggleSubcontractorOptional={toggleSubcontractorOptional}
                               deleteSubcontractorSection={deleteSubcontractorSection}
                               updateSubcontractorMarkup={updateSubcontractorMarkup}
                               updateCustomRowMarkup={updateCustomRowMarkup}

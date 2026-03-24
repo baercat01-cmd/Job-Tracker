@@ -606,13 +606,14 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       const bundledSet = new Set((bundledItemIds || []).map((r: any) => r.material_item_id));
 
       const unbundledSelectFull = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit, trim_saved_config_id, quantity_ready_for_job, trim_cut_state, notes`;
-      const unbundledSelectMinimal = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit, trim_cut_state, notes`;
+      // Minimal fallback for environments that have not run trim cut-state migration yet.
+      const unbundledSelectMinimal = `id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit, notes`;
       const unbundledRes = await supabase
         .from('material_items')
         .select(unbundledSelectFull)
         .in('status', ['pull_from_shop', 'ready_for_job']);
       let unbundledRows: any[] | null = unbundledRes.data ?? null;
-      if (unbundledRes.error && /schema cache|could not find|column.*does not exist|quantity_ready_for_job|trim_saved_config_id/i.test(unbundledRes.error.message)) {
+      if (unbundledRes.error && /schema cache|could not find|column.*does not exist|quantity_ready_for_job|trim_saved_config_id|trim_cut_state/i.test(unbundledRes.error.message)) {
         const fallback = await supabase.from('material_items').select(unbundledSelectMinimal).in('status', ['pull_from_shop', 'ready_for_job']);
         if (!fallback.error) unbundledRows = fallback.data ?? null;
       }
@@ -1172,18 +1173,17 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                         key={item.id} 
                                         className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
                                       >
-                                        <div className="flex items-start justify-between gap-2">
+                                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                                           <div className="flex-1 min-w-0">
                                             <h4 className="font-semibold text-sm leading-tight mb-2">
                                               {item.material_items.material_name}
                                             </h4>
                                             
-                                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
                                               <div>
                                                 <span className="text-muted-foreground">Qty:</span>
                                                 <p className="font-semibold text-base">
                                                   {Math.max(0, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))} to pull
-                                                  <span className="text-muted-foreground font-normal"> (of {item.material_items.quantity} total)</span>
                                                   {(item.material_items.quantity_ready_for_job ?? 0) > 0 && (
                                                     <span className="text-muted-foreground font-normal"> — {item.material_items.quantity_ready_for_job} ready</span>
                                                   )}
@@ -1250,7 +1250,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                         void updateTrimCutState(item.material_items.id, desired);
                                                       }}
                                                     >
-                                                      <SelectTrigger className="h-8 text-xs w-[160px]">
+                                                      <SelectTrigger className="h-7 text-[11px] w-[130px]">
                                                         <SelectValue />
                                                       </SelectTrigger>
                                                       <SelectContent>
@@ -1265,7 +1265,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             );
                                           })()}
                                           
-                                          <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
+                                          <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto flex-shrink-0 items-stretch sm:items-center">
                                             {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id || item.material_items.category === 'Trim') && (
                                               item.material_items.trim_saved_configs?.drawing_segments ? (
                                                 <button
@@ -1441,17 +1441,16 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                         key={item.id}
                                         className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
                                       >
-                                        <div className="flex items-start justify-between gap-2">
+                                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                                           <div className="flex-1 min-w-0">
                                             <h4 className="font-semibold text-sm leading-tight mb-2">
                                               {item.material_items.material_name}
                                             </h4>
-                                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
                                               <div>
                                                 <span className="text-muted-foreground">Qty:</span>
                                                 <p className="font-semibold text-base">
                                                   {Math.max(0, item.material_items.quantity - (item.material_items.quantity_ready_for_job ?? 0))} to pull
-                                                  <span className="text-muted-foreground font-normal"> (of {item.material_items.quantity} total)</span>
                                                   {(item.material_items.quantity_ready_for_job ?? 0) > 0 && (
                                                     <span className="text-muted-foreground font-normal"> — {item.material_items.quantity_ready_for_job} ready</span>
                                                   )}
@@ -1496,7 +1495,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                                   void updateTrimCutState(item.material_items.id, desired);
                                                 }}
                                               >
-                                                <SelectTrigger className="h-8 text-xs w-[160px]">
+                                                <SelectTrigger className="h-7 text-[11px] w-[130px]">
                                                   <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -1508,7 +1507,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             </div>
                                           )}
                                           </div>
-                                          <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 items-end sm:items-center">
+                                          <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto flex-shrink-0 items-stretch sm:items-center">
                                             {(item.material_items.trim_saved_configs?.drawing_segments || item.material_items.trim_saved_config_id || item.material_items.category === 'Trim') && (
                                               item.material_items.trim_saved_configs?.drawing_segments ? (
                                                 <button

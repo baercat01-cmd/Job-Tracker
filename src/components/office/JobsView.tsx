@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -95,7 +95,6 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [showReplyDialog, setShowReplyDialog] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<typeof recentMessages[0] | null>(null);
-  const [replySubject, setReplySubject] = useState('');
   const [replyBody, setReplyBody] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [showNewMessageDialog, setShowNewMessageDialog] = useState(false);
@@ -103,6 +102,65 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [newMessageSubject, setNewMessageSubject] = useState('');
   const [newMessageBody, setNewMessageBody] = useState('');
   const [sendingNewMessage, setSendingNewMessage] = useState(false);
+  const [customerMessagesOpen, setCustomerMessagesOpen] = useState(false);
+  const [lastSeenCustomerMessageAt, setLastSeenCustomerMessageAt] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('office_customer_messages_last_seen_at');
+      const n = raw ? Number(raw) : 0;
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const customerMessageThreads = useMemo(() => {
+    const byJob = new Map<string, (typeof recentMessages)>();
+    for (const msg of recentMessages) {
+      const key = msg.job_id || 'unknown';
+      if (!byJob.has(key)) byJob.set(key, []);
+      byJob.get(key)!.push(msg);
+    }
+    return Array.from(byJob.entries())
+      .map(([jobId, msgs]) => {
+        const sortedDesc = [...msgs].sort(
+          (a, b) => new Date(b.email_date).getTime() - new Date(a.email_date).getTime()
+        );
+        const sortedAsc = [...msgs].sort(
+          (a, b) => new Date(a.email_date).getTime() - new Date(b.email_date).getTime()
+        );
+        const latest = sortedDesc[0];
+        const latestInbound = sortedDesc.find((m) => m.direction === 'inbound') ?? null;
+        return {
+          jobId,
+          latest,
+          latestInbound,
+          messages: sortedAsc,
+          jobName: latest?.jobs?.name ?? 'Unknown job',
+          customerName:
+            (latestInbound?.from_name || latestInbound?.from_email || latest?.from_name || latest?.from_email || 'Customer') as string,
+        };
+      })
+      .sort((a, b) => new Date(b.latest.email_date).getTime() - new Date(a.latest.email_date).getTime());
+  }, [recentMessages]);
+  const unreadCustomerMessageCount = useMemo(
+    () =>
+      recentMessages.filter(
+        (m) =>
+          m.direction === 'inbound' &&
+          new Date(m.email_date).getTime() > lastSeenCustomerMessageAt
+      ).length,
+    [recentMessages, lastSeenCustomerMessageAt]
+  );
+
+  function markCustomerMessagesSeen() {
+    const nowTs = Date.now();
+    setLastSeenCustomerMessageAt(nowTs);
+    try {
+      localStorage.setItem('office_customer_messages_last_seen_at', String(nowTs));
+    } catch {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     loadJobs();
@@ -465,7 +523,35 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         .limit(25);
 
       if (error) throw error;
-      setRecentMessages((data || []) as any);
+      const { data: directMessages } = await supabase
+        .from('job_messages')
+        .select('id, job_id, sender_role, sender_name, sender_contact, message_text, created_at')
+        .order('created_at', { ascending: false })
+        .limit(25);
+      const directJobIds = [...new Set((directMessages || []).map((m: any) => m.job_id).filter(Boolean))];
+      let directJobNameById = new Map<string, string>();
+      if (directJobIds.length > 0) {
+        const { data: directJobs } = await supabase
+          .from('jobs')
+          .select('id, name')
+          .in('id', directJobIds);
+        directJobNameById = new Map((directJobs || []).map((j: any) => [j.id, j.name || 'Unknown job']));
+      }
+      const mappedDirect = (directMessages || []).map((m: any) => ({
+        id: `msg-${m.id}`,
+        job_id: m.job_id,
+        subject: m.sender_role === 'customer' ? 'Message from customer' : 'Message from project team',
+        from_name: m.sender_name,
+        from_email: m.sender_contact,
+        body_text: m.message_text,
+        email_date: m.created_at,
+        direction: m.sender_role === 'customer' ? 'inbound' : 'sent',
+        jobs: m.job_id ? { id: m.job_id, name: directJobNameById.get(m.job_id) || 'Unknown job' } : undefined,
+      }));
+      const merged = ([...(data || []), ...mappedDirect] as any[]).sort(
+        (a, b) => new Date(b.email_date).getTime() - new Date(a.email_date).getTime()
+      );
+      setRecentMessages(merged.slice(0, 25) as any);
     } catch (error: any) {
       if (!isAbortLikeError(error)) {
         console.error('Error loading recent messages:', error);
@@ -497,7 +583,6 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
   function openReplyDialog(msg: (typeof recentMessages)[0]) {
     setReplyToMessage(msg);
-    setReplySubject(msg.subject?.startsWith('Re:') ? msg.subject : `Re: ${msg.subject || 'Message'}`);
     setReplyBody('');
     setShowReplyDialog(true);
   }
@@ -509,24 +594,18 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
     }
     setSendingReply(true);
     try {
-      const { error } = await supabase.from('job_emails').insert({
+      const { error } = await supabase.from('job_messages').insert({
         job_id: replyToMessage.job_id,
-        message_id: `office-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        subject: replySubject.trim(),
-        from_email: profile?.email ?? 'office@company.com',
-        from_name: profile?.user_metadata?.full_name ?? profile?.email ?? 'Project Team',
-        to_emails: replyToMessage.from_email ? [replyToMessage.from_email] : [],
-        cc_emails: [],
-        body_text: replyBody.trim(),
-        email_date: new Date().toISOString(),
-        direction: 'sent',
+        sender_role: 'team',
+        sender_name: profile?.user_metadata?.full_name ?? profile?.email ?? 'Project Team',
+        sender_contact: profile?.email ?? null,
+        message_text: replyBody.trim(),
         is_read: false,
       });
       if (error) throw error;
       toast.success('Message sent. Customer will see it in their portal.');
       setShowReplyDialog(false);
       setReplyToMessage(null);
-      setReplySubject('');
       setReplyBody('');
       await loadRecentMessages();
     } catch (err: any) {
@@ -556,17 +635,12 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
     }
     setSendingNewMessage(true);
     try {
-      const { error } = await supabase.from('job_emails').insert({
+      const { error } = await supabase.from('job_messages').insert({
         job_id: job.id,
-        message_id: `office-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        subject: newMessageSubject.trim() || `Message from project team`,
-        from_email: profile?.email ?? 'office@company.com',
-        from_name: profile?.user_metadata?.full_name ?? profile?.email ?? 'Project Team',
-        to_emails: job.customer_email ? [job.customer_email] : [],
-        cc_emails: [],
-        body_text: newMessageBody.trim(),
-        email_date: new Date().toISOString(),
-        direction: 'sent',
+        sender_role: 'team',
+        sender_name: profile?.user_metadata?.full_name ?? profile?.email ?? 'Project Team',
+        sender_contact: profile?.email ?? null,
+        message_text: newMessageBody.trim(),
         is_read: false,
       });
       if (error) throw error;
@@ -668,7 +742,13 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 New Job
               </Button>
               {!showArchived && (
-                <Popover>
+                <Popover
+                  open={customerMessagesOpen}
+                  onOpenChange={(open) => {
+                    setCustomerMessagesOpen(open);
+                    if (open) markCustomerMessagesSeen();
+                  }}
+                >
                   <PopoverTrigger asChild>
                     <Button
                       type="button"
@@ -678,9 +758,9 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                       title="Customer messages"
                     >
                       <Mail className="w-4 h-4" />
-                      {recentMessages.length > 0 && (
+                      {unreadCustomerMessageCount > 0 && (
                         <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
-                          {recentMessages.length > 25 ? '25+' : recentMessages.length}
+                          {unreadCustomerMessageCount > 25 ? '25+' : unreadCustomerMessageCount}
                         </span>
                       )}
                     </Button>
@@ -703,41 +783,60 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                     <div className="overflow-y-auto flex-1 min-h-0">
                       {loadingMessages ? (
                         <p className="p-3 text-sm text-muted-foreground">Loading...</p>
-                      ) : recentMessages.length === 0 ? (
+                      ) : customerMessageThreads.length === 0 ? (
                         <p className="p-3 text-sm text-muted-foreground">No customer messages yet.</p>
                       ) : (
                         <ul className="p-2 space-y-1">
-                          {recentMessages.map((msg) => (
-                            <li key={msg.id} className="flex flex-col gap-1">
+                          {customerMessageThreads.map((thread) => (
+                            <li key={thread.jobId} className="rounded-lg border p-2.5 space-y-2">
                               <button
                                 type="button"
-                                onClick={() => openJobCommunications(msg.job_id)}
-                                className="w-full text-left rounded-lg border p-2.5 hover:bg-muted/50 transition-colors"
+                                onClick={() => {
+                                  markCustomerMessagesSeen();
+                                  openJobCommunications(thread.jobId);
+                                }}
+                                className="w-full text-left"
                               >
-                                <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start justify-between gap-2 mb-2">
                                   <div className="min-w-0 flex-1">
-                                    <span className="font-medium text-foreground text-sm">
-                                      {msg.jobs?.name ?? 'Unknown job'}
-                                    </span>
-                                    <span className="text-muted-foreground text-xs ml-1">
-                                      {msg.from_name ?? 'Customer'}
-                                    </span>
-                                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                      {msg.subject || (msg.body_text ?? '').slice(0, 50) || 'No subject'}
-                                    </p>
+                                    <span className="font-medium text-foreground text-sm">{thread.jobName}</span>
+                                    <span className="text-muted-foreground text-xs ml-1">{thread.customerName}</span>
                                   </div>
                                   <span className="text-[10px] text-muted-foreground shrink-0">
-                                    {new Date(msg.email_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    {new Date(thread.latest.email_date).toLocaleDateString(undefined, {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}
                                   </span>
                                 </div>
+                                <div className="space-y-1">
+                                  {thread.messages.slice(-3).map((m) => (
+                                    <div key={m.id} className={`flex ${m.direction === 'sent' ? 'justify-end' : 'justify-start'}`}>
+                                      <div
+                                        className={`max-w-[85%] rounded-xl px-2 py-1.5 text-xs ${
+                                          m.direction === 'sent'
+                                            ? 'bg-emerald-100 text-emerald-900'
+                                            : 'bg-slate-100 text-slate-800'
+                                        }`}
+                                      >
+                                        <p className="line-clamp-2">{m.body_text || m.subject || 'Message'}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               </button>
-                              {msg.direction === 'inbound' && (
+                              {thread.latestInbound && (
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="ghost"
                                   className="h-7 text-xs self-end"
-                                  onClick={(e) => { e.stopPropagation(); openReplyDialog(msg); }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openReplyDialog(thread.latestInbound as (typeof recentMessages)[0]);
+                                  }}
                                 >
                                   <Reply className="w-3 h-3 mr-1" />
                                   Reply (sends to customer portal)
@@ -2177,7 +2276,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
       </Dialog>
 
       {/* Reply to customer (portal) */}
-      <Dialog open={showReplyDialog} onOpenChange={(open) => { if (!open) { setShowReplyDialog(false); setReplyToMessage(null); setReplySubject(''); setReplyBody(''); } }}>
+      <Dialog open={showReplyDialog} onOpenChange={(open) => { if (!open) { setShowReplyDialog(false); setReplyToMessage(null); setReplyBody(''); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Reply to customer</DialogTitle>
@@ -2186,16 +2285,6 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
             </p>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <div>
-              <Label htmlFor="reply-subject">Subject</Label>
-              <Input
-                id="reply-subject"
-                value={replySubject}
-                onChange={(e) => setReplySubject(e.target.value)}
-                placeholder="Re: ..."
-                className="mt-1"
-              />
-            </div>
             <div>
               <Label htmlFor="reply-body">Message</Label>
               <Textarea
@@ -2208,7 +2297,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => { setShowReplyDialog(false); setReplyToMessage(null); setReplySubject(''); setReplyBody(''); }}>
+              <Button type="button" variant="outline" onClick={() => { setShowReplyDialog(false); setReplyToMessage(null); setReplyBody(''); }}>
                 Cancel
               </Button>
               <Button type="button" onClick={sendReplyToCustomer} disabled={sendingReply || !replyBody.trim()}>
