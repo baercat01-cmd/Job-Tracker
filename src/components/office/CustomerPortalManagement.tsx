@@ -166,10 +166,15 @@ function readEffectiveMaterialListVisibility(
     return global.show_material_items_no_prices === true;
   }
 
+  const hasLinkLevelField = typeof (link as any).show_material_items_no_prices === 'boolean';
+  if (hasLinkLevelField) {
+    return link.show_material_items_no_prices === true;
+  }
+
   const marker = stripMaterialVisibilityMarker(link.custom_message || '').markerValue;
   if (marker != null) return marker === true;
 
-  return link.show_material_items_no_prices === true;
+  return false;
 }
 
 interface CustomerPortalManagementProps {
@@ -1127,6 +1132,38 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
                     : l
                 )
               );
+              toast.success('Material list visibility saved.');
+              return;
+            }
+            // If visibility_by_quote itself is unavailable in schema cache, persist via custom_message marker only.
+            const markerOnlyPayload = {
+              custom_message: withMaterialVisibilityMarker(customMessage || link.custom_message || '', newValue),
+              updated_at: new Date().toISOString(),
+            } as any;
+            let { error: markerOnlyErr } = await supabase
+              .from('customer_portal_access')
+              .update(markerOnlyPayload)
+              .eq('id', link.id);
+            if (markerOnlyErr && link.access_token) {
+              const byToken = await supabase
+                .from('customer_portal_access')
+                .update(markerOnlyPayload)
+                .eq('access_token', link.access_token);
+              markerOnlyErr = byToken.error;
+            }
+            if (!markerOnlyErr) {
+              setPortalLinks((prev) =>
+                prev.map((l) =>
+                  l.id === link.id
+                    ? ({
+                        ...l,
+                        show_material_items_no_prices: newValue,
+                        custom_message: markerOnlyPayload.custom_message,
+                      } as CustomerPortalLink)
+                    : l
+                )
+              );
+              setCustomMessage(stripMaterialVisibilityMarker(markerOnlyPayload.custom_message).cleanText);
               toast.success('Material list visibility saved.');
               return;
             }

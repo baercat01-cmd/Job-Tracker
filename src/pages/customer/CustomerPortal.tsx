@@ -835,6 +835,7 @@ function JobDetailView({
     }
     return 0;
   };
+  const hasLinkMaterialField = typeof customerInfo?.show_material_items_no_prices === 'boolean';
   const materialListFromLink = customerInfo?.show_material_items_no_prices === true;
   const materialListFromMarker = readMaterialVisibilityMarker(customerInfo?.custom_message);
   const globalVis =
@@ -853,15 +854,17 @@ function JobDetailView({
   const hasExplicitMaterialListPerQuote = !!(perQuoteVisObj && 'show_material_items_no_prices' in perQuoteVisObj);
   const materialListFromPerQuote = hasExplicitMaterialListPerQuote ? perQuoteVisObj!.show_material_items_no_prices === true : null;
   // Priority: per-quote override -> global visibility flag -> link-level column.
-  // If fields are unavailable due to stale schema cache, default to hidden (office can still enable via __global fallback).
+  // Marker is only a last-resort fallback when link-level field is missing in stale schema responses.
   const showMaterialItemsNoPrices =
     hasExplicitMaterialListPerQuote
       ? materialListFromPerQuote === true
       : hasGlobalMaterialList
         ? materialListFromGlobal === true
-        : materialListFromMarker != null
-          ? materialListFromMarker === true
-          : materialListFromLink;
+        : hasLinkMaterialField
+          ? materialListFromLink
+          : materialListFromMarker != null
+            ? materialListFromMarker === true
+            : false;
   const showProposal = customerInfo?.show_proposal === true;
   const showPayments = customerInfo?.show_payments === true;
   const showSchedule = customerInfo?.show_schedule === true;
