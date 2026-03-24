@@ -218,6 +218,14 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
     selectedQuoteId && proposalDataByQuoteId[selectedQuoteId]
       ? proposalDataByQuoteId[selectedQuoteId]
       : jobData.proposalData;
+  const isOptionalFlag = (value: any) => value === true || value === 'true' || value === 1;
+  const optionalProposalSheets = ((proposalData?.materialSheets || []) as any[]).filter(
+    (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name) && isOptionalFlag(s.is_option)
+  );
+  const optionalStandaloneSubs = ((proposalData?.subcontractorEstimates || []) as any[]).filter(
+    (est: any) => !est.sheet_id && !est.row_id && isOptionalFlag(est.is_option)
+  );
+  const hasOptionsTab = showProposalTab && (optionalProposalSheets.length > 0 || optionalStandaloneSubs.length > 0);
   const { payments, documents, photos, scheduleEvents, viewerLinks = [] } = jobData;
   const totalPaid = payments?.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0) || 0;
   const balance = (proposalData?.totals?.grandTotal || 0) - totalPaid;
@@ -266,6 +274,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
     ...(showProposalTab
       ? [{ value: 'proposal', label: 'Proposal', show: true as boolean }]
       : [{ value: 'overview', label: 'Overview', show: true as boolean }]),
+    ...(hasOptionsTab ? [{ value: 'options', label: 'Options', show: true as boolean }] : []),
     ...(hasChangeOrderTab ? [{ value: 'change-orders', label: 'Change orders', show: true as boolean }] : []),
     ...(showMaterialsTab ? [{ value: 'materials', label: 'Materials', show: true as boolean }] : []),
     { value: 'payments', label: 'Payments', show: visibilitySettings?.show_payments },
@@ -273,6 +282,10 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
     { value: 'documents', label: 'Documents', show: visibilitySettings?.show_documents },
     { value: 'photos', label: 'Photos', show: visibilitySettings?.show_photos },
   ].filter((tab) => tab.show);
+
+  useEffect(() => {
+    if (activeTab === 'options' && !hasOptionsTab) setActiveTab(showProposalTab ? 'proposal' : 'overview');
+  }, [activeTab, hasOptionsTab, showProposalTab]);
 
   return (
     <div className="min-h-full">
@@ -363,7 +376,7 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                       !!sectionId && baseShowPrice && (sp == null || sp[sectionId] !== false);
                     // Build sections: material sheets (section totals only), linked custom rows, standalone rows/subs
                     const proposalSheets = (proposalData?.materialSheets || []).filter(
-                      (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
+                      (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name) && !isOptionalFlag(s.is_option)
                     );
                     const customRows = proposalData?.customRows || [];
                     const standaloneCustomRows = customRows.filter((r: any) => !r.sheet_id);
@@ -378,7 +391,9 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
                     const allSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [
                       ...sheetSections,
                       ...standaloneCustomRows.map((r: any) => ({ type: 'custom' as const, id: r.id, orderIndex: (r.order_index ?? 0) * 1000, data: r })),
-                      ...(proposalData?.subcontractorEstimates || []).filter((e: any) => !e.sheet_id && !e.row_id).map((e: any) => ({ type: 'subcontractor' as const, id: e.id, orderIndex: (e.order_index ?? 0) * 1000, data: e })),
+                      ...(proposalData?.subcontractorEstimates || [])
+                        .filter((e: any) => !e.sheet_id && !e.row_id && !isOptionalFlag(e.is_option))
+                        .map((e: any) => ({ type: 'subcontractor' as const, id: e.id, orderIndex: (e.order_index ?? 0) * 1000, data: e })),
                     ].sort((a, b) => a.orderIndex - b.orderIndex);
 
                     return (
@@ -476,6 +491,97 @@ function JobDetailPreview({ jobData, onBack, visibilitySettings, initialQuoteId 
               </Card>
             )}
           </TabsContent>
+
+          {hasOptionsTab && (
+            <TabsContent value="options" className="space-y-6">
+              <Card className="border-amber-200/70 bg-amber-50/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-amber-900">
+                    <ClipboardList className="w-5 h-5" />
+                    Optional Add-Ons
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {(() => {
+                    const baseShowPrice = !!(visibilitySettings?.show_financial_summary && visibilitySettings?.show_line_item_prices);
+                    const sp: Record<string, boolean> | null =
+                      typeof visibilitySettings?.show_section_prices === 'object' &&
+                      visibilitySettings?.show_section_prices !== null &&
+                      !Array.isArray(visibilitySettings?.show_section_prices)
+                        ? visibilitySettings.show_section_prices
+                        : null;
+                    const showPriceForSection = (sectionId?: string) =>
+                      !!sectionId && baseShowPrice && (sp == null || sp[sectionId] !== false);
+
+                    return (
+                      <>
+                        {optionalProposalSheets
+                          .slice()
+                          .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+                          .map((sheet: any) => {
+                            const sheetMaterials = sheet._computedMaterials ?? 0;
+                            const sheetLabor = sheet._computedLabor ?? 0;
+                            const sectionTotal = sheetMaterials + sheetLabor;
+                            const showPrice = showPriceForSection(sheet.id);
+                            return (
+                              <div key={sheet.id} className="border rounded-lg p-4 flex items-start justify-between gap-4 bg-white">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="font-bold text-lg">{sheet.sheet_name}</h3>
+                                    <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">Optional</Badge>
+                                  </div>
+                                  {sheet.description && (
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                      <PortalMultilineText text={sheet.description} />
+                                    </p>
+                                  )}
+                                </div>
+                                {showPrice && (
+                                  <div className="w-[120px] shrink-0 text-right">
+                                    <p className="text-xs text-amber-700 font-medium mb-1">Not in total</p>
+                                    <p className="text-xs text-slate-500">Section total</p>
+                                    <p className="text-xl font-bold text-emerald-700">
+                                      ${sectionTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        {optionalStandaloneSubs
+                          .slice()
+                          .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+                          .map((est: any) => {
+                            const total = est._computedTotal ?? 0;
+                            const showPrice = showPriceForSection(est.id);
+                            return (
+                              <div key={est.id} className="border rounded-lg p-4 flex items-start justify-between gap-4 bg-white">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="font-bold text-lg">{est.company_name}</h3>
+                                    <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">Optional</Badge>
+                                  </div>
+                                  {est.scope_of_work && <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>}
+                                </div>
+                                {showPrice && (
+                                  <div className="w-[120px] shrink-0 text-right">
+                                    <p className="text-xs text-amber-700 font-medium mb-1">Not in total</p>
+                                    <p className="text-xs text-slate-500">Section total</p>
+                                    <p className="text-xl font-bold text-emerald-700">
+                                      ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
           {/* Overview when proposal tab is hidden — welcome + drawings only */}
           <TabsContent value="overview" className="space-y-6">

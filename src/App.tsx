@@ -226,7 +226,7 @@ export default function App() {
           <Route path="/vendor-pricing/:token" element={<VendorPricingForm />} />
           {/* Public customer portal - no authentication required */}
           <Route path="/customer-portal" element={<CustomerPortal />} />
-          {/* Public subcontractor portal - requires username/password login */}
+          {/* Public subcontractor portal - no-login shared link via ?sub=... */}
           <Route path="/subcontractor-portal" element={<SubcontractorPortal />} />
           
           {/* All other routes use main app authentication */}

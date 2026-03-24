@@ -729,30 +729,17 @@ function JobDetailView({
     [jobQuotes]
   );
 
-  // Default: signed/contract proposal first, then most recently sent, then highest proposal number
+  // Default: latest proposal first (newest created/sent/highest proposal number).
   const defaultQuoteId = (() => {
     if (!proposalQuotes.length) return quote && !(quote as any).is_change_order_proposal ? quote.id : null;
     const list = proposalQuotes as any[];
-    const contractQuotes = list.filter((q: any) => q.status === 'signed' || q.status === 'accepted');
-    if (contractQuotes.length > 0) {
-      const bySent = [...contractQuotes].sort((a, b) =>
-        (new Date(b.sent_at || 0).getTime()) - (new Date(a.sent_at || 0).getTime())
-      );
-      const byProposal = [...contractQuotes].sort((a, b) => {
-        const aN = parseInt((a.proposal_number || a.quote_number || '0').toString().split('-').pop() || '0', 10);
-        const bN = parseInt((b.proposal_number || b.quote_number || '0').toString().split('-').pop() || '0', 10);
-        return bN - aN;
-      });
-      return (bySent[0]?.sent_at ? bySent[0] : byProposal[0])?.id ?? contractQuotes[0].id;
-    }
-    const sentQuotes = list.filter((q: any) => q.sent_at);
-    if (sentQuotes.length > 0) {
-      const sorted = [...sentQuotes].sort((a: any, b: any) =>
-        new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
-      );
-      return sorted[0].id;
-    }
     const sorted = [...list].sort((a: any, b: any) => {
+      const aSent = new Date(a.sent_at || 0).getTime();
+      const bSent = new Date(b.sent_at || 0).getTime();
+      if (aSent !== bSent) return bSent - aSent;
+      const aCreated = new Date(a.created_at || 0).getTime();
+      const bCreated = new Date(b.created_at || 0).getTime();
+      if (aCreated !== bCreated) return bCreated - aCreated;
       const aN = parseInt((a.proposal_number || a.quote_number || '0').toString().split('-').pop() || '0', 10);
       const bN = parseInt((b.proposal_number || b.quote_number || '0').toString().split('-').pop() || '0', 10);
       return bN - aN;
@@ -853,18 +840,21 @@ function JobDetailView({
     : null;
   const hasExplicitMaterialListPerQuote = !!(perQuoteVisObj && 'show_material_items_no_prices' in perQuoteVisObj);
   const materialListFromPerQuote = hasExplicitMaterialListPerQuote ? perQuoteVisObj!.show_material_items_no_prices === true : null;
+  const linkLevelMaterialsOff = hasLinkMaterialField && customerInfo?.show_material_items_no_prices === false;
   // Priority: per-quote override -> global visibility flag -> link-level column.
   // Marker is only a last-resort fallback when link-level field is missing in stale schema responses.
   const showMaterialItemsNoPrices =
-    hasExplicitMaterialListPerQuote
-      ? materialListFromPerQuote === true
-      : hasGlobalMaterialList
-        ? materialListFromGlobal === true
-        : hasLinkMaterialField
-          ? materialListFromLink
-          : materialListFromMarker != null
-            ? materialListFromMarker === true
-            : false;
+    linkLevelMaterialsOff
+      ? false
+      : hasExplicitMaterialListPerQuote
+        ? materialListFromPerQuote === true
+        : hasGlobalMaterialList
+          ? materialListFromGlobal === true
+          : hasLinkMaterialField
+            ? materialListFromLink
+            : materialListFromMarker != null
+              ? materialListFromMarker === true
+              : false;
   const showProposal = customerInfo?.show_proposal === true;
   const showPayments = customerInfo?.show_payments === true;
   const showSchedule = customerInfo?.show_schedule === true;
@@ -1501,6 +1491,14 @@ function JobDetailView({
   const showMaterialsTab = showMaterialItemsNoPrices;
   const showCoMaterialsInMaterialsTab =
     !!changeOrderQuote && showMaterialItemsNoPricesCo && !!(changeOrderQuote as any)?.sent_at;
+  const isOptionalFlag = (value: any) => value === true || value === 'true' || value === 1;
+  const optionalProposalSheets = ((proposalData?.materialSheets || []) as any[]).filter(
+    (s: any) => !isFieldRequestSheetName(s.sheet_name) && isOptionalFlag(s.is_option)
+  );
+  const optionalStandaloneSubs = ((proposalData?.subcontractorEstimates || []) as any[]).filter(
+    (est: any) => !est.sheet_id && !est.row_id && isOptionalFlag(est.is_option)
+  );
+  const hasOptionsTab = showProposal && (optionalProposalSheets.length > 0 || optionalStandaloneSubs.length > 0);
 
   const proposalNumber = selectedQuote?.proposal_number || selectedQuote?.quote_number || 'N/A';
   const portalUrl = typeof window !== 'undefined' ? window.location.href : '';
@@ -1552,6 +1550,7 @@ function JobDetailView({
 
   const viewOptions = [
     { value: 'overview', label: 'Overview', icon: LayoutDashboard },
+    ...(hasOptionsTab ? [{ value: 'options' as const, label: 'Options', icon: ClipboardList }] : []),
     ...(showProposal && changeOrderQuote
       ? [{ value: 'change-orders' as const, label: 'Change orders', icon: ClipboardList }]
       : []),
@@ -1766,7 +1765,7 @@ function JobDetailView({
               )}
             </div>
             <div className="flex items-center gap-3">
-              <PWAInstallButton />
+              <PWAInstallButton alwaysVisible />
               <Badge variant="outline" className="bg-amber-500/10 text-amber-300 border-amber-500/40 px-4 py-2">
                 Customer Portal
               </Badge>
@@ -1907,11 +1906,17 @@ function JobDetailView({
                           const proposalSheets = (proposalData.materialSheets || []).filter(
                             (s: any) => !isFieldRequestSheetName(s.sheet_name)
                           );
+                          const requiredSheetIds = new Set(
+                            proposalSheets
+                              .filter((s: any) => !isOptionalFlag(s.is_option))
+                              .map((s: any) => s.id)
+                          );
+                          const requiredProposalSheets = proposalSheets.filter((s: any) => requiredSheetIds.has(s.id));
                           const customRows = proposalData.customRows || [];
                           const standaloneCustomRows = customRows.filter((row: any) => !row.sheet_id);
                           // Build sections: each material sheet (sheet-linked line items are shown inside the sheet card), then linked custom rows, then standalone custom rows and subcontractors.
                           const sheetSections: Array<{ type: 'material' | 'custom' | 'subcontractor'; id: string; orderIndex: number; data: any }> = [];
-                          proposalSheets.forEach((sheet: any) => {
+                          requiredProposalSheets.forEach((sheet: any) => {
                             const sheetOrder = sheet.order_index ?? 0;
                             sheetSections.push({
                               type: 'material' as const,
@@ -1940,7 +1945,7 @@ function JobDetailView({
                               data: row,
                             })),
                             ...(proposalData.subcontractorEstimates || [])
-                              .filter((est: any) => !est.sheet_id && !est.row_id)
+                              .filter((est: any) => !est.sheet_id && !est.row_id && !isOptionalFlag(est.is_option))
                               .map((est: any) => ({
                                 type: 'subcontractor' as const,
                                 id: est.id,
@@ -2225,6 +2230,119 @@ function JobDetailView({
             </>
           )}
 
+          </TabsContent>
+
+          <TabsContent value="options" className="space-y-6">
+            <Card className="border-amber-200/60">
+              <CardHeader>
+                <CardTitle className="text-emerald-800">Optional Add-Ons</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!showFinancial && (
+                  <p className="text-sm text-muted-foreground">
+                    Optional sections are shown below. Pricing is hidden in this portal view.
+                  </p>
+                )}
+                {proposalDataLoading ? (
+                  <div className="text-sm text-muted-foreground">Loading options...</div>
+                ) : !proposalData ? (
+                  <div className="text-sm text-muted-foreground">No proposal data available.</div>
+                ) : (optionalProposalSheets.length === 0 && optionalStandaloneSubs.length === 0) ? (
+                  <div className="text-sm text-muted-foreground">No optional sections for this proposal.</div>
+                ) : (
+                  <>
+                    {optionalProposalSheets
+                      .slice()
+                      .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+                      .map((sheet: any) => {
+                        const linkedSubs = (proposalData.subcontractorEstimates || []).filter((e: any) => e.sheet_id === sheet.id);
+                        const sheetMaterials = sheet._computedMaterials ?? 0;
+                        const sheetLabor = sheet._computedLabor ?? 0;
+                        const sheetTotal = readSectionTotal(sheet, sheetMaterials + sheetLabor);
+                        const showPrice = showPriceForSection(sheet.id);
+                        const showSheetBreakdown =
+                          showPrice && !showMaterialItemsNoPrices && (sheetMaterials > 0 || sheetLabor > 0);
+                        return (
+                          <div key={sheet.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-semibold text-base">{sheet.sheet_name}</h3>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                                  Optional
+                                </span>
+                              </div>
+                              {sheet.description && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  <PortalMultilineText text={sheet.description} />
+                                </p>
+                              )}
+                              {linkedSubs.map((est: any) => (
+                                <div key={est.id} className="mt-2">
+                                  {est.scope_of_work && (
+                                    <p className="text-sm text-muted-foreground">
+                                      <PortalMultilineText text={est.scope_of_work} />
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            {showPrice && (
+                              <div className="w-[120px] flex-shrink-0 text-right">
+                                <p className="text-xs text-amber-700 font-medium mb-0.5">Not in total</p>
+                                {showSheetBreakdown && sheetMaterials > 0 && (
+                                  <>
+                                    <p className="text-sm text-slate-500">Materials</p>
+                                    <p className="text-base font-bold text-blue-700">${sheetMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                  </>
+                                )}
+                                {showSheetBreakdown && sheetLabor > 0 && (
+                                  <>
+                                    <p className="text-sm text-slate-500 mt-2">Labor</p>
+                                    <p className="text-base font-bold text-amber-700">${sheetLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                  </>
+                                )}
+                                <p className={`text-[11px] text-slate-500 ${showSheetBreakdown ? 'mt-2' : ''}`}>Section total</p>
+                                <p className="text-sm font-bold text-emerald-700">
+                                  ${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    {optionalStandaloneSubs
+                      .slice()
+                      .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+                      .map((est: any) => (
+                        <div key={est.id} className="border rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-semibold text-base">{est.company_name}</h3>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                                Optional
+                              </span>
+                            </div>
+                            {est.scope_of_work && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <PortalMultilineText text={est.scope_of_work} />
+                              </p>
+                            )}
+                          </div>
+                          {showPriceForSection(est.id) && (
+                            <div className="w-[120px] flex-shrink-0 text-right">
+                              <p className="text-xs text-amber-700 font-medium mb-0.5">Not in total</p>
+                              <p className="text-[11px] text-slate-500">Section total</p>
+                              <p className="text-sm font-bold text-emerald-700">
+                                ${readSectionTotal(est).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="change-orders" className="space-y-6">

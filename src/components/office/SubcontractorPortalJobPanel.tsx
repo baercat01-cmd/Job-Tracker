@@ -58,6 +58,17 @@ function formatSupabaseError(err: unknown): string {
   return parts.join(' — ') || 'Request failed';
 }
 
+function isPortalJobAccessOptionalColumnError(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message ?? '');
+  return /can_edit_schedule|can_view_proposal|can_view_materials|schema cache|PGRST204/i.test(msg);
+}
+
+function isRlsError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  const msg = String((err as { message?: string })?.message ?? '');
+  return code === '42501' || code === 'PGRST301' || /row-level security|permission|denied|RLS/i.test(msg);
+}
+
 export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPortalJobPanelProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -77,8 +88,6 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
 
   const [createOpen, setCreateOpen] = useState(false);
   const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -92,14 +101,35 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       const { data: access, error: e1 } = await supabase.from('portal_job_access').select('*').eq('job_id', jobId);
       if (e1) throw e1;
       const userIds = [...new Set((access || []).map((a: { portal_user_id: string }) => a.portal_user_id))];
-      let userMap = new Map<string, PortalUserRow>();
+      const userMap = new Map<string, PortalUserRow>();
       if (userIds.length > 0) {
         const { data: pu, error: ePu } = await supabase
           .from('portal_users')
           .select('id, user_type, email, username, full_name, company_name, is_active')
           .in('id', userIds);
-        if (ePu) throw ePu;
-        (pu || []).forEach((u: PortalUserRow) => userMap.set(u.id, u));
+        if (!ePu) {
+          (pu || []).forEach((u: PortalUserRow) => userMap.set(u.id, u));
+        }
+        const missingIds = userIds.filter((id) => !userMap.has(id));
+        if (missingIds.length > 0) {
+          const { data: subs, error: subsErr } = await supabase
+            .from('subcontractors')
+            .select('id, name, company_name, email, active')
+            .in('id', missingIds);
+          if (!subsErr) {
+            (subs || []).forEach((s: any) =>
+              userMap.set(String(s.id), {
+                id: String(s.id),
+                user_type: 'subcontractor',
+                email: String(s.email ?? ''),
+                username: String(s.email ?? s.name ?? ''),
+                full_name: String(s.name ?? ''),
+                company_name: s.company_name ?? null,
+                is_active: s.active !== false,
+              })
+            );
+          }
+        }
       }
       const rows: JobAccessRow[] = (access || []).map((a: Record<string, unknown>) => ({
         ...a,
@@ -108,12 +138,21 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       setAccessRows(rows.filter((r) => r.portal_users?.user_type === 'subcontractor'));
 
       const { data: users, error: e2 } = await supabase
-        .from('portal_users')
-        .select('id, user_type, email, username, full_name, company_name, is_active')
-        .eq('user_type', 'subcontractor')
+        .from('subcontractors')
+        .select('id, name, company_name, email, active')
         .order('created_at', { ascending: false });
       if (e2) throw e2;
-      setAllSubUsers((users || []) as PortalUserRow[]);
+      setAllSubUsers(
+        (users || []).map((s: any) => ({
+          id: String(s.id),
+          user_type: 'subcontractor',
+          email: String(s.email ?? ''),
+          username: String(s.email ?? s.name ?? ''),
+          full_name: String(s.name ?? ''),
+          company_name: s.company_name ?? null,
+          is_active: s.active !== false,
+        }))
+      );
     } catch (err: unknown) {
       console.error(err);
       toast.error('Could not load subcontractor portal access for this job');
@@ -132,13 +171,14 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
     [allSubUsers, grantedIds]
   );
 
-  async function copyPortalUrl() {
-    const url = `${window.location.origin}/subcontractor-portal`;
+  async function copyPortalUrlForUser(userId: string, name?: string | null) {
     try {
+      const url = `${window.location.origin}/subcontractor-portal?sub=${encodeURIComponent(userId)}`;
       await navigator.clipboard.writeText(url);
-      toast.success('Subcontractor portal link copied');
-    } catch {
-      toast.error('Could not copy link');
+      toast.success(`${name || 'Subcontractor'} multi-job link copied`);
+    } catch (err: unknown) {
+      console.error('[SubcontractorPortalJobPanel] copyPortalUrlForUser', err);
+      toast.error(`Could not copy link: ${formatSupabaseError(err)}`);
     }
   }
 
@@ -148,21 +188,28 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       return;
     }
     try {
-      const { error } = await supabase.from('portal_job_access').insert([
-        {
-          portal_user_id: selectedUserId,
-          job_id: jobId,
-          can_view_schedule: canViewSchedule,
-          can_view_documents: canViewDocuments,
-          can_view_photos: canViewPhotos,
-          can_view_financials: canViewFinancials,
-          can_view_proposal: canViewProposal,
-          can_view_materials: canViewMaterials,
-          can_edit_schedule: canEditSchedule,
-          notes: accessNotes || null,
-          created_by: profile?.id,
-        },
-      ]);
+      const payload = {
+        portal_user_id: selectedUserId,
+        job_id: jobId,
+        can_view_schedule: canViewSchedule,
+        can_view_documents: canViewDocuments,
+        can_view_photos: canViewPhotos,
+        can_view_financials: canViewFinancials,
+        can_view_proposal: canViewProposal,
+        can_view_materials: canViewMaterials,
+        can_edit_schedule: canEditSchedule,
+        notes: accessNotes || null,
+        created_by: profile?.id,
+      };
+      let { error } = await supabase.from('portal_job_access').insert([payload]);
+      if (error && isPortalJobAccessOptionalColumnError(error)) {
+        const { can_view_proposal, can_view_materials, can_edit_schedule, ...fallbackPayload } = payload;
+        void can_view_proposal;
+        void can_view_materials;
+        void can_edit_schedule;
+        const fallback = await supabase.from('portal_job_access').insert([fallbackPayload]);
+        error = fallback.error;
+      }
       if (error) throw error;
       toast.success('Access granted for this job');
       setGrantOpen(false);
@@ -171,7 +218,9 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       await load();
     } catch (err: unknown) {
       const msg = (err as { message?: string })?.message ?? 'Grant failed';
-      if (/duplicate|unique/i.test(msg)) {
+      if (isRlsError(err)) {
+        toast.error('Database blocked portal_job_access write (RLS). Run scripts/fix-portal-job-access-rls.sql in Supabase SQL Editor.', { duration: 12000 });
+      } else if (/duplicate|unique/i.test(msg)) {
         toast.error('This user already has access to this job');
       } else {
         toast.error(msg);
@@ -181,38 +230,36 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
 
   async function createUserAndMaybeGrant() {
     const em = email.trim();
-    const un = username.trim();
     const fn = fullName.trim();
-    if (!em || !un || !password || !fn) {
-      toast.error('Email, username, password, and full name are required');
+    if (!em || !fn) {
+      toast.error('Email and full name are required');
       return;
     }
     setCreating(true);
     try {
       const payload = {
-        user_type: 'subcontractor' as const,
-        email: em,
-        username: un,
-        password_hash: password,
-        full_name: fn,
+        name: fn,
         company_name: companyName.trim() || null,
+        email: em || null,
+        trades: [],
+        notes: null,
+        active: true,
         created_by: profile?.id ?? null,
       };
 
-      // Avoid .single(): if RLS allows INSERT but blocks RETURNING, PostgREST returns 0 rows and .single() errors.
-      const { data: insertedRows, error } = await supabase.from('portal_users').insert([payload]).select('id');
+      const { data: insertedRows, error } = await supabase.from('subcontractors').insert([payload]).select('id');
       if (error) {
-        console.error('[SubcontractorPortalJobPanel] portal_users insert', error);
+        console.error('[SubcontractorPortalJobPanel] subcontractors insert', error);
         throw error;
       }
 
       let newId = insertedRows?.[0]?.id as string | undefined;
       if (!newId) {
         const { data: lookup, error: lookupErr } = await supabase
-          .from('portal_users')
+          .from('subcontractors')
           .select('id')
-          .eq('email', em)
-          .eq('user_type', 'subcontractor')
+          .eq('email', em || null)
+          .eq('name', fn)
           .maybeSingle();
         if (!lookupErr && lookup?.id) newId = lookup.id;
       }
@@ -220,17 +267,15 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       if (!newId) {
         await load();
         toast.error(
-          'Could not confirm the new user (insert may be blocked or RETURNING hidden by RLS). Run scripts/fix-portal-users-rls.sql in Supabase SQL Editor, then try again.',
+          'Could not confirm the new subcontractor profile after save.',
           { duration: 14000 }
         );
         return;
       }
 
-      toast.success('Subcontractor portal user created');
+      toast.success('Subcontractor profile created');
       setCreateOpen(false);
       setEmail('');
-      setUsername('');
-      setPassword('');
       setFullName('');
       setCompanyName('');
       await load();
@@ -238,16 +283,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       setGrantOpen(true);
     } catch (err: unknown) {
       console.error('[SubcontractorPortalJobPanel] create user', err);
-      const msg = formatSupabaseError(err);
-      const isRls =
-        /42501|PGRST301|RLS|permission|denied|row-level security/i.test(msg) ||
-        (err as { code?: string })?.code === '42501';
-      toast.error(
-        isRls
-          ? `${msg}\n\nRun scripts/fix-portal-users-rls.sql in Supabase SQL Editor (same idea as customer portal RLS fix).`
-          : msg,
-        { duration: 12000 }
-      );
+      toast.error(formatSupabaseError(err), { duration: 10000 });
     } finally {
       setCreating(false);
     }
@@ -256,19 +292,25 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
   async function saveEdit() {
     if (!editRow) return;
     try {
-      const { error } = await supabase
-        .from('portal_job_access')
-        .update({
-          can_view_schedule: editRow.can_view_schedule,
-          can_view_documents: editRow.can_view_documents,
-          can_view_photos: editRow.can_view_photos,
-          can_view_financials: editRow.can_view_financials,
-          can_view_proposal: editRow.can_view_proposal ?? false,
-          can_view_materials: editRow.can_view_materials ?? false,
-          can_edit_schedule: editRow.can_edit_schedule ?? false,
-          notes: editRow.notes,
-        })
-        .eq('id', editRow.id);
+      const payload = {
+        can_view_schedule: editRow.can_view_schedule,
+        can_view_documents: editRow.can_view_documents,
+        can_view_photos: editRow.can_view_photos,
+        can_view_financials: editRow.can_view_financials,
+        can_view_proposal: editRow.can_view_proposal ?? false,
+        can_view_materials: editRow.can_view_materials ?? false,
+        can_edit_schedule: editRow.can_edit_schedule ?? false,
+        notes: editRow.notes,
+      };
+      let { error } = await supabase.from('portal_job_access').update(payload).eq('id', editRow.id);
+      if (error && isPortalJobAccessOptionalColumnError(error)) {
+        const { can_view_proposal, can_view_materials, can_edit_schedule, ...fallbackPayload } = payload;
+        void can_view_proposal;
+        void can_view_materials;
+        void can_edit_schedule;
+        const fallback = await supabase.from('portal_job_access').update(fallbackPayload).eq('id', editRow.id);
+        error = fallback.error;
+      }
       if (error) throw error;
       toast.success('Access updated');
       setEditRow(null);
@@ -296,21 +338,18 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Link2 className="w-5 h-5" />
-            Subcontractor portal link
+            Subcontractor shared link
           </CardTitle>
           <CardDescription>
-            Same login page for every sub: they use the email and password you set, and only see jobs you grant
-            {jobName ? ` (including ${jobName})` : ''}.
+            Copy a no-login link from any subcontractor row below. That one link shows all jobs you grant to that subcontractor, with build info only (no prices).
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row sm:items-center gap-3">
           <code className="flex-1 text-sm bg-muted px-3 py-2 rounded-md break-all">
-            {typeof window !== 'undefined' ? `${window.location.origin}/subcontractor-portal` : '/subcontractor-portal'}
+            {typeof window !== 'undefined'
+              ? `${window.location.origin}/subcontractor-portal?sub=...`
+              : '/subcontractor-portal?sub=...'}
           </code>
-          <Button type="button" variant="outline" onClick={copyPortalUrl}>
-            <Copy className="w-4 h-4 mr-2" />
-            Copy link
-          </Button>
         </CardContent>
       </Card>
 
@@ -366,6 +405,14 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
                       </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => copyPortalUrlForUser(row.portal_user_id, u.full_name)}
+                      >
+                        <Copy className="w-4 h-4 mr-1" />
+                        Copy link
+                      </Button>
                       <Button size="sm" variant="outline" onClick={() => setEditRow({ ...row })}>
                         <Pencil className="w-4 h-4 mr-1" />
                         Edit
@@ -403,7 +450,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
                 </SelectContent>
               </Select>
               {availableToGrant.length === 0 && (
-                <p className="text-xs text-muted-foreground mt-1">All active subs already have access, or create a new user.</p>
+                <p className="text-xs text-muted-foreground mt-1">All active subcontractors already have access, or create a new subcontractor profile.</p>
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -457,7 +504,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
           <DialogHeader>
             <DialogTitle>New subcontractor portal user</DialogTitle>
             <DialogDescription>
-              Creates a login for /subcontractor-portal. If save fails, run scripts/fix-portal-users-rls.sql in Supabase (RLS on portal_users).
+              Creates a subcontractor profile for shared no-login links.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -498,27 +545,6 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="sub-portal-username">Username *</Label>
-              <Input
-                id="sub-portal-username"
-                name="username"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="sub-portal-password">Password *</Label>
-              <Input
-                id="sub-portal-password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
             <DialogFooter className="gap-2 sm:gap-0">

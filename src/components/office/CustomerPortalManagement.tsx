@@ -137,6 +137,12 @@ function readEffectiveMaterialListVisibility(
   link: CustomerPortalLink,
   selectedQuoteId: string | null
 ): boolean {
+  const hasLinkLevelField = typeof (link as any).show_material_items_no_prices === 'boolean';
+  // Link-level OFF is a hard kill-switch so customer Materials always hide.
+  if (hasLinkLevelField && link.show_material_items_no_prices === false) {
+    return false;
+  }
+
   const byQuote =
     selectedQuoteId &&
     link.visibility_by_quote &&
@@ -166,7 +172,6 @@ function readEffectiveMaterialListVisibility(
     return global.show_material_items_no_prices === true;
   }
 
-  const hasLinkLevelField = typeof (link as any).show_material_items_no_prices === 'boolean';
   if (hasLinkLevelField) {
     return link.show_material_items_no_prices === true;
   }

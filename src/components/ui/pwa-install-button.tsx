@@ -19,7 +19,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export function PWAInstallButton() {
+export function PWAInstallButton({ alwaysVisible = false }: { alwaysVisible?: boolean } = {}) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showButton, setShowButton] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -72,7 +72,7 @@ export function PWAInstallButton() {
     }
   };
 
-  if (!showButton) return null;
+  if (!showButton && !alwaysVisible) return null;
 
   return (
     <Button

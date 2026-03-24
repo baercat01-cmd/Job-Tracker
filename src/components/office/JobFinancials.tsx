@@ -119,6 +119,72 @@ interface MaterialsBreakdown {
   };
 }
 
+function toBool(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 't' || normalized === 'yes';
+  }
+  return false;
+}
+
+function isMissingSubcontractorOptionalColumnError(error: unknown): boolean {
+  const msg = String((error as any)?.message || '').toLowerCase();
+  return msg.includes('subcontractor_estimates') && msg.includes('is_option') && msg.includes('column');
+}
+
+function getSubOptionalStorageKey(scopeId: string): string {
+  return `jobfinancials_sub_optional_${scopeId}`;
+}
+
+function readSubOptionalStorage(scopeId: string): Record<string, boolean> {
+  try {
+    if (typeof window === 'undefined') return {};
+    const raw = window.localStorage.getItem(getSubOptionalStorageKey(scopeId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, boolean> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([k, v]) => {
+      out[k] = toBool(v);
+    });
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeSubOptionalStorage(scopeId: string, value: Record<string, boolean>): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(getSubOptionalStorageKey(scopeId), JSON.stringify(value));
+  } catch {
+    // Ignore storage write errors (private mode/quota, etc.)
+  }
+}
+
+function getSubOptionalUnsupportedKey(jobId: string): string {
+  return `jobfinancials_sub_optional_unsupported_${jobId}`;
+}
+
+function readSubOptionalUnsupported(jobId: string): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+    return toBool(window.localStorage.getItem(getSubOptionalUnsupportedKey(jobId)));
+  } catch {
+    return false;
+  }
+}
+
+function writeSubOptionalUnsupported(jobId: string, value: boolean): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(getSubOptionalUnsupportedKey(jobId), value ? '1' : '0');
+  } catch {
+    // Ignore storage write errors.
+  }
+}
+
 interface JobFinancialsProps {
   job: Job;
   /** When provided (e.g. combined Proposal+Materials view), sync selected proposal with parent */
@@ -204,6 +270,37 @@ function sumLinkedSubLaborFromSubs(
     const estMarkup = sub.markup_percent || 0;
     return sum + laborTotal * (1 + estMarkup / 100);
   }, 0);
+}
+
+/** Linked custom row totals split by item_type and per-line-item markup. */
+function sumLinkedRowTotals(
+  linkedRows: any[],
+  customRowLineItems: Record<string, any[]>
+): { materialTotal: number; laborTotal: number } {
+  return linkedRows.reduce(
+    (acc: { materialTotal: number; laborTotal: number }, row: any) => {
+      const lineItems = customRowLineItems[row.id] || [];
+
+      if (lineItems.length > 0) {
+        for (const item of lineItems) {
+          const itemCost = Number(item?.total_cost) || ((Number(item?.quantity) || 0) * (Number(item?.unit_cost) || 0));
+          const itemMarkup = Number(item?.markup_percent ?? row?.markup_percent ?? 0) || 0;
+          const itemPrice = itemCost * (1 + itemMarkup / 100);
+          const itemType = (item?.item_type || 'material') === 'labor' ? 'labor' : 'material';
+          if (itemType === 'labor') acc.laborTotal += itemPrice;
+          else acc.materialTotal += itemPrice;
+        }
+      } else {
+        // Backward-compatible fallback for rows without line items.
+        const baseCost = Number(row?.total_cost) || 0;
+        const rowMarkup = Number(row?.markup_percent ?? 0) || 0;
+        acc.materialTotal += baseCost * (1 + rowMarkup / 100);
+      }
+
+      return acc;
+    },
+    { materialTotal: 0, laborTotal: 0 }
+  );
 }
 
 // Sortable Row Component
@@ -300,14 +397,7 @@ function SortableRow({
       const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
       const linkedSubs = linkedSubcontractors[sheet.sheetId] || [];
       
-      // Calculate linked rows total (with their own markup already applied)
-      const linkedRowsTotal = linkedRows.reduce((rowSum: number, row: any) => {
-        const lineItems = customRowLineItems[row.id] || [];
-        const baseCost = lineItems.length > 0
-          ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
-          : row.total_cost;
-        return rowSum + (baseCost * (1 + row.markup_percent / 100));
-      }, 0);
+      const linkedRowTotals = sumLinkedRowTotals(linkedRows, customRowLineItems);
       
       // Linked subcontractors: materials vs labor (item_type), same as breakdown totals & sub UI
       const linkedSubsMaterialsTotal = sumLinkedSubMaterialsFromSubs(linkedSubs, subcontractorLineItems);
@@ -383,11 +473,15 @@ function SortableRow({
       const sheetFinalPrice =
         materialsSubtotalFromCategories +
         sheetMaterialLineItemsTotal +
-        linkedRowsTotal +
+        linkedRowTotals.materialTotal +
         linkedSubsMaterialsTotal;
       
-      // Total labor: legacy sheet labor + sheet labor line items + subcontractor labor lines
-      const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsLaborTotal;
+      // Total labor: legacy sheet labor + sheet labor line items + linked custom-row labor + subcontractor labor lines
+      const totalLaborCost =
+        sheetLaborTotal +
+        sheetLaborLineItemsTotal +
+        linkedRowTotals.laborTotal +
+        linkedSubsLaborTotal;
       const sectionTotal = sheetFinalPrice + totalLaborCost;
 
       return (
@@ -515,8 +609,13 @@ function SortableRow({
                   (sheet as any).isOptional ? (
                     <>
                       <DropdownMenuItem onClick={async () => {
+                        setOptionalSheetOverlay(prev => ({ ...prev, [sheet.sheetId]: false }));
                         // Always update is_option first (column is guaranteed to exist)
-                        await supabase.from('material_sheets').update({ is_option: false }).eq('id', sheet.sheetId);
+                        const { error } = await supabase.from('material_sheets').update({ is_option: false }).eq('id', sheet.sheetId);
+                        if (error) {
+                          toast.error(error.message || 'Failed to update optional state');
+                          return;
+                        }
                         // Best-effort: clear comparison link (column may not exist on older DBs)
                         await supabase.from('material_sheets').update({ compare_to_sheet_id: null } as any).eq('id', sheet.sheetId);
                         await loadMaterialsData(quote?.id ?? null, false);
@@ -540,7 +639,12 @@ function SortableRow({
                     </>
                   ) : (
                     <DropdownMenuItem onClick={async () => {
-                      await supabase.from('material_sheets').update({ is_option: true }).eq('id', sheet.sheetId);
+                      setOptionalSheetOverlay(prev => ({ ...prev, [sheet.sheetId]: true }));
+                      const { error } = await supabase.from('material_sheets').update({ is_option: true }).eq('id', sheet.sheetId);
+                      if (error) {
+                        toast.error(error.message || 'Failed to update optional state');
+                        return;
+                      }
                       await loadMaterialsData(quote?.id ?? null, false);
                     }}>
                       <Eye className="w-3 h-3 mr-2 text-amber-600" />
@@ -1217,13 +1321,7 @@ function SortableRow({
 
               // Calculate base sheet price using same formula as sheetFinalPrice
               const baseLinkedRows = customRows.filter((r: any) => r.sheet_id === baseSheet.sheetId);
-              const baseLinkedRowsTotal = baseLinkedRows.reduce((rowSum: number, row: any) => {
-                const lineItems = customRowLineItems[row.id] || [];
-                const baseCost = lineItems.length > 0
-                  ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
-                  : row.total_cost;
-                return rowSum + (baseCost * (1 + row.markup_percent / 100));
-              }, 0);
+              const baseLinkedRowTotals = sumLinkedRowTotals(baseLinkedRows, customRowLineItems);
               const baseLinkedSubs = linkedSubcontractors[baseSheet.sheetId] || [];
               const baseLinkedSubsMaterialsTotal = sumLinkedSubMaterialsFromSubs(baseLinkedSubs, subcontractorLineItems);
               const baseLinkedSubsLaborTotal = sumLinkedSubLaborFromSubs(baseLinkedSubs, subcontractorLineItems);
@@ -1238,7 +1336,7 @@ function SortableRow({
                 const categoryCostDisplay = baseCategoryCost * (1 + markup / 100);
                 return sum + categoryCostDisplay;
               }, 0);
-              const baseFinalPrice = baseCategoryTotals + baseLinkedRowsTotal + baseLinkedSubsMaterialsTotal;
+              const baseFinalPrice = baseCategoryTotals + baseLinkedRowTotals.materialTotal + baseLinkedSubsMaterialsTotal;
 
               // Base sheet labor
               const baseSheetLaborTotal = sheetLabor[baseSheet.sheetId] ? sheetLabor[baseSheet.sheetId].total_labor_cost : 0;
@@ -1247,7 +1345,11 @@ function SortableRow({
                 const markup = item.markup_percent ?? 0;
                 return sum + (item.total_cost * (1 + markup / 100));
               }, 0);
-              const baseLaborCost = baseSheetLaborTotal + baseSheetLaborLineItemsTotal + baseLinkedSubsLaborTotal;
+              const baseLaborCost =
+                baseSheetLaborTotal +
+                baseSheetLaborLineItemsTotal +
+                baseLinkedRowTotals.laborTotal +
+                baseLinkedSubsLaborTotal;
 
               const baseTotal = baseFinalPrice + baseLaborCost;
               const optionTotal = sheetFinalPrice + totalLaborCost;
@@ -1938,7 +2040,7 @@ function SortableRow({
               ) : (
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-bold text-slate-900 truncate">{est.company_name}</h3>
-                  {(est as any).is_option && (
+                  {toBool((est as any).is_option) && (
                     <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
                       Optional
                     </Badge>
@@ -1975,7 +2077,7 @@ function SortableRow({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {!est.sheet_id && !est.row_id && (
-                    (est as any).is_option ? (
+                    toBool((est as any).is_option) ? (
                       <DropdownMenuItem onSelect={() => toggleSubcontractorOptional(est.id, false)}>
                         <Check className="w-3 h-3 mr-2 text-green-600" />
                         Include in Total
@@ -2278,6 +2380,9 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
   const [subcontractorLineItems, setSubcontractorLineItems] = useState<Record<string, any[]>>({});
   const [linkedSubcontractors, setLinkedSubcontractors] = useState<Record<string, any[]>>({});
+  const [subOptionalPersistenceUnsupported, setSubOptionalPersistenceUnsupported] = useState(() => readSubOptionalUnsupported(job.id));
+  const [optionalSheetOverlay, setOptionalSheetOverlay] = useState<Record<string, boolean>>({});
+  const [optionalSubOverlay, setOptionalSubOverlay] = useState<Record<string, boolean>>({});
   // Track empty description boxes so we can show narrow width (width of placeholder text)
   const [emptyNotesById, setEmptyNotesById] = useState<Record<string, boolean>>({});
   const [emptyScopeById, setEmptyScopeById] = useState<Record<string, boolean>>({});
@@ -2509,6 +2614,15 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
     // Value was loaded from DB → it is saved
     setTaxExemptSaved(taxExempt === true);
   }, [quote?.id, (quote as any)?.tax_exempt]);
+
+  // Keep optional sheet overlay scoped to the active quote.
+  useEffect(() => {
+    setOptionalSheetOverlay({});
+  }, [quote?.id]);
+  useEffect(() => {
+    const scopeId = quote?.id ? `quote:${quote.id}` : `job:${job.id}`;
+    setOptionalSubOverlay(readSubOptionalStorage(scopeId));
+  }, [quote?.id, job.id]);
 
   // Real-time broadcast: sync tax exempt across all users who have this job open
   useEffect(() => {
@@ -3209,7 +3323,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           workbook_id: newWb.id,
           sheet_name: sh.sheet_name ?? 'Sheet',
           order_index: sh.order_index ?? 0,
-          is_option: sh.is_option ?? false,
+          is_option: toBool(sh.is_option),
           description: sh.description ?? null,
           sheet_type: sh.sheet_type ?? 'proposal',
           change_order_seq: sh.change_order_seq ?? null,
@@ -3339,7 +3453,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             workbook_id: newWb.id,
             sheet_name: sh.sheet_name ?? 'Sheet',
             order_index: sh.order_index ?? 0,
-            is_option: sh.is_option ?? false,
+            is_option: toBool(sh.is_option),
             description: sh.description ?? null,
             sheet_type: sh.sheet_type ?? 'proposal',
             change_order_seq: sh.change_order_seq ?? null,
@@ -5052,9 +5166,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       }
 
       // Strip the nested relation out so state only holds flat estimate objects
+      const scopeId = targetQuoteId ? `quote:${targetQuoteId}` : `job:${job.id}`;
+      const persistedSubOptional = readSubOptionalStorage(scopeId);
       const estimatesOnly = rawData.map((est: any) => {
         const { subcontractor_estimate_line_items: _items, ...estimateData } = est;
-        return estimateData;
+        const normalizedOptional = toBool(estimateData.is_option);
+        const persistedOptional = Object.prototype.hasOwnProperty.call(persistedSubOptional, estimateData.id)
+          ? !!persistedSubOptional[estimateData.id]
+          : normalizedOptional;
+        const overlaidOptional = Object.prototype.hasOwnProperty.call(optionalSubOverlay, estimateData.id)
+          ? !!optionalSubOverlay[estimateData.id]
+          : persistedOptional;
+        return { ...estimateData, is_option: overlaidOptional };
       });
 
       if (JSON.stringify(estimatesOnly) !== JSON.stringify(subcontractorEstimates)) {
@@ -5152,7 +5275,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           workbook_id: newWb.id,
           sheet_name: sheet.sheet_name,
           order_index: sheet.order_index ?? 0,
-          is_option: sheet.is_option ?? false,
+          is_option: toBool(sheet.is_option),
           description: sheet.description ?? null,
         })
         .select('id')
@@ -5288,14 +5411,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
               : (Number(item.quantity) || 0) * (Number(item.price_per_unit) || 0);
           const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
             const totalCost = items
-              .filter((item: any) => !(item.is_optional === true))
+              .filter((item: any) => !toBool(item.is_optional))
               .reduce((sum, item) => {
                 const extended = Number(item.extended_cost) || 0;
                 if (extended > 0) return sum + extended;
                 return sum + ((Number(item.cost_per_unit) || 0) * (Number(item.quantity) || 0));
               }, 0);
             const totalPrice = items
-              .filter((item: any) => !(item.is_optional === true))
+              .filter((item: any) => !toBool(item.is_optional))
               .reduce((sum, item) => sum + snapEffectivePrice(item), 0);
             
             const profit = totalPrice - totalCost;
@@ -5307,7 +5430,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
               items: items.map((item: any) => ({
                 id: item.id,
                 order_index: item.order_index ?? 0,
-                isOptional: item.is_optional ?? false,
+                isOptional: toBool(item.is_optional),
                 material_name: item.material_name,
                 sku: item.sku,
                 quantity: item.quantity || 0,
@@ -5348,7 +5471,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             sheetName: sheet.sheet_name,
             sheetDescription: sheet.description || '',
             orderIndex: sheet.order_index,
-            isOptional: sheet.is_option ?? false,
+            isOptional: Object.prototype.hasOwnProperty.call(optionalSheetOverlay, sheet.id)
+              ? !!optionalSheetOverlay[sheet.id]
+              : toBool(sheet.is_option),
             compareToSheetId: sheet.compare_to_sheet_id ?? null,
             sheetType: sheet.sheet_type ?? 'proposal',
             changeOrderSeq: sheet.change_order_seq ?? null,
@@ -5774,7 +5899,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           sheetName: sheet.sheet_name,
           sheetDescription: sheet.description || '',
           orderIndex: sheet.order_index,
-          isOptional: sheet.is_option ?? false,
+          isOptional: Object.prototype.hasOwnProperty.call(optionalSheetOverlay, sheet.id)
+            ? !!optionalSheetOverlay[sheet.id]
+            : toBool(sheet.is_option),
           compareToSheetId: sheet.compare_to_sheet_id ?? null,
           sheetType: sheet.sheet_type ?? 'proposal',
           changeOrderSeq: sheet.change_order_seq ?? null,
@@ -7283,6 +7410,17 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     setSubcontractorEstimates((prev) =>
       prev.map((est: any) => (est.id === estimateId ? { ...est, is_option: isOptional } : est))
     );
+    const scopeId = quote?.id ? `quote:${quote.id}` : `job:${job.id}`;
+    setOptionalSubOverlay((prev) => {
+      const next = { ...prev, [estimateId]: isOptional };
+      writeSubOptionalStorage(scopeId, next);
+      return next;
+    });
+    // Older databases might not have subcontractor_estimates.is_option yet.
+    // Keep local behavior and avoid repeated failing writes.
+    if (subOptionalPersistenceUnsupported) {
+      return;
+    }
     try {
       const { error } = await supabase
         .from('subcontractor_estimates')
@@ -7292,7 +7430,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       await loadSubcontractorEstimates(quote?.id ?? null, !!isReadOnly);
     } catch (error: any) {
       console.error('Error updating subcontractor optional state:', error);
-      // Keep local state if DB schema is behind so user can keep working.
+      if (isMissingSubcontractorOptionalColumnError(error)) {
+        setSubOptionalPersistenceUnsupported(true);
+        writeSubOptionalUnsupported(job.id, true);
+        return;
+      }
+      // Keep local state if DB save fails for other reasons.
       toast.error(error?.message || 'Saved locally only. Run latest migration to persist optional state.');
     }
   }
@@ -7577,17 +7720,11 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
           const linkedSubs = linkedSubcontractors[sheet.sheetId] || [];
           
-          const linkedRowsTotal = linkedRows.reduce((sum: number, row: any) => {
-            const lineItems = customRowLineItems[row.id] || [];
-            const baseCost = lineItems.length > 0
-              ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
-              : row.total_cost;
-            return sum + (baseCost * (1 + row.markup_percent / 100));
-          }, 0);
+          const linkedRowTotals = sumLinkedRowTotals(linkedRows, customRowLineItems);
           
           const linkedSubsMaterialsTotal = sumLinkedSubMaterialsFromSubs(linkedSubs, subcontractorLineItems);
           
-          const sheetBaseCost = sheet.totalPrice + linkedRowsTotal + linkedSubsMaterialsTotal;
+          const sheetBaseCost = sheet.totalPrice + linkedRowTotals.materialTotal + linkedSubsMaterialsTotal;
           const sheetMarkup = sheet.markup_percent || 10;
           const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
 
@@ -7597,11 +7734,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             const baseSheetBd = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === (sheet as any).compareToSheetId);
             if (baseSheetBd) {
               const baseLinkedRows2 = customRows.filter((r: any) => r.sheet_id === baseSheetBd.sheetId);
-              const baseLinkedRowsTotal2 = baseLinkedRows2.reduce((rowSum: number, row: any) => {
-                const lineItems2 = customRowLineItems[row.id] || [];
-                const bc = lineItems2.length > 0 ? lineItems2.reduce((s2: number, it: any) => s2 + it.total_cost, 0) : row.total_cost;
-                return rowSum + (bc * (1 + row.markup_percent / 100));
-              }, 0);
+              const baseLinkedRowTotals2 = sumLinkedRowTotals(baseLinkedRows2, customRowLineItems);
               const baseLinkedSubs2 = linkedSubcontractors[baseSheetBd.sheetId] || [];
               const baseLinkedSubsTotal2 = sumLinkedSubMaterialsFromSubs(baseLinkedSubs2, subcontractorLineItems);
               const baseCatTotals2 = (baseSheetBd.categories || []).reduce((s2: number, cat: any) => {
@@ -7615,7 +7748,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                 }, 0) || (Number(cat.totalCost) || 0);
                 return s2 + baseCategoryCost * (1 + mu / 100);
               }, 0);
-              const baseMaterialsPrice = baseCatTotals2 + baseLinkedRowsTotal2 + baseLinkedSubsTotal2;
+              const baseMaterialsPrice = baseCatTotals2 + baseLinkedRowTotals2.materialTotal + baseLinkedSubsTotal2;
               const baseSheetLaborData = sheetLabor[baseSheetBd.sheetId];
               const baseSheetLaborTotal2 = baseSheetLaborData ? baseSheetLaborData.total_labor_cost : 0;
               const baseSheetLaborLineItems2 = customRowLineItems[baseSheetBd.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
@@ -7625,7 +7758,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
                 const nt = li2.filter((it: any) => !it.excluded && !it.taxable).reduce((ss: number, it: any) => ss + it.total_price, 0);
                 return s2 + (nt * (1 + (sub.markup_percent || 0) / 100));
               }, 0);
-              const baseLaborPrice = baseSheetLaborTotal2 + baseSheetLaborLineItemsTotal2 + baseNonTaxable2;
+              const baseLaborPrice = baseSheetLaborTotal2 + baseSheetLaborLineItemsTotal2 + baseLinkedRowTotals2.laborTotal + baseNonTaxable2;
 
               // Option sheet labor
               const optSheetLaborData = sheetLabor[sheet.sheetId];
@@ -7634,7 +7767,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
               const optSheetLaborLineItemsTotal = optSheetLaborLineItems.reduce((s2: number, it: any) => s2 + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
               const optLinkedSubs2 = linkedSubcontractors[sheet.sheetId] || [];
               const optSubLabor = sumLinkedSubLaborFromSubs(optLinkedSubs2, subcontractorLineItems);
-              const optLaborPrice = optSheetLaborTotal + optSheetLaborLineItemsTotal + optSubLabor;
+              const optLaborPrice = optSheetLaborTotal + optSheetLaborLineItemsTotal + linkedRowTotals.laborTotal + optSubLabor;
 
               // Category-level comparison rows
               const allCatNames = Array.from(new Set([
@@ -7717,7 +7850,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             name: est.company_name,
             description: est.scope_of_work || '',
             price: finalPrice,
-            optional: (est as any).is_option ?? false,
+            optional: toBool((est as any).is_option),
             items: showLineItems ? lineItems
               .filter((item: any) => !item.excluded)
               .map((li: any) => ({
@@ -7959,6 +8092,53 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     materialsBreakdown.sheetBreakdowns.filter((s: any) => s.isOptional).map((s: any) => s.sheetId)
   );
 
+  const getSheetCategoryPriceTotal = (sheet: any): number => {
+    const sheetIdForMatch = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
+    const sheetNameForMatch = String(sheet?.sheetName ?? sheet?.sheet_name ?? '').trim().toLowerCase();
+    const normalizeCategoryName = (name: unknown) => String(name ?? '').trim().toLowerCase();
+    const breakdownSheet = materialsBreakdown.sheetBreakdowns.find(
+      (s: any) => String(s?.sheetId ?? s?.id ?? '').trim() === sheetIdForMatch
+    ) || materialsBreakdown.sheetBreakdowns.find(
+      (s: any) => String(s?.sheetName ?? s?.sheet_name ?? '').trim().toLowerCase() === sheetNameForMatch
+    );
+    const breakdownCategories = (((breakdownSheet as any)?.categories || []) as any[]);
+    const categorySource = ((breakdownSheet as any)?.categories?.length ? (breakdownSheet as any).categories : sheet.categories) || [];
+    const displayCategories = breakdownCategories.length > 0 ? breakdownCategories : categorySource;
+    const breakdownCategoryPriceByName = new Map<string, number>(
+      breakdownCategories.map((cat: any) => [normalizeCategoryName(cat?.name), Number(cat?.totalPrice) || 0])
+    );
+
+    const getCategoryBreakdownPrice = (cat: any) => {
+      const catKey = normalizeCategoryName(cat?.name);
+      const extBySheetId = externalPriceLookup.get(sheetIdForMatch);
+      if (extBySheetId && Object.prototype.hasOwnProperty.call(extBySheetId, catKey)) {
+        return Number(extBySheetId[catKey]) || 0;
+      }
+      const extBySheetName = externalPriceLookup.get(sheetNameForMatch);
+      if (extBySheetName && Object.prototype.hasOwnProperty.call(extBySheetName, catKey)) {
+        return Number(extBySheetName[catKey]) || 0;
+      }
+      const itemsPrice = ((cat?.items || []) as any[]).reduce((sum: number, item: any) => {
+        if (item?.extended_price != null && item.extended_price !== '') {
+          return sum + (Number(item.extended_price) || 0);
+        }
+        return sum + ((Number(item?.quantity) || 0) * (Number(item?.price_per_unit) || 0));
+      }, 0);
+      if (itemsPrice > 0) return itemsPrice;
+      const directTotalPrice = Number(cat?.totalPrice);
+      if (Number.isFinite(directTotalPrice) && directTotalPrice > 0) return directTotalPrice;
+      if (breakdownCategoryPriceByName.has(catKey)) return breakdownCategoryPriceByName.get(catKey) || 0;
+      return 0;
+    };
+
+    return displayCategories.reduce((sum: number, cat: any) => {
+      const categoryKey = `${sheet.sheetId}_${cat.name}`;
+      const categoryMarkup = categoryMarkups[categoryKey] ?? ((sheet as any).markup_percent ?? 10);
+      const base = getCategoryBreakdownPrice(cat);
+      return sum + (base * (1 + (Number(categoryMarkup) || 0) / 100));
+    }, 0);
+  };
+
   // Materials: material sheets + custom material rows (ALL materials, not just taxable)
   // Also track taxable-only materials for tax calculation
   let materialSheetsPrice = 0;
@@ -8048,31 +8228,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         return sum + item.total_cost * (1 + m / 100);
       }, 0);
     
-    // Category totals: treat stored/derived category value as cost, then apply category markup for price.
-    const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
-      const categoryKey = `${sheet.sheetId}_${cat.name}`;
-      const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
-      const baseCategoryCost = (cat.items || []).reduce((itemSum: number, item: any) => {
-        const extended = Number(item.extended_cost) || 0;
-        if (extended > 0) return itemSum + extended;
-        return itemSum + ((Number(item.cost_per_unit) || 0) * (Number(item.quantity) || 0));
-      }, 0) || (Number(cat.totalCost) || 0);
-      const categoryCostDisplay = baseCategoryCost * (1 + categoryMarkup / 100);
-      return sum + categoryCostDisplay;
-    }, 0) || 0;
-    
-    // For taxable calculation, all category materials are taxable by default
-    const categoryTaxableOnly = sheet.categories?.reduce((sum: number, cat: any) => {
-      const categoryKey = `${sheet.sheetId}_${cat.name}`;
-      const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
-      const baseCategoryCost = (cat.items || []).reduce((itemSum: number, item: any) => {
-        const extended = Number(item.extended_cost) || 0;
-        if (extended > 0) return itemSum + extended;
-        return itemSum + ((Number(item.cost_per_unit) || 0) * (Number(item.quantity) || 0));
-      }, 0) || (Number(cat.totalCost) || 0);
-      const categoryCostDisplay = baseCategoryCost * (1 + categoryMarkup / 100);
-      return sum + categoryCostDisplay;
-    }, 0) || 0;
+    const categoryTotals = getSheetCategoryPriceTotal(sheet);
+    // Category materials are treated as taxable by default in current model.
+    const categoryTaxableOnly = categoryTotals;
     
     // Final = categories + sheet material line items + linked custom rows + linked subs
     materialSheetsPrice +=
@@ -8090,7 +8248,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   // Subcontractors: only standalone estimates (not linked to sheets/rows)
   // Material type items go to materials, labor type items go to labor
   const standaloneSubcontractors = subcontractorEstimates.filter(
-    est => !est.sheet_id && !est.row_id && !(est as any).is_option
+    est => !est.sheet_id && !est.row_id && !toBool((est as any).is_option)
   );
   let subcontractorMaterialsPrice = 0;
   let subcontractorMaterialsTaxableOnly = 0;
@@ -8272,13 +8430,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     item =>
       !(
         (item.type === 'material' && (item.data as any).isOptional) ||
-        (item.type === 'subcontractor' && (item.data as any).is_option)
+        (item.type === 'subcontractor' && toBool((item.data as any).is_option))
       )
   );
   const optionalItems = allItemsUnsorted.filter(
     item =>
       (item.type === 'material' && (item.data as any).isOptional) ||
-      (item.type === 'subcontractor' && (item.data as any).is_option)
+      (item.type === 'subcontractor' && toBool((item.data as any).is_option))
   );
 
   // Optional categories (section-level options): list for the "Options" block at bottom of proposal

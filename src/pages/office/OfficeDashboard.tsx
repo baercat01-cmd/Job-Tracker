@@ -38,6 +38,7 @@ import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { EmailSettings } from '@/components/office/EmailSettings';
 import { PortalManagement } from '@/components/office/PortalManagement';
+import { SubcontractorHubManagement } from '@/components/office/SubcontractorHubManagement';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 import { Database } from 'lucide-react';
@@ -383,6 +384,19 @@ export function OfficeDashboard() {
               <Users className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Contacts</span>
             </Button>
+            <Button
+              variant={activeTab === 'sub-hub' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('sub-hub')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'sub-hub'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Users className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Sub Hub</span>
+            </Button>
 
           </div>
 
@@ -613,6 +627,16 @@ export function OfficeDashboard() {
           </div>
         )}
 
+        {activeTab === 'sub-hub' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Subcontractor Hub</h2>
+              <p className="text-yellow-400">Manage all subcontractors and job visibility from one place</p>
+            </div>
+            <SubcontractorHubManagement />
+          </div>
+        )}
+
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
@@ -685,6 +709,10 @@ export function OfficeDashboard() {
                 <TabsTrigger value="portal-management" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Users className="w-4 h-4 mr-2" />
                   Portals
+                </TabsTrigger>
+                <TabsTrigger value="sub-hub" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Users className="w-4 h-4 mr-2" />
+                  Sub Hub
                 </TabsTrigger>
                 <TabsTrigger value="zoho-integration" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Database className="w-4 h-4 mr-2" />
@@ -784,6 +812,10 @@ export function OfficeDashboard() {
 
               <TabsContent value="portal-management" className="mt-6">
                 <PortalManagement />
+              </TabsContent>
+
+              <TabsContent value="sub-hub" className="mt-6">
+                <SubcontractorHubManagement />
               </TabsContent>
 
               <TabsContent value="zoho-integration" className="mt-6">

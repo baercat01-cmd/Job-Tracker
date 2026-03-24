@@ -1429,6 +1429,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       const selectedQuote = quoteIdForLoad
         ? jobQuotes.find((q) => q.id === quoteIdForLoad) ?? null
         : null;
+      const selectedQuoteForDefaultView = quoteIdForLoad
+        ? buildQuoteForContract(
+            jobQuotes,
+            quoteIdForLoad,
+            quoteIdForLoad === effectiveQuoteId ? contractQuoteFields : null,
+          ) ?? selectedQuote
+        : null;
+      const shouldDefaultToLockedWorkbook = !!selectedQuoteForDefaultView?.sent_at;
       const sameProposalQuoteIds = selectedQuote
         ? new Set(
             jobQuotes
@@ -1461,20 +1469,29 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         if (!workbookData) setSnapshotWorkbookId(null);
       }
       if (!workbookData) {
-        workbookData = workingList[0] ?? lockedList[0] ?? null;
+        workbookData = shouldDefaultToLockedWorkbook
+          ? (lockedList[0] ?? workingList[0] ?? null)
+          : (workingList[0] ?? lockedList[0] ?? null);
       }
       if (!workbookData && quoteIdForLoad) {
         // Quote-scoped view: never fall back to another quote's workbook.
         // Proposal-family fallback: allow workbooks tied to another quote row with the same proposal number.
         // Legacy fallback: allow quote_id NULL workbooks for this job (older data before per-proposal linkage).
-        workbookData =
-          wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
-          wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
-          wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
-          wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
-          wbs.find((w) => w.status === 'working' && !w.quote_id) ??
-          wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
-          null;
+        workbookData = shouldDefaultToLockedWorkbook
+          ? (wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
+              wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
+              wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
+              wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
+              wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
+              wbs.find((w) => w.status === 'working' && !w.quote_id) ??
+              null)
+          : (wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
+              wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
+              wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
+              wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
+              wbs.find((w) => w.status === 'working' && !w.quote_id) ??
+              wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
+              null);
       }
       if (!workbookData && !quoteIdForLoad) {
         workbookData = wbs.find((w) => w.status === 'working') ?? wbs[0] ?? null;
