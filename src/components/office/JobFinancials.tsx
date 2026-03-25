@@ -2396,18 +2396,6 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
     sheetBreakdowns: [],
     totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
   });
-  // Build a fast lookup from the structured external prices: (sheetId|sheetName) → categoryName → price.
-  // IMPORTANT: When the proposal is locked/read-only, the right panel can be showing the working workbook.
-  // Never let working-book breakdown prices affect the locked proposal totals.
-  const externalPriceLookup = useMemo(() => {
-    const map = new Map<string, Record<string, number>>();
-    if (isReadOnly) return map;
-    (externalBreakdownSheetPrices || []).forEach((sp) => {
-      map.set(sp.sheetId, sp.categories);
-      map.set(sp.sheetName.trim().toLowerCase(), sp.categories);
-    });
-    return map;
-  }, [externalBreakdownSheetPrices, isReadOnly]);
   
   // Material sheet description editing
   const [showSheetDescDialog, setShowSheetDescDialog] = useState(false);
@@ -2598,6 +2586,19 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   );
   // Read-only when default locked and user hasn't unlocked this historical proposal for editing
   const isReadOnly = isDefaultLocked && quote?.id !== historicalUnlockedQuoteId;
+
+  // Build a fast lookup from the structured external prices: (sheetId|sheetName) → categoryName → price.
+  // IMPORTANT: When the proposal is locked/read-only, the right panel can be showing the working workbook.
+  // Never let working-book breakdown prices affect the locked proposal totals.
+  const externalPriceLookup = useMemo(() => {
+    const map = new Map<string, Record<string, number>>();
+    if (isReadOnly) return map;
+    (externalBreakdownSheetPrices || []).forEach((sp) => {
+      map.set(sp.sheetId, sp.categories);
+      map.set(sp.sheetName.trim().toLowerCase(), sp.categories);
+    });
+    return map;
+  }, [externalBreakdownSheetPrices, isReadOnly]);
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
