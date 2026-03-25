@@ -186,9 +186,12 @@ import {
   upsertFlatstockCutListNotes,
 } from '@/lib/flatstockCutListNotes';
 import { cn } from '@/lib/utils';
-import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
+import { isQuoteContractFrozen, quoteHasActiveContract } from '@/lib/quoteProposalLock';
+import { fetchQuoteIdsWithSignedProposalVersion } from '@/lib/proposalSignedQuotes';
 
-type ContractQuoteFields = Pick<JobQuote, 'sent_at' | 'locked_for_editing' | 'signed_version' | 'customer_signed_at'>;
+type ContractQuoteFields = Pick<JobQuote, 'sent_at' | 'locked_for_editing' | 'signed_version' | 'customer_signed_at'> & {
+  has_signed_proposal_version?: boolean | null;
+};
 
 /** Merge list row with authoritatively fetched contract fields (avoids stale jobQuotes vs JobFinancials). */
 function buildQuoteForContract(
@@ -272,6 +275,8 @@ interface JobQuote {
   is_change_order_proposal?: boolean;
   signed_version?: number | null;
   customer_signed_at?: string | null;
+  /** True when a signed proposal_versions row exists (legacy repair + portal). */
+  has_signed_proposal_version?: boolean;
 }
 
 export interface BreakdownSheetPrice {
@@ -934,12 +939,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         return;
       }
       const quotes = (data || []) as JobQuote[];
-      setJobQuotes(quotes);
+      const signedIds = await fetchQuoteIdsWithSignedProposalVersion(quotes.map((q) => q.id));
+      const merged = quotes.map((q) => ({ ...q, has_signed_proposal_version: signedIds.has(q.id) }));
+      setJobQuotes(merged);
       if (!isControlled) {
         setSelectedQuoteId(prev => {
-          if (quotes.length === 0) return null;
-          if (!prev || !quotes.some(q => q.id === prev)) {
-            const defaultQuote = quotes.find(q => !q.is_change_order_proposal) ?? quotes[0];
+          if (merged.length === 0) return null;
+          if (!prev || !merged.some(q => q.id === prev)) {
+            const defaultQuote = merged.find(q => !q.is_change_order_proposal) ?? merged[0];
             return defaultQuote.id;
           }
           return prev;
@@ -962,19 +969,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (!mounted) return;
       if (error) return;
       const quotes = (data || []) as JobQuote[];
-      setJobQuotes(quotes);
+      const signedIds = await fetchQuoteIdsWithSignedProposalVersion(quotes.map((q) => q.id));
+      setJobQuotes(quotes.map((q) => ({ ...q, has_signed_proposal_version: signedIds.has(q.id) })));
     })();
     return () => { mounted = false; };
   }, [isControlled, effectiveQuoteId, job.id, jobQuotes]);
 
   const jobHasContract = useMemo(
-    () =>
-      jobQuotes.some((q) => {
-        if (q.is_change_order_proposal) return false;
-        const sv = q.signed_version;
-        const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
-        return hasSigned || !!q.customer_signed_at;
-      }),
+    () => jobQuotes.some((q) => !q.is_change_order_proposal && quoteHasActiveContract(q as any)),
     [jobQuotes]
   );
 
@@ -996,11 +998,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         setContractQuoteFields(null);
         return;
       }
+      const signedIds = await fetchQuoteIdsWithSignedProposalVersion([effectiveQuoteId]);
       setContractQuoteFields({
         sent_at: data.sent_at ?? null,
         locked_for_editing: data.locked_for_editing ?? null,
         signed_version: data.signed_version ?? null,
         customer_signed_at: data.customer_signed_at ?? null,
+        has_signed_proposal_version: signedIds.has(effectiveQuoteId),
       });
     })();
     return () => {
@@ -1018,12 +1022,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         (payload: { new?: Record<string, unknown> }) => {
           const row = payload.new;
           if (!row || row.id !== effectiveQuoteId) return;
-          setContractQuoteFields({
-            sent_at: (row.sent_at as string | null) ?? null,
-            locked_for_editing: (row.locked_for_editing as boolean | null) ?? null,
-            signed_version: (row.signed_version as number | null) ?? null,
-            customer_signed_at: (row.customer_signed_at as string | null) ?? null,
-          });
+          void (async () => {
+            const signedIds = await fetchQuoteIdsWithSignedProposalVersion([effectiveQuoteId]);
+            setContractQuoteFields({
+              sent_at: (row.sent_at as string | null) ?? null,
+              locked_for_editing: (row.locked_for_editing as boolean | null) ?? null,
+              signed_version: (row.signed_version as number | null) ?? null,
+              customer_signed_at: (row.customer_signed_at as string | null) ?? null,
+              has_signed_proposal_version: signedIds.has(effectiveQuoteId),
+            });
+          })();
         },
       )
       .subscribe();
@@ -1096,7 +1104,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return () => window.removeEventListener('material-workbook-restored', handler as EventListener);
   }, [effectiveQuoteId]);
 
-  // When office locks/unlocks proposal for editing (JobFinancials), workbook status changes — refetch
+  // When office locks/unlocks or contract is set (JobFinancials), workbook + quote rows change — refetch all of it.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ quoteId?: string | null; jobId?: string }>).detail;
@@ -1105,7 +1113,23 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       for (const key of workbookCache.keys()) {
         if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
       }
-      loadWorkbook(true);
+      void (async () => {
+        const { data: jq, error } = await supabase
+          .from('quotes')
+          .select(
+            'id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at',
+          )
+          .eq('job_id', job.id)
+          .order('created_at', { ascending: false });
+        if (!error && jq) {
+          const ids = (jq as JobQuote[]).map((q) => q.id);
+          const signedIds = await fetchQuoteIdsWithSignedProposalVersion(ids);
+          setJobQuotes(
+            (jq as JobQuote[]).map((q) => ({ ...q, has_signed_proposal_version: signedIds.has(q.id) })),
+          );
+        }
+        await loadWorkbook(true);
+      })();
     };
     window.addEventListener('materials-workbook-updated', handler as EventListener);
     return () => window.removeEventListener('materials-workbook-updated', handler as EventListener);
@@ -1377,7 +1401,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     if (wbErr) throw wbErr;
   }
 
-  async function loadWorkbook(silent = false, overrideQuoteId?: string | null, snapshotIdOverride?: string | null) {
+  /** Whether the load ended on an editable (non-snapshot) working workbook — used after leaving locked snapshot view. */
+  async function loadWorkbook(
+    silent = false,
+    overrideQuoteId?: string | null,
+    snapshotIdOverride?: string | null,
+    opts?: { preferWorking?: boolean }
+  ): Promise<{ landedOnEditableWorking: boolean } | undefined> {
     workbookLoadDepthRef.current += 1;
     const loadDepth = workbookLoadDepthRef.current;
     try {
@@ -1415,33 +1445,55 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         setLoading(true);
       }
 
-      // Single query: fetch all workbooks for this job, then pick the best one in JS.
-      // This collapses 4 sequential fallback round-trips into 1.
-      const { data: allWorkbooks, error: wbError } = await supabase
+      // Fetch workbooks + authoritative quote contract fields together (React `contractQuoteFields` often lags
+      // right after “Set as contract” if realtime is off — without DB read, we never default to the locked snapshot
+      // or run signed-contract workbook pairing).
+      const wbQuery = supabase
         .from('material_workbooks')
         .select('*')
         .eq('job_id', job.id)
         .order('updated_at', { ascending: false });
+      const quoteFreshPromise = quoteIdForLoad
+        ? supabase
+            .from('quotes')
+            .select('sent_at, locked_for_editing, signed_version, customer_signed_at')
+            .eq('id', quoteIdForLoad)
+            .maybeSingle()
+        : Promise.resolve({ data: null as any, error: null as any });
+
+      const [{ data: allWorkbooks, error: wbError }, { data: fqRow }] = await Promise.all([wbQuery, quoteFreshPromise]);
 
       if (wbError) throw wbError;
 
       const wbs = allWorkbooks || [];
+      let freshContractFields: ContractQuoteFields | null = null;
+      if (fqRow && quoteIdForLoad) {
+        const signedIds = await fetchQuoteIdsWithSignedProposalVersion([quoteIdForLoad]);
+        freshContractFields = {
+          sent_at: fqRow.sent_at ?? null,
+          locked_for_editing: fqRow.locked_for_editing ?? null,
+          signed_version: fqRow.signed_version ?? null,
+          customer_signed_at: fqRow.customer_signed_at ?? null,
+          has_signed_proposal_version: signedIds.has(quoteIdForLoad),
+        };
+      }
+      if (freshContractFields && quoteIdForLoad === effectiveQuoteId) {
+        setContractQuoteFields(freshContractFields);
+      }
+
       const matchQuote = (w: (typeof wbs)[0]) =>
         quoteIdForLoad ? w.quote_id === quoteIdForLoad : !w.quote_id;
       const selectedQuote = quoteIdForLoad
         ? jobQuotes.find((q) => q.id === quoteIdForLoad) ?? null
         : null;
+      const fieldsForContract =
+        freshContractFields ?? (quoteIdForLoad === effectiveQuoteId ? contractQuoteFields : null);
       const selectedQuoteForDefaultView = quoteIdForLoad
-        ? buildQuoteForContract(
-            jobQuotes,
-            quoteIdForLoad,
-            quoteIdForLoad === effectiveQuoteId ? contractQuoteFields : null,
-          ) ?? selectedQuote
+        ? buildQuoteForContract(jobQuotes, quoteIdForLoad, fieldsForContract) ?? selectedQuote
         : null;
-      // Only default to locked workbook when the quote is actually frozen (signed/office-locked).
-      // "Sent" alone must not force locked pricing; if the proposal is unlocked, users need the working workbook
-      // so prices can adjust.
-      const shouldDefaultToLockedWorkbook = isQuoteContractFrozen(selectedQuoteForDefaultView as any);
+      // Draft: default to working (price + edits). Signed contract: default to locked snapshot (proposal price).
+      // Office-only lock: still one row — usually `locked` only; working-first ordering still resolves to that row.
+      const shouldDefaultToLockedWorkbook = quoteHasActiveContract(selectedQuoteForDefaultView as any);
       const sameProposalQuoteIds = selectedQuote
         ? new Set(
             jobQuotes
@@ -1474,9 +1526,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         if (!workbookData) setSnapshotWorkbookId(null);
       }
       if (!workbookData) {
-        workbookData = shouldDefaultToLockedWorkbook
-          ? (lockedList[0] ?? workingList[0] ?? null)
-          : (workingList[0] ?? lockedList[0] ?? null);
+        // User explicitly left signed-contract snapshot / chose "working copy" — must land on working, not locked-first.
+        if (opts?.preferWorking && workingList.length > 0) {
+          workbookData = workingList[0];
+        } else {
+          workbookData = shouldDefaultToLockedWorkbook
+            ? (lockedList[0] ?? workingList[0] ?? null)
+            : (workingList[0] ?? lockedList[0] ?? null);
+        }
       }
       if (!workbookData && quoteIdForLoad) {
         // Quote-scoped view: never fall back to another quote's workbook.
@@ -1553,7 +1610,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         setLockedSnapshotsMeta([]);
         setHasWorkingWorkbookForQuote(false);
         if (!silent) setLoading(false);
-        return;
+        return { landedOnEditableWorking: false };
       }
 
       const { data: sheetsRows, error: sheetsError } = await supabase
@@ -1683,7 +1740,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
             }
             await createWorkingFromLatestLocked({ silent: true });
-            return;
+            return { landedOnEditableWorking: true };
           }
         } catch (reErr: any) {
           console.error('repair empty working workbook:', reErr);
@@ -1712,11 +1769,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (sheets.length > 0 && (!current || !sheets.some((s: any) => s.id === current))) {
         setActiveSheetId(sheets[0].id);
       }
+
+      return {
+        landedOnEditableWorking: !isSnapshotView && workbookData.status === 'working',
+      };
     } catch (error: any) {
       console.error('Error loading workbook:', error);
       const msg = error?.message || error?.error_description || String(error);
       const short = msg.length > 120 ? msg.slice(0, 117) + '…' : msg;
       toast.error(short ? `Failed to load materials: ${short}` : 'Failed to load materials');
+      return undefined;
     } finally {
       workbookLoadDepthRef.current -= 1;
       setLoading(false);
@@ -1730,8 +1792,29 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   async function exitLockedSnapshotView() {
     setSnapshotWorkbookId(null);
-    await loadWorkbook(false, undefined, null);
+    const res = await loadWorkbook(false, undefined, null, { preferWorking: true });
+    // Without a `working` row, preferWorking still falls back to `locked` → UI stays read-only. Create a working copy from the snapshot.
+    if (res && !res.landedOnEditableWorking && effectiveQuoteId) {
+      await createWorkingFromLatestLocked({ silent: true });
+    }
   }
+
+  // When the proposal is unlocked for editing from the left panel (JobFinancials),
+  // automatically switch Materials out of the locked snapshot view and into the working copy.
+  // The locked workbook remains the proposal-price source of truth; edits happen on working.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { quoteId } = (e as CustomEvent).detail ?? {};
+      if (!quoteId || !effectiveQuoteId || quoteId !== effectiveQuoteId) return;
+      const viewingLocked = !!snapshotWorkbookId || workbook?.status === 'locked';
+      if (!viewingLocked) return;
+      // Always attempt to exit locked view when proposal unlocks.
+      // If no working workbook exists yet, loadWorkbook will keep the best available view.
+      void exitLockedSnapshotView();
+    };
+    window.addEventListener('proposal-editing-unlocked', handler as EventListener);
+    return () => window.removeEventListener('proposal-editing-unlocked', handler as EventListener);
+  }, [effectiveQuoteId, snapshotWorkbookId, workbook?.status]);
 
   async function createWorkingFromLatestLocked(opts?: { silent?: boolean; _retriedAfterEmptyPurge?: boolean }) {
     const silent = !!opts?.silent;
@@ -1769,7 +1852,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           for (const key of workbookCache.keys()) {
             if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
           }
-          await loadWorkbook(true, undefined, null);
+          await loadWorkbook(true, undefined, null, { preferWorking: true });
           return;
         }
         // Empty working + empty locked materials: still replace with a proper clone (sheets/structure from locked)
@@ -1936,7 +2019,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         toast.success('Working workbook created. Field requests and edits use this copy; locked snapshots stay unchanged.');
       }
       setSnapshotWorkbookId(null);
-      await loadWorkbook(false, undefined, null);
+      await loadWorkbook(false, undefined, null, { preferWorking: true });
       window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id, quoteId: qid } }));
     } catch (e: any) {
       console.error(e);
@@ -2007,16 +2090,19 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
-  /** Stable key when the selected quote is signed/office-locked contract (triggers auto workbook pairing). "Sent" alone does not count. */
-  const frozenContractQuoteKey = useMemo(() => {
+  /**
+   * Only a signed contract (customer sign and/or signed_version) gets the locked + working workbook pair.
+   * Office-only proposal lock keeps a single workbook row; it must not auto-clone a job-tracking copy.
+   */
+  const signedContractWorkbookPairKey = useMemo(() => {
     const q = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
-    if (!q || !effectiveQuoteId || !isQuoteContractFrozen(q as any)) return null;
-    return `${q.id}|${q.signed_version ?? ''}|${q.customer_signed_at ?? ''}|${q.locked_for_editing ?? ''}`;
+    if (!q || !effectiveQuoteId || !quoteHasActiveContract(q as any)) return null;
+    return `${q.id}|${q.signed_version ?? ''}|${q.customer_signed_at ?? ''}`;
   }, [jobQuotes, effectiveQuoteId, contractQuoteFields]);
 
-  // Signed / sent proposals: ensure locked (contract) + working (shop/crew) workbooks without manual "Lock workbook".
+  // Signed contract: ensure locked (proposal price) + working (job/COS only, not tied to proposal total).
   useEffect(() => {
-    if (!frozenContractQuoteKey || !effectiveQuoteId) return;
+    if (!signedContractWorkbookPairKey || !effectiveQuoteId) return;
     const qid = effectiveQuoteId;
     let cancelled = false;
     (async () => {
@@ -2081,7 +2167,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- createWorkingFromLatestLocked/loadWorkbook are stable for this intent; avoid re-running on every render
-  }, [frozenContractQuoteKey, effectiveQuoteId, job.id]);
+  }, [signedContractWorkbookPairKey, effectiveQuoteId, job.id]);
 
   function handleSheetChange(sheetId: string) {
     setActiveSheetId(sheetId);
@@ -3789,35 +3875,103 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Group by workbook category, using user-defined order when present
   const categoryGroups = groupByCategory(filteredItems, activeSheet?.category_order);
 
+  // Proposal / Breakdown panel must follow the price workbook only. On a signed contract, that is the `locked`
+  // snapshot — never the job-tracking `working` row (sheet names often match, so category overlays would wrongly replace totals).
   useEffect(() => {
-    if (!workbook?.sheets?.length) return;
+    let cancelled = false;
 
-    const sheetPrices: BreakdownSheetPrice[] = workbook.sheets.map((sheet) => {
-      const allCategoryGroups = groupByCategory(sheet.items || [], sheet.category_order);
-      const categories: Record<string, number> = {};
-      allCategoryGroups.forEach((catGroup) => {
-        const key = String(catGroup.category || '').trim().toLowerCase();
-        // Must match breakdown tab math exactly: catGroup.items reduce getDisplayExtended(item).price
-        categories[key] = (catGroup.items || []).reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
+    const buildSheetPrices = (sheets: MaterialSheet[]): BreakdownSheetPrice[] =>
+      (sheets || []).map((sheet) => {
+        const allCategoryGroups = groupByCategory(sheet.items || [], sheet.category_order);
+        const categories: Record<string, number> = {};
+        allCategoryGroups.forEach((catGroup) => {
+          const key = String(catGroup.category || '').trim().toLowerCase();
+          categories[key] = (catGroup.items || []).reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
+        });
+        return { sheetId: sheet.id, sheetName: sheet.sheet_name || '', categories };
       });
-      return { sheetId: sheet.id, sheetName: sheet.sheet_name || '', categories };
-    });
 
-    onBreakdownPriceSync?.(sheetPrices);
-  }, [workbook, onBreakdownPriceSync]);
+    (async () => {
+      if (!onBreakdownPriceSync) return;
+
+      const q = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
+      const signedContract = quoteHasActiveContract(q as any);
+      const onJobTrackingCopy =
+        signedContract &&
+        !!workbook &&
+        workbook.status === 'working' &&
+        !snapshotWorkbookId;
+
+      if (onJobTrackingCopy && effectiveQuoteId) {
+        let lockedId = lockedSnapshotsMeta[0]?.id;
+        if (!lockedId) {
+          const { data: lockRow } = await supabase
+            .from('material_workbooks')
+            .select('id')
+            .eq('quote_id', effectiveQuoteId)
+            .eq('status', 'locked')
+            .order('version_number', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          lockedId = lockRow?.id ?? undefined;
+        }
+        if (!lockedId) return;
+        try {
+          const { data: sheetsData, error: shErr } = await supabase
+            .from('material_sheets')
+            .select('*')
+            .eq('workbook_id', lockedId)
+            .order('order_index');
+          if (cancelled || shErr) return;
+          const sheetIds = (sheetsData || []).map((s: any) => s.id).filter(Boolean);
+          let itemsData: any[] = [];
+          if (sheetIds.length > 0) {
+            const { data: items, error: itErr } = await supabase
+              .from('material_items')
+              .select('*')
+              .in('sheet_id', sheetIds)
+              .order('order_index');
+            if (cancelled || itErr) return;
+            itemsData = items || [];
+          }
+          itemsData = await enrichItemsWithCatalogPrices(itemsData);
+          if (cancelled) return;
+          const sheetsWithItems: MaterialSheet[] = (sheetsData || []).map((s: any) => ({
+            ...s,
+            items: itemsData.filter((i: any) => i.sheet_id === s.id),
+          })) as MaterialSheet[];
+          onBreakdownPriceSync(buildSheetPrices(sheetsWithItems));
+        } catch {
+          if (!cancelled) onBreakdownPriceSync([]);
+        }
+        return;
+      }
+
+      if (!workbook?.sheets?.length) {
+        onBreakdownPriceSync([]);
+        return;
+      }
+      onBreakdownPriceSync(buildSheetPrices(workbook.sheets));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    workbook,
+    workbook?.sheets,
+    workbook?.status,
+    onBreakdownPriceSync,
+    jobQuotes,
+    effectiveQuoteId,
+    contractQuoteFields,
+    lockedSnapshotsMeta,
+    snapshotWorkbookId,
+  ]);
 
   useEffect(() => {
     onWorkbookViewSync?.({ workbookId: workbook?.id ?? null, status: (workbook?.status as any) ?? null });
   }, [workbook?.id, workbook?.status, onWorkbookViewSync]);
-
-  if (loading) {
-    return (
-      <div className="text-center py-8">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-muted-foreground">Loading materials...</p>
-      </div>
-    );
-  }
 
   const selectedQuote = jobQuotes.find(q => q.id === effectiveQuoteId);
   const quoteForContractUi = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
@@ -3845,11 +3999,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const showShopOrderControls = workbook?.status === 'working';
 
   const quoteContractFrozen = isQuoteContractFrozen(quoteForContractUi as any);
+  const quoteHasSignedContract = quoteHasActiveContract(quoteForContractUi as any);
   /** Unsigned / draft proposals: optional manual lock. Sent or signed contracts auto-manage locked + working copies. */
   const showManualLockWorkbook =
     !!workbook && workbook.status === 'working' && !quoteContractFrozen && !isWorkbookReadOnly;
-  /** Show switch whenever we have a locked contract row — working side enables after auto-setup (or is disabled until then). */
-  const showContractWorkingToggle = quoteContractFrozen && lockedSnapshotsMeta.length > 0;
+  /** Signed contract only: two workbook rows (price snapshot vs job-tracking working copy). */
+  const showContractWorkingToggle = quoteHasSignedContract && lockedSnapshotsMeta.length > 0;
   /** User manually locked while still editable — keep older “view snapshot” row. */
   const showLegacyLockedSnapshotButtons =
     !quoteContractFrozen && workbook?.status === 'working' && lockedSnapshotsMeta.length > 0;
@@ -3869,10 +4024,23 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     hasWorkingWorkbookForQuote;
   const workingCopyToggleDisabled = !hasWorkingWorkbookForQuote;
 
+  if (loading) {
+    return (
+      <div className="text-center py-8">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-muted-foreground">Loading materials...</p>
+      </div>
+    );
+  }
+
   /** Readable on both the dark portaled job bar and light inline headers */
   const contractWorkbookViewToggle =
     showContractWorkingToggle && lockedSnapshotsMeta[0] ? (
-      <div className="flex items-center gap-1.5 shrink-0" role="group" aria-label="Switch materials workbook view">
+      <div
+        className="flex flex-col gap-0.5 shrink-0"
+        role="group"
+        aria-label="Two workbooks: signed contract snapshot (proposal price) vs editable working copy"
+      >
         <div className="inline-flex rounded-md border-2 border-amber-600 bg-white/95 dark:bg-slate-900/90 p-0.5 shadow-sm">
           <button
             type="button"
@@ -3893,7 +4061,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 ? ensuringContractWorkbookPair
                   ? 'Creating working copy…'
                   : 'Working copy is being prepared for this signed contract'
-                : 'Edit materials, shop status, and crew orders'
+                : 'Separate workbook row in the database — edits here do not change proposal totals from the signed snapshot'
             }
           >
             Working copy
@@ -3909,12 +4077,15 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'text-amber-950 hover:bg-amber-50',
             )}
-            title="Read-only line items and totals as signed/sent"
+            title="Separate locked workbook — line items and totals tied to proposal price / signed contract (read-only)"
           >
             Signed contract{' '}
             <span className="opacity-90 font-semibold">v{lockedSnapshotsMeta[0].version_number}</span>
           </button>
         </div>
+        <p className="text-[9px] sm:text-[10px] text-amber-900/80 max-w-[14rem] leading-tight hidden sm:block">
+          Two material workbooks per proposal: locked = proposal price; working = shop/crew edits (proposal total unchanged).
+        </p>
       </div>
     ) : null;
 
@@ -4149,7 +4320,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           </div>
         )}
 
-        {quoteContractFrozen && ensuringContractWorkbookPair && (
+        {quoteHasSignedContract && ensuringContractWorkbookPair && (
           <div className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-950 mb-2 flex items-center gap-2">
             <div className="w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0" />
             <span>Preparing working copy for shop, crew orders, and edits…</span>
@@ -4185,7 +4356,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           </div>
         )}
 
-        {workbook && quoteContractFrozen && !!snapshotWorkbookId && (
+        {workbook && quoteHasSignedContract && !!snapshotWorkbookId && (
           <div className="rounded-lg border border-amber-300 bg-amber-50/95 px-3 py-2 text-sm text-amber-950 mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <Lock className="w-4 h-4 shrink-0" />
@@ -4199,15 +4370,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               variant="secondary"
               className="h-8 text-xs shrink-0"
               onClick={() => exitLockedSnapshotView()}
+              title="Open or create the editable working workbook. The signed contract snapshot is not changed."
             >
               <LockOpen className="w-3 h-3 mr-1" />
-              Working copy
+              Unlock for edits (working copy)
             </Button>
           </div>
         )}
 
         {workbook &&
-          quoteContractFrozen &&
+          quoteHasSignedContract &&
           workbook.status === 'locked' &&
           !snapshotWorkbookId &&
           !hasWorkingWorkbookForQuote &&
@@ -4255,7 +4427,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                           </Badge>
                         </div>
                         <p className="text-xs opacity-90 mt-1 max-w-[56rem]">
-                          Shop orders and line status are hidden here. Use <strong>Back to working workbook</strong> for crew orders and edits.
+                          The locked snapshot stays read-only so proposal pricing does not change. Use <strong>Unlock for edits (working copy)</strong> to edit line items — a working workbook is opened or created automatically if you do not have one yet.
                         </p>
                       </div>
                     </div>
@@ -4265,10 +4437,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                       variant="secondary"
                       className="h-8 text-xs shrink-0"
                       onClick={() => exitLockedSnapshotView()}
-                    >
-                      <LockOpen className="w-3 h-3 mr-1" />
-                      Back to working workbook
-                    </Button>
+              title="Open or create the editable working workbook. Line-item changes apply there only; this locked snapshot is unchanged."
+            >
+              <LockOpen className="w-3 h-3 mr-1" />
+              Unlock for edits (working copy)
+            </Button>
                     {!hasWorkingWorkbookForQuote && (
                       <Button
                         type="button"

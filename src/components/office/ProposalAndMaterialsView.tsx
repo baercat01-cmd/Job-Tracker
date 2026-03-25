@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
+import { fetchQuoteIdsWithSignedProposalVersion } from '@/lib/proposalSignedQuotes';
 import type { Job } from '@/types';
 import { DocumentPanelContext } from '@/contexts/DocumentPanelContext';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
@@ -63,9 +64,15 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
         return;
       }
 
+      const signedIds = await fetchQuoteIdsWithSignedProposalVersion((quotes || []).map((q: any) => q.id));
+      const quotesMerged = (quotes || []).map((q: any) => ({
+        ...q,
+        has_signed_proposal_version: signedIds.has(q.id),
+      }));
+
       // Prefer a signed/office-locked main proposal so Materials binds to the workbook that exists for contracts.
       // This fixes the "No Material Workbook" case when the most-recent proposal is not the frozen contract.
-      const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
+      const mainQuotes = quotesMerged.filter((q: any) => !q.is_change_order_proposal);
       const frozenMain = mainQuotes.filter((q: any) => isQuoteContractFrozen(q));
       if (frozenMain.length > 0) {
         setInternalQuoteId((prev) => {
@@ -75,7 +82,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
         return;
       }
 
-      const sorted = [...quotes].sort((a: any, b: any) => {
+      const sorted = [...quotesMerged].sort((a: any, b: any) => {
         const na = (a.proposal_number || a.quote_number || '').toString();
         const nb = (b.proposal_number || b.quote_number || '').toString();
         if (na === nb) return 0;
