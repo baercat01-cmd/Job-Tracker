@@ -4150,33 +4150,30 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
         {showLegacyLockedSnapshotButtons && (
           <div className="flex flex-wrap items-center gap-2 justify-end mb-2">
-            <Button
-              type="button"
-              size="sm"
-              className="h-9 text-xs font-semibold bg-amber-100 border-2 border-amber-400 text-amber-950 hover:bg-amber-200 shadow-sm"
-              onClick={() => openLockedSnapshotView(lockedSnapshotsMeta[0].id)}
-              title="Open the latest locked snapshot (read-only)"
-            >
-              <Lock className="w-3.5 h-3.5 mr-1.5" />
-              View locked snapshot
-              <Badge variant="outline" className="ml-2 bg-white border-amber-500 text-amber-900">
-                v{lockedSnapshotsMeta[0].version_number}
-              </Badge>
-            </Button>
-            {lockedSnapshotsMeta.slice(1).map((lb) => (
+            {snapshotWorkbookId ? (
               <Button
-                key={lb.id}
                 type="button"
                 size="sm"
-                variant="outline"
-                className="h-8 text-xs border-amber-300 text-amber-900 bg-white hover:bg-amber-50"
-                onClick={() => openLockedSnapshotView(lb.id)}
+                variant="secondary"
+                className="h-9 text-xs font-semibold"
+                onClick={() => exitLockedSnapshotView()}
+                title="Return to the working workbook"
               >
-                <Lock className="w-3 h-3 mr-1" />
-                v{lb.version_number}
-                {lb.locked_at ? ` · ${new Date(lb.locked_at).toLocaleDateString()}` : ''}
+                <LockOpen className="w-3.5 h-3.5 mr-1.5" />
+                Working copy
               </Button>
-            ))}
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 text-xs font-semibold bg-amber-100 border-2 border-amber-400 text-amber-950 hover:bg-amber-200 shadow-sm"
+                onClick={() => openLockedSnapshotView(lockedSnapshotsMeta[0].id)}
+                title="Open the latest locked snapshot (read-only)"
+              >
+                <Lock className="w-3.5 h-3.5 mr-1.5" />
+                Locked
+              </Button>
+            )}
           </div>
         )}
 
