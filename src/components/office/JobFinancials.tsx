@@ -95,6 +95,8 @@ interface CustomRowLineItem {
   markup_percent?: number;
   item_type?: 'material' | 'labor';
   sheet_id?: string;
+  quote_id?: string | null;
+  section_name?: string | null;
   hide_from_customer?: boolean;
 }
 
@@ -6257,9 +6259,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     );
 
     // Fetch sheet-linked items (row_id IS NULL).
-    // IMPORTANT: Use the currently displayed sheetBreakdowns as the primary source of sheet IDs.
-    // When proposals are locked/historical or workbook selection falls back, workbook-derived sheetIds can diverge
-    // from what's rendered in the UI, making newly added sheet line items "disappear" after reload.
+    // NOTE: Sheet line items are proposal-scoped via (quote_id + section_name) and may optionally also have sheet_id.
+    // We attach them to the currently displayed sheets by matching section_name (and fall back to sheet_id).
     let sheetLinkedItems: CustomRowLineItem[] = [];
     let sheetIds: string[] = [];
     const displayedSheetIds = Array.from(
@@ -6364,23 +6365,53 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         .maybeSingle();
       if (sheetIds.length === 0) sheetIds = ((jobWb as any)?.material_sheets || []).map((s: any) => s.id);
     }
-    if (sheetIds.length > 0) {
+    if (targetQuoteId) {
+      // Primary: proposal-scoped items (new behavior).
+      const { data: byQuote, error: byQuoteErr } = await supabase
+        .from('custom_financial_row_items')
+        .select('*')
+        .eq('quote_id', targetQuoteId)
+        .is('row_id', null)
+        .order('order_index');
+      if (byQuoteErr) console.error('Error loading quote-scoped sheet line items:', byQuoteErr);
+      sheetLinkedItems = (byQuote || []) as CustomRowLineItem[];
+
+      // Backward compatibility: also load legacy sheet_id-linked items if needed.
+      if ((sheetLinkedItems?.length || 0) === 0 && sheetIds.length > 0) {
+        const { data: sheetItems, error: sheetItemsErr } = await supabase
+          .from('custom_financial_row_items')
+          .select('*')
+          .in('sheet_id', sheetIds)
+          .is('row_id', null)
+          .order('order_index');
+        if (sheetItemsErr) console.error('Error loading sheet-linked line items:', sheetItemsErr);
+        sheetLinkedItems = (sheetItems || []) as CustomRowLineItem[];
+      }
+    } else if (sheetIds.length > 0) {
       const { data: sheetItems, error: sheetItemsErr } = await supabase
         .from('custom_financial_row_items')
         .select('*')
         .in('sheet_id', sheetIds)
         .is('row_id', null)
         .order('order_index');
-      if (sheetItemsErr) {
-        console.error('Error loading sheet-linked line items:', sheetItemsErr);
-      }
+      if (sheetItemsErr) console.error('Error loading sheet-linked line items:', sheetItemsErr);
       sheetLinkedItems = (sheetItems || []) as CustomRowLineItem[];
     }
 
     const allLineItems = [...rowLinkedItems, ...sheetLinkedItems];
 
+    const sheetNameToId = new Map<string, string>();
+    materialSheets.forEach((s: any) => {
+      const id = String(s?.id ?? '').trim();
+      const nameKey = normalizeSheetName(s?.sheet_name);
+      if (id && nameKey && !sheetNameToId.has(nameKey)) sheetNameToId.set(nameKey, id);
+    });
+
     const getEffectiveParentId = (item: CustomRowLineItem) => {
       if (item.row_id) return duplicateToSurviving[item.row_id] ?? item.row_id;
+      // Prefer attaching by section_name (stable across workbook copies).
+      const sec = normalizeSheetName((item as any).section_name);
+      if (sec && sheetNameToId.has(sec)) return sheetNameToId.get(sec) ?? null;
       const sid = item.sheet_id ?? null;
       if (sid && workingSheetIdToDisplayedId.has(String(sid))) return workingSheetIdToDisplayedId.get(String(sid)) ?? sid;
       return sid;
@@ -7085,6 +7116,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     const itemData = {
       row_id: isSheet ? null : lineItemParentRowId,
       sheet_id: isSheet ? lineItemParentRowId : null,
+      quote_id: isSheet ? (quote?.id ?? null) : null,
+      section_name: isSheet
+        ? (materialSheets.find((s: any) => s.id === lineItemParentRowId)?.sheet_name ??
+            materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === lineItemParentRowId)?.sheetName ??
+            null)
+        : null,
       description: lineItemForm.description,
       quantity: qty,
       unit_cost: cost,
