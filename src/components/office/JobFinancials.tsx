@@ -5110,6 +5110,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     // polling since no navigation is in flight.
     const effectiveQuote = targetQuote !== undefined ? targetQuote : quote;
     const targetQuoteId: string | null = effectiveQuote?.id ?? null;
+    const contractFrozen = isQuoteContractFrozen(effectiveQuote as any);
 
     // When user has unlocked a historical proposal for editing, load live data for it (or forceLive for this load)
     const isHistorical = !options?.forceLive && !!effectiveQuote
@@ -5121,13 +5122,26 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       setLoading(true);
     }
     try {
-      await Promise.all([
-        loadCustomRows(targetQuoteId, isHistorical),
-        loadLaborPricing(),
-        loadLaborHours(),
-        loadMaterialsData(targetQuoteId, isHistorical),
-        loadSubcontractorEstimates(targetQuoteId, isHistorical),
-      ]);
+      // IMPORTANT: When a proposal is frozen/locked, the materials workbook selection differs (locked workbook only),
+      // and `loadCustomRows` relies on the currently displayed sheet IDs to fetch sheet-linked line items (Add Labor).
+      // Load materials first in that case to avoid a race that can drop labor from totals on initial load.
+      if (contractFrozen) {
+        await loadMaterialsData(targetQuoteId, isHistorical);
+        await Promise.all([
+          loadCustomRows(targetQuoteId, isHistorical),
+          loadLaborPricing(),
+          loadLaborHours(),
+          loadSubcontractorEstimates(targetQuoteId, isHistorical),
+        ]);
+      } else {
+        await Promise.all([
+          loadCustomRows(targetQuoteId, isHistorical),
+          loadLaborPricing(),
+          loadLaborHours(),
+          loadMaterialsData(targetQuoteId, isHistorical),
+          loadSubcontractorEstimates(targetQuoteId, isHistorical),
+        ]);
+      }
     } catch (error) {
       console.error('Error loading financial data:', error);
       if (!silent) {
