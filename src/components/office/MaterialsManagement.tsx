@@ -293,6 +293,8 @@ interface MaterialsManagementProps {
   externalActiveSheetId?: string | null;
   /** Sync breakdown prices to parent for proposal-side source-of-truth display. */
   onBreakdownPriceSync?: (prices: BreakdownSheetPrice[]) => void;
+  /** Sync which workbook (working vs locked) the materials panel is currently viewing. */
+  onWorkbookViewSync?: (view: { workbookId: string | null; status: 'working' | 'locked' | null }) => void;
 }
 
 interface CategoryGroup {
@@ -300,7 +302,7 @@ interface CategoryGroup {
   items: MaterialItem[];
 }
 
-export function MaterialsManagement({ job, userId, proposalNumber, controlledQuoteId, onQuoteChange, externalActiveSheetId, onBreakdownPriceSync }: MaterialsManagementProps) {
+export function MaterialsManagement({ job, userId, proposalNumber, controlledQuoteId, onQuoteChange, externalActiveSheetId, onBreakdownPriceSync, onWorkbookViewSync }: MaterialsManagementProps) {
   const normalizeSyncKeyPart = (value: unknown) =>
     String(value ?? '')
       .toLowerCase()
@@ -3803,6 +3805,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
     onBreakdownPriceSync?.(sheetPrices);
   }, [workbook, onBreakdownPriceSync]);
+
+  useEffect(() => {
+    onWorkbookViewSync?.({ workbookId: workbook?.id ?? null, status: (workbook?.status as any) ?? null });
+  }, [workbook?.id, workbook?.status, onWorkbookViewSync]);
 
   if (loading) {
     return (

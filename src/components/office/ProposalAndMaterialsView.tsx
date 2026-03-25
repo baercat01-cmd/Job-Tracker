@@ -39,6 +39,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
   const [linkedSheetId, setLinkedSheetId] = useState<string | null>(null);
   const [showDocumentsInPanel, setShowDocumentsInPanel] = useState(false);
   const [breakdownSheetPrices, setBreakdownSheetPrices] = useState<BreakdownSheetPrice[]>([]);
+  const [materialsWorkbookView, setMaterialsWorkbookView] = useState<{ workbookId: string | null; status: 'working' | 'locked' | null } | null>(null);
 
   const isControlled = controlledQuoteId !== undefined;
   const selectedQuoteId = isControlled ? (controlledQuoteId ?? null) : internalQuoteId;
@@ -120,6 +121,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
                 onQuoteChange={setSelectedQuoteId}
                 onSheetSelect={setLinkedSheetId}
                 externalBreakdownSheetPrices={breakdownSheetPrices}
+                externalMaterialsWorkbookView={materialsWorkbookView}
               />
             </div>
           </div>
@@ -149,6 +151,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
                   onQuoteChange={setSelectedQuoteId}
                   externalActiveSheetId={linkedSheetId}
                   onBreakdownPriceSync={setBreakdownSheetPrices}
+                  onWorkbookViewSync={setMaterialsWorkbookView}
                 />
               </Suspense>
             )}

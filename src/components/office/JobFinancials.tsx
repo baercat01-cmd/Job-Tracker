@@ -198,6 +198,8 @@ interface JobFinancialsProps {
   onSheetSelect?: (sheetId: string | null) => void;
   /** Structured per-sheet category prices from right-panel Breakdown (source of truth). */
   externalBreakdownSheetPrices?: { sheetId: string; sheetName: string; categories: Record<string, number> }[];
+  /** When split-view materials panel is viewing a locked workbook snapshot, mirror that here for pricing isolation. */
+  externalMaterialsWorkbookView?: { workbookId: string | null; status: 'working' | 'locked' | null } | null;
 }
 
 /** Nested material_sheets select variants for cloning (most complete → oldest DBs). */
@@ -2365,7 +2367,7 @@ function SortableRow({
 
 const headerBtn = 'bg-white text-black hover:bg-slate-100 border-slate-400 text-xs h-8 px-2';
 
-export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSelect, externalBreakdownSheetPrices }: JobFinancialsProps) {
+export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSelect, externalBreakdownSheetPrices, externalMaterialsWorkbookView }: JobFinancialsProps) {
   const { profile } = useAuth();
   const setProposalToolbar = useProposalToolbar();
   const proposalSummaryCtx = useProposalSummary();
@@ -2608,19 +2610,21 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   );
   // Read-only when default locked and user hasn't unlocked this historical proposal for editing
   const isReadOnly = isDefaultLocked && quote?.id !== historicalUnlockedQuoteId;
+  const isExternallyViewingLockedWorkbook = externalMaterialsWorkbookView?.status === 'locked';
+  const isPriceIsolated = isReadOnly || isExternallyViewingLockedWorkbook;
 
   // Build a fast lookup from the structured external prices: (sheetId|sheetName) → categoryName → price.
   // IMPORTANT: When the proposal is locked/read-only, the right panel can be showing the working workbook.
   // Never let working-book breakdown prices affect the locked proposal totals.
   const externalPriceLookup = useMemo(() => {
     const map = new Map<string, Record<string, number>>();
-    if (isReadOnly) return map;
+    if (isPriceIsolated) return map;
     (externalBreakdownSheetPrices || []).forEach((sp) => {
       map.set(sp.sheetId, sp.categories);
       map.set(sp.sheetName.trim().toLowerCase(), sp.categories);
     });
     return map;
-  }, [externalBreakdownSheetPrices, isReadOnly]);
+  }, [externalBreakdownSheetPrices, isPriceIsolated]);
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -5616,6 +5620,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       if (hasQuote) {
         const wbSelect = `
           id,
+          status,
           material_sheets (
             *,
             material_items (*),
@@ -5623,6 +5628,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             material_category_markups (*)
           )
         `;
+        // If the split-view materials panel is explicitly viewing a locked workbook, mirror that here
+        // so the proposal totals stay attached to the locked snapshot (never influenced by working edits).
+        if (externalMaterialsWorkbookView?.status === 'locked' && externalMaterialsWorkbookView.workbookId) {
+          const { data: forcedWb, error: forcedErr } = await supabase
+            .from('material_workbooks')
+            .select(wbSelect)
+            .eq('id', externalMaterialsWorkbookView.workbookId)
+            .limit(1)
+            .maybeSingle();
+          if (forcedErr) throw forcedErr;
+          workbookData = forcedWb;
+          workbookError = null;
+        } else {
         const { data: quoteRowForMaterials } = await supabase
           .from('quotes')
           .select('locked_for_editing, sent_at, signed_version, customer_signed_at')
@@ -5732,6 +5750,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
               .maybeSingle();
             workbookData = fallback.data;
           }
+        }
         }
 
         if (!workbookData) {
