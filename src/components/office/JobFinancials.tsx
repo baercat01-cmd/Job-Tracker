@@ -892,7 +892,7 @@ function SortableRow({
                           </div>
                           <div className="flex items-center gap-3 text-xs">
                             <div className="text-right">
-                              <p className="text-slate-500">Cost</p>
+                              <p className="text-slate-500">Price</p>
                               <p className="font-semibold text-slate-900">${categoryCostDisplay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
                             <div className="flex items-center gap-1">
@@ -2613,18 +2613,23 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   const isExternallyViewingLockedWorkbook = externalMaterialsWorkbookView?.status === 'locked';
   const isPriceIsolated = isReadOnly || isExternallyViewingLockedWorkbook;
 
-  // Build a fast lookup from the structured external prices: (sheetId|sheetName) → categoryName → price.
-  // IMPORTANT: When the proposal is locked/read-only, the right panel can be showing the working workbook.
-  // Never let working-book breakdown prices affect the locked proposal totals.
+  // Build a fast lookup from the structured Breakdown prices: (sheetId|sheetName) → categoryName → price.
+  // NOTE: We intentionally always build this lookup so the left Proposal sections can match the Breakdown panel.
   const externalPriceLookup = useMemo(() => {
     const map = new Map<string, Record<string, number>>();
-    if (isPriceIsolated) return map;
     (externalBreakdownSheetPrices || []).forEach((sp) => {
-      map.set(sp.sheetId, sp.categories);
-      map.set(sp.sheetName.trim().toLowerCase(), sp.categories);
+      // Normalize category keys so lookups by lowercased names always work.
+      const normalizedCategories: Record<string, number> = {};
+      Object.entries(sp.categories || {}).forEach(([k, v]) => {
+        const key = String(k ?? '').trim().toLowerCase();
+        if (!key) return;
+        normalizedCategories[key] = Number(v) || 0;
+      });
+      map.set(sp.sheetId, normalizedCategories);
+      map.set(sp.sheetName.trim().toLowerCase(), normalizedCategories);
     });
     return map;
-  }, [externalBreakdownSheetPrices, isPriceIsolated]);
+  }, [externalBreakdownSheetPrices]);
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -5691,28 +5696,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           usedFallbackWorkbook = false;
           proposalWorkbookIdForLabor = null;
           if (!workbookData && !workbookError) {
-            // No locked row yet (edge case) — fall back to working / any for this quote
-            let { data, error } = await supabase
-              .from('material_workbooks')
-              .select(wbSelect)
-              .eq('quote_id', targetQuoteId)
-              .eq('status', 'working')
-              .order('version_number', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            workbookData = data;
-            workbookError = error;
-            if (!workbookData && !workbookError) {
-              const fallback = await supabase
-                .from('material_workbooks')
-                .select(wbSelect)
-                .eq('quote_id', targetQuoteId)
-                .order('version_number', { ascending: false })
-                .order('updated_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-              workbookData = fallback.data;
-            }
+            // Hard guarantee: do NOT fall back to working when this quote is frozen/locked.
+            // Falling back would let working edits change locked proposal totals.
+            toast.error('Locked proposal workbook not found. Create/restore the locked contract workbook to view locked totals.');
           }
         } else {
           // Draft / editable proposal: match MaterialsManagement — highest-version working, then highest-version locked
