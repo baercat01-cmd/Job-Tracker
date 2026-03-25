@@ -6268,6 +6268,56 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     if (displayedSheetIds.length > 0) {
       sheetIds = displayedSheetIds;
     }
+
+    // When a proposal has both a locked workbook (contract) and a working workbook (edits),
+    // sheet IDs differ between the two. Sheet-linked line items (Add Labor) are stored by sheet_id,
+    // so if they were added while viewing/using the working workbook they won't naturally appear
+    // under the locked workbook's sheet IDs.
+    //
+    // Build a best-effort mapping from working sheet_id → displayed (locked) sheet_id using sheet_name (+ order_index fallback).
+    const normalizeSheetName = (v: unknown) =>
+      String(v ?? '')
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, ' ');
+    const displayedSheetNameToId = new Map<string, string>();
+    const displayedSheetOrderToId = new Map<number, string>();
+    materialSheets.forEach((s: any) => {
+      const id = String(s?.id ?? '').trim();
+      if (!id) return;
+      const nameKey = normalizeSheetName(s?.sheet_name);
+      if (nameKey && !displayedSheetNameToId.has(nameKey)) displayedSheetNameToId.set(nameKey, id);
+      const oi = Number(s?.order_index);
+      if (Number.isFinite(oi) && !displayedSheetOrderToId.has(oi)) displayedSheetOrderToId.set(oi, id);
+    });
+    const workingSheetIdToDisplayedId = new Map<string, string>();
+    const extraWorkingSheetIds: string[] = [];
+    if (targetQuoteId && isReadOnly) {
+      const { data: workingWb } = await supabase
+        .from('material_workbooks')
+        .select('id, material_sheets(id, sheet_name, order_index)')
+        .eq('quote_id', targetQuoteId)
+        .eq('status', 'working')
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const ws = (workingWb as any)?.material_sheets || [];
+      ws.forEach((s: any) => {
+        const wid = String(s?.id ?? '').trim();
+        if (!wid) return;
+        extraWorkingSheetIds.push(wid);
+        const byName = displayedSheetNameToId.get(normalizeSheetName(s?.sheet_name));
+        if (byName) {
+          workingSheetIdToDisplayedId.set(wid, byName);
+          return;
+        }
+        const byOrder = displayedSheetOrderToId.get(Number(s?.order_index));
+        if (byOrder) workingSheetIdToDisplayedId.set(wid, byOrder);
+      });
+    }
+    if (extraWorkingSheetIds.length > 0) {
+      sheetIds = Array.from(new Set([...(sheetIds || []), ...extraWorkingSheetIds]));
+    }
     if (targetQuoteId) {
       let quoteWb: any = null;
       let { data: wbData } = await supabase
@@ -6331,7 +6381,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
 
     const getEffectiveParentId = (item: CustomRowLineItem) => {
       if (item.row_id) return duplicateToSurviving[item.row_id] ?? item.row_id;
-      return item.sheet_id ?? null;
+      const sid = item.sheet_id ?? null;
+      if (sid && workingSheetIdToDisplayedId.has(String(sid))) return workingSheetIdToDisplayedId.get(String(sid)) ?? sid;
+      return sid;
     };
     const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
     allLineItems.forEach(item => {
