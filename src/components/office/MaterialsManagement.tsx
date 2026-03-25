@@ -1436,7 +1436,10 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             quoteIdForLoad === effectiveQuoteId ? contractQuoteFields : null,
           ) ?? selectedQuote
         : null;
-      const shouldDefaultToLockedWorkbook = !!selectedQuoteForDefaultView?.sent_at;
+      // Only default to locked workbook when the quote is actually frozen (signed/office-locked).
+      // "Sent" alone must not force locked pricing; if the proposal is unlocked, users need the working workbook
+      // so prices can adjust.
+      const shouldDefaultToLockedWorkbook = isQuoteContractFrozen(selectedQuoteForDefaultView as any);
       const sameProposalQuoteIds = selectedQuote
         ? new Set(
             jobQuotes
