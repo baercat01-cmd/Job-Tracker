@@ -2549,7 +2549,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   /** Apply new cost/price per foot to all lineal-foot items in this category; persist and update workbook. Metal: if only cost is entered, default price = cost + $0.10; if only price, default cost = price − $0.10; if both entered, use both. */
   async function applyCategoryFootPrice(catGroup: CategoryGroup, costPerFoot: number | null, pricePerFoot: number | null) {
     if (isWorkbookReadOnly || workbook?.status === 'locked') {
-      toast.error(workbook?.status === 'locked' ? 'This is a locked snapshot — return to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+      toast.error('This is a locked snapshot — return to the working workbook to edit.');
       return;
     }
     const linealItems = catGroup.items.filter((i) => {
@@ -2845,7 +2845,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   async function deleteItem(itemId: string) {
     if (isWorkbookReadOnly || workbook?.status === 'locked') {
-      toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+      toast.error('Locked snapshot — switch to the working workbook to edit.');
       return;
     }
     if (!confirm('Delete this material?')) return;
@@ -2992,7 +2992,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   async function addMaterialsFromCatalogSelection() {
     if (isWorkbookReadOnly || workbook?.status === 'locked') {
-      toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+      toast.error('Locked snapshot — switch to the working workbook to edit.');
       return;
     }
     if (selectedCatalogMaterials.length === 0) {
@@ -3235,7 +3235,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
     if (!isChangeOrder) {
       if (isWorkbookReadOnly || workbook?.status === 'locked') {
-        toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+        toast.error('Locked snapshot — switch to the working workbook to edit.');
         return;
       }
       if (!workbook) {
@@ -3446,7 +3446,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   async function deleteSheet(sheet: MaterialSheet) {
     if (isWorkbookReadOnly || workbook?.status === 'locked') {
       setSheetDeleteConfirmId(null);
-      toast.error(workbook?.status === 'locked' ? 'Locked snapshot — switch to the working workbook to edit.' : 'This proposal is locked and cannot be edited.');
+      toast.error('Locked snapshot — switch to the working workbook to edit.');
       return;
     }
     if (!workbook) {
@@ -3836,12 +3836,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return nb.localeCompare(na, undefined, { numeric: true });
   });
   const latestQuoteId = sortedQuotes.find(q => !q.is_change_order_proposal)?.id ?? sortedQuotes[0]?.id;
-  const isWorkbookReadOnly = !!quoteForContractUi && (
-    quoteForContractUi.is_change_order_proposal
-      ? isQuoteContractFrozen(quoteForContractUi as any)
-      : ((sortedQuotes.length > 0 && quoteForContractUi.id !== latestQuoteId) || isQuoteContractFrozen(quoteForContractUi as any))
-  );
-  const materialsWorkbookLocked = isWorkbookReadOnly || workbook?.status === 'locked';
+  // Read-only is a workbook-view concern, not a proposal concern:
+  // - Locked snapshot (workbook.status === 'locked' or snapshotWorkbookId) is always read-only
+  // - Working copy stays editable, even when the proposal is frozen, so ops can adjust prices/orders without mutating the locked snapshot.
+  const isWorkbookReadOnly = !!snapshotWorkbookId || workbook?.status === 'locked';
+  const materialsWorkbookLocked = isWorkbookReadOnly;
   /** Zoho orders + line status (Not Ordered / etc.) are for operations on the working copy only — never on locked contract snapshots. */
   const showShopOrderControls = workbook?.status === 'working';
 
