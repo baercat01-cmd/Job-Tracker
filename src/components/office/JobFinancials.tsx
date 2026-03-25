@@ -2396,15 +2396,18 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
     sheetBreakdowns: [],
     totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
   });
-  // Build a fast lookup from the structured external prices: (sheetId|sheetName) → categoryName → price
+  // Build a fast lookup from the structured external prices: (sheetId|sheetName) → categoryName → price.
+  // IMPORTANT: When the proposal is locked/read-only, the right panel can be showing the working workbook.
+  // Never let working-book breakdown prices affect the locked proposal totals.
   const externalPriceLookup = useMemo(() => {
     const map = new Map<string, Record<string, number>>();
+    if (isReadOnly) return map;
     (externalBreakdownSheetPrices || []).forEach((sp) => {
       map.set(sp.sheetId, sp.categories);
       map.set(sp.sheetName.trim().toLowerCase(), sp.categories);
     });
     return map;
-  }, [externalBreakdownSheetPrices]);
+  }, [externalBreakdownSheetPrices, isReadOnly]);
   
   // Material sheet description editing
   const [showSheetDescDialog, setShowSheetDescDialog] = useState(false);
@@ -5111,6 +5114,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     const effectiveQuote = targetQuote !== undefined ? targetQuote : quote;
     const targetQuoteId: string | null = effectiveQuote?.id ?? null;
     const contractFrozen = isQuoteContractFrozen(effectiveQuote as any);
+    const officeLocked = !!(effectiveQuote as any)?.locked_for_editing;
 
     // When user has unlocked a historical proposal for editing, load live data for it (or forceLive for this load)
     const isHistorical = !options?.forceLive && !!effectiveQuote
@@ -5122,10 +5126,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       setLoading(true);
     }
     try {
-      // IMPORTANT: When a proposal is frozen/locked, the materials workbook selection differs (locked workbook only),
-      // and `loadCustomRows` relies on the currently displayed sheet IDs to fetch sheet-linked line items (Add Labor).
-      // Load materials first in that case to avoid a race that can drop labor from totals on initial load.
-      if (contractFrozen) {
+      // IMPORTANT: When a proposal is locked (either contract-frozen OR office-locked), `loadCustomRows` relies on the
+      // currently displayed sheet IDs to fetch sheet-linked line items (Add Labor). Load materials first to avoid a
+      // race where sheet IDs are empty and labor disappears from locked totals until a later refresh/unlock cycle.
+      if (contractFrozen || officeLocked) {
         await loadMaterialsData(targetQuoteId, isHistorical);
         await Promise.all([
           loadCustomRows(targetQuoteId, isHistorical),
