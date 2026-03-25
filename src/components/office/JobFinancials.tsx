@@ -5634,39 +5634,29 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         // both sorted by version_number desc — NOT updated_at alone, or locking the working copy can surface an
         // older locked snapshot and change materials totals on the left panel.
         if (wasHistoricalRequest) {
-          let { data, error } = await supabase
+          // Historical/locked proposal view: prefer locked workbook so working edits never change this proposal's prices.
+          // Fall back to working only if no locked workbook exists yet for this quote.
+          const lockedFb = await supabase
             .from('material_workbooks')
             .select(wbSelect)
             .eq('quote_id', targetQuoteId)
-            .eq('status', 'working')
+            .eq('status', 'locked')
             .order('version_number', { ascending: false })
             .limit(1)
             .maybeSingle();
-          workbookData = data;
-          workbookError = error;
+          workbookData = lockedFb.data;
+          workbookError = lockedFb.error;
           if (!workbookData && !workbookError) {
-            const lockedFb = await supabase
+            const workingFb = await supabase
               .from('material_workbooks')
               .select(wbSelect)
               .eq('quote_id', targetQuoteId)
-              .eq('status', 'locked')
+              .eq('status', 'working')
               .order('version_number', { ascending: false })
               .limit(1)
               .maybeSingle();
-            workbookData = lockedFb.data;
-            workbookError = lockedFb.error;
-          }
-          if (!workbookData && !workbookError) {
-            const anyFb = await supabase
-              .from('material_workbooks')
-              .select(wbSelect)
-              .eq('quote_id', targetQuoteId)
-              .order('version_number', { ascending: false })
-              .order('updated_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            workbookData = anyFb.data;
-            workbookError = anyFb.error;
+            workbookData = workingFb.data;
+            workbookError = workingFb.error;
           }
         } else if (contractFrozen) {
           // Sent/signed/office-locked: proposal financials MUST follow the locked contract workbook only.
