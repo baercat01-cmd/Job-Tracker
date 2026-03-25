@@ -5853,6 +5853,24 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             material_category_markups (*)
           )
         `;
+        // Used later for empty-workbook fallback rules.
+        // Must be in outer scope (the workbook selection branches below can exit their block).
+        let contractFrozen = false;
+        try {
+          const { data: quoteRowForMaterials } = await supabase
+            .from('quotes')
+            .select('locked_for_editing, sent_at, signed_version, customer_signed_at')
+            .eq('id', targetQuoteId)
+            .maybeSingle();
+          const signedMat = await fetchQuoteIdsWithSignedProposalVersion(targetQuoteId ? [targetQuoteId] : []);
+          const quoteRowMerged =
+            quoteRowForMaterials && targetQuoteId
+              ? { ...quoteRowForMaterials, has_signed_proposal_version: signedMat.has(targetQuoteId) }
+              : quoteRowForMaterials;
+          contractFrozen = isQuoteContractFrozen(quoteRowMerged as any);
+        } catch {
+          // non-blocking: keep default false
+        }
         // If the split-view materials panel is explicitly viewing a locked workbook, mirror that here
         // so the proposal totals stay attached to the locked snapshot (never influenced by working edits).
         if (externalMaterialsWorkbookView?.status === 'locked' && externalMaterialsWorkbookView.workbookId) {
@@ -5866,25 +5884,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           workbookData = forcedWb;
           workbookError = null;
         } else {
-        const { data: quoteRowForMaterials } = await supabase
-          .from('quotes')
-          .select('locked_for_editing, sent_at, signed_version, customer_signed_at')
-          .eq('id', targetQuoteId)
-          .maybeSingle();
-        const signedMat = await fetchQuoteIdsWithSignedProposalVersion(targetQuoteId ? [targetQuoteId] : []);
-        const quoteRowMerged =
-          quoteRowForMaterials && targetQuoteId
-            ? {
-                ...quoteRowForMaterials,
-                has_signed_proposal_version: signedMat.has(targetQuoteId),
-              }
-            : quoteRowForMaterials;
-        const contractFrozen = isQuoteContractFrozen(quoteRowMerged as any);
-
-        // Non–first-proposal tab: same workbook priority as MaterialsManagement (workingList[0] ?? lockedList[0]),
-        // both sorted by version_number desc — NOT updated_at alone, or locking the working copy can surface an
-        // older locked snapshot and change materials totals on the left panel.
-        if (wasHistoricalRequest) {
+          // Non–first-proposal tab: same workbook priority as MaterialsManagement (workingList[0] ?? lockedList[0]),
+          // both sorted by version_number desc — NOT updated_at alone, or locking the working copy can surface an
+          // older locked snapshot and change materials totals on the left panel.
+          if (wasHistoricalRequest) {
           // Historical/locked proposal view: prefer locked workbook so working edits never change this proposal's prices.
           // Fall back to working only if no locked workbook exists yet for this quote.
           const lockedFb = await supabase
@@ -5909,7 +5912,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             workbookData = workingFb.data;
             workbookError = workingFb.error;
           }
-        } else if (contractFrozen) {
+          } else if (contractFrozen) {
           // Office lock OR signed contract: one `locked` workbook row holds the proposal materials total (no edits on a separate job workbook affect this).
           // When signed contract + working duplicate exists, this is always the locked snapshot; when office-locked only, it is the single flipped workbook.
           const { data: lockedRows, error: lockedErr } = await supabase
@@ -5928,7 +5931,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             // Falling back would let working edits change locked proposal totals.
             toast.error('Locked proposal workbook not found. Create/restore the locked contract workbook to view locked totals.');
           }
-        } else {
+          } else {
           // Draft (not office-locked, not signed contract): one working workbook holds proposal price + edits.
           // A separate locked row exists only after sign-contract (handled above) or rare legacy — prefer working first so COS edits change the header.
           const workingPreferred = await supabase
