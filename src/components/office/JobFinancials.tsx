@@ -2611,12 +2611,17 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   // Read-only when default locked and user hasn't unlocked this historical proposal for editing
   const isReadOnly = isDefaultLocked && quote?.id !== historicalUnlockedQuoteId;
   const isExternallyViewingLockedWorkbook = externalMaterialsWorkbookView?.status === 'locked';
-  const isPriceIsolated = isReadOnly || isExternallyViewingLockedWorkbook;
+  // Pricing isolation is stricter than editability:
+  // Signed/contract proposals must never change totals due to working workbook edits,
+  // even if a user "unlocks for editing".
+  const isContractPriceLocked = quoteHasActiveContract(quote as any);
+  const isPriceIsolated = isContractPriceLocked || isReadOnly || isExternallyViewingLockedWorkbook;
 
   // Build a fast lookup from the structured Breakdown prices: (sheetId|sheetName) → categoryName → price.
   // NOTE: We intentionally always build this lookup so the left Proposal sections can match the Breakdown panel.
   const externalPriceLookup = useMemo(() => {
     const map = new Map<string, Record<string, number>>();
+    if (isPriceIsolated) return map;
     (externalBreakdownSheetPrices || []).forEach((sp) => {
       // Normalize category keys so lookups by lowercased names always work.
       const normalizedCategories: Record<string, number> = {};
@@ -2629,7 +2634,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
       map.set(sp.sheetName.trim().toLowerCase(), normalizedCategories);
     });
     return map;
-  }, [externalBreakdownSheetPrices]);
+  }, [externalBreakdownSheetPrices, isPriceIsolated]);
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
