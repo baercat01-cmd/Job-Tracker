@@ -547,10 +547,12 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
   function portalVisibilityRpcSucceeded(data: unknown, rpcError: { message?: string } | null): boolean {
     if (rpcError) return false;
+    if (typeof data === 'boolean') return data;
     return (
       data === true ||
       data === 'true' ||
       data === 't' ||
+      data === 'T' ||
       data === 1 ||
       data === '1'
     );
@@ -561,7 +563,8 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     const msg = String(e?.message || '');
     return (
       e?.code === 'PGRST202' ||
-      /Could not find the function|function .* does not exist|404/.test(msg)
+      e?.code === '42883' ||
+      /Could not find the function|function .* does not exist|404|does not exist.*function/i.test(msg)
     );
   }
 
@@ -569,30 +572,48 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     try {
       const nextValue = !currentValue;
 
-      // Prefer SECURITY DEFINER RPC first: PostgREST often lags the DB after migrations and rejects REST
-      // updates with "Could not find the 'visible_to_customer_portal' column ... in the schema cache".
-      const { data: rpcOk, error: rpcError } = await supabase.rpc('set_job_document_portal_visibility', {
+      // SECURITY DEFINER RPCs do not require PostgREST to expose visible_to_customer_portal for PATCH.
+      // Try (1) uuid+boolean, (2) jsonb overload, (3) REST — in that order.
+      const { data: rpcOk1, error: rpcErr1 } = await supabase.rpc('set_job_document_portal_visibility', {
         p_document_id: docId,
         p_visible: nextValue,
       });
 
-      if (!portalVisibilityRpcSucceeded(rpcOk, rpcError)) {
-        if (rpcError) {
-          throw rpcError;
-        }
-        if (rpcOk === false) {
+      if (portalVisibilityRpcSucceeded(rpcOk1, rpcErr1)) {
+        /* ok */
+      } else if (rpcOk1 === false) {
+        throw new Error('Document not found or could not be updated.');
+      } else if (rpcErr1 && !isMissingPortalDocRpcError(rpcErr1)) {
+        throw rpcErr1;
+      } else {
+        const { data: rpcOk2, error: rpcErr2 } = await supabase.rpc('set_job_document_portal_visibility_json', {
+          p: { p_document_id: docId, p_visible: nextValue },
+        });
+
+        if (portalVisibilityRpcSucceeded(rpcOk2, rpcErr2)) {
+          /* ok */
+        } else if (rpcOk2 === false) {
           throw new Error('Document not found or could not be updated.');
+        } else if (rpcErr2 && !isMissingPortalDocRpcError(rpcErr2)) {
+          throw rpcErr2;
+        } else {
+          const { data: updatedRow, error: restError } = await supabase
+            .from('job_documents')
+            .update({
+              visible_to_customer_portal: nextValue,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', docId)
+            .select('id')
+            .maybeSingle();
+
+          if (restError) throw restError;
+          if (!updatedRow) {
+            throw new Error(
+              'Could not update document (not found or no permission). Run scripts/fix-job-documents-customer-portal-complete.sql in Supabase SQL Editor, then: SELECT pg_notify(\'pgrst\', \'reload schema\');'
+            );
+          }
         }
-
-        const { error: restError } = await supabase
-          .from('job_documents')
-          .update({
-            visible_to_customer_portal: nextValue,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', docId);
-
-        if (restError) throw restError;
       }
 
       toast.success(nextValue ? 'Document is now visible in customer portal' : 'Document hidden from customer portal');
@@ -607,17 +628,23 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       if (isMissingPortalDocRpcError(error)) {
         toast.error('Portal document functions are not installed (or PostgREST is stale)', {
           description:
-            'In Supabase → SQL Editor run the full script: scripts/fix-job-documents-customer-portal-complete.sql (adds column, RPCs, NOTIFY pgrst).',
+            'In Supabase → SQL Editor run the full script: scripts/fix-job-documents-customer-portal-complete.sql (adds column, RPCs, NOTIFY pgrst). Then wait a minute and toggle again.',
           duration: 18_000,
         });
       } else if (isPostgrestSchemaCacheOrMissingColumnError(error)) {
         toast.error('Database API cache is out of date', {
           description:
-            'In Supabase → SQL Editor run: NOTIFY pgrst, \'reload schema\'; Or run scripts/fix-job-documents-customer-portal-complete.sql end-to-end.',
-          duration: 14_000,
+            'Supabase → SQL Editor: run SELECT pg_notify(\'pgrst\', \'reload schema\'); then wait 30–60s and try again. If it still fails, run the full repo file scripts/fix-job-documents-customer-portal-complete.sql (includes the reload).',
+          duration: 20_000,
         });
       } else {
-        toast.error(msg || 'Failed to update visibility');
+        toast.error(msg || 'Failed to update visibility', {
+          description:
+            msg && msg.length < 400
+              ? `If this persists, confirm you’re on the correct Supabase project and run scripts/fix-job-documents-customer-portal-complete.sql.`
+              : undefined,
+          duration: 10_000,
+        });
       }
     }
   }

@@ -10,6 +10,10 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { Save, FileText, Home, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { createDefaultRectPlan, resizeRectPerimeter, type BuildingPlanModel } from '@/lib/buildingPlanModel';
+import { planToEstimatorBuildingState } from '@/lib/planToEstimator3D';
+import { useAuth } from '@/hooks/useAuth';
+import { PlanLocalWorkspace } from '@/components/office/PlanLocalWorkspace';
 import {
   Select,
   SelectContent,
@@ -327,13 +331,16 @@ export default function BuildingEstimator3D({
   onSave
 }: BuildingEstimatorProps) {
   const navigate = useNavigate();
-  const [state, setState] = useState<BuildingState>({
-    width: initialWidth,
-    length: initialLength,
-    height: initialHeight,
-    pitch: initialPitch,
-    openings: []
-  });
+  const { profile } = useAuth();
+  const [plan, setPlan] = useState<BuildingPlanModel>(() =>
+    createDefaultRectPlan({
+      width: initialWidth,
+      length: initialLength,
+      height: initialHeight,
+      pitch: initialPitch,
+      name: quoteId ? `Quote ${quoteId} plan` : 'New plan',
+    })
+  );
 
   const [visibility, setVisibility] = useState<VisibilityState>({
     frame: true,
@@ -355,31 +362,37 @@ export default function BuildingEstimator3D({
 
   // Add window
   const addWindow = () => {
-    setState(prev => ({
-      ...prev,
-      openings: [...prev.openings, {
-        id: Date.now(),
-        wall: windowForm.wall,
-        offset: windowForm.offset,
-        elev: windowForm.elev,
-        w: windowForm.w,
-        h: windowForm.h
-      }]
-    }));
+    setPlan((prev) => {
+      const wall = prev.walls.find((w) => w.label === windowForm.wall);
+      if (!wall) return prev;
+      return {
+        ...prev,
+        openings: [
+          ...prev.openings,
+          {
+            id: `open_${Date.now()}`,
+            type: 'window',
+            wallId: wall.id,
+            offset: windowForm.offset,
+            sill: windowForm.elev,
+            width: windowForm.w,
+            height: windowForm.h,
+          },
+        ],
+      };
+    });
     toast.success('Window added to building');
   };
 
   // Remove opening
-  const removeOpening = (id: number) => {
-    setState(prev => ({
-      ...prev,
-      openings: prev.openings.filter(o => o.id !== id)
-    }));
+  const removeOpening = (openingId: string) => {
+    setPlan((prev) => ({ ...prev, openings: prev.openings.filter((o) => o.id !== openingId) }));
     toast.success('Window removed');
   };
 
   // Calculate materials and pricing
   const syncProject = () => {
+    const state = planToEstimatorBuildingState(plan);
     const l = Math.ceil(state.length / 8) * 8;
     const waste = 1.10;
     
@@ -409,35 +422,55 @@ export default function BuildingEstimator3D({
   const { lines, total, numPosts, lumberPieces } = syncProject();
 
   // Save estimate to database
-  const handleSave = async () => {
+  const handleSave = async (opts?: { after?: 'close' }) => {
+    const after = opts?.after ?? 'close';
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!profile?.id) throw new Error('Not authenticated');
 
+      const state = planToEstimatorBuildingState(plan);
       const estimateData = {
         quote_id: quoteId || null,
         width: state.width,
         length: state.length,
         height: state.height,
         pitch: state.pitch,
-        model_data: { ...state, visibility },
+        model_data: { ...state, visibility, plan },
         calculated_materials: { lines, total },
         estimated_cost: total,
-        created_by: user.id
+        created_by: profile.id
       };
 
-      const { error } = await supabase
-        .from('building_estimates')
-        .insert(estimateData);
+      const { data: savedRow, error } = await supabase.rpc('create_building_estimate', {
+        p_quote_id: estimateData.quote_id,
+        p_width: estimateData.width,
+        p_length: estimateData.length,
+        p_height: estimateData.height,
+        p_pitch: estimateData.pitch,
+        p_model_data: estimateData.model_data,
+        p_calculated_materials: estimateData.calculated_materials,
+        p_estimated_cost: estimateData.estimated_cost,
+        p_created_by: estimateData.created_by,
+      });
 
       if (error) throw error;
 
       toast.success('Building estimate saved successfully!');
-      if (onSave) onSave(estimateData);
+      if (onSave) onSave(savedRow ?? estimateData);
+      if (after === 'close') {
+        navigate('/office?tab=quotes');
+      }
     } catch (error: any) {
       console.error('Error saving estimate:', error);
-      toast.error(error.message || 'Failed to save estimate');
+      const msg = String(error?.message || '');
+      const isRpcMissing =
+        /Could not find the function|function .* does not exist|PGRST202|schema cache/i.test(msg);
+      toast.error(isRpcMissing ? 'Estimator save function is not installed (or PostgREST is stale)' : (msg || 'Failed to save estimate'), {
+        description: isRpcMissing
+          ? 'In Supabase → SQL Editor run the building estimates RPC SQL, then run: SELECT pg_notify(\'pgrst\', \'reload schema\'); (The function must NOT use a DEFAULT param before non-default params.)'
+          : undefined,
+        duration: isRpcMissing ? 18_000 : 6_000,
+      });
     } finally {
       setSaving(false);
     }
@@ -483,7 +516,7 @@ export default function BuildingEstimator3D({
             </Button>
             <Button
               size="sm"
-              onClick={handleSave}
+              onClick={() => handleSave({ after: 'close' })}
               disabled={saving}
               className="bg-mb-success hover:bg-green-500 text-white shadow-sm"
             >
@@ -508,6 +541,12 @@ export default function BuildingEstimator3D({
                 3D Building View
               </button>
               <button
+                className={`px-1 transition-all ${activeTab === '2d' ? 'text-mb-success border-b-2 border-mb-success font-bold' : 'text-slate-600 hover:text-mb-success'}`}
+                onClick={() => setActiveTab('2d')}
+              >
+                2D Plans
+              </button>
+              <button
                 className={`px-1 transition-all ${activeTab === 'catalog' ? 'text-mb-success border-b-2 border-mb-success font-bold' : 'text-slate-600 hover:text-mb-success'}`}
                 onClick={() => setActiveTab('catalog')}
               >
@@ -523,16 +562,23 @@ export default function BuildingEstimator3D({
           </div>
 
           <div className="relative flex-1 overflow-hidden bg-[#eef2f6]">
+            {/* 2D Plans (local; no token needed) */}
+            {activeTab === '2d' && <PlanLocalWorkspace plan={plan} onChange={setPlan} />}
             {/* 3D View */}
             {activeTab === '3d' && (
               <div className="absolute inset-0 w-full h-full flex flex-col">
                 <div className="flex-1">
+                  {(() => {
+                    const state = planToEstimatorBuildingState(plan) as any as BuildingState;
+                    return (
                   <Canvas camera={{ position: [110, 80, 110], fov: 38 }}>
                     <ambientLight intensity={0.75} />
                     <directionalLight position={[50, 100, 50]} intensity={0.8} castShadow />
                     <Building3D state={state} visibility={visibility} />
                     <OrbitControls enableDamping />
                   </Canvas>
+                    );
+                  })()}
                 </div>
 
                 {/* HUD */}
@@ -552,7 +598,7 @@ export default function BuildingEstimator3D({
                       </div>
                       <div className="flex justify-between gap-12">
                         <span>Openings:</span>
-                        <span className="font-bold text-mb-yellow">{state.openings.length}</span>
+                        <span className="font-bold text-mb-yellow">{plan.openings.length}</span>
                       </div>
                     </div>
                   </div>
@@ -696,8 +742,11 @@ export default function BuildingEstimator3D({
               <Label className="text-[10px] font-bold text-slate-400 uppercase">Width</Label>
               <Input
                 type="number"
-                value={state.width}
-                onChange={(e) => setState(prev => ({ ...prev, width: parseFloat(e.target.value) || 0 }))}
+                value={plan.dims.width}
+                onChange={(e) => {
+                  const width = parseFloat(e.target.value) || 0;
+                  setPlan((prev) => resizeRectPerimeter(prev, { ...prev.dims, width }));
+                }}
                 className="w-24 text-right font-bold text-slate-700"
               />
             </div>
@@ -705,8 +754,11 @@ export default function BuildingEstimator3D({
               <Label className="text-[10px] font-bold text-slate-400 uppercase">Length</Label>
               <Input
                 type="number"
-                value={state.length}
-                onChange={(e) => setState(prev => ({ ...prev, length: parseFloat(e.target.value) || 0 }))}
+                value={plan.dims.length}
+                onChange={(e) => {
+                  const length = parseFloat(e.target.value) || 0;
+                  setPlan((prev) => resizeRectPerimeter(prev, { ...prev.dims, length }));
+                }}
                 className="w-24 text-right font-bold text-slate-700"
               />
             </div>
@@ -714,8 +766,11 @@ export default function BuildingEstimator3D({
               <Label className="text-[10px] font-bold text-slate-400 uppercase">Eave Ht</Label>
               <Input
                 type="number"
-                value={state.height}
-                onChange={(e) => setState(prev => ({ ...prev, height: parseFloat(e.target.value) || 0 }))}
+                value={plan.dims.height}
+                onChange={(e) => {
+                  const height = parseFloat(e.target.value) || 0;
+                  setPlan((prev) => ({ ...prev, dims: { ...prev.dims, height } }));
+                }}
                 className="w-24 text-right font-bold text-slate-700"
               />
             </div>
@@ -723,8 +778,11 @@ export default function BuildingEstimator3D({
               <Label className="text-[10px] font-bold text-mb-blue uppercase italic">Pitch</Label>
               <Input
                 type="number"
-                value={state.pitch}
-                onChange={(e) => setState(prev => ({ ...prev, pitch: parseFloat(e.target.value) || 0 }))}
+                value={plan.dims.pitch}
+                onChange={(e) => {
+                  const pitch = parseFloat(e.target.value) || 0;
+                  setPlan((prev) => ({ ...prev, dims: { ...prev.dims, pitch } }));
+                }}
                 className="w-24 text-right font-bold text-mb-blue border-blue-100 bg-blue-50/20"
               />
             </div>
@@ -805,12 +863,14 @@ export default function BuildingEstimator3D({
 
           <div className="p-4 flex-grow overflow-y-auto">
             <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3 italic">Active Features</h3>
-            {state.openings.map(o => (
+            {plan.openings.map((o) => (
               <div key={o.id} className="bg-slate-50 border border-slate-200 rounded p-2 mb-2 flex justify-between items-center text-[10px] font-mono shadow-sm">
                 <div>
-                  <span className="font-bold text-slate-800 uppercase tracking-tighter">{o.w}'x{o.h}' Window</span>
+                  <span className="font-bold text-slate-800 uppercase tracking-tighter">
+                    {o.width}'x{o.height}' {o.type === 'door' ? 'Door' : 'Window'}
+                  </span>
                   <br />
-                  {o.wall} @ {o.offset}' Offset
+                  {(plan.walls.find((w) => w.id === o.wallId)?.label ?? 'Wall')} @ {o.offset}' Offset
                 </div>
                 <button onClick={() => removeOpening(o.id)} className="text-rose-400 hover:text-rose-600 font-bold">
                   <X className="w-4 h-4" />

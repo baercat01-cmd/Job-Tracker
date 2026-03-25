@@ -34,6 +34,45 @@ $$;
 
 REVOKE ALL ON FUNCTION public.set_job_document_portal_visibility(uuid, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.set_job_document_portal_visibility(uuid, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.set_job_document_portal_visibility(uuid, boolean) TO service_role;
+
+-- 2b) Same update via single jsonb arg (fallback when PostgREST/client has trouble with the two-arg RPC)
+CREATE OR REPLACE FUNCTION public.set_job_document_portal_visibility_json(p jsonb)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  doc_id uuid;
+  vis boolean;
+BEGIN
+  doc_id := (p->>'p_document_id')::uuid;
+  IF doc_id IS NULL THEN
+    doc_id := (p->>'document_id')::uuid;
+  END IF;
+  IF p ? 'p_visible' THEN
+    vis := COALESCE((p->>'p_visible')::boolean, false);
+  ELSIF p ? 'visible' THEN
+    vis := COALESCE((p->>'visible')::boolean, false);
+  ELSE
+    vis := false;
+  END IF;
+  IF doc_id IS NULL THEN
+    RETURN false;
+  END IF;
+  UPDATE public.job_documents
+  SET
+    visible_to_customer_portal = vis,
+    updated_at = now()
+  WHERE id = doc_id;
+  RETURN FOUND;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.set_job_document_portal_visibility_json(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_job_document_portal_visibility_json(jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.set_job_document_portal_visibility_json(jsonb) TO service_role;
 
 -- 3) Customer: list documents (matches supabase/migrations/20260325120000_align_customer_portal_job_documents_rpcs.sql)
 CREATE OR REPLACE FUNCTION public.get_job_documents_for_customer_portal(p_access_token text, p_job_id uuid)
