@@ -509,6 +509,21 @@ function SortableRow({
         return 0;
       };
 
+      // When `externalPriceLookup` provides a category total, that value already matches the Breakdown panel's green "Price".
+      // Do NOT apply category markup again or we'd double-markup and the left panel won't match the Breakdown.
+      const getCategoryDisplayPrice = (cat: any) => {
+        const catKey = normalizeCategoryName(cat?.name);
+        const extBySheetId = externalPriceLookup.get(sheetIdForMatch);
+        if (extBySheetId && Object.prototype.hasOwnProperty.call(extBySheetId, catKey)) {
+          return { price: Number(extBySheetId[catKey]) || 0, isFinal: true };
+        }
+        const extBySheetName = externalPriceLookup.get(sheetNameForMatch);
+        if (extBySheetName && Object.prototype.hasOwnProperty.call(extBySheetName, catKey)) {
+          return { price: Number(extBySheetName[catKey]) || 0, isFinal: true };
+        }
+        return { price: getCategoryBreakdownPrice(cat), isFinal: false };
+      };
+
       // Materials total for this section header = sum of each category "Price" (same as rows below:
       // getCategoryBreakdownPrice × (1 + category markup)) plus sheet material rows and linked material rows.
       const displayCategoriesForMaterialsSum =
@@ -518,8 +533,8 @@ function SortableRow({
           const categoryKey = `${sheet.sheetId}_${cat.name}`;
           const categoryMarkup =
             categoryMarkups[categoryKey] ?? (sheet.markup_percent ?? 10);
-          const base = getCategoryBreakdownPrice(cat);
-          return sum + base * (1 + (Number(categoryMarkup) || 0) / 100);
+          const { price, isFinal } = getCategoryDisplayPrice(cat);
+          return sum + (isFinal ? price : price * (1 + (Number(categoryMarkup) || 0) / 100));
         },
         0
       );
@@ -813,8 +828,10 @@ function SortableRow({
                       if (extended > 0) return sum + extended;
                       return sum + ((Number(item.cost_per_unit) || 0) * (Number(item.quantity) || 0));
                     }, 0) || (Number(category.totalCost) || 0);
-                    const categoryCostDisplay = getCategoryBreakdownPrice(breakdownCategory);
-                    const categoryPriceWithMarkup = categoryCostDisplay * (1 + (Number(categoryMarkup) || 0) / 100);
+                    const { price: categoryCostDisplay, isFinal: categoryCostIsFinal } = getCategoryDisplayPrice(breakdownCategory);
+                    const categoryPriceWithMarkup = categoryCostIsFinal
+                      ? categoryCostDisplay
+                      : categoryCostDisplay * (1 + (Number(categoryMarkup) || 0) / 100);
                     
                     const categoryIsOptional = category.items?.every((i: any) => i.isOptional) ?? false;
                     return (
