@@ -96,6 +96,7 @@ interface CustomRowLineItem {
   item_type?: 'material' | 'labor';
   sheet_id?: string;
   quote_id?: string | null;
+  workbook_id?: string | null;
   section_name?: string | null;
   hide_from_customer?: boolean;
 }
@@ -2421,6 +2422,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetDescription, setSheetDescription] = useState('');
   const [materialSheets, setMaterialSheets] = useState<any[]>([]);
+  const [activeWorkbookId, setActiveWorkbookId] = useState<string | null>(null);
+  const [activeWorkbookStatus, setActiveWorkbookStatus] = useState<'working' | 'locked' | null>(null);
   const [sheetLabor, setSheetLabor] = useState<Record<string, any>>({});
   const [customRowLabor, setCustomRowLabor] = useState<Record<string, any>>({});
 
@@ -5800,10 +5803,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
         });
         setMaterialSheets([]);
+        setActiveWorkbookId(null);
+        setActiveWorkbookStatus(null);
         setSheetLabor({});
         setSheetMarkups({});
         return;
       }
+      setActiveWorkbookId(String(workbookData.id ?? '') || null);
+      setActiveWorkbookStatus((workbookData.status as any) ?? null);
 
       const sheetsData: any[] = (workbookData.material_sheets || [])
         .slice()
@@ -6371,6 +6378,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         .from('custom_financial_row_items')
         .select('*')
         .eq('quote_id', targetQuoteId)
+        .eq('workbook_id', activeWorkbookId)
         .is('row_id', null)
         .order('order_index');
       if (byQuoteErr) console.error('Error loading quote-scoped sheet line items:', byQuoteErr);
@@ -7117,6 +7125,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       row_id: isSheet ? null : lineItemParentRowId,
       sheet_id: isSheet ? lineItemParentRowId : null,
       quote_id: isSheet ? (quote?.id ?? null) : null,
+      workbook_id: isSheet ? (activeWorkbookId ?? null) : null,
       section_name: isSheet
         ? (materialSheets.find((s: any) => s.id === lineItemParentRowId)?.sheet_name ??
             materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === lineItemParentRowId)?.sheetName ??
