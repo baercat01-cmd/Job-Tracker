@@ -53,10 +53,20 @@ function formatSupabaseErr(err: unknown): string {
   return parts.join(' — ') || 'Request failed';
 }
 
+function isLikelyPortalUsersRls(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  const msg = String((err as { message?: string })?.message ?? '');
+  if (!/portal_users/i.test(msg)) return false;
+  if (/row-level security|RLS policy|violates row-level/i.test(msg)) return true;
+  if (code === '42501' && /row-level security|rls/i.test(msg)) return true;
+  return false;
+}
+
 /** Avoid treating generic "permission denied" as RLS — that hides RPC / wrong-project / schema-cache issues. */
 function isLikelyPortalJobAccessRls(err: unknown): boolean {
   const code = (err as { code?: string })?.code;
   const msg = String((err as { message?: string })?.message ?? '');
+  if (/portal_users/i.test(msg)) return false;
   if (/row-level security|RLS policy|violates row-level/i.test(msg)) return true;
   if (code === '42501' && /row-level security|rls/i.test(msg)) return true;
   return false;
@@ -225,7 +235,12 @@ export function SubcontractorHubManagement() {
       await loadAccess(selectedSubId);
     } catch (e: any) {
       const detail = formatSupabaseErr(e);
-      if (isLikelyPortalJobAccessRls(e)) {
+      if (isLikelyPortalUsersRls(e)) {
+        toast.error(
+          `Could not create portal login: ${detail}. Deploy RPC office_portal_user_ensure_for_subcontractor_json (see supabase/migrations/20260327000000_portal_user_ensure_subcontractor_json.sql), or disable RLS on portal_users (scripts/fix-portal-users-rls.sql), then NOTIFY pgrst, 'reload schema'.`,
+          { duration: 22000 }
+        );
+      } else if (isLikelyPortalJobAccessRls(e)) {
         toast.error(
           `Could not save job access: ${detail}. Deploy Edge Function portal-job-access (see supabase/functions/portal-job-access/README.md), or run scripts/portal-job-access-emergency-rls-off.sql and NOTIFY pgrst, 'reload schema';.`,
           { duration: 18000 }

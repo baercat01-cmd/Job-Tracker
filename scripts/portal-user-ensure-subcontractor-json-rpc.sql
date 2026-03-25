@@ -1,0 +1,3 @@
+-- Paste and run in SQL Editor (same as migration):
+--   supabase/migrations/20260327000000_portal_user_ensure_subcontractor_json.sql
+-- Then: NOTIFY pgrst, 'reload schema';

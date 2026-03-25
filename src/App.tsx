@@ -11,11 +11,13 @@ import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
 import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
+import EstimatorHomePage from '@/pages/office/EstimatorHomePage';
 import ZohoSettingsPage from '@/pages/office/ZohoSettingsPage';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { VendorPricingForm } from '@/pages/VendorPricingForm';
 import CustomerPortal from '@/pages/customer/CustomerPortal';
 import SubcontractorPortal from '@/pages/SubcontractorPortal';
+import PlanShare from '@/pages/PlanShare';
 import { Toaster } from '@/components/ui/sonner';
 import { UndoProvider } from '@/contexts/UndoContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -134,7 +136,8 @@ function AppContent() {
         <Route path="/office" element={<OfficeDashboard />} />
         <Route path="/office/quotes/new" element={<QuoteIntakePage />} />
         <Route path="/office/quotes/:quoteId" element={<QuoteIntakePage />} />
-        <Route path="/office/estimator" element={<BuildingEstimatorPage />} />
+        <Route path="/office/estimator" element={<EstimatorHomePage />} />
+        <Route path="/office/estimator/build" element={<BuildingEstimatorPage />} />
         <Route path="/office/zoho-settings" element={<ZohoSettingsPage />} />
         <Route path="/office/daily-report" element={<DailyReportPage />} />
         <Route path="*" element={<Navigate to="/office?tab=jobs" replace />} />
@@ -228,6 +231,8 @@ export default function App() {
           <Route path="/customer-portal" element={<CustomerPortal />} />
           {/* Public subcontractor portal - no-login shared link via ?sub=... */}
           <Route path="/subcontractor-portal" element={<SubcontractorPortal />} />
+          {/* Public building plan share link - no-login via ?token=... */}
+          <Route path="/plan" element={<PlanShare />} />
           
           {/* All other routes use main app authentication */}
           <Route path="/*" element={

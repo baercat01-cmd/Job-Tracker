@@ -323,6 +323,38 @@ function sumLinkedRowTotals(
   );
 }
 
+/** Linked custom-row material totals + taxable portion, matching section header math (per-line-item markup). */
+function sumLinkedRowMaterialTotals(
+  linkedRows: any[],
+  customRowLineItems: Record<string, any[]>
+): { materialTotal: number; materialTaxableOnly: number } {
+  return linkedRows.reduce(
+    (acc: { materialTotal: number; materialTaxableOnly: number }, row: any) => {
+      const lineItems = customRowLineItems[row.id] || [];
+      if (lineItems.length > 0) {
+        for (const item of lineItems) {
+          const itemType = (item?.item_type || 'material') === 'labor' ? 'labor' : 'material';
+          if (itemType !== 'material') continue;
+          const itemCost =
+            Number(item?.total_cost) || (Number(item?.quantity) || 0) * (Number(item?.unit_cost) || 0);
+          const itemMarkup = Number(item?.markup_percent ?? row?.markup_percent ?? 0) || 0;
+          const itemPrice = itemCost * (1 + itemMarkup / 100);
+          acc.materialTotal += itemPrice;
+          if (item?.taxable) acc.materialTaxableOnly += itemPrice;
+        }
+      } else if (row.category !== 'labor') {
+        const baseCost = Number(row?.total_cost) || 0;
+        const rowMarkup = Number(row?.markup_percent ?? 0) || 0;
+        const price = baseCost * (1 + rowMarkup / 100);
+        acc.materialTotal += price;
+        if (row?.taxable) acc.materialTaxableOnly += price;
+      }
+      return acc;
+    },
+    { materialTotal: 0, materialTaxableOnly: 0 }
+  );
+}
+
 // Sortable Row Component
 function SortableRow({
   item,
@@ -673,15 +705,15 @@ function SortableRow({
                     </DropdownMenuItem>
                   )
                 )}
-                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'material')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'material', 'sheet')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material Row
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'labor')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'labor', 'sheet')}>
                   <DollarSign className="w-3 h-3 mr-2" />
                   Add Labor
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'combined')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'combined', 'sheet')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material + Labor
                 </DropdownMenuItem>
@@ -1121,7 +1153,7 @@ function SortableRow({
                                   <EyeOff className="w-3 h-3" />
                                 </span>
                               )}
-                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, lineItem, isLabor ? 'labor' : 'material')}>
+                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, lineItem, isLabor ? 'labor' : 'material', 'sheet')}>
                                 <Edit className="w-3 h-3" />
                               </Button>
                               <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteLineItem(lineItem.id)}>
@@ -1608,15 +1640,15 @@ function SortableRow({
                   <Edit className="w-3 h-3 mr-2" />
                   Edit Description
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material', 'row')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material Row
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor', 'row')}>
                   <DollarSign className="w-3 h-3 mr-2" />
                   Add Labor
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'combined')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'combined', 'row')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material + Labor
                 </DropdownMenuItem>
@@ -1814,7 +1846,7 @@ function SortableRow({
                                 size="sm"
                                 variant="ghost"
                                 className="h-5 w-5 p-0"
-                                onClick={() => openLineItemDialog(row.id, lineItem, isLabor ? 'labor' : 'material')}
+                                onClick={() => openLineItemDialog(row.id, lineItem, isLabor ? 'labor' : 'material', 'row')}
                               >
                                 <Edit className="w-3 h-3" />
                               </Button>
@@ -2334,6 +2366,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   const [savingLineItem, setSavingLineItem] = useState(false);
   const savingLineItemRef = useRef(false);
   const [lineItemParentRowId, setLineItemParentRowId] = useState<string | null>(null);
+  const [lineItemParentType, setLineItemParentType] = useState<'sheet' | 'row' | null>(null);
   const [lineItemType, setLineItemType] = useState<'material' | 'labor' | 'combined'>('material');
   const [lineItemForm, setLineItemForm] = useState({
     description: '',
@@ -6187,10 +6220,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       (row.custom_financial_row_items || []) as CustomRowLineItem[]
     );
 
-    // Fetch sheet-linked items (row_id IS NULL). Use the SAME workbook/sheet selection as loadMaterialsData
-    // so Add Labor line items (saved with sheet_id from the displayed sheet) are always found on reload.
+    // Fetch sheet-linked items (row_id IS NULL).
+    // IMPORTANT: Use the currently displayed sheetBreakdowns as the primary source of sheet IDs.
+    // When proposals are locked/historical or workbook selection falls back, workbook-derived sheetIds can diverge
+    // from what's rendered in the UI, making newly added sheet line items "disappear" after reload.
     let sheetLinkedItems: CustomRowLineItem[] = [];
     let sheetIds: string[] = [];
+    const displayedSheetIds = Array.from(
+      new Set((materialsBreakdown.sheetBreakdowns || []).map((s: any) => String(s?.sheetId || '').trim()).filter(Boolean))
+    );
+    if (displayedSheetIds.length > 0) {
+      sheetIds = displayedSheetIds;
+    }
     if (targetQuoteId) {
       let quoteWb: any = null;
       let { data: wbData } = await supabase
@@ -6227,7 +6268,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           }
         }
       }
-      sheetIds = quoteSheetIds;
+      if (sheetIds.length === 0) sheetIds = quoteSheetIds;
     } else {
       const { data: jobWb } = await supabase
         .from('material_workbooks')
@@ -6235,15 +6276,18 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         .eq('job_id', job.id)
         .eq('status', 'working')
         .maybeSingle();
-      sheetIds = ((jobWb as any)?.material_sheets || []).map((s: any) => s.id);
+      if (sheetIds.length === 0) sheetIds = ((jobWb as any)?.material_sheets || []).map((s: any) => s.id);
     }
     if (sheetIds.length > 0) {
-      const { data: sheetItems } = await supabase
+      const { data: sheetItems, error: sheetItemsErr } = await supabase
         .from('custom_financial_row_items')
         .select('*')
         .in('sheet_id', sheetIds)
         .is('row_id', null)
         .order('order_index');
+      if (sheetItemsErr) {
+        console.error('Error loading sheet-linked line items:', sheetItemsErr);
+      }
       sheetLinkedItems = (sheetItems || []) as CustomRowLineItem[];
     }
 
@@ -6264,7 +6308,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     Object.keys(lineItemsMap).forEach(k => {
       lineItemsMap[k].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     });
-    setCustomRowLineItems(lineItemsMap);
+    // Preserve optimistic items (e.g., when RLS blocks returning/select) so the user still sees what they just added.
+    // A later successful reload will replace these with real DB rows.
+    setCustomRowLineItems(prev => {
+      const next: Record<string, CustomRowLineItem[]> = { ...lineItemsMap };
+      for (const parentId of Object.keys(prev || {})) {
+        const optimistic = (prev[parentId] || []).filter((it: any) => String(it?.id || '').startsWith('optimistic_'));
+        if (!optimistic.length) continue;
+        const existingIds = new Set((next[parentId] || []).map((it: any) => String(it?.id || '')));
+        const toAdd = optimistic.filter((it: any) => !existingIds.has(String(it?.id || '')));
+        if (toAdd.length) next[parentId] = [...(next[parentId] || []), ...toAdd];
+      }
+      return next;
+    });
   }
 
   async function loadLaborPricing() {
@@ -6800,9 +6856,15 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   }
 
   // Line item functions
-  function openLineItemDialog(parentId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor' | 'combined') {
+  function openLineItemDialog(
+    parentId: string,
+    lineItem?: CustomRowLineItem,
+    itemType?: 'material' | 'labor' | 'combined',
+    parentType?: 'sheet' | 'row'
+  ) {
     setLineItemParentRowId(parentId);
     setLineItemType(itemType || 'combined');
+    setLineItemParentType(parentType ?? (lineItem?.sheet_id ? 'sheet' : lineItem?.row_id ? 'row' : null));
     
     if (lineItem) {
       setEditingLineItem(lineItem);
@@ -6872,7 +6934,11 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     setSavingLineItem(true);
 
     // Determine if this is for a sheet or a custom row (sheet = line items under a material sheet, e.g. Add Labor from sheet dropdown)
-    const isSheet = materialSheets.some(s => s.id === lineItemParentRowId) ||
+    // Prefer the explicit parent type set when opening the dialog; the heuristic can be wrong while materials are still loading.
+    const isSheet =
+      lineItemParentType === 'sheet' ||
+      (!!editingLineItem?.sheet_id && !editingLineItem?.row_id) ||
+      materialSheets.some(s => s.id === lineItemParentRowId) ||
       materialsBreakdown.sheetBreakdowns.some((s: any) => s.sheetId === lineItemParentRowId);
     
     // Calculate costs based on line item type
@@ -6973,12 +7039,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             .single();
           if (error) throw error;
           toast.success('Line item added');
-          if (created) {
-            setCustomRowLineItems(prev => ({
-              ...prev,
-              [lineItemParentRowId]: [...(prev[lineItemParentRowId] || []), created],
-            }));
-          }
+          // If RLS prevents "returning" the inserted row, `created` can be null even though insert succeeded.
+          // Always append an optimistic item so the user sees it immediately; a subsequent reload will reconcile.
+          const optimistic = (created || {
+            id: `optimistic_${Date.now()}`,
+            ...itemData,
+          }) as any;
+          setCustomRowLineItems(prev => ({
+            ...prev,
+            [lineItemParentRowId]: [...(prev[lineItemParentRowId] || []), optimistic],
+          }));
         } else {
           const parentCol = isSheet ? 'sheet_id' : 'row_id';
           const { data: existing } = await supabase
@@ -7053,6 +7123,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         setShowLineItemDialog(false);
         setEditingLineItem(null);
         setLineItemParentRowId(null);
+        setLineItemParentType(null);
       }
     } catch (error: any) {
       console.error('Error saving line item:', error);
@@ -7953,14 +8024,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   }
 
   // Filter labor rows and calculate total labor hours
-  const laborRows = customRows.filter(r => r.category === 'labor');
+  const laborRows = customRows.filter((r) => r.category === 'labor');
   const totalLaborHours = laborRows.reduce((sum, r) => sum + r.quantity, 0);
+  const nonLaborCustomRows = customRows.filter((r) => r.category !== 'labor');
   
   // Sort all rows by order_index for proper display order
   const sortedCustomRows = [...customRows].sort((a, b) => a.order_index - b.order_index);
   
   // Calculate totals (using line items where applicable)
-  const grandTotalCost = customRows.reduce((sum, row) => {
+  // IMPORTANT: labor rows are priced separately via totalLaborHours; do not double-count them here.
+  const grandTotalCost = nonLaborCustomRows.reduce((sum, row) => {
     const lineItems = customRowLineItems[row.id] || [];
     if (lineItems.length > 0) {
       return sum + lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
@@ -7968,7 +8041,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     return sum + row.total_cost;
   }, 0);
 
-  const grandTotalPrice = customRows.reduce((sum, row) => {
+  const grandTotalPrice = nonLaborCustomRows.reduce((sum, row) => {
     return sum + getCustomRowTotal(row);
   }, 0);
 
@@ -8050,6 +8123,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   standaloneCustomRows.forEach(row => {
     const lineItems = customRowLineItems[row.id] || [];
     const linkedSubs = linkedSubcontractors[row.id] || [];
+    const rowMarkupPct = Number(row.markup_percent) || 0;
     
     // Separate line items by type (use item_type, not taxable)
     const materialLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'material');
@@ -8059,27 +8133,34 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     let rowMaterialsTotal = 0;
     let rowMaterialsTaxableOnly = 0;
     if (lineItems.length > 0) {
-      // Sum all material line items
-      rowMaterialsTotal = materialLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
-      // Sum only taxable material line items
-      rowMaterialsTaxableOnly = materialLineItems
-        .filter((item: any) => item.taxable)
-        .reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      // Sum material line items using per-item markup (fallback to row markup), matching section header math
+      for (const item of materialLineItems) {
+        const itemCost =
+          Number(item?.total_cost) || (Number(item?.quantity) || 0) * (Number(item?.unit_cost) || 0);
+        const itemMarkup = Number(item?.markup_percent ?? rowMarkupPct) || 0;
+        const itemPrice = itemCost * (1 + itemMarkup / 100);
+        rowMaterialsTotal += itemPrice;
+        if (item?.taxable) rowMaterialsTaxableOnly += itemPrice;
+      }
     } else if (row.category !== 'labor') {
       // No line items and not a labor row = material row
-      rowMaterialsTotal = row.total_cost;
-      rowMaterialsTaxableOnly = row.taxable ? row.total_cost : 0;
+      const baseCost = Number(row.total_cost) || 0;
+      const price = baseCost * (1 + rowMarkupPct / 100);
+      rowMaterialsTotal = price;
+      rowMaterialsTaxableOnly = row.taxable ? price : 0;
     }
     
     // Calculate labor portion - WITH MARKUP
     let rowLaborTotal = 0;
     if (lineItems.length > 0) {
-      rowLaborTotal = laborLineItems.reduce((sum: number, item: any) => {
-        const itemMarkup = item.markup_percent || 0;
-        return sum + (item.total_cost * (1 + itemMarkup / 100));
-      }, 0);
+      for (const item of laborLineItems) {
+        const itemCost =
+          Number(item?.total_cost) || (Number(item?.quantity) || 0) * (Number(item?.unit_cost) || 0);
+        const itemMarkup = Number(item?.markup_percent ?? rowMarkupPct) || 0;
+        rowLaborTotal += itemCost * (1 + itemMarkup / 100);
+      }
     } else if (row.category === 'labor') {
-      rowLaborTotal = row.total_cost;
+      rowLaborTotal = (Number(row.total_cost) || 0) * (1 + rowMarkupPct / 100);
     }
     
     // Add linked subcontractors (separate materials from labor)
@@ -8098,16 +8179,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         .reduce((sum: number, item: any) => sum + item.total_price, 0);
       
       const estMarkup = sub.markup_percent || 0;
-      rowMaterialsTotal += subMaterialsTotal * (1 + estMarkup / 100);
-      rowMaterialsTaxableOnly += subMaterialsTaxableOnly * (1 + estMarkup / 100);
-      rowLaborTotal += subLaborTotal * (1 + estMarkup / 100);
+      // Standalone row markup applies to linked subs (consistent with row-level totals elsewhere in this component).
+      const rowMu = 1 + rowMarkupPct / 100;
+      rowMaterialsTotal += subMaterialsTotal * (1 + estMarkup / 100) * rowMu;
+      rowMaterialsTaxableOnly += subMaterialsTaxableOnly * (1 + estMarkup / 100) * rowMu;
+      rowLaborTotal += subLaborTotal * (1 + estMarkup / 100) * rowMu;
     });
-    
-    // Apply row markup to all portions
-    const rowMarkup = 1 + (row.markup_percent / 100);
-    customRowsMaterialsTotal += rowMaterialsTotal * rowMarkup;
-    customRowsMaterialsTaxableOnly += rowMaterialsTaxableOnly * rowMarkup;
-    customRowsLaborTotal += rowLaborTotal * rowMarkup;
+
+    customRowsMaterialsTotal += rowMaterialsTotal;
+    customRowsMaterialsTaxableOnly += rowMaterialsTaxableOnly;
+    customRowsLaborTotal += rowLaborTotal;
   });
   
   // Build set of optional sheet IDs so they can be excluded from all totals
@@ -8148,6 +8229,15 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         return sum + ((Number(item?.quantity) || 0) * (Number(item?.price_per_unit) || 0));
       }, 0);
       if (itemsPrice > 0) return itemsPrice;
+      // Fallback: if selling price fields are missing, use cost fields so category markup can still produce a price.
+      // This fixes under-counting when rows have cost populated but price_per_unit / extended_price are blank.
+      const itemsCost = ((cat?.items || []) as any[]).reduce((sum: number, item: any) => {
+        if (item?.extended_cost != null && item.extended_cost !== '') {
+          return sum + (Number(item.extended_cost) || 0);
+        }
+        return sum + ((Number(item?.quantity) || 0) * (Number(item?.cost_per_unit) || 0));
+      }, 0);
+      if (itemsCost > 0) return itemsCost;
       const directTotalPrice = Number(cat?.totalPrice);
       if (Number.isFinite(directTotalPrice) && directTotalPrice > 0) return directTotalPrice;
       if (breakdownCategoryPriceByName.has(catKey)) return breakdownCategoryPriceByName.get(catKey) || 0;
@@ -8173,32 +8263,14 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     const ms = materialSheets.find((m: any) => m.id === sheet.sheetId);
     if (ms?.sheet_type === 'change_order') return;
 
-    // Calculate cost from linked custom rows (ALL materials, with their own markup)
+    // Linked custom rows (materials) — match section header math (per-line-item markup; no extra rowMarkup multiplier)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
-    let linkedRowsMaterialsTotal = 0;
-    let linkedRowsMaterialsTaxableOnly = 0;
-    
-    linkedRows.forEach(row => {
-      const lineItems = customRowLineItems[row.id] || [];
+    const linkedRowMat = sumLinkedRowMaterialTotals(linkedRows, customRowLineItems);
+    let linkedRowsMaterialsTotal = linkedRowMat.materialTotal;
+    let linkedRowsMaterialsTaxableOnly = linkedRowMat.materialTaxableOnly;
+    // Linked subs attached to custom rows (materials only) — include subcontractor markup (section header behavior)
+    linkedRows.forEach((row: any) => {
       const linkedSubs = linkedSubcontractors[row.id] || [];
-      
-      // Separate line items by type
-      const materialLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'material');
-      
-      // Calculate material portions
-      let rowMaterialsTotal = 0;
-      let rowMaterialsTaxableOnly = 0;
-      if (lineItems.length > 0) {
-        rowMaterialsTotal = materialLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
-        rowMaterialsTaxableOnly = materialLineItems
-          .filter((item: any) => item.taxable)
-          .reduce((sum: number, item: any) => sum + item.total_cost, 0);
-      } else if (row.category !== 'labor') {
-        rowMaterialsTotal = row.total_cost;
-        rowMaterialsTaxableOnly = row.taxable ? row.total_cost : 0;
-      }
-      
-      // Add linked subcontractors (materials only)
       linkedSubs.forEach((sub: any) => {
         const subLineItems = subcontractorLineItems[sub.id] || [];
         const subMaterialsTotal = subLineItems
@@ -8208,14 +8280,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material' && item.taxable)
           .reduce((sum: number, item: any) => sum + item.total_price, 0);
         const estMarkup = sub.markup_percent || 0;
-        rowMaterialsTotal += subMaterialsTotal * (1 + estMarkup / 100);
-        rowMaterialsTaxableOnly += subMaterialsTaxableOnly * (1 + estMarkup / 100);
+        linkedRowsMaterialsTotal += subMaterialsTotal * (1 + estMarkup / 100);
+        linkedRowsMaterialsTaxableOnly += subMaterialsTaxableOnly * (1 + estMarkup / 100);
       });
-      
-      // Apply row markup
-      const rowMarkup = 1 + (row.markup_percent / 100);
-      linkedRowsMaterialsTotal += rowMaterialsTotal * rowMarkup;
-      linkedRowsMaterialsTaxableOnly += rowMaterialsTaxableOnly * rowMarkup;
     });
     
     // Calculate linked subcontractors (materials only, both taxable and non-taxable)
@@ -8253,12 +8320,17 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     const categoryTotals = getSheetCategoryPriceTotal(sheet);
     // Category materials are treated as taxable by default in current model.
     const categoryTaxableOnly = categoryTotals;
+
+    // Section-level markup (shown as "+ %") applies to non-category material totals in the UI
+    // (sheet-level material line items + linked custom rows + linked subs). Categories already include markup.
+    const sheetMuPct = Number((sheet as any).markup_percent ?? 10) || 0;
+    const sheetMu = 1 + sheetMuPct / 100;
+    const nonCategoryMaterials = sheetMatLinePrice + linkedRowsMaterialsTotal + linkedSubsMaterialsTotal;
+    const nonCategoryTaxableOnly = sheetMatLineTaxable + linkedRowsMaterialsTaxableOnly + linkedSubsMaterialsTaxableOnly;
     
-    // Final = categories + sheet material line items + linked custom rows + linked subs
-    materialSheetsPrice +=
-      categoryTotals + sheetMatLinePrice + linkedRowsMaterialsTotal + linkedSubsMaterialsTotal;
-    materialSheetsTaxableOnly +=
-      categoryTaxableOnly + sheetMatLineTaxable + linkedRowsMaterialsTaxableOnly + linkedSubsMaterialsTaxableOnly;
+    // Final = categories (already marked-up) + (non-category materials × sheet markup)
+    materialSheetsPrice += categoryTotals + nonCategoryMaterials * sheetMu;
+    materialSheetsTaxableOnly += categoryTaxableOnly + nonCategoryTaxableOnly * sheetMu;
   });
 
   // Optional sections are intentionally excluded from proposal totals.
@@ -8390,19 +8462,20 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
   
   // Combine materials with subcontractor materials for display
   const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + subcontractorMaterialsPrice;
-  
-  // Calculate subtotals
-  const materialsSubtotal = proposalMaterialsPrice + subcontractorMaterialsPrice;
-  const laborSubtotal = proposalLaborPrice;
-  
-  // Tax: use local checkbox state so total updates immediately when user checks "Tax exempt"
-  const proposalTotalTaxRaw = ((Number(proposalMaterialsTaxableOnly) || 0) + (Number(subcontractorMaterialsTaxableOnly) || 0)) * TAX_RATE;
-  const proposalTotalTax = taxExemptChecked ? 0 : proposalTotalTaxRaw;
-  
-  // Grand total: subtotal + tax (tax is 0 when tax exempt)
-  const proposalSubtotal = (Number(materialsSubtotal) || 0) + (Number(laborSubtotal) || 0);
-  const proposalGrandTotal = (Number(proposalSubtotal) || 0) + (Number(proposalTotalTax) || 0);
 
+  // Debug helper: show bucket totals in header when troubleshooting mismatches
+  const debugTotalsEnabled =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugTotals') === '1';
+  const debugMaterialsBuckets = debugTotalsEnabled
+    ? {
+        materialSheetsPrice,
+        customRowsMaterialsTotal,
+        subcontractorMaterialsPrice,
+        proposalMaterialsPrice,
+        proposalMaterialsTotalWithSubcontractors,
+      }
+    : null;
+  
   // Progress calculations - use total labor hours from labor rows
   const progressPercent = totalLaborHours > 0 ? Math.min((totalClockInHours / totalLaborHours) * 100, 100) : 0;
   const isOverBudget = totalClockInHours > totalLaborHours && totalLaborHours > 0;
@@ -8474,6 +8547,107 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       (item.type === 'material' && (item.data as any).isOptional) ||
       (item.type === 'subcontractor' && toBool((item.data as any).is_option))
   );
+
+  // Sum of the "blue numbers" shown on each section card (matches left panel UI, not the proposal subtotal).
+  // - Sheets: blue value is the Materials number (materials categories + sheet material line items + linked rows + linked subs)
+  // - Custom rows: blue value is the Materials number
+  // - Subcontractors: blue value is the Total number (materials + labor)
+  const sumAllSectionBlueTotals = useMemo(() => {
+    const bySheetId = new Map<string, any>();
+    (materialsBreakdown.sheetBreakdowns || []).forEach((s: any) => {
+      if (s?.sheetId) bySheetId.set(String(s.sheetId), s);
+    });
+
+    const sheetBlue = (sheet: any): number => {
+      const sheetId = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
+      if (!sheetId) return 0;
+      const sheetBd = bySheetId.get(sheetId) || sheet;
+
+      const categoryTotals = getSheetCategoryPriceTotal(sheetBd);
+
+      const sheetMaterialItems = (customRowLineItems[sheetId] || []).filter(
+        (item: any) => (item.item_type || 'material') === 'material'
+      );
+      const sheetMaterialLineItemsTotal = sheetMaterialItems.reduce((sum: number, item: any) => {
+        const itemMarkup = item.markup_percent ?? 0;
+        return sum + (Number(item.total_cost) || 0) * (1 + (Number(itemMarkup) || 0) / 100);
+      }, 0);
+
+      const linkedRows = customRows.filter((r: any) => (r as any).sheet_id === sheetId);
+      const linkedRowTotals = sumLinkedRowTotals(linkedRows, customRowLineItems);
+      const linkedSubs = linkedSubcontractors[sheetId] || [];
+      const linkedSubsMaterialsTotal = sumLinkedSubMaterialsFromSubs(linkedSubs, subcontractorLineItems);
+
+      return (Number(categoryTotals) || 0) + sheetMaterialLineItemsTotal + (Number(linkedRowTotals.materialTotal) || 0) + (Number(linkedSubsMaterialsTotal) || 0);
+    };
+
+    const customRowBlue = (row: any): number => {
+      const rowId = String(row?.id ?? '').trim();
+      if (!rowId) return 0;
+      const lineItems = customRowLineItems[rowId] || [];
+      const linkedSubs = linkedSubcontractors[rowId] || [];
+      const linkedSubsMaterialsTotal = sumLinkedSubMaterialsFromSubs(linkedSubs, subcontractorLineItems);
+
+      const materialLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'material');
+      const materialLineItemsTotal = materialLineItems.reduce((sum: number, item: any) => {
+        const itemMarkup = item.markup_percent || 0;
+        return sum + (Number(item.total_cost) || 0) * (1 + (Number(itemMarkup) || 0) / 100);
+      }, 0);
+
+      // Matches the card logic: when line items exist, use marked-up line items directly; otherwise use row total_cost with row-level markup.
+      if (lineItems.length > 0) return materialLineItemsTotal + linkedSubsMaterialsTotal;
+      return ((Number((row as any).total_cost) || 0) + linkedSubsMaterialsTotal) * (1 + (Number((row as any).markup_percent) || 0) / 100);
+    };
+
+    const subcontractorBlue = (est: any): number => {
+      const estId = String(est?.id ?? '').trim();
+      if (!estId) return 0;
+      const lineItems = subcontractorLineItems[estId] || [];
+      const included = lineItems.filter((item: any) => !item.excluded);
+      const materialIncludedTotal = included
+        .filter((i: any) => (i.item_type || 'material') === 'material')
+        .reduce((sum: number, i: any) => sum + (Number(i.total_price) || 0), 0);
+      const laborIncludedTotal = included
+        .filter((i: any) => (i.item_type || 'material') === 'labor')
+        .reduce((sum: number, i: any) => sum + (Number(i.total_price) || 0), 0);
+      const estMarkup = Number(est?.markup_percent) || 0;
+      const materialWithMarkup = materialIncludedTotal * (1 + estMarkup / 100);
+      const laborWithMarkup = laborIncludedTotal * (1 + estMarkup / 100);
+      return materialWithMarkup + laborWithMarkup;
+    };
+
+    return allItemsUnsorted.reduce((sum: number, item: any) => {
+      if (item.type === 'material') return sum + sheetBlue(item.data);
+      if (item.type === 'custom') return sum + customRowBlue(item.data);
+      if (item.type === 'subcontractor') return sum + subcontractorBlue(item.data);
+      return sum;
+    }, 0);
+  }, [
+    allItemsUnsorted,
+    materialsBreakdown.sheetBreakdowns,
+    customRowLineItems,
+    customRows,
+    linkedSubcontractors,
+    subcontractorLineItems,
+    categoryMarkups,
+    categoryMarkups,
+    materialSheets,
+    externalPriceLookup,
+  ]);
+
+  // Calculate subtotals
+  // Materials subtotal should match the sum of section Materials numbers (with markup),
+  // so the header Subtotal equals (Materials + Labor) as shown in the sections list.
+  const materialsSubtotal = sumAllSectionBlueTotals;
+  const laborSubtotal = proposalLaborPrice;
+  
+  // Tax: use local checkbox state so total updates immediately when user checks "Tax exempt"
+  const proposalTotalTaxRaw = ((Number(proposalMaterialsTaxableOnly) || 0) + (Number(subcontractorMaterialsTaxableOnly) || 0)) * TAX_RATE;
+  const proposalTotalTax = taxExemptChecked ? 0 : proposalTotalTaxRaw;
+  
+  // Grand total: subtotal + tax (tax is 0 when tax exempt)
+  const proposalSubtotal = (Number(materialsSubtotal) || 0) + (Number(laborSubtotal) || 0);
+  const proposalGrandTotal = (Number(proposalSubtotal) || 0) + (Number(proposalTotalTax) || 0);
 
   // Optional categories (section-level options): list for the "Options" block at bottom of proposal
   const optionalCategoriesList: { sheetName: string; categoryName: string; totalCost: number; priceWithMarkup: number }[] = [];
@@ -8760,7 +8934,19 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           </div>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Materials:</span>
-          <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span className="font-bold text-slate-900">
+            ${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          {debugMaterialsBuckets && (
+            <span
+              className="text-[11px] text-slate-500"
+              title={JSON.stringify(debugMaterialsBuckets)}
+            >
+              (sheets ${materialSheetsPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, rows{' '}
+              {customRowsMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, subs{' '}
+              {subcontractorMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+            </span>
+          )}
           <span className="text-slate-600">Labor:</span>
           <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           <span className="text-slate-300">|</span>
@@ -8980,7 +9166,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         {!setProposalToolbar && (
         <div className="flex flex-wrap items-center gap-4 py-2 px-3 mb-3 rounded-lg bg-gradient-to-r from-slate-100 to-slate-50 border border-slate-200 text-sm">
           <span className="font-semibold text-slate-700">Materials:</span>
-          <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span className="font-bold text-slate-900">${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           {proposalLaborPrice > 0 && (
             <>
               <span className="font-semibold text-slate-700">Labor:</span>

@@ -60,9 +60,19 @@ function formatSupabaseError(err: unknown): string {
   return parts.join(' — ') || 'Request failed';
 }
 
+function isLikelyPortalUsersRls(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  const msg = String((err as { message?: string })?.message ?? '');
+  if (!/portal_users/i.test(msg)) return false;
+  if (/row-level security|RLS policy|violates row-level/i.test(msg)) return true;
+  if (code === '42501' && /row-level security|rls/i.test(msg)) return true;
+  return false;
+}
+
 function isLikelyPortalJobAccessRls(err: unknown): boolean {
   const code = (err as { code?: string })?.code;
   const msg = String((err as { message?: string })?.message ?? '');
+  if (/portal_users/i.test(msg)) return false;
   if (/row-level security|RLS policy|violates row-level/i.test(msg)) return true;
   if (code === '42501' && /row-level security|rls/i.test(msg)) return true;
   return false;
@@ -218,7 +228,12 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
       await load();
     } catch (err: unknown) {
       const msg = formatSupabaseError(err);
-      if (isLikelyPortalJobAccessRls(err)) {
+      if (isLikelyPortalUsersRls(err)) {
+        toast.error(
+          `Could not create portal login: ${msg}. Deploy RPC office_portal_user_ensure_for_subcontractor_json (supabase/migrations/20260327000000_portal_user_ensure_subcontractor_json.sql), or fix RLS on portal_users; NOTIFY pgrst, 'reload schema'.`,
+          { duration: 22000 }
+        );
+      } else if (isLikelyPortalJobAccessRls(err)) {
         toast.error(
           `Could not save job access: ${msg}. Deploy Edge Function portal-job-access (supabase/functions/portal-job-access) or fix RLS on portal_job_access.`,
           { duration: 18000 }
