@@ -31,7 +31,6 @@ import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileS
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { isQuoteContractFrozen, quoteHasActiveContract } from '@/lib/quoteProposalLock';
-import { fetchQuoteIdsWithSignedProposalVersion } from '@/lib/proposalSignedQuotes';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
@@ -298,6 +297,31 @@ function sumLinkedSubLaborFromSubs(
   }, 0);
 }
 
+function normalizeMarkupKeyPart(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function lookupCategoryMarkup(
+  categoryMarkups: Record<string, number>,
+  sheetId: string,
+  categoryName: unknown,
+  defaultMarkup: number
+): number {
+  const rawName = String(categoryName ?? '');
+  const exactKey = `${sheetId}_${rawName}`;
+  if (categoryMarkups[exactKey] != null) return Number(categoryMarkups[exactKey]) || 0;
+
+  // Fallback: match existing keys case-insensitively (handles "Trim" vs "trim", whitespace differences, etc.).
+  const want = normalizeMarkupKeyPart(rawName);
+  const prefix = `${sheetId}_`;
+  for (const [k, v] of Object.entries(categoryMarkups)) {
+    if (!k.startsWith(prefix)) continue;
+    const suffix = k.slice(prefix.length);
+    if (normalizeMarkupKeyPart(suffix) === want) return Number(v) || 0;
+  }
+  return Number(defaultMarkup) || 0;
+}
+
 /** Linked custom row totals split by item_type and per-line-item markup. */
 function sumLinkedRowTotals(
   linkedRows: any[],
@@ -309,7 +333,9 @@ function sumLinkedRowTotals(
 
       if (lineItems.length > 0) {
         for (const item of lineItems) {
-          const itemCost = Number(item?.total_cost) || ((Number(item?.quantity) || 0) * (Number(item?.unit_cost) || 0));
+          const itemCost =
+            Number((item as any)?.total_price ?? (item as any)?.total_cost) ||
+            (Number((item as any)?.quantity) || 0) * (Number((item as any)?.unit_cost) || 0);
           const itemMarkup = Number(item?.markup_percent ?? row?.markup_percent ?? 0) || 0;
           const itemPrice = itemCost * (1 + itemMarkup / 100);
           const itemType = (item?.item_type || 'material') === 'labor' ? 'labor' : 'material';
@@ -342,7 +368,8 @@ function sumLinkedRowMaterialTotals(
           const itemType = (item?.item_type || 'material') === 'labor' ? 'labor' : 'material';
           if (itemType !== 'material') continue;
           const itemCost =
-            Number(item?.total_cost) || (Number(item?.quantity) || 0) * (Number(item?.unit_cost) || 0);
+            Number((item as any)?.total_price ?? (item as any)?.total_cost) ||
+            (Number((item as any)?.quantity) || 0) * (Number((item as any)?.unit_cost) || 0);
           const itemMarkup = Number(item?.markup_percent ?? row?.markup_percent ?? 0) || 0;
           const itemPrice = itemCost * (1 + itemMarkup / 100);
           acc.materialTotal += itemPrice;
@@ -469,14 +496,16 @@ function SortableRow({
       const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
       const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => {
         const itemMarkup = item.markup_percent ?? 0;
-        return sum + (item.total_cost * (1 + itemMarkup / 100));
+        const base = Number(item.total_price ?? item.total_cost) || 0;
+        return sum + (base * (1 + itemMarkup / 100));
       }, 0);
 
       // Sheet-level material line items (Add Material Row from section) — include in section total
       const sheetMaterialItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'material') || [];
       const sheetMaterialLineItemsTotal = sheetMaterialItems.reduce((sum: number, item: any) => {
         const itemMarkup = item.markup_percent ?? 0;
-        return sum + (item.total_cost * (1 + itemMarkup / 100));
+        const base = Number(item.total_price ?? item.total_cost) || 0;
+        return sum + (base * (1 + itemMarkup / 100));
       }, 0);
       
       const categorySource = ((breakdownSheet as any)?.categories?.length ? (breakdownSheet as any).categories : sheet.categories) || [];
@@ -515,17 +544,17 @@ function SortableRow({
         return 0;
       };
 
-      // When `externalPriceLookup` provides a category total, that value already matches the Breakdown panel's green "Price".
-      // Do NOT apply category markup again or we'd double-markup and the left panel won't match the Breakdown.
+      // When `externalPriceLookup` provides a category total, treat it as the base category price
+      // so the per-category markup % always affects the section "Price" column.
       const getCategoryDisplayPrice = (cat: any) => {
         const catKey = normalizeCategoryName(cat?.name);
         const extBySheetId = externalPriceLookup.get(sheetIdForMatch);
         if (extBySheetId && Object.prototype.hasOwnProperty.call(extBySheetId, catKey)) {
-          return { price: Number(extBySheetId[catKey]) || 0, isFinal: true };
+          return { price: Number(extBySheetId[catKey]) || 0, isFinal: false };
         }
         const extBySheetName = externalPriceLookup.get(sheetNameForMatch);
         if (extBySheetName && Object.prototype.hasOwnProperty.call(extBySheetName, catKey)) {
-          return { price: Number(extBySheetName[catKey]) || 0, isFinal: true };
+          return { price: Number(extBySheetName[catKey]) || 0, isFinal: false };
         }
         return { price: getCategoryBreakdownPrice(cat), isFinal: false };
       };
@@ -536,9 +565,13 @@ function SortableRow({
         breakdownCategories.length > 0 ? breakdownCategories : categorySource;
       const materialsSubtotalFromCategories = displayCategoriesForMaterialsSum.reduce(
         (sum: number, cat: any) => {
-          const categoryKey = `${sheet.sheetId}_${cat.name}`;
-          const categoryMarkup =
-            categoryMarkups[categoryKey] ?? (sheet.markup_percent ?? 10);
+          const sheetId = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
+          const categoryMarkup = lookupCategoryMarkup(
+            categoryMarkups,
+            sheetId,
+            cat?.name,
+            (sheet.markup_percent ?? 10)
+          );
           const { price, isFinal } = getCategoryDisplayPrice(cat);
           return sum + (isFinal ? price : price * (1 + (Number(categoryMarkup) || 0) / 100));
         },
@@ -1099,7 +1132,7 @@ function SortableRow({
                     {sheetLineItems.map((lineItem: any) => {
                       const isLabor = (lineItem.item_type || 'material') === 'labor';
                       const itemMarkup = lineItem.markup_percent || 0;
-                      const itemCost = lineItem.total_cost;
+                      const itemCost = Number(lineItem.total_price ?? lineItem.total_cost) || 0;
                       const itemPrice = itemCost * (1 + itemMarkup / 100);
                       return (
                         <div key={lineItem.id} className={`rounded p-2 border ${isLabor ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
@@ -3447,8 +3480,8 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
       return;
     }
     if (!confirm(isCo
-      ? 'Send this change order to the customer? The date and time will be recorded (permanent). They can review and sign under Change orders in the customer portal. The workbook stays editable until the change order is signed as a contract.'
-      : 'Record that this proposal was sent to the customer? The date and time will be saved permanently and cannot be cleared by “Revoke contract”. The materials workbook stays editable until you set a signed contract.')) return;
+      ? 'Send this change order to the customer? The date and time will be recorded (permanent). This will lock the proposal + materials workbook (read-only) until you unlock it or it becomes a signed contract.'
+      : 'Record that this proposal was sent to the customer? The date and time will be saved permanently and cannot be cleared by “Revoke contract”. This will lock the proposal + materials workbook (read-only) until you unlock it or it becomes a signed contract.')) return;
 
     const onSuccess = async () => {
       toast.success(isCo ? 'Change order marked as sent. Customer can sign under Change orders in the portal.' : 'Proposal marked as sent. Date and time recorded.');
@@ -3459,17 +3492,39 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
     try {
       const { error: quoteErr } = await supabase
         .from('quotes')
-        .update({ sent_at: new Date().toISOString(), sent_by: profile.id })
+        .update({
+          sent_at: new Date().toISOString(),
+          sent_by: profile.id,
+          locked_for_editing: true,
+        } as any)
         .eq('id', quote.id);
 
       if (!quoteErr) {
+        // Sent => lock workbook (single-workbook model; no copy until signed contract)
+        const { error: wbErr } = await supabase
+          .from('material_workbooks')
+          .update({ status: 'locked', updated_at: new Date().toISOString() })
+          .eq('quote_id', quote.id)
+          .eq('status', 'working');
+        if (wbErr) console.warn('markProposalAsSent workbook lock:', wbErr.message);
+        await onSuccess();
+        return;
+      }
+
+      // Fallback: Edge Function (service role) locks sent + workbook atomically when RPC exists.
+      const { data: fnRes, error: fnErr } = await supabase.functions.invoke('mark-proposal-as-sent', {
+        body: { quote_id: quote.id, user_id: profile.id },
+      });
+      if (!fnErr && (fnRes as any)?.ok) {
         await onSuccess();
         return;
       }
 
       const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
-UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote.id}';`;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS locked_for_editing boolean DEFAULT false;
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}', locked_for_editing = true WHERE id = '${quote.id}';
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${quote.id}' AND status = 'working';`;
       setMarkAsSentManualSql(manualSql);
       setShowMarkAsSentManualDialog(true);
       toast.error('Update failed. Copy the SQL from the dialog and run it in Supabase SQL Editor, then refresh.');
@@ -3477,14 +3532,16 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
       console.error('Error marking proposal as sent:', error);
       const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
-UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote.id}';`;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS locked_for_editing boolean DEFAULT false;
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}', locked_for_editing = true WHERE id = '${quote.id}';
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${quote.id}' AND status = 'working';`;
       setMarkAsSentManualSql(manualSql);
       setShowMarkAsSentManualDialog(true);
       toast.error(error?.message || 'Mark as sent failed. Use the dialog to run the SQL manually.');
     }
   }
 
-  /** Set sent_at on the change-order quote (same as toolbar “Send change order”; does not lock workbook). */
+  /** Set sent_at on the change-order quote (same as toolbar “Send change order”; locks proposal + workbook). */
   async function sendChangeOrderProposalToCustomer() {
     if (!profile?.id) {
       toast.error('You must be signed in.');
@@ -3528,17 +3585,25 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${quote
     try {
       const { error: quoteErr } = await supabase
         .from('quotes')
-        .update({ sent_at: new Date().toISOString(), sent_by: profile.id })
+        .update({ sent_at: new Date().toISOString(), sent_by: profile.id, locked_for_editing: true } as any)
         .eq('id', coQuoteId);
 
       if (!quoteErr) {
+        const { error: wbErr } = await supabase
+          .from('material_workbooks')
+          .update({ status: 'locked', updated_at: new Date().toISOString() })
+          .eq('quote_id', coQuoteId)
+          .eq('status', 'working');
+        if (wbErr) console.warn('sendChangeOrderProposalToCustomer workbook lock:', wbErr.message);
         await onSuccess();
         return;
       }
 
       const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
-UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuoteId}';`;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS locked_for_editing boolean DEFAULT false;
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}', locked_for_editing = true WHERE id = '${coQuoteId}';
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${coQuoteId}' AND status = 'working';`;
       setMarkAsSentManualSql(manualSql);
       setShowMarkAsSentManualDialog(true);
       toast.error('Update failed. Copy the SQL from the dialog and run it in Supabase SQL Editor, then refresh.');
@@ -3546,7 +3611,9 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       console.error('Error sending change orders:', error);
       const manualSql = `-- Run in Supabase Dashboard → SQL Editor → New query → Paste → Run
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS sent_at timestamptz, ADD COLUMN IF NOT EXISTS sent_by uuid;
-UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuoteId}';`;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS locked_for_editing boolean DEFAULT false;
+UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}', locked_for_editing = true WHERE id = '${coQuoteId}';
+UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_id = '${coQuoteId}' AND status = 'working';`;
       setMarkAsSentManualSql(manualSql);
       setShowMarkAsSentManualDialog(true);
       toast.error(error?.message || 'Send failed. Use the dialog to run the SQL manually.');
@@ -4524,14 +4591,6 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         return nb.localeCompare(na, undefined, { numeric: true });
       });
 
-      if (quotesList.length > 0) {
-        const signedIds = await fetchQuoteIdsWithSignedProposalVersion(quotesList.map((q: any) => q.id));
-        quotesList = quotesList.map((q: any) => ({
-          ...q,
-          has_signed_proposal_version: signedIds.has(q.id),
-        }));
-      }
-
       setAllJobQuotes(quotesList);
 
       // When job already has quotes, use that list. Prefer user-selected; else default to first (highest proposal number).
@@ -5390,13 +5449,25 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           loadSubcontractorEstimates(targetQuoteId, isHistorical),
         ]);
       } else {
-        await Promise.all([
-          loadCustomRows(targetQuoteId, isHistorical),
-          loadLaborPricing(),
-          loadLaborHours(),
-          loadMaterialsData(targetQuoteId, isHistorical),
-          loadSubcontractorEstimates(targetQuoteId, isHistorical),
-        ]);
+        // Even when editable, sheet-linked line items (Add Labor) can depend on workbook/sheet resolution.
+        // Load materials first whenever a quote is active to prevent races when switching proposals.
+        if (targetQuoteId) {
+          await loadMaterialsData(targetQuoteId, isHistorical);
+          await Promise.all([
+            loadCustomRows(targetQuoteId, isHistorical),
+            loadLaborPricing(),
+            loadLaborHours(),
+            loadSubcontractorEstimates(targetQuoteId, isHistorical),
+          ]);
+        } else {
+          await Promise.all([
+            loadCustomRows(targetQuoteId, isHistorical),
+            loadLaborPricing(),
+            loadLaborHours(),
+            loadMaterialsData(targetQuoteId, isHistorical),
+            loadSubcontractorEstimates(targetQuoteId, isHistorical),
+          ]);
+        }
       }
     } catch (error) {
       console.error('Error loading financial data:', error);
@@ -5853,24 +5924,8 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             material_category_markups (*)
           )
         `;
-        // Used later for empty-workbook fallback rules.
-        // Must be in outer scope (the workbook selection branches below can exit their block).
+        // Used later for empty-workbook fallback rules (must be outer scope).
         let contractFrozen = false;
-        try {
-          const { data: quoteRowForMaterials } = await supabase
-            .from('quotes')
-            .select('locked_for_editing, sent_at, signed_version, customer_signed_at')
-            .eq('id', targetQuoteId)
-            .maybeSingle();
-          const signedMat = await fetchQuoteIdsWithSignedProposalVersion(targetQuoteId ? [targetQuoteId] : []);
-          const quoteRowMerged =
-            quoteRowForMaterials && targetQuoteId
-              ? { ...quoteRowForMaterials, has_signed_proposal_version: signedMat.has(targetQuoteId) }
-              : quoteRowForMaterials;
-          contractFrozen = isQuoteContractFrozen(quoteRowMerged as any);
-        } catch {
-          // non-blocking: keep default false
-        }
         // If the split-view materials panel is explicitly viewing a locked workbook, mirror that here
         // so the proposal totals stay attached to the locked snapshot (never influenced by working edits).
         if (externalMaterialsWorkbookView?.status === 'locked' && externalMaterialsWorkbookView.workbookId) {
@@ -5884,10 +5939,17 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
           workbookData = forcedWb;
           workbookError = null;
         } else {
-          // Non–first-proposal tab: same workbook priority as MaterialsManagement (workingList[0] ?? lockedList[0]),
-          // both sorted by version_number desc — NOT updated_at alone, or locking the working copy can surface an
-          // older locked snapshot and change materials totals on the left panel.
-          if (wasHistoricalRequest) {
+        const { data: quoteRowForMaterials } = await supabase
+          .from('quotes')
+          .select('locked_for_editing, sent_at, signed_version, customer_signed_at')
+          .eq('id', targetQuoteId)
+          .maybeSingle();
+        contractFrozen = isQuoteContractFrozen(quoteRowForMaterials as any);
+
+        // Non–first-proposal tab: same workbook priority as MaterialsManagement (workingList[0] ?? lockedList[0]),
+        // both sorted by version_number desc — NOT updated_at alone, or locking the working copy can surface an
+        // older locked snapshot and change materials totals on the left panel.
+        if (wasHistoricalRequest) {
           // Historical/locked proposal view: prefer locked workbook so working edits never change this proposal's prices.
           // Fall back to working only if no locked workbook exists yet for this quote.
           const lockedFb = await supabase
@@ -5912,7 +5974,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             workbookData = workingFb.data;
             workbookError = workingFb.error;
           }
-          } else if (contractFrozen) {
+        } else if (contractFrozen) {
           // Office lock OR signed contract: one `locked` workbook row holds the proposal materials total (no edits on a separate job workbook affect this).
           // When signed contract + working duplicate exists, this is always the locked snapshot; when office-locked only, it is the single flipped workbook.
           const { data: lockedRows, error: lockedErr } = await supabase
@@ -5931,7 +5993,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             // Falling back would let working edits change locked proposal totals.
             toast.error('Locked proposal workbook not found. Create/restore the locked contract workbook to view locked totals.');
           }
-          } else {
+        } else {
           // Draft (not office-locked, not signed contract): one working workbook holds proposal price + edits.
           // A separate locked row exists only after sign-contract (handled above) or rare legacy — prefer working first so COS edits change the header.
           const workingPreferred = await supabase
@@ -6585,12 +6647,7 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         .select('locked_for_editing, signed_version, customer_signed_at')
         .eq('id', targetQuoteId)
         .maybeSingle();
-      const signedLi = await fetchQuoteIdsWithSignedProposalVersion(targetQuoteId ? [targetQuoteId] : []);
-      const quoteRowLineMerged =
-        quoteRowLineItems && targetQuoteId
-          ? { ...quoteRowLineItems, has_signed_proposal_version: signedLi.has(targetQuoteId) }
-          : quoteRowLineItems;
-      const preferLockedWb = isQuoteContractFrozen(quoteRowLineMerged as any);
+      const preferLockedWb = isQuoteContractFrozen(quoteRowLineItems as any);
 
       if (preferLockedWb) {
         const lockedTop = await supabase
@@ -6762,11 +6819,47 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
         .order('order_index');
       const wbIds = Array.from(workbookIdsToLoad);
       if (wbIds.length > 0) {
-        byQuoteQuery = byQuoteQuery.in('workbook_id', wbIds);
+        // Prefer scoping to relevant workbooks; include NULL for backward compatibility.
+        byQuoteQuery = byQuoteQuery.or(`workbook_id.is.null,workbook_id.in.(${wbIds.join(',')})`);
       }
       const { data: byQuote, error: byQuoteErr } = await byQuoteQuery;
-      if (byQuoteErr) console.error('Error loading quote-scoped sheet line items:', byQuoteErr);
-      sheetLinkedItems = (byQuote || []) as CustomRowLineItem[];
+      if (byQuoteErr) {
+        console.error('Error loading quote-scoped sheet line items:', byQuoteErr);
+        // Older DBs may not yet have quote_id/workbook_id/section_name columns. Fall back to legacy sheet_id-linked fetch.
+        let legacySheetIds = sheetIds;
+        if (legacySheetIds.length === 0 && targetQuoteId) {
+          try {
+            const { data: wbRows } = await supabase
+              .from('material_workbooks')
+              .select('id')
+              .eq('quote_id', targetQuoteId);
+            const ids = (wbRows || []).map((w: any) => w.id).filter(Boolean);
+            if (ids.length > 0) {
+              const { data: sheetRows } = await supabase
+                .from('material_sheets')
+                .select('id')
+                .in('workbook_id', ids);
+              legacySheetIds = (sheetRows || []).map((s: any) => s.id).filter(Boolean);
+            }
+          } catch {
+            // ignore; keep legacySheetIds as-is
+          }
+        }
+        if (legacySheetIds.length > 0) {
+          const { data: sheetItems, error: sheetItemsErr } = await supabase
+            .from('custom_financial_row_items')
+            .select('*')
+            .in('sheet_id', legacySheetIds)
+            .is('row_id', null)
+            .order('order_index');
+          if (sheetItemsErr) console.error('Error loading sheet-linked line items:', sheetItemsErr);
+          sheetLinkedItems = (sheetItems || []) as CustomRowLineItem[];
+        } else {
+          sheetLinkedItems = [];
+        }
+      } else {
+        sheetLinkedItems = (byQuote || []) as CustomRowLineItem[];
+      }
 
       // Backward compatibility: also load legacy sheet_id-linked items if needed.
       if ((sheetLinkedItems?.length || 0) === 0 && sheetIds.length > 0) {
@@ -7530,20 +7623,84 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       actualItemType = 'material';
     }
     
-    const itemData = {
-      row_id: isSheet ? null : lineItemParentRowId,
-      sheet_id: isSheet ? lineItemParentRowId : null,
-      quote_id: isSheet ? (quote?.id ?? null) : null,
-      workbook_id: isSheet ? (activeWorkbookId ?? null) : null,
-      section_name: isSheet
+    // Sheet line items should always be proposal-scoped. In some races (fresh load / split view),
+    // `activeWorkbookId` can be null even though a workbook exists; resolve one so inserts don't fail.
+    let effectiveWorkbookId: string | null = isSheet ? (activeWorkbookId ?? null) : null;
+    if (isSheet && !effectiveWorkbookId && quote?.id) {
+      try {
+        const { data: wb } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('quote_id', quote.id)
+          .eq('status', 'working')
+          .order('version_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        effectiveWorkbookId = wb?.id ?? null;
+        if (!effectiveWorkbookId) {
+          const { data: wb2 } = await supabase
+            .from('material_workbooks')
+            .select('id')
+            .eq('quote_id', quote.id)
+            .order('version_number', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          effectiveWorkbookId = wb2?.id ?? null;
+        }
+      } catch {
+        // non-blocking; keep null and let DB error surface
+      }
+    }
+
+    // NOTE: Some deployments use `total_cost` while newer ones use `total_price`.
+    // Build base payload without the total column, then try the right column name via retries.
+    //
+    // IMPORTANT: When the UI is showing the LOCKED contract workbook, `lineItemParentRowId` is a locked sheet_id.
+    // On older DBs (no quote_id/section_name/workbook_id columns), persistence relies on `sheet_id`, so saving
+    // against a locked sheet_id makes the row disappear when viewing the WORKING workbook (different sheet ids).
+    // Resolve the canonical WORKING sheet_id by section name and persist against that whenever possible.
+    let persistSheetId: string | null = isSheet ? lineItemParentRowId : null;
+    const persistSectionName =
+      isSheet
         ? (materialSheets.find((s: any) => s.id === lineItemParentRowId)?.sheet_name ??
             materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === lineItemParentRowId)?.sheetName ??
             null)
+        : null;
+    if (isSheet && quote?.id && persistSectionName) {
+      try {
+        const normalize = (v: unknown) =>
+          String(v ?? '')
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, ' ');
+        const targetNameKey = normalize(persistSectionName);
+        const { data: wb } = await supabase
+          .from('material_workbooks')
+          .select('id, material_sheets(id, sheet_name, order_index)')
+          .eq('quote_id', quote.id)
+          .eq('status', 'working')
+          .order('version_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const ws = (wb as any)?.material_sheets || [];
+        const byName = (ws || []).find((s: any) => normalize(s?.sheet_name) === targetNameKey);
+        if (byName?.id) persistSheetId = byName.id;
+      } catch {
+        // non-blocking: keep best-effort persistSheetId
+      }
+    }
+
+    const itemDataBase: Record<string, any> = {
+      row_id: isSheet ? null : lineItemParentRowId,
+      sheet_id: isSheet ? persistSheetId : null,
+      quote_id: isSheet ? (quote?.id ?? null) : null,
+      workbook_id: isSheet ? effectiveWorkbookId : null,
+      section_name: isSheet
+        ? persistSectionName
         : null,
       description: lineItemForm.description,
       quantity: qty,
       unit_cost: cost,
-      total_cost: totalCost,
       notes: notesData,
       taxable: actualItemType === 'labor' ? false : lineItemForm.taxable,
       item_type: actualItemType,
@@ -7554,39 +7711,110 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       hide_from_customer: lineItemForm.hide_from_customer,
     };
 
+    const isMissingColumnError = (err: any, col: string) => {
+      const msg = String(err?.message || '').toLowerCase();
+      return msg.includes(`could not find the '${col}' column`.toLowerCase()) || msg.includes(`column ${col}`.toLowerCase());
+    };
+    const withTotalCost = (d: Record<string, any>) => ({ ...d, total_cost: totalCost });
+    const withTotalPrice = (d: Record<string, any>) => ({ ...d, total_price: totalCost });
+    const toLegacyTotalCost = (d: Record<string, any>) => {
+      const legacy = { ...d };
+      if ('total_price' in legacy) {
+        legacy.total_cost = legacy.total_price;
+        delete legacy.total_price;
+      }
+      return legacy;
+    };
+    const dropProposalScopeColumns = (d: Record<string, any>) => {
+      const legacy = { ...d };
+      delete legacy.quote_id;
+      delete legacy.section_name;
+      delete legacy.workbook_id;
+      delete legacy.hide_from_customer;
+      return legacy;
+    };
+
     try {
       if (editingLineItem) {
-        const { data: updated, error } = await supabase
+        const { error } = await supabase
           .from('custom_financial_row_items')
-          .update(itemData)
+          .update(withTotalCost(itemDataBase))
           .eq('id', editingLineItem.id)
-          .select()
-          .single();
-
-        if (error) throw error;
-        toast.success('Line item updated');
-        if (updated) {
-          setCustomRowLineItems(prev => ({
-            ...prev,
-            [lineItemParentRowId]: (prev[lineItemParentRowId] || []).map(it => it.id === editingLineItem.id ? updated : it),
-          }));
+          .limit(1);
+        if (
+          error &&
+          isSheet &&
+          (isMissingColumnError(error, 'quote_id') ||
+            isMissingColumnError(error, 'section_name') ||
+            isMissingColumnError(error, 'workbook_id') ||
+            isMissingColumnError(error, 'total_price'))
+        ) {
+          let legacyData: Record<string, any> = dropProposalScopeColumns(itemDataBase);
+          if (isMissingColumnError(error, 'total_cost')) {
+            // If this DB doesn't have total_cost either, fall back to total_price.
+            legacyData = withTotalPrice(legacyData);
+          } else {
+            legacyData = withTotalCost(legacyData);
+          }
+          const retry = await supabase
+            .from('custom_financial_row_items')
+            .update(legacyData)
+            .eq('id', editingLineItem.id)
+            .limit(1);
+          if (retry.error) throw retry.error;
+        } else if (error) {
+          throw error;
         }
+        toast.success('Line item updated');
       } else {
         // Labor: always insert so user can add multiple labor rows. Material: upsert by same parent+description+qty+cost to avoid duplicates.
         const isNewLabor = actualItemType === 'labor';
         if (isNewLabor) {
-          const { data: created, error } = await supabase
+          const attempts: string[] = [];
+          // Prefer legacy `total_cost` first to avoid schema-cache errors on older DBs.
+          let { error } = await supabase
             .from('custom_financial_row_items')
-            .insert([itemData])
-            .select()
-            .single();
-          if (error) throw error;
+            .insert([withTotalCost(itemDataBase)]);
+          attempts.push('insert(total_cost)');
+          if (error) {
+            // If DB lacks total_cost, retry with total_price (newer schema).
+            if (isMissingColumnError(error, 'total_cost')) {
+              attempts.push('retry(insert total_price)');
+              const retry = await supabase
+                .from('custom_financial_row_items')
+                .insert([withTotalPrice(itemDataBase)]);
+              error = retry.error;
+            }
+          }
+          if (error) {
+            // 2) If DB lacks proposal-scope columns (quote_id/section_name/workbook_id), fall back to legacy payload.
+            if (
+              isSheet &&
+              (isMissingColumnError(error, 'quote_id') ||
+                isMissingColumnError(error, 'section_name') ||
+                isMissingColumnError(error, 'workbook_id') ||
+                isMissingColumnError(error, 'total_price') ||
+                isMissingColumnError(error, 'total_cost'))
+            ) {
+              attempts.push('retry(insert legacy sheet_id)');
+              const legacyBase = dropProposalScopeColumns(itemDataBase);
+              // Try total_cost first, then total_price if needed.
+              let retry = await supabase.from('custom_financial_row_items').insert([withTotalCost(legacyBase)]);
+              if (retry.error && isMissingColumnError(retry.error, 'total_cost')) {
+                retry = await supabase.from('custom_financial_row_items').insert([withTotalPrice(legacyBase)]);
+              }
+              error = retry.error;
+            }
+          }
+          if (error) {
+            console.warn('saveLineItem insert failed after retries:', { attempts, error });
+            throw error;
+          }
           toast.success('Line item added');
-          // If RLS prevents "returning" the inserted row, `created` can be null even though insert succeeded.
           // Always append an optimistic item so the user sees it immediately; a subsequent reload will reconcile.
-          const optimistic = (created || {
+          const optimistic = ({
             id: `optimistic_${Date.now()}`,
-            ...itemData,
+            ...withTotalCost(itemDataBase),
           }) as any;
           setCustomRowLineItems(prev => ({
             ...prev,
@@ -7598,41 +7826,64 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
             .from('custom_financial_row_items')
             .select('id')
             .eq(parentCol, lineItemParentRowId)
-            .eq('description', itemData.description)
-            .eq('quantity', itemData.quantity)
-            .eq('unit_cost', itemData.unit_cost)
+            .eq('description', itemDataBase.description)
+            .eq('quantity', itemDataBase.quantity)
+            .eq('unit_cost', itemDataBase.unit_cost)
             .limit(1)
             .maybeSingle();
 
           if (existing?.id) {
-            const { data: updated, error } = await supabase
+            const { error } = await supabase
               .from('custom_financial_row_items')
-              .update(itemData)
+              .update(withTotalCost(itemDataBase))
               .eq('id', existing.id)
-              .select()
-              .single();
             if (error) throw error;
             toast.success('Line item updated');
-            if (updated) {
-              setCustomRowLineItems(prev => ({
-                ...prev,
-                [lineItemParentRowId]: (prev[lineItemParentRowId] || []).map(it => it.id === existing.id ? updated : it),
-              }));
-            }
           } else {
-            const { data: created, error } = await supabase
+            const attempts: string[] = [];
+            let { error } = await supabase
               .from('custom_financial_row_items')
-              .insert([itemData])
-              .select()
-              .single();
-            if (error) throw error;
-            toast.success('Line item added');
-            if (created) {
-              setCustomRowLineItems(prev => ({
-                ...prev,
-                [lineItemParentRowId]: [...(prev[lineItemParentRowId] || []), created],
-              }));
+              .insert([withTotalCost(itemDataBase)]);
+            attempts.push('insert(total_cost)');
+            if (error) {
+              if (isMissingColumnError(error, 'total_cost')) {
+                attempts.push('retry(insert total_price)');
+                const retry = await supabase
+                  .from('custom_financial_row_items')
+                  .insert([withTotalPrice(itemDataBase)]);
+                error = retry.error;
+              }
             }
+            if (error) {
+              if (
+                isSheet &&
+                (isMissingColumnError(error, 'quote_id') ||
+                  isMissingColumnError(error, 'section_name') ||
+                  isMissingColumnError(error, 'workbook_id') ||
+                  isMissingColumnError(error, 'total_price') ||
+                  isMissingColumnError(error, 'total_cost'))
+              ) {
+                attempts.push('retry(insert legacy sheet_id)');
+                const legacyBase = dropProposalScopeColumns(itemDataBase);
+                let retry = await supabase.from('custom_financial_row_items').insert([withTotalCost(legacyBase)]);
+                if (retry.error && isMissingColumnError(retry.error, 'total_cost')) {
+                  retry = await supabase.from('custom_financial_row_items').insert([withTotalPrice(legacyBase)]);
+                }
+                error = retry.error;
+              }
+            }
+            if (error) {
+              console.warn('saveLineItem insert failed after retries:', { attempts, error });
+              throw error;
+            }
+            toast.success('Line item added');
+            setCustomRowLineItems(prev => ({
+              ...prev,
+              [lineItemParentRowId]: [
+                ...(prev[lineItemParentRowId] || []),
+                ({ id: `optimistic_${Date.now()}`, ...withTotalCost(itemDataBase) } as any),
+              ],
+            }));
           }
         }
       }
@@ -7670,8 +7921,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       }
     } catch (error: any) {
       console.error('Error saving line item:', error);
-      const msg = error?.message || error?.error_description || 'Failed to save line item';
-      toast.error(msg.length > 80 ? 'Failed to save line item' : msg);
+      const msg =
+        error?.message ||
+        error?.error_description ||
+        error?.details ||
+        error?.hint ||
+        'Failed to save line item';
+      toast.error(msg.length > 140 ? 'Failed to save line item' : msg);
     } finally {
       savingLineItemRef.current = false;
       setSavingLineItem(false);
@@ -7682,19 +7938,12 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     if (!confirm('Delete this line item?')) return;
 
     try {
-      const { data: deleted, error } = await supabase
+      const { error } = await supabase
         .from('custom_financial_row_items')
         .delete()
-        .eq('id', id)
-        .select('id');
+        .eq('id', id);
 
       if (error) throw error;
-      if (!deleted?.length) {
-        toast.error(
-          'Could not delete this line (nothing removed). Check Supabase RLS on custom_financial_row_items or refresh the page.'
-        );
-        return;
-      }
       setCustomRowLineItems(prev => {
         const next: Record<string, CustomRowLineItem[]> = {};
         for (const k of Object.keys(prev)) {
@@ -7708,7 +7957,13 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
     } catch (error: any) {
       console.error('Error deleting line item:', error);
-      toast.error('Failed to delete line item');
+      const msg =
+        error?.message ||
+        error?.error_description ||
+        error?.details ||
+        error?.hint ||
+        'Failed to delete line item';
+      toast.error(msg.length > 140 ? 'Failed to delete line item' : msg);
     }
   }
 
@@ -8134,15 +8389,29 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
     const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
     const unit = Math.round((value / qty) * 10000) / 10000;
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('custom_financial_row_items')
         .update({
-          total_cost: value,
+          total_price: value,
           quantity: qty,
           unit_cost: unit,
         })
         .eq('id', lineItemId)
         .select('id');
+      // Backward compatibility: older DBs may not have total_price yet.
+      if (error && String(error?.message || '').toLowerCase().includes("could not find the 'total_price' column")) {
+        const retry = await supabase
+          .from('custom_financial_row_items')
+          .update({
+            total_cost: value,
+            quantity: qty,
+            unit_cost: unit,
+          })
+          .eq('id', lineItemId)
+          .select('id');
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) throw error;
       if (!data?.length) {
@@ -8787,11 +9056,30 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       return 0;
     };
 
+    // If the Breakdown panel provides a category total, treat it as the base price so category markup applies.
+    const getCategoryDisplayPrice = (cat: any) => {
+      const catKey = normalizeCategoryName(cat?.name);
+      const extBySheetId = externalPriceLookup.get(sheetIdForMatch);
+      if (extBySheetId && Object.prototype.hasOwnProperty.call(extBySheetId, catKey)) {
+        return { price: Number(extBySheetId[catKey]) || 0, isFinal: false };
+      }
+      const extBySheetName = externalPriceLookup.get(sheetNameForMatch);
+      if (extBySheetName && Object.prototype.hasOwnProperty.call(extBySheetName, catKey)) {
+        return { price: Number(extBySheetName[catKey]) || 0, isFinal: false };
+      }
+      return { price: getCategoryBreakdownPrice(cat), isFinal: false };
+    };
+
     return displayCategories.reduce((sum: number, cat: any) => {
-      const categoryKey = `${sheet.sheetId}_${cat.name}`;
-      const categoryMarkup = categoryMarkups[categoryKey] ?? ((sheet as any).markup_percent ?? 10);
-      const base = getCategoryBreakdownPrice(cat);
-      return sum + (base * (1 + (Number(categoryMarkup) || 0) / 100));
+      const sheetId = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
+      const categoryMarkup = lookupCategoryMarkup(
+        categoryMarkups,
+        sheetId,
+        cat?.name,
+        ((sheet as any).markup_percent ?? 10)
+      );
+      const { price, isFinal } = getCategoryDisplayPrice(cat);
+      return sum + (isFinal ? price : price * (1 + (Number(categoryMarkup) || 0) / 100));
     }, 0);
   };
 
@@ -9091,10 +9379,10 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       (item.type === 'subcontractor' && toBool((item.data as any).is_option))
   );
 
-  // Sum of the "blue numbers" shown on each section card (matches left panel UI, not the proposal subtotal).
-  // - Sheets: blue value is the Materials number (materials categories + sheet material line items + linked rows + linked subs)
-  // - Custom rows: blue value is the Materials number
-  // - Subcontractors: blue value is the Total number (materials + labor)
+  // Sum of the per-section Materials totals shown on each section card (excluding optional sections).
+  // - Sheets: card Materials number (categories + sheet material line items + linked rows + linked subs)
+  // - Custom rows: card Materials number
+  // - Subcontractors: card Material number only (not labor)
   const sumAllSectionBlueTotals = useMemo(() => {
     const bySheetId = new Map<string, any>();
     (materialsBreakdown.sheetBreakdowns || []).forEach((s: any) => {
@@ -9150,23 +9438,20 @@ UPDATE quotes SET sent_at = now(), sent_by = '${profile.id}' WHERE id = '${coQuo
       const materialIncludedTotal = included
         .filter((i: any) => (i.item_type || 'material') === 'material')
         .reduce((sum: number, i: any) => sum + (Number(i.total_price) || 0), 0);
-      const laborIncludedTotal = included
-        .filter((i: any) => (i.item_type || 'material') === 'labor')
-        .reduce((sum: number, i: any) => sum + (Number(i.total_price) || 0), 0);
       const estMarkup = Number(est?.markup_percent) || 0;
       const materialWithMarkup = materialIncludedTotal * (1 + estMarkup / 100);
-      const laborWithMarkup = laborIncludedTotal * (1 + estMarkup / 100);
-      return materialWithMarkup + laborWithMarkup;
+      return materialWithMarkup;
     };
 
-    return allItemsUnsorted.reduce((sum: number, item: any) => {
+    const raw = allItems.reduce((sum: number, item: any) => {
       if (item.type === 'material') return sum + sheetBlue(item.data);
       if (item.type === 'custom') return sum + customRowBlue(item.data);
       if (item.type === 'subcontractor') return sum + subcontractorBlue(item.data);
       return sum;
     }, 0);
+    return Math.round(raw * 100) / 100;
   }, [
-    allItemsUnsorted,
+    allItems,
     materialsBreakdown.sheetBreakdowns,
     customRowLineItems,
     customRows,

@@ -104,12 +104,17 @@ export default function EstimatorHomePage() {
             ) : (
               <div className="divide-y">
                 {filtered.slice(0, 50).map((job) => (
-                  <button
+                  <div
                     key={job.id}
-                    className="w-full text-left py-3 flex items-center justify-between gap-3 hover:bg-slate-50 px-2 rounded"
-                    onClick={() => navigate(`/office/estimator/build?jobId=${encodeURIComponent(job.id)}`)}
+                    className="w-full py-3 flex items-center justify-between gap-3 hover:bg-slate-50 px-2 rounded"
                   >
-                    <div className="min-w-0">
+                    <button
+                      className="flex-1 text-left min-w-0"
+                      onClick={() =>
+                        navigate(`/office/estimator/build?jobId=${encodeURIComponent(job.id)}&new=1`)
+                      }
+                      title="Start a new blank build for this job"
+                    >
                       <div className="font-semibold text-slate-900 truncate">
                         {job.name || '(Untitled job)'}
                         {job.quote_number ? <span className="ml-2 text-xs text-slate-500">#{job.quote_number}</span> : null}
@@ -119,9 +124,22 @@ export default function EstimatorHomePage() {
                         {job.address ? ` · ${job.address}` : ''}
                         {job.status ? ` · ${job.status}` : ''}
                       </div>
+                    </button>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          navigate(`/office/estimator/build?jobId=${encodeURIComponent(job.id)}`)
+                        }
+                        title="Open latest drawing (if any)"
+                      >
+                        Open latest
+                      </Button>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

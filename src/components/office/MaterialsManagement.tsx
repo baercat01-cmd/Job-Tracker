@@ -187,11 +187,8 @@ import {
 } from '@/lib/flatstockCutListNotes';
 import { cn } from '@/lib/utils';
 import { isQuoteContractFrozen, quoteHasActiveContract } from '@/lib/quoteProposalLock';
-import { fetchQuoteIdsWithSignedProposalVersion } from '@/lib/proposalSignedQuotes';
 
-type ContractQuoteFields = Pick<JobQuote, 'sent_at' | 'locked_for_editing' | 'signed_version' | 'customer_signed_at'> & {
-  has_signed_proposal_version?: boolean | null;
-};
+type ContractQuoteFields = Pick<JobQuote, 'sent_at' | 'locked_for_editing' | 'signed_version' | 'customer_signed_at'>;
 
 /** Merge list row with authoritatively fetched contract fields (avoids stale jobQuotes vs JobFinancials). */
 function buildQuoteForContract(
@@ -275,8 +272,6 @@ interface JobQuote {
   is_change_order_proposal?: boolean;
   signed_version?: number | null;
   customer_signed_at?: string | null;
-  /** True when a signed proposal_versions row exists (legacy repair + portal). */
-  has_signed_proposal_version?: boolean;
 }
 
 export interface BreakdownSheetPrice {
@@ -917,7 +912,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [creatingWorkingFromLocked, setCreatingWorkingFromLocked] = useState(false);
   /** True when this quote has at least one `working` material_workbook row (even if UI is viewing a locked snapshot). */
   const [hasWorkingWorkbookForQuote, setHasWorkingWorkbookForQuote] = useState(false);
-  /** Auto lock + create working copy for signed/sent contracts (no manual Lock workbook). */
+  /** Auto-manage locked snapshot + working copy for signed contracts (no manual Lock workbook). */
   const [ensuringContractWorkbookPair, setEnsuringContractWorkbookPair] = useState(false);
   /** Fresh sent/signed/office-lock fields for the selected quote (Materials jobQuotes can lag JobFinancials). */
   const [contractQuoteFields, setContractQuoteFields] = useState<ContractQuoteFields | null>(null);
@@ -939,14 +934,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         return;
       }
       const quotes = (data || []) as JobQuote[];
-      const signedIds = await fetchQuoteIdsWithSignedProposalVersion(quotes.map((q) => q.id));
-      const merged = quotes.map((q) => ({ ...q, has_signed_proposal_version: signedIds.has(q.id) }));
-      setJobQuotes(merged);
+      setJobQuotes(quotes);
       if (!isControlled) {
         setSelectedQuoteId(prev => {
-          if (merged.length === 0) return null;
-          if (!prev || !merged.some(q => q.id === prev)) {
-            const defaultQuote = merged.find(q => !q.is_change_order_proposal) ?? merged[0];
+          if (quotes.length === 0) return null;
+          if (!prev || !quotes.some(q => q.id === prev)) {
+            const defaultQuote = quotes.find(q => !q.is_change_order_proposal) ?? quotes[0];
             return defaultQuote.id;
           }
           return prev;
@@ -969,14 +962,19 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (!mounted) return;
       if (error) return;
       const quotes = (data || []) as JobQuote[];
-      const signedIds = await fetchQuoteIdsWithSignedProposalVersion(quotes.map((q) => q.id));
-      setJobQuotes(quotes.map((q) => ({ ...q, has_signed_proposal_version: signedIds.has(q.id) })));
+      setJobQuotes(quotes);
     })();
     return () => { mounted = false; };
   }, [isControlled, effectiveQuoteId, job.id, jobQuotes]);
 
   const jobHasContract = useMemo(
-    () => jobQuotes.some((q) => !q.is_change_order_proposal && quoteHasActiveContract(q as any)),
+    () =>
+      jobQuotes.some((q) => {
+        if (q.is_change_order_proposal) return false;
+        const sv = q.signed_version;
+        const hasSigned = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
+        return hasSigned || !!q.customer_signed_at;
+      }),
     [jobQuotes]
   );
 
@@ -998,13 +996,11 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         setContractQuoteFields(null);
         return;
       }
-      const signedIds = await fetchQuoteIdsWithSignedProposalVersion([effectiveQuoteId]);
       setContractQuoteFields({
         sent_at: data.sent_at ?? null,
         locked_for_editing: data.locked_for_editing ?? null,
         signed_version: data.signed_version ?? null,
         customer_signed_at: data.customer_signed_at ?? null,
-        has_signed_proposal_version: signedIds.has(effectiveQuoteId),
       });
     })();
     return () => {
@@ -1022,16 +1018,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         (payload: { new?: Record<string, unknown> }) => {
           const row = payload.new;
           if (!row || row.id !== effectiveQuoteId) return;
-          void (async () => {
-            const signedIds = await fetchQuoteIdsWithSignedProposalVersion([effectiveQuoteId]);
-            setContractQuoteFields({
-              sent_at: (row.sent_at as string | null) ?? null,
-              locked_for_editing: (row.locked_for_editing as boolean | null) ?? null,
-              signed_version: (row.signed_version as number | null) ?? null,
-              customer_signed_at: (row.customer_signed_at as string | null) ?? null,
-              has_signed_proposal_version: signedIds.has(effectiveQuoteId),
-            });
-          })();
+          setContractQuoteFields({
+            sent_at: (row.sent_at as string | null) ?? null,
+            locked_for_editing: (row.locked_for_editing as boolean | null) ?? null,
+            signed_version: (row.signed_version as number | null) ?? null,
+            customer_signed_at: (row.customer_signed_at as string | null) ?? null,
+          });
         },
       )
       .subscribe();
@@ -1121,13 +1113,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           )
           .eq('job_id', job.id)
           .order('created_at', { ascending: false });
-        if (!error && jq) {
-          const ids = (jq as JobQuote[]).map((q) => q.id);
-          const signedIds = await fetchQuoteIdsWithSignedProposalVersion(ids);
-          setJobQuotes(
-            (jq as JobQuote[]).map((q) => ({ ...q, has_signed_proposal_version: signedIds.has(q.id) })),
-          );
-        }
+        if (!error && jq) setJobQuotes(jq as JobQuote[]);
         await loadWorkbook(true);
       })();
     };
@@ -1466,17 +1452,15 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       if (wbError) throw wbError;
 
       const wbs = allWorkbooks || [];
-      let freshContractFields: ContractQuoteFields | null = null;
-      if (fqRow && quoteIdForLoad) {
-        const signedIds = await fetchQuoteIdsWithSignedProposalVersion([quoteIdForLoad]);
-        freshContractFields = {
-          sent_at: fqRow.sent_at ?? null,
-          locked_for_editing: fqRow.locked_for_editing ?? null,
-          signed_version: fqRow.signed_version ?? null,
-          customer_signed_at: fqRow.customer_signed_at ?? null,
-          has_signed_proposal_version: signedIds.has(quoteIdForLoad),
-        };
-      }
+      const freshContractFields: ContractQuoteFields | null =
+        fqRow && quoteIdForLoad
+          ? {
+              sent_at: fqRow.sent_at ?? null,
+              locked_for_editing: fqRow.locked_for_editing ?? null,
+              signed_version: fqRow.signed_version ?? null,
+              customer_signed_at: fqRow.customer_signed_at ?? null,
+            }
+          : null;
       if (freshContractFields && quoteIdForLoad === effectiveQuoteId) {
         setContractQuoteFields(freshContractFields);
       }
@@ -2147,7 +2131,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           await createWorkingFromLatestLocked({ silent: true });
         }
 
-        // Re-read and prune to a clean "locked + working" pair for this signed/sent quote.
+        // Re-read and prune to a clean "locked + working" pair for this signed contract.
         const { data: allWbs3, error: e3 } = await supabase
           .from('material_workbooks')
           .select('*')
@@ -3875,99 +3859,22 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Group by workbook category, using user-defined order when present
   const categoryGroups = groupByCategory(filteredItems, activeSheet?.category_order);
 
-  // Proposal / Breakdown panel must follow the price workbook only. On a signed contract, that is the `locked`
-  // snapshot — never the job-tracking `working` row (sheet names often match, so category overlays would wrongly replace totals).
   useEffect(() => {
-    let cancelled = false;
+    if (!workbook?.sheets?.length) return;
 
-    const buildSheetPrices = (sheets: MaterialSheet[]): BreakdownSheetPrice[] =>
-      (sheets || []).map((sheet) => {
-        const allCategoryGroups = groupByCategory(sheet.items || [], sheet.category_order);
-        const categories: Record<string, number> = {};
-        allCategoryGroups.forEach((catGroup) => {
-          const key = String(catGroup.category || '').trim().toLowerCase();
-          categories[key] = (catGroup.items || []).reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
-        });
-        return { sheetId: sheet.id, sheetName: sheet.sheet_name || '', categories };
+    const sheetPrices: BreakdownSheetPrice[] = workbook.sheets.map((sheet) => {
+      const allCategoryGroups = groupByCategory(sheet.items || [], sheet.category_order);
+      const categories: Record<string, number> = {};
+      allCategoryGroups.forEach((catGroup) => {
+        const key = String(catGroup.category || '').trim().toLowerCase();
+        // Must match breakdown tab math exactly: catGroup.items reduce getDisplayExtended(item).price
+        categories[key] = (catGroup.items || []).reduce((sum, item) => sum + getDisplayExtended(item).price, 0);
       });
+      return { sheetId: sheet.id, sheetName: sheet.sheet_name || '', categories };
+    });
 
-    (async () => {
-      if (!onBreakdownPriceSync) return;
-
-      const q = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
-      const signedContract = quoteHasActiveContract(q as any);
-      const onJobTrackingCopy =
-        signedContract &&
-        !!workbook &&
-        workbook.status === 'working' &&
-        !snapshotWorkbookId;
-
-      if (onJobTrackingCopy && effectiveQuoteId) {
-        let lockedId = lockedSnapshotsMeta[0]?.id;
-        if (!lockedId) {
-          const { data: lockRow } = await supabase
-            .from('material_workbooks')
-            .select('id')
-            .eq('quote_id', effectiveQuoteId)
-            .eq('status', 'locked')
-            .order('version_number', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          lockedId = lockRow?.id ?? undefined;
-        }
-        if (!lockedId) return;
-        try {
-          const { data: sheetsData, error: shErr } = await supabase
-            .from('material_sheets')
-            .select('*')
-            .eq('workbook_id', lockedId)
-            .order('order_index');
-          if (cancelled || shErr) return;
-          const sheetIds = (sheetsData || []).map((s: any) => s.id).filter(Boolean);
-          let itemsData: any[] = [];
-          if (sheetIds.length > 0) {
-            const { data: items, error: itErr } = await supabase
-              .from('material_items')
-              .select('*')
-              .in('sheet_id', sheetIds)
-              .order('order_index');
-            if (cancelled || itErr) return;
-            itemsData = items || [];
-          }
-          itemsData = await enrichItemsWithCatalogPrices(itemsData);
-          if (cancelled) return;
-          const sheetsWithItems: MaterialSheet[] = (sheetsData || []).map((s: any) => ({
-            ...s,
-            items: itemsData.filter((i: any) => i.sheet_id === s.id),
-          })) as MaterialSheet[];
-          onBreakdownPriceSync(buildSheetPrices(sheetsWithItems));
-        } catch {
-          if (!cancelled) onBreakdownPriceSync([]);
-        }
-        return;
-      }
-
-      if (!workbook?.sheets?.length) {
-        onBreakdownPriceSync([]);
-        return;
-      }
-      onBreakdownPriceSync(buildSheetPrices(workbook.sheets));
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    workbook,
-    workbook?.sheets,
-    workbook?.status,
-    onBreakdownPriceSync,
-    jobQuotes,
-    effectiveQuoteId,
-    contractQuoteFields,
-    lockedSnapshotsMeta,
-    snapshotWorkbookId,
-  ]);
+    onBreakdownPriceSync?.(sheetPrices);
+  }, [workbook, onBreakdownPriceSync]);
 
   useEffect(() => {
     onWorkbookViewSync?.({ workbookId: workbook?.id ?? null, status: (workbook?.status as any) ?? null });

@@ -33,7 +33,6 @@ import { format } from 'date-fns';
 
 import { useAuth } from '@/hooks/useAuth';
 import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
-import { fetchQuoteIdsWithSignedProposalVersion } from '@/lib/proposalSignedQuotes';
 import type { Job } from '@/types';
 import { JobDetailProposalToolbarContext } from '@/contexts/JobDetailProposalToolbarContext';
 import { JobDetailMaterialsToolbarSlotContext } from '@/contexts/JobDetailMaterialsToolbarContext';
@@ -508,12 +507,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
         setSelectedProposalQuoteId(null);
         return;
       }
-      const signedIds = await fetchQuoteIdsWithSignedProposalVersion((quotes || []).map((q: any) => q.id));
-      const quotesMerged = (quotes || []).map((q: any) => ({
-        ...q,
-        has_signed_proposal_version: signedIds.has(q.id),
-      }));
-      const mainQuotes = quotesMerged.filter((q: any) => !q.is_change_order_proposal);
+      const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
       const frozenMain = mainQuotes.filter((q: any) => isQuoteContractFrozen(q));
 
       // If this job has a contract-frozen main quote, default selection to it.
@@ -526,7 +520,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
         return;
       }
 
-      const sorted = [...quotesMerged].sort((a: any, b: any) => {
+      const sorted = [...quotes].sort((a: any, b: any) => {
         const na = (a.proposal_number || a.quote_number || '').toString();
         const nb = (b.proposal_number || b.quote_number || '').toString();
         return nb.localeCompare(na, undefined, { numeric: true });

@@ -63,10 +63,10 @@ serve(async (req) => {
 
     console.warn('RPC failed, trying direct updates. RPC error:', rpcError.message);
 
-    // 2) Direct update via service-role (bypasses RLS; needs sent_at/sent_by columns). Do not lock workbooks.
+    // 2) Direct update via service-role (bypasses RLS; needs sent_at/sent_by/locked_for_editing columns).
     const { error: sentErr } = await admin
       .from('quotes')
-      .update({ sent_at: new Date().toISOString(), sent_by: userId })
+      .update({ sent_at: new Date().toISOString(), sent_by: userId, locked_for_editing: true })
       .eq('id', quoteId);
 
     if (sentErr) {
@@ -79,6 +79,14 @@ serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Best-effort: lock workbooks for this quote (single-workbook model; no copy).
+    const { error: wbErr } = await admin
+      .from('material_workbooks')
+      .update({ status: 'locked', updated_at: new Date().toISOString() })
+      .eq('quote_id', quoteId)
+      .eq('status', 'working');
+    if (wbErr) console.warn('Could not lock workbook after sent:', wbErr.message);
 
     return new Response(JSON.stringify({ ok: true, quote_id: quoteId }), {
       status: 200,

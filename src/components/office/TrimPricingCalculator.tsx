@@ -17,8 +17,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useSearchParams } from 'react-router-dom';
-import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, Undo2 } from 'lucide-react';
+import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, Undo2, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { isAbortLikeError } from '@/lib/error-handler';
@@ -68,6 +69,58 @@ interface LineSegment {
   hemSide?: 'left' | 'right'; // Which side the hem is on
   /** Per-segment hem depth in inches. Falls back to global hemDepthInches for legacy rows. */
   hemDepthInches?: number;
+}
+
+/** Normalize stored drawing_segments JSON into canvas segments (same rules as load). */
+function parseDrawingSegmentsFromSavedConfig(config: SavedConfig): LineSegment[] {
+  try {
+    if (!config.drawing_segments) return [];
+    const raw =
+      typeof config.drawing_segments === 'string'
+        ? JSON.parse(config.drawing_segments)
+        : config.drawing_segments;
+    const arr = Array.isArray(raw) ? raw : [];
+    if (arr.length === 0) return [];
+    return arr.map((seg: any, index: number) => ({
+      id: seg.id ?? `seg-${index}-${Date.now()}`,
+      start:
+        seg.start && typeof seg.start.x === 'number' && typeof seg.start.y === 'number'
+          ? { x: seg.start.x, y: seg.start.y }
+          : { x: 0, y: 0 },
+      end:
+        seg.end && typeof seg.end.x === 'number' && typeof seg.end.y === 'number'
+          ? { x: seg.end.x, y: seg.end.y }
+          : { x: 0, y: 0 },
+      label: seg.label ?? String.fromCharCode(65 + index),
+      hasHem: seg.hasHem === true,
+      hemAtStart: seg.hemAtStart === true,
+      hemSide: seg.hemSide === 'left' || seg.hemSide === 'right' ? seg.hemSide : 'right',
+      hemDepthInches:
+        typeof seg.hemDepthInches === 'number' && Number.isFinite(seg.hemDepthInches)
+          ? Math.max(0.125, seg.hemDepthInches)
+          : undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function sanitizePdfFilenameBase(name: string): string {
+  const cleaned = name.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ').trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 120) : 'Trim-Drawing';
+}
+
+/** Narrow surface used when building multi-page trim PDFs (jsPDF instance). */
+interface TrimPdfDoc {
+  addPage(): void;
+  internal: { pageSize: { getWidth(): number; getHeight(): number } };
+  setTextColor(r: number, g: number, b: number): void;
+  setFont(face: string, style: string): void;
+  setFontSize(size: number): void;
+  splitTextToSize(text: string, maxWidth: number): string[];
+  text(text: string | string[], x: number, y: number): void;
+  addImage(imageData: string, format: string, x: number, y: number, w: number, h: number): void;
+  save(filename: string): void;
 }
 
 interface DrawingState {
@@ -195,6 +248,21 @@ export function TrimPricingCalculator() {
   const [previewConfig, setPreviewConfig] = useState<SavedConfig | null>(null);
   const [showPriceList, setShowPriceList] = useState(false);
   const [priceListMaterialId, setPriceListMaterialId] = useState<string>('');
+  /** Shop / field notes on PDF exports from the live drawing toolbar */
+  const [trimPdfShopColor, setTrimPdfShopColor] = useState('');
+  /** Price list: configs selected for multi-page PDF */
+  const [priceListPdfSelectedIds, setPriceListPdfSelectedIds] = useState<Set<string>>(() => new Set());
+  const [showCombineTrimPdfDialog, setShowCombineTrimPdfDialog] = useState(false);
+  const [combineTrimPdfDraft, setCombineTrimPdfDraft] = useState<
+    {
+      configId: string;
+      name: string;
+      segments: LineSegment[];
+      qtyText: string;
+      lengthText: string;
+      colorText: string;
+    }[]
+  >([]);
   const BASE_CANVAS_WIDTH = 1400;
   const BASE_CANVAS_HEIGHT = 700;
   const baseW = BASE_CANVAS_WIDTH * (scale / 80);
@@ -454,6 +522,18 @@ export function TrimPricingCalculator() {
     const v = segment.hemDepthInches;
     if (typeof v === 'number' && Number.isFinite(v)) return Math.max(0.125, v);
     return Math.max(0.125, hemDepthInches);
+  }
+
+  /** Total material length from segment geometry (includes hem takeoff). */
+  function calculateTotalLengthFromSegments(segments: LineSegment[]): number {
+    let total = 0;
+    for (const segment of segments) {
+      const dx = segment.end.x - segment.start.x;
+      const dy = segment.end.y - segment.start.y;
+      total += Math.sqrt(dx * dx + dy * dy);
+      if (segment.hasHem) total += getHemDepthForSegment(segment);
+    }
+    return total;
   }
 
   /** True if this end of the segment is not attached to another segment (open end). No hem allowed at corners. */
@@ -1581,35 +1661,83 @@ export function TrimPricingCalculator() {
     ctx.restore();
   }
 
-  async function handleSaveTrimDrawingPDF() {
-    if (!showDrawing || !canvasReady) {
-      toast.error('Drawing not ready. Wait for the canvas to load.');
-      return;
+  function addTrimDrawingPageToPdf(
+    doc: TrimPdfDoc,
+    isFirstPage: boolean,
+    options: {
+      segments: LineSegment[];
+      angleDisplayModeRecord: Record<string, boolean>;
+      title: string;
+      lengthDisplay: string;
+      colorDisplay: string;
+      /** When set, printed on PDF (combined pack). Omitted for single-drawing exports. */
+      qtyDisplay?: string;
     }
+  ) {
+    const { segments, angleDisplayModeRecord, title, lengthDisplay, colorDisplay, qtyDisplay } = options;
+    if (segments.length === 0) return;
+    if (!isFirstPage) doc.addPage();
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    const textW = pageW - margin * 2;
+    let y = margin + 14;
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    const titleLines = doc.splitTextToSize(title.trim() || 'Trim drawing', textW);
+    doc.text(titleLines, margin, y);
+    y += titleLines.length * 16 + 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    if (qtyDisplay !== undefined) {
+      doc.text(`Qty: ${qtyDisplay.trim() ? qtyDisplay.trim() : '—'}`, margin, y);
+      y += 15;
+    }
+    doc.text(`Length: ${lengthDisplay.trim() || '—'}`, margin, y);
+    y += 15;
+    doc.text(`Color: ${colorDisplay.trim() ? colorDisplay.trim() : '—'}`, margin, y);
+    y += 22;
+    const headerBottom = y;
+    const pdfW = textW;
+    const pdfH = Math.max(120, pageH - headerBottom - margin);
+    const dpr = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(pdfW * dpr);
+    canvas.height = Math.floor(pdfH * dpr);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get canvas context');
+    drawTrimToPdfCanvas(ctx, canvas.width, canvas.height, segments, angleDisplayModeRecord);
+    const imgData = canvas.toDataURL('image/png');
+    doc.addImage(imgData, 'PNG', margin, headerBottom, pdfW, pdfH);
+  }
+
+  async function exportTrimDrawingAsPdfFile(
+    segments: LineSegment[],
+    angleDisplayModeRecord: Record<string, boolean>,
+    filename: string,
+    meta: { title: string; lengthDisplay: string; colorDisplay: string }
+  ) {
+    const { default: jsPDF } = await import('jspdf');
+    const doc = new jsPDF('p', 'pt', 'letter') as unknown as TrimPdfDoc;
+    addTrimDrawingPageToPdf(doc, true, { segments, angleDisplayModeRecord, ...meta });
+    doc.save(filename);
+  }
+
+  async function handleSaveTrimDrawingPDF() {
     if (drawing.segments.length === 0) {
       toast.error('Draw at least one segment before saving as PDF.');
       return;
     }
     try {
       toast.loading('Saving PDF...', { id: 'trim-pdf' });
-      const { default: jsPDF } = await import('jspdf');
-      const doc = new jsPDF('p', 'pt', 'letter');
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
-      const margin = 40;
-      const pdfW = pageW - margin * 2;
-      const pdfH = pageH - margin * 2;
-      const dpr = 2;
-      const canvas = document.createElement('canvas');
-      canvas.width = pdfW * dpr;
-      canvas.height = pdfH * dpr;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not get canvas context');
-      drawTrimToPdfCanvas(ctx, pdfW * dpr, pdfH * dpr, drawing.segments, angleDisplayMode);
-      const imgData = canvas.toDataURL('image/png');
-      doc.addImage(imgData, 'PNG', margin, margin, pdfW, pdfH);
       const filename = `Trim-Drawing-${new Date().toISOString().slice(0, 10)}.pdf`;
-      doc.save(filename);
+      const totalLen = calculateTotalLengthFromSegments(drawing.segments);
+      await exportTrimDrawingAsPdfFile(drawing.segments, angleDisplayMode, filename, {
+        title: configName.trim() || 'Trim drawing',
+        lengthDisplay: formatMeasurementToEighth(totalLen),
+        colorDisplay: trimPdfShopColor,
+      });
       toast.success('Trim drawing saved as PDF', { id: 'trim-pdf' });
     } catch (e) {
       console.error(e);
@@ -1617,22 +1745,86 @@ export function TrimPricingCalculator() {
     }
   }
 
+  async function downloadTrimDrawingPdfForSavedTrim(
+    trimName: string,
+    segments: LineSegment[]
+  ) {
+    if (segments.length === 0) {
+      toast.error('This trim has no saved drawing to export.');
+      return;
+    }
+    try {
+      toast.loading('Creating PDF...', { id: 'trim-pdf' });
+      const base = sanitizePdfFilenameBase(trimName);
+      const totalLen = calculateTotalLengthFromSegments(segments);
+      await exportTrimDrawingAsPdfFile(segments, {}, `${base}-Trim-Drawing.pdf`, {
+        title: trimName,
+        lengthDisplay: formatMeasurementToEighth(totalLen),
+        colorDisplay: '',
+      });
+      toast.success('PDF downloaded', { id: 'trim-pdf' });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to create PDF', { id: 'trim-pdf' });
+    }
+  }
+
+  function handleOpenCombineTrimPdfDialog() {
+    const configsForTab =
+      priceListTrimTab === 'standard'
+        ? savedConfigs.filter((c) => !isSavedConfigCustom(c))
+        : savedConfigs.filter((c) => isSavedConfigCustom(c));
+    const selected = configsForTab.filter((c) => priceListPdfSelectedIds.has(c.id));
+    const withDrawings = selected
+      .map((c) => ({
+        config: c,
+        segments: parseDrawingSegmentsFromSavedConfig(c),
+      }))
+      .filter((x) => x.segments.length > 0);
+    if (withDrawings.length === 0) {
+      toast.error('Select at least one trim that has a saved drawing.');
+      return;
+    }
+    setCombineTrimPdfDraft(
+      withDrawings.map((x) => ({
+        configId: x.config.id,
+        name: x.config.name,
+        segments: x.segments,
+        qtyText: '1',
+        lengthText: formatMeasurementToEighth(calculateTotalLengthFromSegments(x.segments)),
+        colorText: '',
+      }))
+    );
+    setShowCombineTrimPdfDialog(true);
+  }
+
+  async function handleDownloadCombinedTrimPdf() {
+    if (combineTrimPdfDraft.length === 0) return;
+    try {
+      toast.loading('Creating PDF...', { id: 'trim-pdf' });
+      const { default: jsPDF } = await import('jspdf');
+      const doc = new jsPDF('p', 'pt', 'letter') as unknown as TrimPdfDoc;
+      combineTrimPdfDraft.forEach((row, index) => {
+        addTrimDrawingPageToPdf(doc, index === 0, {
+          segments: row.segments,
+          angleDisplayModeRecord: {},
+          title: row.name,
+          lengthDisplay: row.lengthText,
+          colorDisplay: row.colorText,
+          qtyDisplay: row.qtyText,
+        });
+      });
+      doc.save(`Trim-Pack-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success('Combined PDF downloaded', { id: 'trim-pdf' });
+      setShowCombineTrimPdfDialog(false);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to create combined PDF', { id: 'trim-pdf' });
+    }
+  }
+
   function calculateTotalLength() {
-    let total = 0;
-    
-    drawing.segments.forEach(segment => {
-      const dx = segment.end.x - segment.start.x;
-      const dy = segment.end.y - segment.start.y;
-      const length = Math.sqrt(dx * dx + dy * dy);
-      total += length;
-      
-      // Add hem length - U-shaped hem adds to material take-off (configurable depth)
-      if (segment.hasHem) {
-        total += getHemDepthForSegment(segment);
-      }
-    });
-    
-    return total;
+    return calculateTotalLengthFromSegments(drawing.segments);
   }
 
   function applyDrawingToCalculator() {
@@ -2342,39 +2534,9 @@ export function TrimPricingCalculator() {
       setSelectedTrimTypeId(config.material_type_id);
     }
     
-    // Parse and load drawing if it exists
-    let drawingSegments: LineSegment[] | null = null;
-    try {
-      if (config.drawing_segments) {
-        const raw = typeof config.drawing_segments === 'string'
-          ? JSON.parse(config.drawing_segments)
-          : config.drawing_segments;
-        const arr = Array.isArray(raw) ? raw : null;
-        if (arr && arr.length > 0) {
-          // Normalize segments so canvas has required fields (id, start, end, label, hasHem, hemAtStart, hemSide)
-          drawingSegments = arr.map((seg: any, index: number) => ({
-            id: seg.id ?? `seg-${index}-${Date.now()}`,
-            start: seg.start && typeof seg.start.x === 'number' && typeof seg.start.y === 'number'
-              ? { x: seg.start.x, y: seg.start.y }
-              : { x: 0, y: 0 },
-            end: seg.end && typeof seg.end.x === 'number' && typeof seg.end.y === 'number'
-              ? { x: seg.end.x, y: seg.end.y }
-              : { x: 0, y: 0 },
-            label: seg.label ?? String.fromCharCode(65 + index),
-            hasHem: seg.hasHem === true,
-            hemAtStart: seg.hemAtStart === true,
-            hemSide: seg.hemSide === 'left' || seg.hemSide === 'right' ? seg.hemSide : 'right',
-            hemDepthInches: typeof seg.hemDepthInches === 'number' && Number.isFinite(seg.hemDepthInches)
-              ? Math.max(0.125, seg.hemDepthInches)
-              : undefined,
-          }));
-        }
-      }
-    } catch (e) {
-      console.warn('Could not parse drawing_segments for config', config.name, e);
-    }
+    const drawingSegments = parseDrawingSegmentsFromSavedConfig(config);
 
-    if (drawingSegments && drawingSegments.length > 0) {
+    if (drawingSegments.length > 0) {
       setShowDrawing(true); // Ensure drawing panel is visible when loading a trim that has a drawing
       setDrawing({
         segments: drawingSegments,
@@ -2616,12 +2778,34 @@ export function TrimPricingCalculator() {
                 Clear
               </Button>
               
+              {drawing.segments.length > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 border border-gray-300 rounded">
+                    <span className="text-gray-600 text-xs whitespace-nowrap">PDF total length:</span>
+                    <span className="text-xs font-medium tabular-nums text-gray-900">
+                      {formatMeasurementToEighth(calculateTotalLengthFromSegments(drawing.segments))}&quot;
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="trim-pdf-shop-color" className="text-gray-600 text-xs whitespace-nowrap shrink-0">
+                      PDF color:
+                    </Label>
+                    <Input
+                      id="trim-pdf-shop-color"
+                      className="h-7 w-32 text-xs py-1 px-2"
+                      placeholder="e.g. Charcoal"
+                      value={trimPdfShopColor}
+                      onChange={(e) => setTrimPdfShopColor(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
               <Button
                 onClick={handleSaveTrimDrawingPDF}
                 size="sm"
                 variant="outline"
                 className="h-7 px-2 border border-blue-600 text-blue-600 hover:bg-blue-50 text-xs"
-                title="Save drawing as PDF"
+                title="Save drawing as PDF (includes length & color above when set)"
               >
                 <Download className="w-3 h-3 mr-1" />
                 Save as PDF
@@ -3658,7 +3842,13 @@ export function TrimPricingCalculator() {
       </Dialog>
 
       {/* Price List Dialog */}
-      <Dialog open={showPriceList} onOpenChange={setShowPriceList}>
+      <Dialog
+        open={showPriceList}
+        onOpenChange={(open) => {
+          setShowPriceList(open);
+          if (!open) setPriceListPdfSelectedIds(new Set());
+        }}
+      >
         <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-500">
@@ -3667,6 +3857,21 @@ export function TrimPricingCalculator() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleOpenCombineTrimPdfDialog}
+                className="border-yellow-500/80 text-yellow-300 hover:bg-yellow-900/30"
+              >
+                <Layers className="w-4 h-4 mr-2" />
+                Combined PDF…
+              </Button>
+              <span className="text-white/60 text-xs">
+                Select rows (checkbox), then set length &amp; color per drawing in the next step.
+              </span>
+            </div>
             {/* Material Type Selector */}
             <div className="bg-black/30 border-2 border-green-800 rounded-lg p-3">
               <Label className="text-yellow-400 font-semibold mb-2 block">
@@ -3745,7 +3950,8 @@ export function TrimPricingCalculator() {
                   markupAmount,
                   bendCost: totalBendCost,
                   cutCost: totalCutCost,
-                  sellingPrice
+                  sellingPrice,
+                  pdfDrawingSegments: parseDrawingSegmentsFromSavedConfig(config),
                 };
               }).filter(Boolean);
               
@@ -3782,6 +3988,7 @@ export function TrimPricingCalculator() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-green-900/30 border-b border-green-800">
+                          <th className="text-center p-2 text-yellow-400 font-semibold w-10">PDF</th>
                           <th className="text-left p-2 text-yellow-400 font-semibold">Trim Name</th>
                           <th className="text-right p-2 text-yellow-400 font-semibold">Total Inches</th>
                           <th className="text-right p-2 text-yellow-400 font-semibold">Bends</th>
@@ -3796,13 +4003,29 @@ export function TrimPricingCalculator() {
                       <tbody>
                         {pricedConfigs.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="text-center py-8 text-white/50">
+                            <td colSpan={10} className="text-center py-8 text-white/50">
                               No valid trim configurations found
                             </td>
                           </tr>
                         ) : (
                           pricedConfigs.map((item: any) => (
                             <tr key={item.config.id} className="border-b border-green-800/30 hover:bg-green-900/20">
+                              <td className="text-center p-2 align-middle">
+                                <Checkbox
+                                  checked={priceListPdfSelectedIds.has(item.config.id)}
+                                  disabled={item.pdfDrawingSegments.length === 0}
+                                  onCheckedChange={(checked) => {
+                                    setPriceListPdfSelectedIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (checked === true) next.add(item.config.id);
+                                      else next.delete(item.config.id);
+                                      return next;
+                                    });
+                                  }}
+                                  className="border-yellow-600 data-[state=checked]:bg-yellow-500 data-[state=checked]:text-black"
+                                  aria-label={`Include ${item.config.name} in combined PDF`}
+                                />
+                              </td>
                               <td className="p-2 text-white font-medium">
                                 {item.config.name}
                                 {item.config.job_name && (
@@ -3817,7 +4040,7 @@ export function TrimPricingCalculator() {
                               <td className="text-right p-2 text-white/80">${item.cutCost.toFixed(2)}</td>
                               <td className="text-right p-2 text-yellow-400 font-bold">${item.sellingPrice.toFixed(2)}</td>
                               <td className="text-center p-2">
-                                <div className="flex items-center justify-center gap-1">
+                                <div className="flex items-center justify-center gap-1 flex-wrap">
                                   <Button
                                     onClick={() => {
                                       setSelectedTrimTypeId(priceListMaterialId);
@@ -3830,6 +4053,22 @@ export function TrimPricingCalculator() {
                                     className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-7 px-2 text-xs"
                                   >
                                     Load
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={() =>
+                                      downloadTrimDrawingPdfForSavedTrim(
+                                        item.config.name,
+                                        item.pdfDrawingSegments
+                                      )
+                                    }
+                                    disabled={item.pdfDrawingSegments.length === 0}
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-yellow-500/80 text-yellow-300 hover:bg-yellow-900/30 h-7 px-2 text-xs"
+                                    title="Download trim drawing as PDF"
+                                  >
+                                    <Download className="w-3 h-3" />
                                   </Button>
                                   <Button
                                     onClick={async () => {
@@ -3851,6 +4090,7 @@ export function TrimPricingCalculator() {
                       {pricedConfigs.length > 0 && (
                         <tfoot>
                           <tr className="bg-green-900/50 font-bold border-t-2 border-green-700">
+                            <td />
                             <td className="p-2 text-yellow-400">TOTAL ({pricedConfigs.length} trims)</td>
                             <td className="text-right p-2 text-white">
                               {pricedConfigs.reduce((sum: number, item: any) => sum + item.totalInches, 0).toFixed(2)}"
@@ -3890,6 +4130,93 @@ export function TrimPricingCalculator() {
               className="w-full border-green-700 text-yellow-400"
             >
               Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCombineTrimPdfDialog} onOpenChange={setShowCombineTrimPdfDialog}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="text-yellow-500 flex items-center gap-2">
+              <Layers className="w-5 h-5" />
+              Combined trim PDF
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-white/70 text-sm">
+            One page per trim. Set qty, length, and color for each drawing before downloading.
+          </p>
+          <div className="border border-green-800 rounded-lg overflow-hidden mt-3">
+            <table className="w-full text-sm text-white table-fixed">
+              <thead>
+                <tr className="bg-green-900/40 border-b border-green-800">
+                  <th className="text-left p-2 text-yellow-400 font-semibold w-[28%]">Trim name</th>
+                  <th className="text-left p-2 text-yellow-400 font-semibold w-20">Qty</th>
+                  <th className="text-left p-2 text-yellow-400 font-semibold w-[22%]">Length</th>
+                  <th className="text-left p-2 text-yellow-400 font-semibold">Color</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combineTrimPdfDraft.map((row, index) => (
+                  <tr key={row.configId} className="border-b border-green-800/40">
+                    <td className="p-2 font-medium align-top break-words">{row.name}</td>
+                    <td className="p-2 align-top">
+                      <Input
+                        className="bg-white text-black h-9 text-sm border-green-800 w-full min-w-[4rem]"
+                        inputMode="decimal"
+                        placeholder="1"
+                        value={row.qtyText}
+                        onChange={(e) =>
+                          setCombineTrimPdfDraft((prev) =>
+                            prev.map((r, i) => (i === index ? { ...r, qtyText: e.target.value } : r))
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="p-2 align-top">
+                      <Input
+                        className="bg-white text-black h-9 text-sm border-green-800"
+                        value={row.lengthText}
+                        onChange={(e) =>
+                          setCombineTrimPdfDraft((prev) =>
+                            prev.map((r, i) => (i === index ? { ...r, lengthText: e.target.value } : r))
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="p-2 align-top">
+                      <Input
+                        className="bg-white text-black h-9 text-sm border-green-800"
+                        placeholder="e.g. Charcoal"
+                        value={row.colorText}
+                        onChange={(e) =>
+                          setCombineTrimPdfDraft((prev) =>
+                            prev.map((r, i) => (i === index ? { ...r, colorText: e.target.value } : r))
+                          )
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowCombineTrimPdfDialog(false)}
+              className="border-green-700 text-yellow-400"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleDownloadCombinedTrimPdf()}
+              className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download PDF
             </Button>
           </div>
         </DialogContent>
