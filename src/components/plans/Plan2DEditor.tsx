@@ -84,7 +84,9 @@ export function Plan2DEditor(props: {
   openingSpec?: { width: number; height: number; sill: number } | null;
   /** When mode is `overhead`: width, height, sill, and sectional-door style. */
   overheadSpec?: { width: number; height: number; sill: number; style: PlanOverheadStyle } | null;
-  /** When mode is `door`: free click vs measured spacing from wall end/start. */
+  /** Door size for door mode and for drag-and-drop when not in door mode (optional; falls back to openingSpec when mode is door). */
+  doorOpeningSpec?: { width: number; height: number; sill: number } | null;
+  /** When mode is `door`: free click vs measured spacing from wall end/start. Also applies to door drag-and-drop from the palette. */
   doorPlacementOptions?: DoorPlacementOptions | null;
   orientation?: Orientation;
   onCancelPlacement?: () => void;
@@ -103,6 +105,8 @@ export function Plan2DEditor(props: {
     loftStairHoleTargetId = null,
     openingSpec,
     overheadSpec,
+    doorOpeningSpec = null,
+    doorPlacementOptions = null,
     orientation = 'widthX',
     onCancelPlacement,
     onOp,
@@ -111,6 +115,10 @@ export function Plan2DEditor(props: {
   } = props;
 
   const activeRoomFloor: PlanActiveRoomFloor = activeRoomFloorProp ?? { kind: 'main' };
+
+  function resolveDoorDimensions(): { width: number; height: number; sill: number } {
+    return doorOpeningSpec ?? (mode === 'door' ? openingSpec ?? null : null) ?? { width: 3, height: 7, sill: 0 };
+  }
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const lastPointerPlanRef = useRef<PlanPoint | null>(null);
@@ -188,6 +196,9 @@ export function Plan2DEditor(props: {
     openingSpec?.width,
     openingSpec?.height,
     openingSpec?.sill,
+    doorOpeningSpec?.width,
+    doorOpeningSpec?.height,
+    doorOpeningSpec?.sill,
     overheadSpec?.width,
     overheadSpec?.height,
     doorPlacementOptions?.mode,
@@ -208,7 +219,9 @@ export function Plan2DEditor(props: {
     const spec =
       kind === 'overhead'
         ? overheadSpec ?? { width: 16, height: 14, sill: 0, style: DEFAULT_OVERHEAD_STYLE }
-        : openingSpec ?? (kind === 'door' ? { width: 3, height: 7, sill: 0 } : { width: 4, height: 3, sill: 3 });
+        : kind === 'door'
+          ? resolveDoorDimensions()
+          : openingSpec ?? { width: 4, height: 3, sill: 3 };
     // Preview follows cursor; snapping happens on click/drop.
     const center = closestPointOnSegment(p, wall.start, wall.end);
     const { ux, uy } = segmentUnit(wall.start, wall.end);
@@ -343,7 +356,7 @@ export function Plan2DEditor(props: {
     }
 
     if (kind === 'door' && doorPlacementOptions?.mode === 'measured') {
-      const spec = openingSpec ?? { width: 3, height: 7, sill: 0 };
+      const spec = resolveDoorDimensions();
       const opt = doorPlacementOptions;
       const offsets = computeMeasuredDoorOffsets(
         wallLen,
@@ -366,7 +379,7 @@ export function Plan2DEditor(props: {
       return;
     }
 
-    const spec = openingSpec ?? (kind === 'door' ? { width: 3, height: 7, sill: 0 } : { width: 4, height: 3, sill: 3 });
+    const spec = kind === 'door' ? resolveDoorDimensions() : openingSpec ?? { width: 4, height: 3, sill: 3 };
     const snappedCenter = snapOpeningCenterOffset({
       centerOffset,
       wallLen,
@@ -827,7 +840,9 @@ export function Plan2DEditor(props: {
       const spec =
         kind === 'overhead'
           ? overheadSpec ?? { width: 16, height: 14, sill: 0, style: DEFAULT_OVERHEAD_STYLE }
-          : openingSpec ?? (kind === 'door' ? { width: 3, height: 7, sill: 0 } : { width: 4, height: 3, sill: 3 });
+          : kind === 'door'
+            ? resolveDoorDimensions()
+            : openingSpec ?? { width: 4, height: 3, sill: 3 };
       const center = closestPointOnSegment(raw, wall.start, wall.end);
       const { ux, uy } = segmentUnit(wall.start, wall.end);
       const half = spec.width / 2;

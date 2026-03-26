@@ -8,7 +8,12 @@ import type {
 } from '@/lib/buildingPlanModel';
 import { clamp, DEFAULT_OVERHEAD_STYLE } from '@/lib/buildingPlanModel';
 import { applyOp, type PlanOp } from '@/lib/planOps';
-import { Plan2DEditor, type PlanActiveRoomFloor, type PlanRoomPlacementSpec } from '@/components/plans/Plan2DEditor';
+import {
+  Plan2DEditor,
+  type DoorPlacementOptions,
+  type PlanActiveRoomFloor,
+  type PlanRoomPlacementSpec,
+} from '@/components/plans/Plan2DEditor';
 import { PlanElevationPreview } from '@/components/plans/PlanElevationPreview';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -56,6 +61,20 @@ export function PlanLocalWorkspace(props: {
     width: 4,
     height: 3,
     sill: 3,
+  });
+  const [showDoorDialog, setShowDoorDialog] = useState(false);
+  const [doorSpec, setDoorSpec] = useState<{ label: string; width: number; height: number; sill: number }>({
+    label: '3×7',
+    width: 3,
+    height: 7,
+    sill: 0,
+  });
+  const [doorPlacement, setDoorPlacement] = useState<DoorPlacementOptions>({
+    mode: 'free',
+    anchor: 'from_start',
+    insetFromCornerFt: 1,
+    count: 1,
+    gapBetweenFt: 0,
   });
   const [showOverheadDialog, setShowOverheadDialog] = useState(false);
   const [overheadPlaceSpec, setOverheadPlaceSpec] = useState<{
@@ -151,9 +170,18 @@ export function PlanLocalWorkspace(props: {
           <Button size="sm" variant={tool === 'wall' ? 'default' : 'outline'} onClick={() => setTool('wall')}>
             Wall
           </Button>
-          <Button size="sm" variant={tool === 'door' ? 'default' : 'outline'} onClick={() => setTool('door')}>
+          <Button
+            size="sm"
+            variant={tool === 'door' ? 'default' : 'outline'}
+            onClick={() => setShowDoorDialog(true)}
+          >
             Door
           </Button>
+          {tool === 'door' ? (
+            <Button size="sm" variant="outline" onClick={() => setTool('select')}>
+              Cancel
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant={tool === 'window' ? 'default' : 'outline'}
@@ -176,6 +204,39 @@ export function PlanLocalWorkspace(props: {
               Cancel
             </Button>
           ) : null}
+          <div className="flex flex-wrap items-center gap-1 ml-1 pl-2 border-l border-slate-200 text-[11px] text-slate-600">
+            <span className="shrink-0 whitespace-nowrap">Drag:</span>
+            <span
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/x-plan-item', 'door');
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              className="cursor-grab select-none px-2 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-900 whitespace-nowrap"
+            >
+              Door
+            </span>
+            <span
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/x-plan-item', 'window');
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              className="cursor-grab select-none px-2 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-950 whitespace-nowrap"
+            >
+              Window
+            </span>
+            <span
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/x-plan-item', 'overhead');
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              className="cursor-grab select-none px-2 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-950 whitespace-nowrap"
+            >
+              Overhead
+            </span>
+          </div>
           <Button size="sm" variant={tool === 'outlet' ? 'default' : 'outline'} onClick={() => setTool('outlet')}>
             Outlet
           </Button>
@@ -323,7 +384,7 @@ export function PlanLocalWorkspace(props: {
         </div>
 
         <div className="text-xs text-slate-600 max-w-md text-right">
-          Tip: choose <strong>Room floor</strong> for main vs on-loft vs above-loft rooms. With <strong>Select</strong>, drag the white <strong>stair opening</strong> to move it; set width and length in <strong>Edit loft</strong>.
+          Tip: choose <strong>Room floor</strong> for main vs on-loft vs above-loft rooms. Drag <strong>Door</strong> / <strong>Window</strong> chips onto a wall, or use <strong>Door</strong> for measured multi-door spacing. With <strong>Select</strong>, drag openings along walls.
         </div>
       </div>
 
@@ -703,6 +764,181 @@ export function PlanLocalWorkspace(props: {
                 }}
               >
                 Place windows
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDoorDialog} onOpenChange={setShowDoorDialog}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Door size and placement</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {[
+                { label: '3×7', width: 3, height: 7, sill: 0 },
+                { label: '3×6′8″', width: 3, height: 6 + 2 / 3, sill: 0 },
+                { label: '2×8 × 6′8″', width: 2 + 2 / 3, height: 6 + 2 / 3, sill: 0 },
+                { label: '6×7 (dbl)', width: 6, height: 7, sill: 0 },
+                { label: '8×8 (oh size)', width: 8, height: 8, sill: 0 },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  className={`border rounded px-3 py-2 text-left hover:bg-slate-50 ${
+                    doorSpec.label === p.label ? 'border-green-600 ring-2 ring-green-200' : 'border-slate-200'
+                  }`}
+                  onClick={() => setDoorSpec(p)}
+                >
+                  <div className="font-semibold text-sm">{p.label}</div>
+                  <div className="text-[11px] text-slate-600">
+                    {p.width.toFixed(2)}ft × {p.height.toFixed(2)}ft
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="border-t pt-3">
+              <div className="text-xs font-semibold text-slate-700 mb-2">Custom size</div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-xs">Width (ft)</Label>
+                  <Input
+                    type="number"
+                    value={doorSpec.width}
+                    onChange={(e) =>
+                      setDoorSpec((p) => ({ ...p, width: parseFloat(e.target.value) || 0, label: 'Custom' }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Height (ft)</Label>
+                  <Input
+                    type="number"
+                    value={doorSpec.height}
+                    onChange={(e) =>
+                      setDoorSpec((p) => ({ ...p, height: parseFloat(e.target.value) || 0, label: 'Custom' }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Sill (ft)</Label>
+                  <Input
+                    type="number"
+                    value={doorSpec.sill}
+                    onChange={(e) =>
+                      setDoorSpec((p) => ({ ...p, sill: parseFloat(e.target.value) || 0, label: 'Custom' }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-xs font-semibold text-slate-700">Placement</div>
+              <div className="flex flex-col gap-2 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="doorPlaceMode"
+                    checked={doorPlacement.mode === 'free'}
+                    onChange={() => setDoorPlacement((p) => ({ ...p, mode: 'free' }))}
+                  />
+                  <span>Free — click or drag one door along the wall (snaps to posts)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="doorPlaceMode"
+                    checked={doorPlacement.mode === 'measured'}
+                    onChange={() => setDoorPlacement((p) => ({ ...p, mode: 'measured' }))}
+                  />
+                  <span>Measured — inset from wall end, count, and spacing between doors</span>
+                </label>
+              </div>
+
+              {doorPlacement.mode === 'measured' ? (
+                <div className="space-y-3 pl-1">
+                  <div>
+                    <Label className="text-xs">Anchor</Label>
+                    <select
+                      className="mt-1 w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+                      value={doorPlacement.anchor}
+                      onChange={(e) =>
+                        setDoorPlacement((p) => ({
+                          ...p,
+                          anchor: e.target.value === 'from_end' ? 'from_end' : 'from_start',
+                        }))
+                      }
+                    >
+                      <option value="from_start">From start of wall (first corner along wall)</option>
+                      <option value="from_end">From end of wall (opposite corner)</option>
+                    </select>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Inset is measured from that corner to the near edge of the nearest door in the row.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <Label className="text-xs">Inset from corner (ft)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={doorPlacement.insetFromCornerFt}
+                        onChange={(e) =>
+                          setDoorPlacement((p) => ({
+                            ...p,
+                            insetFromCornerFt: Math.max(0, parseFloat(e.target.value) || 0),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Number of doors</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={doorPlacement.count}
+                        onChange={(e) =>
+                          setDoorPlacement((p) => ({
+                            ...p,
+                            count: Math.min(50, Math.max(1, Math.round(parseFloat(e.target.value) || 1))),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Gap between (ft)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={doorPlacement.gapBetweenFt}
+                        onChange={(e) =>
+                          setDoorPlacement((p) => ({
+                            ...p,
+                            gapBetweenFt: Math.max(0, parseFloat(e.target.value) || 0),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowDoorDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  setTool('door');
+                  setShowDoorDialog(false);
+                }}
+              >
+                Place on plan
               </Button>
             </div>
           </div>
