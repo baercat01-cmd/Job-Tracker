@@ -25,6 +25,8 @@ OnSpace automatically provides:
 
 **Subcontractor hub / portal job access:** URLs like `https://xxx.backend.onspace.ai` **do not run Supabase Edge Functions** (calls to `/functions/v1/...` return 404). The app uses **database RPCs** instead. If PostgREST reports **“Could not find … office_insert_portal_job_access … in the schema cache”**, run **`scripts/portal-job-access-json-rpcs.sql`** — it adds **single-argument `jsonb` RPCs** (`office_portal_job_access_insert_json`, `office_portal_job_access_list_json`, etc.) that OnSpace/PostgREST exposes reliably; then **`NOTIFY pgrst, 'reload schema';`** (included at end of that script). You can still run **`scripts/portal-job-access-onspace-rpcs.sql`** for the multi-arg versions. If inserts hit **RLS**, run **`scripts/portal-job-access-emergency-rls-off.sql`** on the same database.
 
+**Office building estimator / drawings:** If **“Could not find … office_create_building_plan … in the schema cache”**, run **`scripts/office-building-plan-json-rpcs.sql`** after **`20260325090000_building_plans_and_shares.sql`**. See **`ONSPACE-PROMPT-BUILDING-PLANS.md`** for a copy-paste prompt to OnSpace.ai.
+
 **Optional** — if you host Edge Functions on a separate `*.supabase.co` project that shares the same data, set **`VITE_SUPABASE_FUNCTIONS_URL`** to that API origin (e.g. `https://abcdefghijklmnop.supabase.co`) so portal-job-access can still be invoked.
 
 ### Expected Values

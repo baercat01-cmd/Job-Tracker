@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { Save, FileText, Home, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createDefaultRectPlan, resizeRectPerimeter, type BuildingPlanModel } from '@/lib/buildingPlanModel';
+import { countPerimeterPosts, overheadRoughOpeningsFromPlan } from '@/lib/perimeterPostLayout';
 import { planToEstimatorBuildingState } from '@/lib/planToEstimator3D';
 import { useAuth } from '@/hooks/useAuth';
 import { PlanLocalWorkspace } from '@/components/office/PlanLocalWorkspace';
@@ -68,7 +69,8 @@ export default function BuildingEstimator3D({
   const [visibility, setVisibility] = useState<VisibilityState>({
     frame: true,
     shell: false,
-    roof: false
+    roof: false,
+    shellGables: true,
   });
 
   const [activeTab, setActiveTab] = useState('3d');
@@ -110,7 +112,7 @@ export default function BuildingEstimator3D({
   // Remove opening
   const removeOpening = (openingId: string) => {
     setPlan((prev) => ({ ...prev, openings: prev.openings.filter((o) => o.id !== openingId) }));
-    toast.success('Window removed');
+    toast.success('Opening removed');
   };
 
   // Calculate materials and pricing
@@ -118,8 +120,8 @@ export default function BuildingEstimator3D({
     const state = planToEstimatorBuildingState(plan);
     const l = Math.ceil(state.length / 8) * 8;
     const waste = 1.10;
-    
-    const numPosts = ((l / 8) + 1) * 2;
+
+    const numPosts = countPerimeterPosts(plan.dims.width, plan.dims.length, overheadRoughOpeningsFromPlan(plan));
     const lumberPieces = Math.ceil(((state.width * l * 3.5) / 16) + (state.openings.length * 4));
     const wallArea = ((state.width * 2 + l * 2) * state.height) + (state.width * ((state.width / 2) * (state.pitch / 12)));
     const roofArea = (Math.sqrt(Math.pow(state.width / 2, 2) + Math.pow((state.width / 2) * (state.pitch / 12), 2)) * 2) * l;
@@ -134,7 +136,13 @@ export default function BuildingEstimator3D({
       { id: "Framing", spec: "Wall/Roof Stock (16')", sku: CATALOG.LUMBER.sku, qty: lumberPieces, price: CATALOG.LUMBER.priceEA },
       { id: "Trim", spec: "2x6 Fascia Pieces", sku: CATALOG.FASCIA.sku, qty: fasciaPcs, price: CATALOG.FASCIA.priceEA },
       { id: "Sheeting", spec: "29ga Metal Sheeting", sku: CATALOG.METAL.sku, qty: metalPanels, price: CATALOG.METAL.priceLF * 10 },
-      { id: "Openings", spec: "Assigned Windows", sku: CATALOG.WINDOW.sku, qty: state.openings.length, price: CATALOG.WINDOW.priceEA }
+      {
+        id: 'Openings',
+        spec: 'Windows / doors / overhead',
+        sku: CATALOG.WINDOW.sku,
+        qty: state.openings.length,
+        price: CATALOG.WINDOW.priceEA,
+      },
     ];
 
     const total = lines.reduce((sum, line) => sum + (line.qty * line.price), 0);
@@ -328,9 +336,29 @@ export default function BuildingEstimator3D({
                 </div>
 
                 {/* Visibility Toggles */}
-                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-2 p-1.5 bg-slate-900/95 rounded-2xl shadow-xl border border-white/10">
+                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex flex-wrap justify-center gap-2 p-1.5 bg-slate-900/95 rounded-2xl shadow-xl border border-white/10 max-w-[95vw]">
                   <button
-                    onClick={() => setVisibility(prev => ({ ...prev, shell: !prev.shell }))}
+                    onClick={() =>
+                      setVisibility({
+                        frame: false,
+                        shell: true,
+                        roof: false,
+                        shellGables: false,
+                      })
+                    }
+                    className={`px-4 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
+                      !visibility.frame &&
+                      visibility.shell &&
+                      !visibility.roof &&
+                      visibility.shellGables === false
+                        ? 'bg-sky-600 text-white border-sky-500'
+                        : 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    Walls only
+                  </button>
+                  <button
+                    onClick={() => setVisibility((prev) => ({ ...prev, shell: !prev.shell }))}
                     className={`px-5 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
                       visibility.shell
                         ? 'bg-mb-success text-white border-green-700'
@@ -339,8 +367,26 @@ export default function BuildingEstimator3D({
                   >
                     Shell
                   </button>
+                  {visibility.shell ? (
+                    <button
+                      onClick={() =>
+                        setVisibility((p) => ({
+                          ...p,
+                          shellGables: p.shellGables === false,
+                        }))
+                      }
+                      className={`px-4 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
+                        visibility.shellGables !== false
+                          ? 'bg-slate-600 text-white border-slate-500'
+                          : 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700'
+                      }`}
+                      title="Triangular end wall sheeting"
+                    >
+                      Gable ends
+                    </button>
+                  ) : null}
                   <button
-                    onClick={() => setVisibility(prev => ({ ...prev, frame: !prev.frame }))}
+                    onClick={() => setVisibility((prev) => ({ ...prev, frame: !prev.frame }))}
                     className={`px-5 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
                       visibility.frame
                         ? 'bg-mb-success text-white border-green-700'
@@ -350,7 +396,7 @@ export default function BuildingEstimator3D({
                     Frame
                   </button>
                   <button
-                    onClick={() => setVisibility(prev => ({ ...prev, roof: !prev.roof }))}
+                    onClick={() => setVisibility((prev) => ({ ...prev, roof: !prev.roof }))}
                     className={`px-5 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
                       visibility.roof
                         ? 'bg-mb-success text-white border-green-700'
@@ -590,7 +636,8 @@ export default function BuildingEstimator3D({
               <div key={o.id} className="bg-slate-50 border border-slate-200 rounded p-2 mb-2 flex justify-between items-center text-[10px] font-mono shadow-sm">
                 <div>
                   <span className="font-bold text-slate-800 uppercase tracking-tighter">
-                    {o.width}'x{o.height}' {o.type === 'door' ? 'Door' : 'Window'}
+                    {o.width}'×{o.height}'{' '}
+                    {o.type === 'overhead_door' ? 'Overhead' : o.type === 'door' ? 'Door' : 'Window'}
                   </span>
                   <br />
                   {(plan.walls.find((w) => w.id === o.wallId)?.label ?? 'Wall')} @ {o.offset}' Offset

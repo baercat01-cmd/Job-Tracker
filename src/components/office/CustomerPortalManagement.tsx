@@ -1527,28 +1527,34 @@ export function CustomerPortalManagement({ job, portalJobId, getPortalJobId }: C
     const TAX_RATE = 0.07;
     const empty = { materialSheets: [], customRows: [], subcontractorEstimates: [], totals: { subtotal: 0, tax: 0, grandTotal: 0, materials: 0, labor: 0 } };
     try {
-      // Use same source as JobFinancials & CustomerPortal: quote columns (proposal_subtotal, proposal_tax, proposal_grand_total) so preview Grand Total matches Proposal & Materials
+      // Prefer RPC totals (JobFinancials) over quote columns so preview matches office when columns are stale.
       let storedTotals: { subtotal: number; tax: number; grandTotal: number } | null = null;
       if (quoteId) {
-        const { data: quoteRow } = await supabase
-          .from('quotes')
-          .select('proposal_subtotal, proposal_tax, proposal_grand_total')
-          .eq('id', quoteId)
-          .maybeSingle();
-        let sub = quoteRow?.proposal_subtotal != null ? Number(quoteRow.proposal_subtotal) : NaN;
-        let tax = quoteRow?.proposal_tax != null ? Number(quoteRow.proposal_tax) : 0;
-        let grand = quoteRow?.proposal_grand_total != null ? Number(quoteRow.proposal_grand_total) : NaN;
-        if (!Number.isFinite(sub) || !Number.isFinite(grand)) {
-          const { data: rpcData } = await supabase.rpc('get_quote_proposal_totals', { p_quote_id: quoteId });
-          const row = Array.isArray(rpcData) && rpcData.length > 0 ? (rpcData[0] as { subtotal?: number | null; tax?: number | null; grand_total?: number | null }) : null;
-          if (row) {
-            sub = row.subtotal != null ? Number(row.subtotal) : sub;
-            tax = row.tax != null ? Number(row.tax) : tax;
-            grand = row.grand_total != null ? Number(row.grand_total) : grand;
+        const { data: rpcData } = await supabase.rpc('get_quote_proposal_totals', { p_quote_id: quoteId });
+        const rpcRow =
+          Array.isArray(rpcData) && rpcData.length > 0
+            ? (rpcData[0] as { subtotal?: number | null; tax?: number | null; grand_total?: number | null })
+            : null;
+        if (rpcRow) {
+          const sub = rpcRow.subtotal != null ? Number(rpcRow.subtotal) : NaN;
+          const tax = rpcRow.tax != null ? Number(rpcRow.tax) : NaN;
+          const grand = rpcRow.grand_total != null ? Number(rpcRow.grand_total) : NaN;
+          if (Number.isFinite(sub) && Number.isFinite(grand)) {
+            storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
           }
         }
-        if (Number.isFinite(sub) && Number.isFinite(grand)) {
-          storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
+        if (!storedTotals) {
+          const { data: quoteRow } = await supabase
+            .from('quotes')
+            .select('proposal_subtotal, proposal_tax, proposal_grand_total')
+            .eq('id', quoteId)
+            .maybeSingle();
+          const sub = quoteRow?.proposal_subtotal != null ? Number(quoteRow.proposal_subtotal) : NaN;
+          const tax = quoteRow?.proposal_tax != null ? Number(quoteRow.proposal_tax) : NaN;
+          const grand = quoteRow?.proposal_grand_total != null ? Number(quoteRow.proposal_grand_total) : NaN;
+          if (Number.isFinite(sub) && Number.isFinite(grand)) {
+            storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
+          }
         }
       }
 

@@ -47,10 +47,18 @@ interface SavedConfig {
   is_custom_trim?: boolean | null;
 }
 
+/** Normalize DB / PostgREST values (sometimes strings) before classifying. */
+function parseIsCustomTrimFlag(raw: unknown): boolean | null {
+  if (raw === true || raw === 'true' || raw === 't' || raw === 1 || raw === '1') return true;
+  if (raw === false || raw === 'false' || raw === 'f' || raw === 0 || raw === '0') return false;
+  return null;
+}
+
 /** Standard = library trim; custom = job-specific or one-off (or legacy rows with job_id). */
 function isSavedConfigCustom(config: SavedConfig): boolean {
-  if (config.is_custom_trim === true) return true;
-  if (config.is_custom_trim === false) return false;
+  const t = parseIsCustomTrimFlag(config.is_custom_trim as unknown);
+  if (t === true) return true;
+  if (t === false) return false;
   return !!config.job_id;
 }
 
@@ -2356,17 +2364,19 @@ export function TrimPricingCalculator() {
         drawing_segments: drawing.segments.length > 0 ? drawing.segments : null, // Store as array
         material_type_id: selectedTrimTypeId,
         material_type_name: selectedTrimType.name,
-        is_custom_trim: saveAsCustomTrim,
+        is_custom_trim: !!saveAsCustomTrim,
       };
 
       console.log('💾 Saving config data:', configData);
       console.log('📍 Current user session:', await supabase.auth.getSession());
       
       let insertedData: any[] | null = null;
+      let usedFallbackInsertWithoutCustomColumn = false;
       let insertRes = await supabase.from('trim_saved_configs').insert([configData]).select();
       if (insertRes.error && /is_custom_trim|column/i.test(String(insertRes.error.message || ''))) {
         const { is_custom_trim: _drop, ...withoutCustomFlag } = configData as Record<string, unknown>;
         insertRes = await supabase.from('trim_saved_configs').insert([withoutCustomFlag]).select();
+        usedFallbackInsertWithoutCustomColumn = !insertRes.error;
         if (!insertRes.error) {
           toast.info('Saved without trim category column — run the latest Supabase migration for Standard vs Custom lists.');
         }
@@ -2387,6 +2397,23 @@ export function TrimPricingCalculator() {
       console.log('📊 Total configs now:', (savedConfigs.length + 1));
 
       const newConfigId = insertedData?.[0]?.id;
+      // Fallback insert used DB default is_custom_trim=false; fix row so Custom saves land in the custom list.
+      if (newConfigId && saveAsCustomTrim) {
+        if (usedFallbackInsertWithoutCustomColumn) {
+          const { error: fixErr } = await supabase
+            .from('trim_saved_configs')
+            .update({ is_custom_trim: true })
+            .eq('id', newConfigId);
+          if (fixErr && !/column|does not exist|schema/i.test(String(fixErr.message || ''))) {
+            console.warn('Could not set is_custom_trim on saved trim:', fixErr.message);
+          }
+        }
+        if (insertedData?.[0]) {
+          insertedData[0] = { ...insertedData[0], is_custom_trim: true };
+        }
+      } else if (insertedData?.[0] && parseIsCustomTrimFlag(insertedData[0].is_custom_trim) === null) {
+        insertedData[0] = { ...insertedData[0], is_custom_trim: !!saveAsCustomTrim };
+      }
       if (addToJobWorkbook && selectedJobId && newConfigId) {
         try {
           const { data: wb } = await supabase
@@ -3190,7 +3217,7 @@ export function TrimPricingCalculator() {
                     <div key={input.id} className="flex items-center gap-1.5">
                       <div className="flex-1">
                         <Label className="text-xs text-yellow-400 mb-0.5 block">
-                          Length #{index + 1}
+                          Cut length #{index + 1}
                         </Label>
                         <Input
                           type="number"

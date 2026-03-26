@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { BuildingPlanModel, PlanViewSide } from '@/lib/buildingPlanModel';
 
 export function PlanElevationPreview(props: {
@@ -45,17 +45,31 @@ export function PlanElevationPreview(props: {
           const ww = (o.width / viewWidth) * 90;
           const y = 5 + 60 - (o.sill / h) * 60 - (o.height / h) * 60;
           const hh = (o.height / h) * 60;
+          const isOh = o.type === 'overhead_door';
+          const fill = isOh ? '#ffedd5' : o.type === 'door' ? '#bae6fd' : '#fef9c3';
+          const stroke = isOh ? '#d97706' : o.type === 'door' ? '#0284c7' : '#a16207';
+          const pr = isOh ? Math.max(1, o.overheadStyle?.panelRows ?? 4) : 0;
+          const pc = isOh ? Math.max(1, o.overheadStyle?.panelCols ?? 3) : 0;
+          const gridLines: ReactNode[] = [];
+          if (isOh && pr > 0 && pc > 0) {
+            for (let i = 1; i < pc; i++) {
+              const lx = x + (i / pc) * ww;
+              gridLines.push(
+                <line key={`v_${i}`} x1={lx} y1={y} x2={lx} y2={y + hh} stroke={stroke} strokeWidth={0.35} opacity={0.5} />
+              );
+            }
+            for (let j = 1; j < pr; j++) {
+              const ly = y + (j / pr) * hh;
+              gridLines.push(
+                <line key={`h_${j}`} x1={x} y1={ly} x2={x + ww} y2={ly} stroke={stroke} strokeWidth={0.35} opacity={0.5} />
+              );
+            }
+          }
           return (
-            <rect
-              key={o.id}
-              x={x}
-              y={y}
-              width={Math.max(2, ww)}
-              height={Math.max(2, hh)}
-              fill={o.type === 'door' ? '#bae6fd' : '#fef9c3'}
-              stroke={o.type === 'door' ? '#0284c7' : '#a16207'}
-              strokeWidth={1}
-            />
+            <g key={o.id}>
+              <rect x={x} y={y} width={Math.max(2, ww)} height={Math.max(2, hh)} fill={fill} stroke={stroke} strokeWidth={1} />
+              {gridLines}
+            </g>
           );
         })}
       </svg>

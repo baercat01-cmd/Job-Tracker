@@ -7,6 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import {
+  officeCreateBuildingPlan,
+  officeListBuildingPlansForJob,
+  officeUpdateBuildingPlan,
+} from '@/lib/buildingPlanOfficeRpc';
 import { createDefaultRectPlan, type BuildingPlanModel } from '@/lib/buildingPlanModel';
 import { useAuth } from '@/hooks/useAuth';
 import { Canvas } from '@react-three/fiber';
@@ -22,7 +27,7 @@ function toastPlanRpcError(e: unknown, fallback: string) {
   if (/schema cache|PGRST202|Could not find the function/i.test(msg)) {
     toast.error('Building plan RPCs missing or API cache stale', {
       description:
-        'Supabase → SQL: run supabase/migrations/20260327120000_office_building_plan_rpcs.sql on this project, then run select pg_notify(\'pgrst\', \'reload schema\'); confirm VITE_SUPABASE_URL matches that project; hard-refresh.',
+        'OnSpace: run scripts/office-building-plan-json-rpcs.sql (single jsonb RPCs). Any host: also run 20260327120000_office_building_plan_rpcs.sql if needed. Then select pg_notify(\'pgrst\', \'reload schema\'); confirm VITE_SUPABASE_URL matches this project; hard-refresh.',
     });
     return;
   }
@@ -63,7 +68,12 @@ export default function BuildingEstimatorPage() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState<'2d' | '3d'>('3d');
-  const [visibility, setVisibility] = useState<VisibilityState>({ frame: true, shell: false, roof: false });
+  const [visibility, setVisibility] = useState<VisibilityState>({
+    frame: true,
+    shell: false,
+    roof: false,
+    shellGables: true,
+  });
   const [pendingDims, setPendingDims] = useState({ width: 0, length: 0, height: 0, pitch: 0 });
   const planNameInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -114,9 +124,7 @@ export default function BuildingEstimatorPage() {
       try {
         if (!forceNew) {
           // Load existing plans first; if none, fall through to blank slate.
-          const { data: listData, error: listErr } = await supabase.rpc('office_list_building_plans_for_job', {
-            p_job_id: jobId,
-          });
+          const { data: listData, error: listErr } = await officeListBuildingPlansForJob(supabase, jobId);
           if (listErr) throw listErr;
           let list: any[] = [];
           if (Array.isArray(listData)) list = listData;
@@ -190,7 +198,7 @@ export default function BuildingEstimatorPage() {
     setSaving(true);
     try {
       const next = { ...plan, name: planName };
-      const { data, error } = await supabase.rpc('office_update_building_plan', {
+      const { data, error } = await officeUpdateBuildingPlan(supabase, {
         p_plan_id: planId,
         p_model_json: next,
         p_name: planName,
@@ -271,10 +279,46 @@ export default function BuildingEstimatorPage() {
                         </button>
                       </div>
                       {activeView === '3d' ? (
-                        <div className="flex items-center gap-2 text-[11px]">
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                          <Button
+                            size="sm"
+                            variant={
+                              !visibility.frame &&
+                              visibility.shell &&
+                              !visibility.roof &&
+                              visibility.shellGables === false
+                                ? 'default'
+                                : 'outline'
+                            }
+                            onClick={() =>
+                              setVisibility({
+                                frame: false,
+                                shell: true,
+                                roof: false,
+                                shellGables: false,
+                              })
+                            }
+                          >
+                            Walls only
+                          </Button>
                           <Button size="sm" variant={visibility.shell ? 'default' : 'outline'} onClick={() => setVisibility((p) => ({ ...p, shell: !p.shell }))}>
                             Shell
                           </Button>
+                          {visibility.shell ? (
+                            <Button
+                              size="sm"
+                              variant={visibility.shellGables !== false ? 'default' : 'outline'}
+                              onClick={() =>
+                                setVisibility((p) => ({
+                                  ...p,
+                                  shellGables: p.shellGables === false,
+                                }))
+                              }
+                              title="Triangular metal on front/back gables"
+                            >
+                              Gable ends
+                            </Button>
+                          ) : null}
                           <Button size="sm" variant={visibility.frame ? 'default' : 'outline'} onClick={() => setVisibility((p) => ({ ...p, frame: !p.frame }))}>
                             Frame
                           </Button>
@@ -368,7 +412,7 @@ export default function BuildingEstimatorPage() {
                                   height: pendingDims.height,
                                   pitch: pendingDims.pitch || 0,
                                 });
-                                const { data, error } = await supabase.rpc('office_create_building_plan', {
+                                const { data, error } = await officeCreateBuildingPlan(supabase, {
                                   p_job_id: jobId,
                                   p_quote_id: null,
                                   p_name: planName,

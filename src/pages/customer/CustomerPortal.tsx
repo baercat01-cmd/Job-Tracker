@@ -2147,18 +2147,19 @@ function JobDetailView({
                           </div>
                         )}
 
-                        {/* Totals — only shown when showFinancial is enabled. Prefer proposalData.totals; fall back to RPC/quote when proposalData not yet loaded. */}
+                        {/* Totals — only when showFinancial. Prefer get_quote_proposal_totals (JobFinancials), then bundle, then quote columns. */}
                         {showFinancial && (() => {
+                          // Prefer RPC totals (same as JobFinancials) over bundle totals — bundle can lag quote columns.
                           const displayTotals =
-                            (proposalData?.totals != null ? proposalData.totals : null) ??
                             quoteStoredTotals ??
-                            ((selectedQuote && Number.isFinite(Number(selectedQuote.proposal_grand_total)) && Number.isFinite(Number(selectedQuote.proposal_subtotal))
+                            (proposalData?.totals != null ? proposalData.totals : null) ??
+                            (selectedQuote && Number.isFinite(Number(selectedQuote.proposal_grand_total)) && Number.isFinite(Number(selectedQuote.proposal_subtotal))
                               ? {
                                   subtotal: Number(selectedQuote.proposal_subtotal),
                                   tax: Number(selectedQuote.proposal_tax) || 0,
                                   grandTotal: Number(selectedQuote.proposal_grand_total),
                                 }
-                              : null));
+                              : null);
                           if (!displayTotals) return null;
                           return (
                             <div className="border-t-2 pt-4 space-y-2">

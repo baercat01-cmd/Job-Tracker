@@ -219,13 +219,21 @@ export function parseNumericValue(value: any): number | null {
 }
 
 /**
- * Parse percentage value (e.g., "0.150303" or "15%")
+ * Parse markup % for material_items.markup_percent (stored as whole percent, e.g. 20 = 20%).
+ * - 15, 29.98 → whole percent
+ * - 0.15 → decimal fraction → 15
+ * - 2998.14 / 3500 (some exports) → treat as percent×100 → divide by 100
  */
 export function parsePercentValue(value: any): number | null {
   const numeric = parseNumericValue(value);
   if (numeric === null) return null;
-  
-  // If value is > 1, assume it's already a percentage (e.g., 15 = 15%)
-  // If value is < 1, assume it's a decimal (e.g., 0.15 = 15%)
-  return numeric > 1 ? numeric / 100 : numeric;
+
+  const a = Math.abs(numeric);
+  if (a >= 1000) {
+    return numeric / 100;
+  }
+  if (a > 1) {
+    return numeric;
+  }
+  return numeric * 100;
 }

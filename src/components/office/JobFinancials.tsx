@@ -31,6 +31,7 @@ import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileS
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { isQuoteContractFrozen, quoteHasActiveContract } from '@/lib/quoteProposalLock';
+import { materialSheetLogicalMergeKey, orphanMaterialWorkbooksForQuoteMerge } from '@/lib/materialWorkbook';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
@@ -3489,14 +3490,30 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
       await loadData(true);
     };
 
+    /** Keep quotes.proposal_* in sync with the office total the moment we send — portal reads these via RPC (same row). */
+    const buildSentPayloadWithTotals = () => {
+      const base = {
+        sent_at: new Date().toISOString(),
+        sent_by: profile.id,
+        locked_for_editing: true,
+      } as Record<string, unknown>;
+      if (Number.isFinite(proposalSubtotal) && Number.isFinite(proposalGrandTotal)) {
+        const sub = Math.round(proposalSubtotal * 100) / 100;
+        const tax = Math.round((proposalTotalTax ?? 0) * 100) / 100;
+        const grand = Math.round(proposalGrandTotal * 100) / 100;
+        base.proposal_subtotal = sub;
+        base.proposal_tax = tax;
+        base.proposal_grand_total = grand;
+        base.proposal_totals_updated_at = new Date().toISOString();
+        lastSyncedTotalsRef.current = { quoteId: quote.id, sub, tax, grand };
+      }
+      return base;
+    };
+
     try {
       const { error: quoteErr } = await supabase
         .from('quotes')
-        .update({
-          sent_at: new Date().toISOString(),
-          sent_by: profile.id,
-          locked_for_editing: true,
-        } as any)
+        .update(buildSentPayloadWithTotals() as any)
         .eq('id', quote.id);
 
       if (!quoteErr) {
@@ -3516,6 +3533,22 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
         body: { quote_id: quote.id, user_id: profile.id },
       });
       if (!fnErr && (fnRes as any)?.ok) {
+        if (Number.isFinite(proposalSubtotal) && Number.isFinite(proposalGrandTotal)) {
+          const sub = Math.round(proposalSubtotal * 100) / 100;
+          const tax = Math.round((proposalTotalTax ?? 0) * 100) / 100;
+          const grand = Math.round(proposalGrandTotal * 100) / 100;
+          lastSyncedTotalsRef.current = { quoteId: quote.id, sub, tax, grand };
+          const { error: totErr } = await supabase
+            .from('quotes')
+            .update({
+              proposal_subtotal: sub,
+              proposal_tax: tax,
+              proposal_grand_total: grand,
+              proposal_totals_updated_at: new Date().toISOString(),
+            } as any)
+            .eq('id', quote.id);
+          if (totErr) console.warn('markProposalAsSent portal totals sync:', totErr.message);
+        }
         await onSuccess();
         return;
       }
@@ -4592,6 +4625,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       });
 
       setAllJobQuotes(quotesList);
+      try {
+        window.dispatchEvent(new CustomEvent('job-proposals-changed', { detail: { jobId: job.id } }));
+      } catch {
+        /* ignore */
+      }
 
       // When job already has quotes, use that list. Prefer user-selected; else default to first (highest proposal number).
       if (quotesList.length > 0) {
@@ -6048,19 +6086,22 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             usedFallbackWorkbook = false;
             proposalWorkbookIdForLabor = null;
           } else {
+            // Keep labor merge target on this quote's workbook; only substitute *another* workbook for the same quote.
+            // Never fall back to `job_id` only — that loads another proposal's workbook and duplicates/mixes sections.
             proposalWorkbookIdForLabor = workbookData.id;
-            const { data: allJobWbs } = await supabase
+            const { data: quoteWbs } = await supabase
               .from('material_workbooks')
               .select(wbSelect)
               .eq('job_id', job.id)
+              .eq('quote_id', targetQuoteId)
               .order('updated_at', { ascending: false });
-            const list = allJobWbs || [];
+            const list = quoteWbs || [];
             for (const wb of list) {
               const wbSheets = wb?.material_sheets || [];
               const wbItemCount = wbSheets.reduce((n: number, s: any) => n + ((s.material_items || []).length), 0);
               if (wbItemCount > 0) {
                 workbookData = wb;
-                usedFallbackWorkbook = true;
+                usedFallbackWorkbook = String(wb.id) !== String(proposalWorkbookIdForLabor);
                 break;
               }
             }
@@ -6106,6 +6147,52 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         .slice()
         .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
 
+      // Orphan workbooks for this quote can still hold material_sheets; merge them so proposal + materials tabs match.
+      if (hasQuote && targetQuoteId) {
+        const wbSelectOrphan = `
+          id,
+          material_sheets (
+            *,
+            material_items (*),
+            material_sheet_labor (*),
+            material_category_markups (*)
+          )
+        `;
+        const { data: allWbsList } = await supabase
+          .from('material_workbooks')
+          .select('id, quote_id, status, version_number')
+          .eq('job_id', job.id);
+        const orphans = orphanMaterialWorkbooksForQuoteMerge(allWbsList || [], (w: any) => w.quote_id === targetQuoteId);
+        const seenSheetIds = new Set(sheetsData.map((s: any) => String(s.id)));
+        const seenLogicalKeys = new Set(sheetsData.map((s: any) => materialSheetLogicalMergeKey(s)));
+        for (const owb of orphans) {
+          if (String(owb.id) === String(workbookData.id)) continue;
+          const { data: extraWb, error: owbErr } = await supabase
+            .from('material_workbooks')
+            .select(wbSelectOrphan)
+            .eq('id', owb.id)
+            .maybeSingle();
+          if (owbErr || !extraWb) continue;
+          for (const s of (extraWb as any).material_sheets || []) {
+            const sid = String(s.id);
+            if (seenSheetIds.has(sid)) continue;
+            const lk = materialSheetLogicalMergeKey(s);
+            if (seenLogicalKeys.has(lk)) continue;
+            seenSheetIds.add(sid);
+            seenLogicalKeys.add(lk);
+            sheetsData.push(s);
+          }
+        }
+        sheetsData.sort((a: any, b: any) => {
+          const typeA = a.sheet_type === 'change_order' ? 1 : 0;
+          const typeB = b.sheet_type === 'change_order' ? 1 : 0;
+          if (typeA !== typeB) return typeA - typeB;
+          const oi = (a.order_index ?? 0) - (b.order_index ?? 0);
+          if (oi !== 0) return oi;
+          return String(a.sheet_name || '').localeCompare(String(b.sheet_name || ''), undefined, { sensitivity: 'base' });
+        });
+      }
+
       // Build flat sheet objects (strip nested children for state storage)
       const sheetsFlat = sheetsData.map(({ material_items: _i, material_sheet_labor: _l, material_category_markups: _m, ...s }: any) => s);
       if (JSON.stringify(sheetsFlat) !== JSON.stringify(materialSheets)) {
@@ -6128,9 +6215,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           .from('material_sheet_labor')
           .select('*')
           .in('sheet_id', sheetIdsForLabor);
+        // Live query is authoritative: nested `material_sheet_labor` can be empty, partial, or stale (e.g. $0 placeholder)
+        // and the old `if (!laborMap[id])` merge prevented correcting that — which hides Labor in the section header.
         (liveLaborRows || []).forEach((labor: any) => {
           const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
-          if (!laborMap[labor.sheet_id]) laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
+          laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
         });
       }
       // When we displayed a fallback workbook (proposal had no sheets/items), labor was on the proposal's workbook;

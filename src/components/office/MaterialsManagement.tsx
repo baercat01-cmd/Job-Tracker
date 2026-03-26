@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Fragment, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { materialSheetLogicalMergeKey, orphanMaterialWorkbooksForQuoteMerge } from '@/lib/materialWorkbook';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useMaterialsToolbarSlot } from '@/contexts/JobDetailMaterialsToolbarContext';
 
@@ -1613,6 +1614,49 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           .order('order_index');
         if (itemsError) throw itemsError;
         itemsData = itemsRes || [];
+      }
+
+      // Merge sheets from orphan workbooks (same quote, not the newest locked+working pair) so sections are not hidden.
+      if (quoteIdForLoad) {
+        const orphans = orphanMaterialWorkbooksForQuoteMerge(wbs, matchQuote);
+        const knownSheetIds = new Set(sheetsData.map((s: any) => String(s.id)));
+        const knownLogicalKeys = new Set(sheetsData.map((s: any) => materialSheetLogicalMergeKey(s)));
+        for (const owb of orphans) {
+          if (String(owb.id) === String(workbookData.id)) continue;
+          const { data: extraSheets, error: exSheetsErr } = await supabase
+            .from('material_sheets')
+            .select('*')
+            .eq('workbook_id', owb.id)
+            .order('order_index');
+          if (exSheetsErr) continue;
+          const extra: any[] = [];
+          for (const s of extraSheets || []) {
+            const sid = String(s.id);
+            if (knownSheetIds.has(sid)) continue;
+            const lk = materialSheetLogicalMergeKey(s);
+            if (knownLogicalKeys.has(lk)) continue;
+            knownSheetIds.add(sid);
+            knownLogicalKeys.add(lk);
+            extra.push(s);
+          }
+          if (extra.length === 0) continue;
+          const extraIds = extra.map((s: any) => s.id);
+          const { data: extraItems } = await supabase
+            .from('material_items')
+            .select('*')
+            .in('sheet_id', extraIds)
+            .order('order_index');
+          sheetsData.push(...extra);
+          itemsData.push(...(extraItems || []));
+        }
+        sheetsData.sort((a: any, b: any) => {
+          const typeA = a.sheet_type === 'change_order' ? 1 : 0;
+          const typeB = b.sheet_type === 'change_order' ? 1 : 0;
+          if (typeA !== typeB) return typeA - typeB;
+          const oi = (a.order_index ?? 0) - (b.order_index ?? 0);
+          if (oi !== 0) return oi;
+          return String(a.sheet_name || '').localeCompare(String(b.sheet_name || ''), undefined, { sensitivity: 'base' });
+        });
       }
 
       const isSnapshotView = !!snapActive && workbookData.id === snapActive;
@@ -4317,7 +4361,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         {workbook &&
           !quoteContractFrozen &&
           (snapshotWorkbookId || (workbook.status === 'locked' && !snapshotWorkbookId)) && (
-            <div className="rounded-lg border p-3 px-3 flex flex-col gap-2 text-sm border-amber-300 bg-amber-50 text-amber-950">
+            <div
+              className={
+                snapshotWorkbookId
+                  ? 'rounded-lg border p-3 px-3 flex flex-col gap-2 text-sm border-amber-300 bg-amber-50 text-amber-950'
+                  : 'rounded-md border px-2 py-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs border-amber-300 bg-amber-50 text-amber-950'
+              }
+            >
               {snapshotWorkbookId ? (
                 <>
                   <div className="flex flex-wrap items-start gap-2 w-full">
@@ -4365,27 +4415,29 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 </>
               ) : (
                 <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Lock className="w-4 h-4 shrink-0" />
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
-                      Locked only
-                    </span>
-                    <span className="font-semibold">No working copy yet</span>
-                    <Badge variant="outline" className="bg-white/80">
-                      v{workbook.version_number}
-                    </Badge>
-                  </div>
-                  <p className="text-xs opacity-90 pl-6">
-                    Create a working copy for crew orders, shop status, and edits — this locked version stays unchanged.
-                  </p>
+                  <Lock className="w-3.5 h-3.5 shrink-0 text-amber-800" aria-hidden />
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-1 py-px rounded leading-none">
+                    Locked only
+                  </span>
+                  <span className="font-medium text-amber-950 whitespace-nowrap">No working copy</span>
+                  <Badge variant="outline" className="bg-white/80 h-5 px-1.5 text-[10px] py-0 shrink-0">
+                    v{workbook.version_number}
+                  </Badge>
+                  <span
+                    className="text-[11px] text-amber-900/80 min-w-0 flex-1 basis-[12rem]"
+                    title="Create a working copy for crew orders, shop status, and edits — this locked version stays unchanged."
+                  >
+                    Add a working copy for crew / shop — locked snapshot unchanged.
+                  </span>
                   <Button
                     type="button"
                     size="sm"
-                    className="h-8 text-xs w-fit gradient-primary"
+                    className="h-7 text-[11px] px-2 shrink-0 gradient-primary"
                     disabled={creatingWorkingFromLocked}
                     onClick={() => createWorkingFromLatestLocked()}
+                    title="Create a working copy from this locked snapshot"
                   >
-                    {creatingWorkingFromLocked ? 'Creating…' : 'Create working copy from snapshot'}
+                    {creatingWorkingFromLocked ? 'Creating…' : 'Create copy'}
                   </Button>
                 </>
               )}
