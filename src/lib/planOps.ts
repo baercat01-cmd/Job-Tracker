@@ -5,16 +5,9 @@ import type {
   PlanLoft,
   PlanOpening,
   PlanRoom,
-  PlanStair,
   PlanWall,
 } from '@/lib/buildingPlanModel';
-import {
-  bumpRev,
-  clampLoftStairOpeningToLoftBounds,
-  clampOpeningOffsetToWall,
-  getWall,
-  newId,
-} from '@/lib/buildingPlanModel';
+import { bumpRev, clampOpeningOffsetToWall, getWall, newId } from '@/lib/buildingPlanModel';
 
 export type PlanActorId = string;
 
@@ -23,15 +16,11 @@ export type PlanOp =
   | { type: 'upsert_wall'; wall: PlanWall }
   | { type: 'delete_wall'; wallId: PlanEntityId }
   | { type: 'upsert_opening'; opening: PlanOpening }
-  /** Apply multiple new/changed openings in one revision (e.g. a row of doors). */
-  | { type: 'upsert_openings_batch'; openings: PlanOpening[] }
   | { type: 'delete_opening'; openingId: PlanEntityId }
   | { type: 'upsert_room'; room: PlanRoom }
   | { type: 'delete_room'; roomId: PlanEntityId }
   | { type: 'upsert_loft'; loft: PlanLoft }
   | { type: 'delete_loft'; loftId: PlanEntityId }
-  | { type: 'upsert_stair'; stair: PlanStair }
-  | { type: 'delete_stair'; stairId: PlanEntityId }
   | { type: 'upsert_fixture'; fixture: PlanFixture }
   | { type: 'delete_fixture'; fixtureId: PlanEntityId };
 
@@ -75,17 +64,6 @@ export function applyOp(plan: BuildingPlanModel, op: PlanOp): BuildingPlanModel 
       const nextOpenings = idx >= 0 ? replaceAt(plan.openings, idx, opening) : [...plan.openings, opening];
       return bumpRev({ ...plan, openings: nextOpenings });
     }
-    case 'upsert_openings_batch': {
-      let nextOpenings = [...plan.openings];
-      for (const raw of op.openings) {
-        const wall = getWall(plan, raw.wallId);
-        const opening = wall ? clampOpeningOffsetToWall(raw, wall) : raw;
-        const idx = nextOpenings.findIndex((o) => o.id === opening.id);
-        if (idx >= 0) nextOpenings = replaceAt(nextOpenings, idx, opening);
-        else nextOpenings = [...nextOpenings, opening];
-      }
-      return bumpRev({ ...plan, openings: nextOpenings });
-    }
     case 'delete_opening': {
       return bumpRev({ ...plan, openings: plan.openings.filter((o) => o.id !== op.openingId) });
     }
@@ -98,27 +76,12 @@ export function applyOp(plan: BuildingPlanModel, op: PlanOp): BuildingPlanModel 
       return bumpRev({ ...plan, rooms: plan.rooms.filter((r) => r.id !== op.roomId) });
     }
     case 'upsert_loft': {
-      const loft =
-        op.loft.stairOpening != null ? clampLoftStairOpeningToLoftBounds(op.loft) : op.loft;
-      const idx = plan.lofts.findIndex((l) => l.id === loft.id);
-      const next = idx >= 0 ? replaceAt(plan.lofts, idx, loft) : [...plan.lofts, loft];
+      const idx = plan.lofts.findIndex((l) => l.id === op.loft.id);
+      const next = idx >= 0 ? replaceAt(plan.lofts, idx, op.loft) : [...plan.lofts, op.loft];
       return bumpRev({ ...plan, lofts: next });
     }
     case 'delete_loft': {
-      return bumpRev({
-        ...plan,
-        lofts: plan.lofts.filter((l) => l.id !== op.loftId),
-        stairs: (plan.stairs ?? []).filter((s) => s.loftId !== op.loftId),
-      });
-    }
-    case 'upsert_stair': {
-      const list = plan.stairs ?? [];
-      const idx = list.findIndex((s) => s.id === op.stair.id);
-      const next = idx >= 0 ? replaceAt(list, idx, op.stair) : [...list, op.stair];
-      return bumpRev({ ...plan, stairs: next });
-    }
-    case 'delete_stair': {
-      return bumpRev({ ...plan, stairs: (plan.stairs ?? []).filter((s) => s.id !== op.stairId) });
+      return bumpRev({ ...plan, lofts: plan.lofts.filter((l) => l.id !== op.loftId) });
     }
     case 'upsert_fixture': {
       const idx = plan.fixtures.findIndex((f) => f.id === op.fixture.id);

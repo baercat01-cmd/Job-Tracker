@@ -38,30 +38,6 @@ import { JobDetailProposalToolbarContext } from '@/contexts/JobDetailProposalToo
 import { JobDetailMaterialsToolbarSlotContext } from '@/contexts/JobDetailMaterialsToolbarContext';
 import { ProposalSummaryProvider } from '@/contexts/ProposalSummaryContext';
 
-/** Dispatched from JobFinancials when the job quote list is reloaded so the header picker stays current. */
-const JOB_PROPOSALS_CHANGED_EVENT = 'job-proposals-changed';
-
-interface JobProposalNavRow {
-  id: string;
-  proposal_number?: string | number | null;
-  quote_number?: string | number | null;
-  is_change_order_proposal?: boolean | null;
-}
-
-function sortJobQuotesForNav<T extends { proposal_number?: unknown; quote_number?: unknown }>(quotes: T[]): T[] {
-  return [...quotes].sort((a, b) => {
-    const na = (a.proposal_number ?? a.quote_number ?? '').toString();
-    const nb = (b.proposal_number ?? b.quote_number ?? '').toString();
-    if (na === nb) return 0;
-    return nb.localeCompare(na, undefined, { numeric: true });
-  });
-}
-
-function formatJobProposalNavLabel(q: JobProposalNavRow): string {
-  const num = q.proposal_number ?? q.quote_number ?? '—';
-  return q.is_change_order_proposal ? `Change order #${num}` : `Proposal #${num}`;
-}
-
 interface JobDetailedViewProps {
   job: Job;
   /** Job id to use for customer portal link creation. When set (from JobsView detail dialog), this is the single source of truth so the link is always for the job the user opened. */
@@ -447,8 +423,6 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
   const [proposalViewMode, setProposalViewMode] = useState<ProposalViewMode>('split');
   /** Shared proposal selection so Subcontractors tab and Proposal & Materials show the same proposal. */
   const [selectedProposalQuoteId, setSelectedProposalQuoteId] = useState<string | null>(null);
-  /** Quotes on this job for the green-bar proposal picker (same sort as JobFinancials). */
-  const [jobProposalNavQuotes, setJobProposalNavQuotes] = useState<JobProposalNavRow[]>([]);
   const materialsToolbarSlotRef = useRef<HTMLDivElement>(null);
   const [materialsToolbarSlotReady, setMaterialsToolbarSlotReady] = useState(false);
 
@@ -517,7 +491,6 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
   useEffect(() => {
     if (!job?.id) {
       setSelectedProposalQuoteId(null);
-      setJobProposalNavQuotes([]);
       return;
     }
     let mounted = true;
@@ -532,20 +505,8 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
       if (!mounted) return;
       if (error || !quotes?.length) {
         setSelectedProposalQuoteId(null);
-        setJobProposalNavQuotes([]);
         return;
       }
-
-      const sorted = sortJobQuotesForNav(quotes as JobProposalNavRow[]);
-      setJobProposalNavQuotes(
-        sorted.map((q: JobProposalNavRow) => ({
-          id: q.id,
-          proposal_number: q.proposal_number,
-          quote_number: q.quote_number,
-          is_change_order_proposal: q.is_change_order_proposal,
-        }))
-      );
-
       const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
       const frozenMain = mainQuotes.filter((q: any) => isQuoteContractFrozen(q));
 
@@ -559,43 +520,17 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
         return;
       }
 
+      const sorted = [...quotes].sort((a: any, b: any) => {
+        const na = (a.proposal_number || a.quote_number || '').toString();
+        const nb = (b.proposal_number || b.quote_number || '').toString();
+        return nb.localeCompare(na, undefined, { numeric: true });
+      });
       setSelectedProposalQuoteId((prev) => {
-        if (prev && sorted.some((q: JobProposalNavRow) => q.id === prev)) return prev;
+        if (prev && sorted.some((q: any) => q.id === prev)) return prev;
         return sorted[0]?.id ?? null;
       });
     })();
     return () => { mounted = false; };
-  }, [job?.id]);
-
-  // When JobFinancials reloads quotes (e.g. new proposal), refresh the nav list without changing selection.
-  useEffect(() => {
-    if (!job?.id) return;
-    const handler = (e: Event) => {
-      const jobId = (e as CustomEvent<{ jobId?: string }>).detail?.jobId;
-      if (jobId !== job.id) return;
-      void (async () => {
-        const { data: quotes, error } = await supabase
-          .from('quotes')
-          .select('id, proposal_number, quote_number, is_change_order_proposal')
-          .eq('job_id', job.id)
-          .order('created_at', { ascending: false });
-        if (error || !quotes?.length) {
-          setJobProposalNavQuotes([]);
-          return;
-        }
-        const sorted = sortJobQuotesForNav(quotes as JobProposalNavRow[]);
-        setJobProposalNavQuotes(
-          sorted.map((q: JobProposalNavRow) => ({
-            id: q.id,
-            proposal_number: q.proposal_number,
-            quote_number: q.quote_number,
-            is_change_order_proposal: q.is_change_order_proposal,
-          }))
-        );
-      })();
-    };
-    window.addEventListener(JOB_PROPOSALS_CHANGED_EVENT, handler);
-    return () => window.removeEventListener(JOB_PROPOSALS_CHANGED_EVENT, handler);
   }, [job?.id]);
 
   useEffect(() => {
@@ -1523,48 +1458,6 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                {jobProposalNavQuotes.length > 1 && (
-                  <>
-                    <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 text-yellow-100 border-yellow-600/40 px-2 max-w-[220px]"
-                          title="This job has multiple proposals — workbook and Subs use the one you select here"
-                        >
-                          <span className="truncate">
-                            {(() => {
-                              if (!selectedProposalQuoteId) return 'Proposal';
-                              const cur = jobProposalNavQuotes.find((q) => q.id === selectedProposalQuoteId);
-                              return cur ? formatJobProposalNavLabel(cur) : 'Proposal';
-                            })()}
-                          </span>
-                          <ChevronDown className="w-3 h-3 shrink-0 opacity-80" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="min-w-[220px] max-h-[min(320px,70vh)] overflow-y-auto bg-slate-900 border-yellow-600/40">
-                        {jobProposalNavQuotes.map((q) => (
-                          <DropdownMenuItem
-                            key={q.id}
-                            onClick={() => setSelectedProposalQuoteId(q.id)}
-                            className="text-yellow-100 focus:bg-green-800 focus:text-yellow-100 gap-2"
-                          >
-                            <FileText className="w-3 h-3 shrink-0 opacity-80" />
-                            <span className="flex-1">{formatJobProposalNavLabel(q)}</span>
-                            {q.id === selectedProposalQuoteId ? (
-                              <span className="text-[10px] uppercase text-green-300 shrink-0">Active</span>
-                            ) : null}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <span className="text-yellow-200/70 text-[11px] hidden md:inline">
-                      {jobProposalNavQuotes.length} on this job
-                    </span>
-                  </>
-                )}
                 {proposalToolbarContent && (
                   <>
                     <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />

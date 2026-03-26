@@ -20,34 +20,19 @@ export async function loadProposalDataForQuote(
       const forChangeOrderDocument =
         !!opts?.forChangeOrderDocument || (!!quoteId && quoteId === changeOrderQuoteIdForJob);
 
-      // Prefer RPC totals (written by JobFinancials) so portal matches office; quote columns can be stale but still numeric.
+      // Prefer proposal totals stored on the quote (written by JobFinancials) so portal always matches office
       let storedTotals: { subtotal: number; tax: number; grandTotal: number; materials?: number; labor?: number } | null = null;
       if (quoteId) {
-        const { data: rpcData } = await supabase.rpc('get_quote_proposal_totals', { p_quote_id: quoteId });
-        const rpcRow =
-          Array.isArray(rpcData) && rpcData.length > 0
-            ? (rpcData[0] as { subtotal?: number | null; tax?: number | null; grand_total?: number | null })
-            : null;
-        if (rpcRow) {
-          const sub = rpcRow.subtotal != null ? Number(rpcRow.subtotal) : NaN;
-          const tax = rpcRow.tax != null ? Number(rpcRow.tax) : NaN;
-          const grand = rpcRow.grand_total != null ? Number(rpcRow.grand_total) : NaN;
-          if (Number.isFinite(sub) && Number.isFinite(grand)) {
-            storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
-          }
-        }
-        if (!storedTotals) {
-          const { data: quoteRow } = await supabase
-            .from('quotes')
-            .select('proposal_subtotal, proposal_tax, proposal_grand_total')
-            .eq('id', quoteId)
-            .maybeSingle();
-          const sub = quoteRow?.proposal_subtotal != null ? Number(quoteRow.proposal_subtotal) : NaN;
-          const tax = quoteRow?.proposal_tax != null ? Number(quoteRow.proposal_tax) : NaN;
-          const grand = quoteRow?.proposal_grand_total != null ? Number(quoteRow.proposal_grand_total) : NaN;
-          if (Number.isFinite(sub) && Number.isFinite(grand)) {
-            storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
-          }
+        const { data: quoteRow } = await supabase
+          .from('quotes')
+          .select('proposal_subtotal, proposal_tax, proposal_grand_total')
+          .eq('id', quoteId)
+          .maybeSingle();
+        const sub = quoteRow?.proposal_subtotal != null ? Number(quoteRow.proposal_subtotal) : NaN;
+        const tax = quoteRow?.proposal_tax != null ? Number(quoteRow.proposal_tax) : NaN;
+        const grand = quoteRow?.proposal_grand_total != null ? Number(quoteRow.proposal_grand_total) : NaN;
+        if (Number.isFinite(sub) && Number.isFinite(grand)) {
+          storedTotals = { subtotal: sub, tax: Number.isFinite(tax) ? tax : 0, grandTotal: grand };
         }
       }
 

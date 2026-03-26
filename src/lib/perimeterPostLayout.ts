@@ -1,168 +1,175 @@
-import type { BuildingPlanModel, PlanPoint } from '@/lib/buildingPlanModel';
+/**
+ * Perimeter post layout logic for building plans
+ * Computes post positions on building perimeter (8' OC standard + overhead door jamb posts)
+ */
 
-/** Matches `BuildingModel3D` framing constants. */
-export const POST_Tp = 0.4583; // 6x6 post width (ft)
-export const POST_Tg = 0.125; // 1.5" girt / jamb gap (ft)
-export const POST_JAMB_GAP = POST_Tg; // 1.5" between RO and jamb post face
-export const POST_SPACING_FT = 8;
+import type { BuildingPlanModel, PlanPoint } from './buildingPlanModel';
 
-export type PerimeterEdge = 'Front' | 'Back' | 'Left' | 'Right';
+/** Post thickness/width in feet (T-post standard dimension) */
+export const POST_Tp = 0.3333; // ~4"
+
+export type PerimeterEdge = 'front' | 'back' | 'left' | 'right';
 
 export interface PerimeterPostSlot {
+  /** Which edge of the building perimeter */
   edge: PerimeterEdge;
-  /**
-   * Front/Back: world X center of post (same as endwall `posX` in BuildingModel3D).
-   * Left/Right: world Z center of post (sidewall loop).
-   */
+  /** Distance along that edge from the edge's start corner (ft) */
   along: number;
-}
-
-export interface OverheadRoughOnWall {
-  wall: PerimeterEdge;
-  /** Same `offset` as PlanOpening / placeOpening (ft). */
-  offset: number;
-  width: number;
-}
-
-function roundedBuildingLength(length: number): number {
-  return Math.ceil(length / POST_SPACING_FT) * POST_SPACING_FT;
-}
-
-/** Default endwall post X positions in world space (before overhead adjustments). */
-function defaultEndwallWorldXs(width: number): number[] {
-  const xs: number[] = [];
-  for (let x = POST_SPACING_FT; x < width - 1; x += POST_SPACING_FT) {
-    xs.push(x - width / 2);
-  }
-  return xs;
-}
-
-/** Default sidewall post Z positions in world space. */
-function defaultSidewallWorldZs(roundedLength: number): number[] {
-  const l = roundedLength;
-  const offsetZ = l / 2;
-  const nB = l / POST_SPACING_FT;
-  const zs: number[] = [];
-  for (let i = 0; i <= nB; i++) {
-    let z = i * POST_SPACING_FT - offsetZ;
-    if (i === 0) z += POST_Tp / 2 + POST_Tg;
-    if (i === nB) z -= POST_Tp / 2 + POST_Tg;
-    zs.push(z);
-  }
-  return zs;
-}
-
-function jambCentersForOverhead(
-  wall: PerimeterEdge,
-  width: number,
-  roundedLength: number,
-  offset: number,
-  openingWidth: number
-): { left: number; right: number } {
-  const w = width;
-  const l = roundedLength;
-  const j = POST_JAMB_GAP;
-  const hp = POST_Tp / 2;
-
-  if (wall === 'Front' || wall === 'Back') {
-    const le = -w / 2 + offset;
-    const re = le + openingWidth;
-    return { left: le - j - hp, right: re + j + hp };
-  }
-
-  const leftEdgeZ = -l / 2 + offset;
-  const rightEdgeZ = leftEdgeZ + openingWidth;
-  return { left: leftEdgeZ - j - hp, right: rightEdgeZ + j + hp };
-}
-
-const DEDUPE_FT = 0.04;
-
-function dedupeSlots(slots: PerimeterPostSlot[]): PerimeterPostSlot[] {
-  const out: PerimeterPostSlot[] = [];
-  for (const s of slots) {
-    if (!out.some((o) => o.edge === s.edge && Math.abs(o.along - s.along) < DEDUPE_FT)) {
-      out.push(s);
-    }
-  }
-  return out.sort((a, b) => (a.edge === b.edge ? a.along - b.along : a.edge.localeCompare(b.edge)));
+  /** Reason for this post (e.g., '8ft_oc', 'overhead_jamb', 'corner') */
+  reason: string;
 }
 
 /**
- * Structural perimeter posts after applying overhead-door jamb posts and removing
- * grid posts strictly between jambs on the same edge.
+ * Compute all perimeter post positions for a given plan.
+ * Places posts at:
+ * - Building corners
+ * - 8' OC along each wall
+ * - Overhead door jamb positions (where overhead doors require structural posts)
  */
-export function computePerimeterPostSlots(
-  width: number,
-  length: number,
-  overheads: OverheadRoughOnWall[]
-): PerimeterPostSlot[] {
-  const lR = roundedBuildingLength(length);
-  const w = width;
-
-  const slots: PerimeterPostSlot[] = [];
-  const endXs = defaultEndwallWorldXs(w);
-  for (const xw of endXs) {
-    slots.push({ edge: 'Front', along: xw }, { edge: 'Back', along: xw });
-  }
-  const sideZs = defaultSidewallWorldZs(lR);
-  for (const z of sideZs) {
-    slots.push({ edge: 'Left', along: z }, { edge: 'Right', along: z });
-  }
-
-  let next = slots;
-
-  for (const oh of overheads) {
-    if (oh.width <= 0) continue;
-    const { left, right } = jambCentersForOverhead(oh.wall, w, lR, oh.offset, oh.width);
-    const lo = Math.min(left, right);
-    const hi = Math.max(left, right);
-
-    next = next.filter((s) => {
-      if (s.edge !== oh.wall) return true;
-      return !(s.along > lo && s.along < hi);
-    });
-
-    next.push({ edge: oh.wall, along: left }, { edge: oh.wall, along: right });
-  }
-
-  return dedupeSlots(next);
-}
-
-export function countPerimeterPosts(width: number, length: number, overheads: OverheadRoughOnWall[]): number {
-  return computePerimeterPostSlots(width, length, overheads).length;
-}
-
-/** Plan-view center (feet) for drawing post markers in the 2D editor. */
-export function overheadRoughOpeningsFromPlan(plan: BuildingPlanModel): OverheadRoughOnWall[] {
-  const wallById = new Map(plan.walls.map((ww) => [ww.id, ww] as const));
-  const out: OverheadRoughOnWall[] = [];
-  for (const o of plan.openings) {
-    if (o.type !== 'overhead_door') continue;
-    const label = wallById.get(o.wallId)?.label;
-    if (label !== 'Front' && label !== 'Back' && label !== 'Left' && label !== 'Right') continue;
-    out.push({ wall: label, offset: o.offset, width: o.width });
-  }
-  return out;
-}
-
 export function computePerimeterPostSlotsFromPlan(plan: BuildingPlanModel): PerimeterPostSlot[] {
-  return computePerimeterPostSlots(plan.dims.width, plan.dims.length, overheadRoughOpeningsFromPlan(plan));
+  const posts: PerimeterPostSlot[] = [];
+  const width = plan.dims.width;
+  const length = plan.dims.length;
+
+  // Helper: add posts at regular intervals along an edge
+  function addOCPostsAlongEdge(edge: PerimeterEdge, edgeLength: number) {
+    const postSpacing = 8; // 8' OC standard
+    
+    // Corner post at start
+    posts.push({ edge, along: 0, reason: 'corner' });
+    
+    // Intermediate posts at 8' OC
+    let pos = postSpacing;
+    while (pos < edgeLength - 0.001) {
+      posts.push({ edge, along: pos, reason: '8ft_oc' });
+      pos += postSpacing;
+    }
+    
+    // Corner post at end (will overlap with next edge's start corner, that's ok)
+    if (edgeLength > 0.001) {
+      posts.push({ edge, along: edgeLength, reason: 'corner' });
+    }
+  }
+
+  // Add standard 8' OC posts for each edge
+  addOCPostsAlongEdge('front', width);
+  addOCPostsAlongEdge('right', length);
+  addOCPostsAlongEdge('back', width);
+  addOCPostsAlongEdge('left', length);
+
+  // Add overhead door jamb posts
+  for (const opening of plan.openings) {
+    if (opening.type !== 'overhead_door') continue;
+    
+    const wall = plan.walls.find(w => w.id === opening.wallId);
+    if (!wall) continue;
+    
+    // Determine which edge this wall is on (simplified for rectangular buildings)
+    const edge = determineEdgeFromWall(wall, width, length);
+    if (!edge) continue;
+    
+    // Jamb posts at opening edges
+    const leftJamb = opening.offset;
+    const rightJamb = opening.offset + opening.width;
+    
+    posts.push({ edge, along: leftJamb, reason: 'overhead_jamb' });
+    posts.push({ edge, along: rightJamb, reason: 'overhead_jamb' });
+  }
+
+  // Remove duplicates (keep posts within ~0.1ft of each other as one post)
+  return deduplicatePosts(posts);
 }
 
-export function perimeterSlotToPlanPoint(slot: PerimeterPostSlot, width: number, length: number): PlanPoint {
-  const inset = POST_Tp / 2;
-  const w = width;
-  const l = length;
-  switch (slot.edge) {
-    case 'Front':
-      return { x: slot.along + w / 2, y: inset };
-    case 'Back':
-      return { x: slot.along + w / 2, y: l - inset };
-    case 'Left':
-      return { x: inset, y: slot.along + l / 2 };
-    case 'Right':
-      return { x: w - inset, y: slot.along + l / 2 };
+/**
+ * Convert a perimeter slot to actual plan coordinates
+ */
+export function perimeterSlotToPlanPoint(
+  slot: PerimeterPostSlot,
+  buildingWidth: number,
+  buildingLength: number
+): PlanPoint {
+  const { edge, along } = slot;
+  
+  switch (edge) {
+    case 'front':
+      // Front edge: y=0, x runs from 0 to width
+      return { x: along, y: 0 };
+    
+    case 'right':
+      // Right edge: x=width, y runs from 0 to length
+      return { x: buildingWidth, y: along };
+    
+    case 'back':
+      // Back edge: y=length, x runs from width down to 0
+      return { x: buildingWidth - along, y: buildingLength };
+    
+    case 'left':
+      // Left edge: x=0, y runs from length down to 0
+      return { x: 0, y: buildingLength - along };
+    
     default:
       return { x: 0, y: 0 };
   }
+}
+
+/**
+ * Determine which perimeter edge a wall belongs to (for rectangular buildings)
+ */
+function determineEdgeFromWall(
+  wall: { start: PlanPoint; end: PlanPoint },
+  buildingWidth: number,
+  buildingLength: number
+): PerimeterEdge | null {
+  const { start, end } = wall;
+  const tolerance = 0.1;
+  
+  // Front edge (y ≈ 0)
+  if (Math.abs(start.y) < tolerance && Math.abs(end.y) < tolerance) {
+    return 'front';
+  }
+  
+  // Back edge (y ≈ length)
+  if (Math.abs(start.y - buildingLength) < tolerance && Math.abs(end.y - buildingLength) < tolerance) {
+    return 'back';
+  }
+  
+  // Left edge (x ≈ 0)
+  if (Math.abs(start.x) < tolerance && Math.abs(end.x) < tolerance) {
+    return 'left';
+  }
+  
+  // Right edge (x ≈ width)
+  if (Math.abs(start.x - buildingWidth) < tolerance && Math.abs(end.x - buildingWidth) < tolerance) {
+    return 'right';
+  }
+  
+  return null;
+}
+
+/**
+ * Remove duplicate posts (posts within 0.1ft are considered the same position)
+ */
+function deduplicatePosts(posts: PerimeterPostSlot[]): PerimeterPostSlot[] {
+  const result: PerimeterPostSlot[] = [];
+  const tolerance = 0.1;
+  
+  for (const post of posts) {
+    // Check if we already have a post at this position
+    const duplicate = result.find(
+      p => p.edge === post.edge && Math.abs(p.along - post.along) < tolerance
+    );
+    
+    if (!duplicate) {
+      result.push(post);
+    } else {
+      // If duplicate, prefer structural posts (overhead_jamb) over standard OC posts
+      if (post.reason === 'overhead_jamb' && duplicate.reason === '8ft_oc') {
+        // Replace the OC post with the jamb post
+        const index = result.indexOf(duplicate);
+        result[index] = post;
+      }
+    }
+  }
+  
+  return result;
 }

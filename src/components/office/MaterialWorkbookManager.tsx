@@ -24,7 +24,6 @@ import {
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { parseExcelWorkbook, validateMaterialWorkbook, parseNumericValue, parsePercentValue } from '@/lib/excel-parser';
-import { sanitizeMaterialItemNumericsForInsert } from '@/lib/materialWorkbook';
 
 interface MaterialWorkbook {
   id: string;
@@ -234,44 +233,6 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated, onW
 
       toast.info(`Found ${workbook.sheets.length} sheets. Uploading...`);
 
-      // Legacy DBs use numeric(5,4) on some columns (max 9.9999) — Excel re-import fails. RPC widens all numeric cols (migration 20260327100000).
-      {
-        const { data: widenResult, error: widenErr } = await supabase.rpc('ensure_material_items_wide_numerics');
-        if (widenErr) {
-          const msg = String(widenErr.message || '');
-          if (/not found|does not exist|schema cache|42883|Could not find the function/i.test(msg)) {
-            toast.message('DB auto-fix RPC not installed', {
-              description:
-                'Run scripts/fix-material-items-all-numeric-columns.sql in Supabase SQL Editor, then reload. Upload will still be attempted.',
-            });
-          } else {
-            console.warn('ensure_material_items_wide_numerics:', widenErr.message);
-          }
-        } else {
-          const wr = widenResult as { ok?: boolean; error?: string } | null;
-          if (wr && wr.ok === false && wr.error) {
-            toast.error(
-              `Could not widen material_items columns: ${wr.error}. Open Supabase → SQL → run scripts/fix-material-items-all-numeric-columns.sql`
-            );
-            return;
-          }
-        }
-      }
-
-      const insertMaterialItemRow = async (item: Record<string, unknown>) => {
-        let { error: itemError } = await supabase.from('material_items').insert(item);
-        if (
-          itemError &&
-          /overflow|numeric field overflow/i.test(String(itemError.message || ''))
-        ) {
-          const { data: fix } = await supabase.rpc('ensure_material_items_wide_numerics');
-          if ((fix as { ok?: boolean } | null)?.ok === true) {
-            ({ error: itemError } = await supabase.from('material_items').insert(item));
-          }
-        }
-        return itemError;
-      };
-
       // Helper: case-insensitive column lookup
       const col = (row: any, ...keys: string[]): any => {
         const normalized: Record<string, any> = {};
@@ -306,38 +267,26 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated, onW
             const cleanCategory = String(category || 'Uncategorized').trim();
             const rawTaxable = col(row, 'taxable');
             const taxable = rawTaxable === false || rawTaxable === 'false' || rawTaxable === 0 ? false : true;
-            const rawQty = parseNumericValue(col(row, 'qty', 'quantity')) || 0;
-            const nums = sanitizeMaterialItemNumericsForInsert({
-              quantity: rawQty,
-              cost_per_unit: parseNumericValue(col(row, 'cost per unit', 'cost_per_unit')),
-              markup_percent: parsePercentValue(col(row, 'mark up', 'markup', 'cf.mark up', 'cf. mark up', 'markup_percent')),
-              price_per_unit: parseNumericValue(col(row, 'price per unit', 'price_per_unit')),
-              extended_cost: parseNumericValue(col(row, 'extended cost', 'extended_cost')),
-              extended_price: parseNumericValue(col(row, 'extended price', 'extended_price')),
-            });
             const item = {
               sheet_id: sheetId,
               category: cleanCategory,
               usage: col(row, 'usage') != null ? String(col(row, 'usage')).trim() || null : null,
               sku: col(row, 'sku') != null ? String(col(row, 'sku')).trim() || null : null,
               material_name: String(col(row, 'material') ?? '').trim(),
-              ...nums,
+              quantity: parseNumericValue(col(row, 'qty', 'quantity')) || 0,
               length: col(row, 'length') != null ? String(col(row, 'length')).trim() || null : null,
               color: col(row, 'color') != null ? String(col(row, 'color')).trim() || null : null,
+              cost_per_unit: parseNumericValue(col(row, 'cost per unit', 'cost_per_unit')),
+              markup_percent: parsePercentValue(col(row, 'mark up', 'markup', 'cf.mark up', 'cf. mark up', 'markup_percent')),
+              price_per_unit: parseNumericValue(col(row, 'price per unit', 'price_per_unit')),
+              extended_cost: parseNumericValue(col(row, 'extended cost', 'extended_cost')),
+              extended_price: parseNumericValue(col(row, 'extended price', 'extended_price')),
               taxable,
               notes: col(row, 'notes') != null ? String(col(row, 'notes')).trim() || null : null,
               order_index: itemIndex++,
             };
-            const itemError = await insertMaterialItemRow(item);
-            if (itemError) {
-              const hint =
-                /overflow|numeric/i.test(String(itemError.message))
-                  ? ' Run scripts/fix-material-items-all-numeric-columns.sql in Supabase SQL Editor (widens every numeric column), reload the app, and upload again.'
-                  : '';
-              throw new Error(
-                `Failed to insert item in sheet "${excelSheet.name}", category "${cleanCategory}": ${itemError.message}.${hint}`
-              );
-            }
+            const { error: itemError } = await supabase.from('material_items').insert(item);
+            if (itemError) throw new Error(`Failed to insert item in sheet "${excelSheet.name}", category "${cleanCategory}": ${itemError.message}`);
             count++;
           }
         }

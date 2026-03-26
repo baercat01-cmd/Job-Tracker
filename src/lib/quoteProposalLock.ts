@@ -1,7 +1,6 @@
 /**
  * Proposal/workbook lock rules:
  * - "Mark as sent" records `sent_at` (permanent) and also sets `locked_for_editing` + locks the workbook.
- *   JobFinancials writes `quotes.proposal_*` totals in the same update so the customer portal (get_quote_proposal_totals) does not briefly show stale numbers after send.
  *   Sent can be *unlocked for editing* without clearing `sent_at`.
  *   Sent is NOT a contract and does NOT create a contract workbook pair.
  * - Contract = customer signature and/or office `signed_version` — revocable via Revoke contract.
