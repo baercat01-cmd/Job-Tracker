@@ -10,7 +10,8 @@
  * - Draft: one `working` row per proposal holds price + line items; header/portal track this workbook.
  * - Office-locked proposal: that same row becomes `locked` (still the only row for that quote).
  * - Signed contract: current workbook is set `locked` (proposal price / contract snapshot), then a second row is inserted as
- *   `working` for shop/COS/job tracking only — JobFinancials and stored proposal totals must never read the working row for price.
+ *   `working` for shop/COS/job tracking. JobFinancials reads the locked row for materials totals; Materials allows editing that
+ *   locked workbook so proposal-priced lines can be corrected (totals update with those edits).
  */
 
 export function quoteHasActiveContract(

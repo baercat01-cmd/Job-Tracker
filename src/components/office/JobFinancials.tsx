@@ -2648,8 +2648,17 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   const isPriceIsolated = isReadOnly || isExternallyViewingLockedWorkbook;
 
   // Build a fast lookup from the structured Breakdown prices: (sheetId|sheetName) → categoryName → price.
-  // NOTE: We intentionally always build this lookup so the left Proposal sections can match the Breakdown panel.
+  // When a signed contract exists and the Materials panel is on the internal **working** workbook, do not apply
+  // those category prices here — they would override locked contract math via sheet-name matching and change the
+  // customer proposal header while shop edits the copy.
   const externalPriceLookup = useMemo(() => {
+    if (
+      quote &&
+      quoteHasActiveContract(quote as any) &&
+      externalMaterialsWorkbookView?.status === 'working'
+    ) {
+      return new Map<string, Record<string, number>>();
+    }
     const map = new Map<string, Record<string, number>>();
     (externalBreakdownSheetPrices || []).forEach((sp) => {
       // Normalize category keys so lookups by lowercased names always work.
@@ -2663,7 +2672,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
       map.set(sp.sheetName.trim().toLowerCase(), normalizedCategories);
     });
     return map;
-  }, [externalBreakdownSheetPrices]);
+  }, [externalBreakdownSheetPrices, quote, externalMaterialsWorkbookView?.status]);
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -6641,6 +6650,8 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         .replace(/\s+/g, ' ');
     const displayedSheetNameToId = new Map<string, string>();
     const displayedSheetOrderToId = new Map<number, string>();
+    /** All sheet ids on the displayed (usually locked / contract) workbook — must feed sheet line-item fetch even when React `materialsBreakdown` is stale after `loadMaterialsData`. */
+    let displayedLockedSheetIds: string[] = [];
     if (!displayedWorkbookIdForLineItems && targetQuoteId) {
       const { data: quoteRowLineItems } = await supabase
         .from('quotes')
@@ -6702,6 +6713,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       (liveDisplayedSheets || []).forEach((s: any) => {
         const id = String(s?.id ?? '').trim();
         if (!id) return;
+        displayedLockedSheetIds.push(id);
         const nameKey = normalizeSheetName(s?.sheet_name);
         if (nameKey && !displayedSheetNameToId.has(nameKey)) displayedSheetNameToId.set(nameKey, id);
         const oi = Number(s?.order_index);
@@ -6745,6 +6757,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     }
     if (extraWorkingSheetIds.length > 0) {
       sheetIds = Array.from(new Set([...(sheetIds || []), ...extraWorkingSheetIds]));
+    }
+    // Contract / locked view: line items may be stored on locked sheet_ids. `materialsBreakdown` in this closure
+    // can still be empty right after `await loadMaterialsData` (state not committed), so always union DB-resolved ids.
+    if (displayedLockedSheetIds.length > 0) {
+      sheetIds = Array.from(new Set([...(sheetIds || []), ...displayedLockedSheetIds]));
     }
     if (targetQuoteId) {
       let quoteWb: any = null;
@@ -6861,16 +6878,28 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         sheetLinkedItems = (byQuote || []) as CustomRowLineItem[];
       }
 
-      // Backward compatibility: also load legacy sheet_id-linked items if needed.
-      if ((sheetLinkedItems?.length || 0) === 0 && sheetIds.length > 0) {
-        const { data: sheetItems, error: sheetItemsErr } = await supabase
+      // Always merge sheet_id-linked rows for this proposal's sheets (locked + working).
+      // Primary query uses quote_id + workbook_id; after "set as contract" some rows can still be
+      // legacy (quote_id null) or workbook_id from an edge case — they would be dropped if we only
+      // relied on byQuote, or if byQuote returned other rows and skipped the old "length === 0" fallback.
+      if (sheetIds.length > 0) {
+        const { data: bySheetRows, error: bySheetErr } = await supabase
           .from('custom_financial_row_items')
           .select('*')
           .in('sheet_id', sheetIds)
           .is('row_id', null)
           .order('order_index');
-        if (sheetItemsErr) console.error('Error loading sheet-linked line items:', sheetItemsErr);
-        sheetLinkedItems = (sheetItems || []) as CustomRowLineItem[];
+        if (bySheetErr) {
+          console.error('Error loading sheet-linked line items (merge):', bySheetErr);
+        } else {
+          const seen = new Set(sheetLinkedItems.map((i) => i.id).filter(Boolean));
+          for (const row of (bySheetRows || []) as CustomRowLineItem[]) {
+            if (row.id && !seen.has(row.id)) {
+              seen.add(row.id);
+              sheetLinkedItems.push(row);
+            }
+          }
+        }
       }
     } else if (sheetIds.length > 0) {
       const { data: sheetItems, error: sheetItemsErr } = await supabase

@@ -624,8 +624,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     flatstockW: number
   ) {
     if (!workbook?.id) return;
-    if (workbook.status !== 'working') {
-      toast.error('Slitting plan can only be saved on the working workbook.');
+    if (!canUseShopTrimAndZohoOnThisWorkbook) {
+      toast.error('Slitting plan can only be saved on the working workbook or the signed contract workbook.');
       return;
     }
     const plan = buildTrimSlittingPlan(demands, flatstockW, FLATSTOCK_STICK_LENGTH_INCHES);
@@ -668,8 +668,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     itemsWithTrim: { item: MaterialItem; stretchOutInches: number }[]
   ) {
     if (!workbook?.id) return;
-    if (workbook.status !== 'working') {
-      toast.error('Trim cut list can only be applied on the working workbook.');
+    if (!canUseShopTrimAndZohoOnThisWorkbook) {
+      toast.error('Trim cut list can only be applied on the working or signed contract workbook.');
       return;
     }
 
@@ -802,8 +802,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     state: 'pending' | 'in_progress' | 'cut_complete'
   ) {
     if (!workbook?.id) return;
-    if (workbook.status !== 'working') {
-      toast.error('Cut status can only be updated on the working workbook.');
+    if (!canUseShopTrimAndZohoOnThisWorkbook) {
+      toast.error('Cut status can only be updated on the working or signed contract workbook.');
       return;
     }
     const { error } = await supabase.from('material_items').update({ trim_cut_state: state }).eq('id', itemId);
@@ -916,6 +916,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [ensuringContractWorkbookPair, setEnsuringContractWorkbookPair] = useState(false);
   /** Fresh sent/signed/office-lock fields for the selected quote (Materials jobQuotes can lag JobFinancials). */
   const [contractQuoteFields, setContractQuoteFields] = useState<ContractQuoteFields | null>(null);
+
+  const signedContractAllowsLockedWorkbookEdits = useMemo(
+    () => quoteHasActiveContract(buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields) as any),
+    [jobQuotes, effectiveQuoteId, contractQuoteFields]
+  );
+
+  /** Working copy, or signed-contract locked row (editable proposal-priced workbook). */
+  const canUseShopTrimAndZohoOnThisWorkbook =
+    workbook?.status === 'working' ||
+    (workbook?.status === 'locked' && signedContractAllowsLockedWorkbookEdits);
 
   // Load job quotes (proposals) so we can scope materials per proposal
   useEffect(() => {
@@ -1291,8 +1301,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   /** Refresh cost/price/length for all material_items in the current workbook from materials_catalog (Zoho Books source). */
   async function refreshWorkbookPricesFromCatalog() {
-    if (workbook?.status !== 'working') {
-      toast.error('Refresh prices is only available on the working workbook, not on a locked contract snapshot.');
+    if (!canUseShopTrimAndZohoOnThisWorkbook) {
+      toast.error('Refresh prices is only available on the working workbook or the signed contract workbook.');
       return;
     }
     if (!workbook?.sheets?.length) return;
@@ -2618,8 +2628,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   /** Apply new cost/price per foot to all lineal-foot items in this category; persist and update workbook. Metal: if only cost is entered, default price = cost + $0.10; if only price, default cost = price − $0.10; if both entered, use both. */
   async function applyCategoryFootPrice(catGroup: CategoryGroup, costPerFoot: number | null, pricePerFoot: number | null) {
-    if (isWorkbookReadOnly || workbook?.status === 'locked') {
-      toast.error('This is a locked snapshot — return to the working workbook to edit.');
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
       return;
     }
     const linealItems = catGroup.items.filter((i) => {
@@ -2709,7 +2719,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   function startCellEdit(itemId: string, field: string, currentValue: any) {
-    if (isWorkbookReadOnly || workbook?.status === 'locked') return;
+    if (isWorkbookReadOnly) return;
     setEditingCell({ itemId, field });
     setCellValue(currentValue?.toString() || '');
   }
@@ -2838,8 +2848,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function updateStatus(itemId: string, newStatus: string) {
-    if (workbook?.status !== 'working') {
-      toast.error('Shop / order status can only be updated on the working workbook, not on a locked contract snapshot.');
+    if (isWorkbookReadOnly) {
+      toast.error('Cannot update order status while this workbook is read-only.');
       return;
     }
     try {
@@ -2914,8 +2924,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function deleteItem(itemId: string) {
-    if (isWorkbookReadOnly || workbook?.status === 'locked') {
-      toast.error('Locked snapshot — switch to the working workbook to edit.');
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
       return;
     }
     if (!confirm('Delete this material?')) return;
@@ -3061,8 +3071,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function addMaterialsFromCatalogSelection() {
-    if (isWorkbookReadOnly || workbook?.status === 'locked') {
-      toast.error('Locked snapshot — switch to the working workbook to edit.');
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
       return;
     }
     if (selectedCatalogMaterials.length === 0) {
@@ -3172,8 +3182,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   function openZohoOrderDialogForMaterial(item: MaterialItem) {
-    if (workbook?.status !== 'working') {
-      toast.error('Zoho orders are only available on the working workbook, not on a locked contract snapshot.');
+    if (!canUseShopTrimAndZohoOnThisWorkbook) {
+      toast.error('Zoho orders are only available on the working workbook or the signed contract workbook.');
       return;
     }
     setSelectedMaterialsForOrder([item]);
@@ -3181,8 +3191,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   function openZohoOrderDialogForCategory(categoryItems: MaterialItem[]) {
-    if (workbook?.status !== 'working') {
-      toast.error('Zoho orders are only available on the working workbook, not on a locked contract snapshot.');
+    if (!canUseShopTrimAndZohoOnThisWorkbook) {
+      toast.error('Zoho orders are only available on the working workbook or the signed contract workbook.');
       return;
     }
     if (categoryItems.length === 0) {
@@ -3304,8 +3314,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       return;
     }
     if (!isChangeOrder) {
-      if (isWorkbookReadOnly || workbook?.status === 'locked') {
-        toast.error('Locked snapshot — switch to the working workbook to edit.');
+      if (isWorkbookReadOnly) {
+        toast.error('This workbook is read-only.');
         return;
       }
       if (!workbook) {
@@ -3514,9 +3524,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   }
 
   async function deleteSheet(sheet: MaterialSheet) {
-    if (isWorkbookReadOnly || workbook?.status === 'locked') {
+    if (isWorkbookReadOnly) {
       setSheetDeleteConfirmId(null);
-      toast.error('Locked snapshot — switch to the working workbook to edit.');
+      toast.error('This workbook is read-only.');
       return;
     }
     if (!workbook) {
@@ -3861,6 +3871,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   useEffect(() => {
     if (!workbook?.sheets?.length) return;
+    // Signed contract + internal working copy: do not push category prices to the proposal panel (customer totals).
+    const signedContract = quoteHasActiveContract(
+      buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields) as any
+    );
+    if (signedContract && workbook.status === 'working' && !snapshotWorkbookId) {
+      return;
+    }
 
     const sheetPrices: BreakdownSheetPrice[] = workbook.sheets.map((sheet) => {
       const allCategoryGroups = groupByCategory(sheet.items || [], sheet.category_order);
@@ -3874,7 +3891,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     });
 
     onBreakdownPriceSync?.(sheetPrices);
-  }, [workbook, onBreakdownPriceSync]);
+  }, [workbook, onBreakdownPriceSync, jobQuotes, effectiveQuoteId, contractQuoteFields, snapshotWorkbookId]);
 
   useEffect(() => {
     onWorkbookViewSync?.({ workbookId: workbook?.id ?? null, status: (workbook?.status as any) ?? null });
@@ -3887,6 +3904,26 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     ? (labelQuote.is_change_order_proposal ? 'Change orders' : (labelQuote.proposal_number || labelQuote.quote_number || `Proposal ${labelQuote.id.slice(0, 8)}`))
     : (proposalNumber || 'Proposal');
 
+  const quoteContractFrozen = isQuoteContractFrozen(quoteForContractUi as any);
+  const quoteHasSignedContract = quoteHasActiveContract(quoteForContractUi as any);
+
+  /** Sum of extended sell price for all lines on the working workbook only (internal; not customer proposal). */
+  const internalWorkingMaterialsExtendedTotal = useMemo(() => {
+    if (!quoteHasSignedContract || !workbook?.sheets?.length) return null;
+    if (workbook.status !== 'working' || snapshotWorkbookId) return null;
+    if (!hasWorkingWorkbookForQuote) return null;
+    let sum = 0;
+    for (const sheet of workbook.sheets) {
+      const groups = groupByCategory(sheet.items || [], sheet.category_order);
+      for (const cg of groups) {
+        for (const item of cg.items || []) {
+          sum += getDisplayExtended(item).price;
+        }
+      }
+    }
+    return sum;
+  }, [quoteHasSignedContract, workbook, snapshotWorkbookId, hasWorkingWorkbookForQuote]);
+
   // Mirror the same locked logic used in JobFinancials. Put change order proposal last; then sort regular quotes by proposal_number descending.
   const sortedQuotes = [...jobQuotes].sort((a, b) => {
     if (a.is_change_order_proposal && !b.is_change_order_proposal) return 1;
@@ -3897,16 +3934,15 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return nb.localeCompare(na, undefined, { numeric: true });
   });
   const latestQuoteId = sortedQuotes.find(q => !q.is_change_order_proposal)?.id ?? sortedQuotes[0]?.id;
-  // Read-only is a workbook-view concern, not a proposal concern:
-  // - Locked snapshot (workbook.status === 'locked' or snapshotWorkbookId) is always read-only
-  // - Working copy stays editable, even when the proposal is frozen, so ops can adjust prices/orders without mutating the locked snapshot.
-  const isWorkbookReadOnly = !!snapshotWorkbookId || workbook?.status === 'locked';
+  // Read-only: office/sent lock without a signed contract keeps locked rows read-only.
+  // Signed contract (customer sign and/or signed_version): the locked proposal workbook is still editable here so
+  // proposal-priced line items can be corrected; JobFinancials continues to read this locked row for materials totals.
+  const isWorkbookReadOnly =
+    (!!snapshotWorkbookId || workbook?.status === 'locked') && !quoteHasSignedContract;
   const materialsWorkbookLocked = isWorkbookReadOnly;
-  /** Zoho orders + line status (Not Ordered / etc.) are for operations on the working copy only — never on locked contract snapshots. */
-  const showShopOrderControls = workbook?.status === 'working';
-
-  const quoteContractFrozen = isQuoteContractFrozen(quoteForContractUi as any);
-  const quoteHasSignedContract = quoteHasActiveContract(quoteForContractUi as any);
+  /** Shop / order controls on both working copy and signed-contract locked workbook (not on sent-only lock). */
+  const showShopOrderControls =
+    workbook?.status === 'working' || (quoteHasSignedContract && workbook?.status === 'locked');
   /** Unsigned / draft proposals: optional manual lock. Sent or signed contracts auto-manage locked + working copies. */
   const showManualLockWorkbook =
     !!workbook && workbook.status === 'working' && !quoteContractFrozen && !isWorkbookReadOnly;
@@ -3968,7 +4004,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 ? ensuringContractWorkbookPair
                   ? 'Creating working copy…'
                   : 'Working copy is being prepared for this signed contract'
-                : 'Separate workbook row in the database — edits here do not change proposal totals from the signed snapshot'
+                : 'Job-tracking copy — edits here do not change the signed contract workbook unless you sync manually; proposal totals follow the Signed contract workbook'
             }
           >
             Working copy
@@ -3984,14 +4020,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'text-amber-950 hover:bg-amber-50',
             )}
-            title="Separate locked workbook — line items and totals tied to proposal price / signed contract (read-only)"
+            title="Signed contract workbook — proposal-priced line items (editable; changes update proposal materials totals)"
           >
             Signed contract{' '}
             <span className="opacity-90 font-semibold">v{lockedSnapshotsMeta[0].version_number}</span>
           </button>
         </div>
         <p className="text-[9px] sm:text-[10px] text-amber-900/80 max-w-[14rem] leading-tight hidden sm:block">
-          Two material workbooks per proposal: locked = proposal price; working = shop/crew edits (proposal total unchanged).
+          Signed contract = proposal-priced workbook (editable). Working copy = shop/crew tracking; Financials totals follow the contract workbook.
         </p>
       </div>
     ) : null;
@@ -4233,6 +4269,28 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             <span>Preparing working copy for shop, crew orders, and edits…</span>
           </div>
         )}
+
+        {quoteHasSignedContract &&
+          viewingWorkingCopy &&
+          internalWorkingMaterialsExtendedTotal != null && (
+            <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-800 mb-2">
+              <span className="font-semibold text-slate-900">Internal workbook (not on customer proposal)</span>
+              <span className="mx-2 text-slate-400 hidden sm:inline">·</span>
+              <span className="block sm:inline mt-0.5 sm:mt-0">
+                Materials extended (this copy):{' '}
+                <span className="font-mono font-semibold tabular-nums">
+                  $
+                  {internalWorkingMaterialsExtendedTotal.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </span>
+              <p className="text-[10px] text-slate-600 mt-1 max-w-2xl">
+                The proposal totals on the left follow the signed contract workbook, not these line items.
+              </p>
+            </div>
+          )}
 
         {showLegacyLockedSnapshotButtons && (
           <div className="flex flex-wrap items-center gap-2 justify-end mb-2">
