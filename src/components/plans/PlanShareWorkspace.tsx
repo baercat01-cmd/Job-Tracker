@@ -228,14 +228,7 @@ function MiniFloor({ plan }: { plan: BuildingPlanModel }) {
         const x = isHorizontal ? 5 + t * 90 : wall.label === 'Left' ? 5 : 95;
         const y = isHorizontal ? (wall.label === 'Front' ? 5 : 65) : 5 + t * 60;
         return (
-          <circle
-            key={o.id}
-            cx={x}
-            cy={y}
-            r={3}
-            fill={o.type === 'overhead_door' ? '#f59e0b' : o.type === 'door' ? '#0284c7' : '#a16207'}
-            opacity={0.8}
-          />
+          <circle key={o.id} cx={x} cy={y} r={3} fill={o.type === 'door' ? '#0284c7' : '#a16207'} opacity={0.8} />
         );
       })}
     </svg>

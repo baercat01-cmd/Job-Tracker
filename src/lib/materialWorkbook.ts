@@ -21,52 +21,6 @@ export function safeQuantityForInsert(qty: number): { value: number; capped: boo
   return { value: Math.max(0.0001, rounded), capped: false };
 }
 
-const MAX_MONEY_MAGNITUDE = 1e12;
-
-function roundDecimals(n: number, places: number): number {
-  const m = 10 ** places;
-  return Math.round(n * m) / m;
-}
-
-/**
- * Normalize numeric fields before material_items insert (Excel upload / round-trip).
- * Reduces float noise; real fix for "numeric field overflow" on quantity > 9.9999 is DB migration
- * `20260326190000_material_items_widen_numeric_columns.sql`.
- */
-export function sanitizeMaterialItemNumericsForInsert(row: {
-  quantity: number;
-  cost_per_unit: number | null;
-  markup_percent: number | null;
-  price_per_unit: number | null;
-  extended_cost: number | null;
-  extended_price: number | null;
-}): {
-  quantity: number;
-  cost_per_unit: number | null;
-  markup_percent: number | null;
-  price_per_unit: number | null;
-  extended_cost: number | null;
-  extended_price: number | null;
-} {
-  const q = Number(row.quantity);
-  const quantity = Number.isFinite(q) ? Math.max(0, roundDecimals(q, 6)) : 0;
-
-  const money = (v: number | null) => {
-    if (v == null || !Number.isFinite(v)) return null;
-    if (Math.abs(v) > MAX_MONEY_MAGNITUDE) return null;
-    return roundDecimals(v, 6);
-  };
-
-  return {
-    quantity,
-    cost_per_unit: money(row.cost_per_unit),
-    markup_percent: money(row.markup_percent),
-    price_per_unit: money(row.price_per_unit),
-    extended_cost: money(row.extended_cost),
-    extended_price: money(row.extended_price),
-  };
-}
-
 /** Canonical sheet name for crew/field requests. Use this so items show in "Field Request" tab. */
 export const FIELD_REQUEST_SHEET_NAME = 'Field Request';
 
@@ -161,63 +115,4 @@ export async function getOrCreateCrewOrdersSheetId(
     .single();
   if (sheetError) throw sheetError;
   return newSheet.id;
-}
-
-/** Minimal workbook row shape for orphan detection (merge hidden sheets into UI). */
-export type MaterialWorkbookMergeRow = {
-  id: string;
-  quote_id?: string | null;
-  status?: string | null;
-  version_number?: number | null;
-};
-
-/**
- * After signing / cloning / pruning, extra `material_workbooks` rows can remain for the same quote.
- * Their `material_sheets` are otherwise invisible because the UI only loads the newest locked + working pair.
- * Returns workbooks that should have their sheets merged into the primary workbook view (by sheet id).
- */
-export function orphanMaterialWorkbooksForQuoteMerge(
-  wbs: MaterialWorkbookMergeRow[],
-  matchQuote: (w: MaterialWorkbookMergeRow) => boolean
-): MaterialWorkbookMergeRow[] {
-  const forQuote = wbs.filter(matchQuote);
-  if (forQuote.length <= 1) return [];
-
-  const byVerDesc = (rows: MaterialWorkbookMergeRow[]) =>
-    [...rows].sort((a, b) => (Number(b.version_number) || 0) - (Number(a.version_number) || 0));
-
-  const newestLocked = byVerDesc(forQuote.filter((w) => w.status === 'locked'))[0];
-  const newestWorking = byVerDesc(forQuote.filter((w) => w.status === 'working'))[0];
-
-  const pairIds = new Set<string>();
-  if (newestLocked?.id) pairIds.add(String(newestLocked.id));
-  if (newestWorking?.id) pairIds.add(String(newestWorking.id));
-
-  const isOnlyLockedWorkingPair =
-    forQuote.length === 2 &&
-    pairIds.size === 2 &&
-    forQuote.every((w) => pairIds.has(String(w.id)));
-
-  if (isOnlyLockedWorkingPair) return [];
-
-  return forQuote.filter((w) => !pairIds.has(String(w.id)));
-}
-
-export function normalizeMaterialSheetNameForMerge(v: unknown): string {
-  return String(v ?? '')
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-/**
- * Logical identity when merging orphan workbooks: same tab title + order + type = one section in the proposal UI.
- * Orphan snapshots often create new sheet UUIDs for the same tab; merging without this duplicates "Materials" sections.
- */
-export function materialSheetLogicalMergeKey(s: {
-  sheet_name?: unknown;
-  order_index?: unknown;
-  sheet_type?: unknown;
-}): string {
-  return `${normalizeMaterialSheetNameForMerge(s?.sheet_name)}|${toSafeInt(s?.order_index)}|${String(s?.sheet_type ?? 'proposal')}`;
 }
