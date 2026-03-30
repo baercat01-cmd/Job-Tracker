@@ -22,6 +22,8 @@ export interface VisibilityState {
   frame: boolean;
   shell: boolean;
   roof: boolean;
+  /** When shell is on: triangular metal on front/back gables. `false` = end walls only (no gable triangles). Default true if omitted. */
+  shellGables?: boolean;
 }
 
 export function BuildingModel3D({ state, visibility }: { state: EstimatorBuildingState; visibility: VisibilityState }) {
@@ -252,14 +254,17 @@ export function buildModel(group: THREE.Group, state: EstimatorBuildingState, vi
 
   // 10. Sheeting (Shell)
   if (visibility.shell) {
+    const showGableEnds = visibility.shellGables !== false;
     [-1, 1].forEach(sz => {
       const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.05), metalMat);
       wall.position.set(0, h / 2, (l / 2) * sz);
       group.add(wall);
-      const gable = new THREE.Mesh(new THREE.CylinderGeometry(0, w / 2, peakH, 3), metalMat);
-      gable.position.set(0, h + peakH / 2, (l / 2) * sz);
-      gable.rotation.z = Math.PI;
-      group.add(gable);
+      if (showGableEnds) {
+        const gable = new THREE.Mesh(new THREE.CylinderGeometry(0, w / 2, peakH, 3), metalMat);
+        gable.position.set(0, h + peakH / 2, (l / 2) * sz);
+        gable.rotation.z = Math.PI;
+        group.add(gable);
+      }
     });
     [-1, 1].forEach(sx => {
       const sidewall = new THREE.Mesh(new THREE.BoxGeometry(0.05, h, l), metalMat);
