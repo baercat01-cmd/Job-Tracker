@@ -111,6 +111,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  parseTrimDrawingSegmentsFromStored,
+  downloadTrimWorkbookPdf,
+  sanitizeTrimPdfFilenameBase,
+  type TrimPdfPageInput,
+} from '@/lib/trimDrawingPdfExport';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -186,7 +192,12 @@ import {
   upsertFlatstockCutListNotes,
 } from '@/lib/flatstockCutListNotes';
 import { cn } from '@/lib/utils';
-import { isQuoteContractFrozen, quoteHasActiveContract } from '@/lib/quoteProposalLock';
+import {
+  isQuoteContractFrozen,
+  isProposalPanelReadOnly,
+  quoteHasActiveContract,
+  sortQuotesLikeJobFinancials,
+} from '@/lib/quoteProposalLock';
 
 type ContractQuoteFields = Pick<JobQuote, 'sent_at' | 'locked_for_editing' | 'signed_version' | 'customer_signed_at'>;
 
@@ -295,6 +306,12 @@ interface MaterialsManagementProps {
   onBreakdownPriceSync?: (prices: BreakdownSheetPrice[]) => void;
   /** Sync which workbook (working vs locked) the materials panel is currently viewing. */
   onWorkbookViewSync?: (view: { workbookId: string | null; status: 'working' | 'locked' | null }) => void;
+  /** Signed contract: extended sell total of the job workbook (`working` row) for display separate from proposal materials. */
+  onJobWorkbookMaterialsTotalSync?: (total: number | null) => void;
+  /** Session unlock from split-view parent — matches JobFinancials read-only so the proposal workbook locks with the left panel. */
+  historicalUnlockedQuoteId?: string | null;
+  /** Split view: show job-workbook materials total on the same top row as legacy proposal-workbook controls. */
+  jobWorkbookMaterialsTotalForStrip?: number;
 }
 
 interface CategoryGroup {
@@ -302,7 +319,23 @@ interface CategoryGroup {
   items: MaterialItem[];
 }
 
-export function MaterialsManagement({ job, userId, proposalNumber, controlledQuoteId, onQuoteChange, externalActiveSheetId, onBreakdownPriceSync, onWorkbookViewSync }: MaterialsManagementProps) {
+function isTrimMaterialCategory(category: string) {
+  return category.trim().toLowerCase() === 'trim';
+}
+
+export function MaterialsManagement({
+  job,
+  userId,
+  proposalNumber,
+  controlledQuoteId,
+  onQuoteChange,
+  externalActiveSheetId,
+  onBreakdownPriceSync,
+  onWorkbookViewSync,
+  onJobWorkbookMaterialsTotalSync,
+  historicalUnlockedQuoteId = null,
+  jobWorkbookMaterialsTotalForStrip,
+}: MaterialsManagementProps) {
   const normalizeSyncKeyPart = (value: unknown) =>
     String(value ?? '')
       .toLowerCase()
@@ -422,9 +455,15 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [linkingTrimConfigId, setLinkingTrimConfigId] = useState<string | null>(null);
   const [trimConfigSearchQuery, setTrimConfigSearchQuery] = useState('');
   const [trimFlatstockConfigMap, setTrimFlatstockConfigMap] = useState<
-    Record<string, { name: string; totalInches: number; stretchOutInches: number }>
+    Record<
+      string,
+      { name: string; totalInches: number; stretchOutInches: number; drawing_segments?: unknown }
+    >
   >({});
   const [loadingTrimFlatstock, setLoadingTrimFlatstock] = useState(false);
+  const [showTrimPdfExportDialog, setShowTrimPdfExportDialog] = useState(false);
+  const [trimPdfExportSelectedIds, setTrimPdfExportSelectedIds] = useState<Set<string>>(() => new Set());
+  const [trimPdfExporting, setTrimPdfExporting] = useState(false);
   const [savingFlatstockWidth, setSavingFlatstockWidth] = useState(false);
   const [savingTrimSlittingPlan, setSavingTrimSlittingPlan] = useState(false);
   const [savingTrimCutListToNotes, setSavingTrimCutListToNotes] = useState(false);
@@ -529,9 +568,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     run();
   }, [workbook, metalCatalogBySku, job.id, effectiveQuoteId]);
 
-  // Load trim configs for Trim / Flatstock tab (total inches per config)
+  // Load trim configs whenever the workbook references saved trim (workbook + PDF export + flatstock tab)
   useEffect(() => {
-    if (activeTab !== 'trim-flatstock' || !workbook?.sheets) {
+    if (!workbook?.sheets) {
       setTrimFlatstockConfigMap({});
       return;
     }
@@ -554,18 +593,136 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         if (error) {
           setTrimFlatstockConfigMap({});
         } else {
-          const map: Record<string, { name: string; totalInches: number; stretchOutInches: number }> = {};
+          const map: Record<
+            string,
+            { name: string; totalInches: number; stretchOutInches: number; drawing_segments?: unknown }
+          > = {};
           (data || []).forEach((row: any) => {
             const totalInches = getTotalInchesFromTrimConfig(row);
             const stretchOutInches =
               getCutLengthFromTrimConfig(row) || totalInches || 0;
-            map[row.id] = { name: row.name ?? 'Trim', totalInches, stretchOutInches };
+            map[row.id] = {
+              name: row.name ?? 'Trim',
+              totalInches,
+              stretchOutInches,
+              drawing_segments: row.drawing_segments,
+            };
           });
           setTrimFlatstockConfigMap(map);
         }
         setLoadingTrimFlatstock(false);
       });
-  }, [activeTab, workbook?.sheets]);
+  }, [workbook?.sheets]);
+
+  function openTrimPdfExportDialog() {
+    if (!workbook?.sheets) return;
+    const ids = new Set<string>();
+    workbook.sheets.forEach((s) => {
+      s.items.forEach((i) => {
+        if (isTrimMaterialCategory(i.category)) ids.add(i.id);
+      });
+    });
+    setTrimPdfExportSelectedIds(ids);
+    setShowTrimPdfExportDialog(true);
+  }
+
+  function toggleTrimPdfExportItem(id: string) {
+    setTrimPdfExportSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function setAllTrimPdfExportSelected(select: boolean) {
+    if (!workbook?.sheets) return;
+    if (!select) {
+      setTrimPdfExportSelectedIds(new Set());
+      return;
+    }
+    const ids = new Set<string>();
+    workbook.sheets.forEach((s) => {
+      s.items.forEach((i) => {
+        if (isTrimMaterialCategory(i.category)) ids.add(i.id);
+      });
+    });
+    setTrimPdfExportSelectedIds(ids);
+  }
+
+  function formatTrimLineLengthDisplay(item: MaterialItem): string {
+    const raw = item.length != null && item.length !== '' ? String(item.length).trim() : '';
+    const unitLike = /^(pcs|pc|bag|bags|lf|ft|piece|pieces|ea|each|units?|linear\s*ft)$/i;
+    const isLength = raw && !unitLike.test(raw);
+    return isLength ? raw : '—';
+  }
+
+  async function handleDownloadTrimWorkbookPdf() {
+    if (!workbook?.sheets) return;
+    if (trimPdfExportSelectedIds.size === 0) {
+      toast.error('Select at least one trim line.');
+      return;
+    }
+    const pages: TrimPdfPageInput[] = [];
+    for (const sheet of workbook.sheets) {
+      for (const item of sheet.items) {
+        if (!trimPdfExportSelectedIds.has(item.id) || !isTrimMaterialCategory(item.category)) continue;
+        const config = item.trim_saved_config_id
+          ? trimFlatstockConfigMap[item.trim_saved_config_id]
+          : undefined;
+        const segments =
+          config?.drawing_segments != null
+            ? parseTrimDrawingSegmentsFromStored(config.drawing_segments)
+            : [];
+        const cutW =
+          config && Number.isFinite(config.stretchOutInches)
+            ? `${config.stretchOutInches.toFixed(2)}"`
+            : '—';
+        const trimTitle =
+          config?.name && config.name.trim()
+            ? `${item.material_name} (${config.name})`
+            : item.material_name;
+        pages.push({
+          title: trimTitle,
+          sheetLabel: `Sheet: ${sheet.sheet_name}`,
+          qtyDisplay: String(item.quantity ?? ''),
+          lengthDisplay: formatTrimLineLengthDisplay(item),
+          colorDisplay: item.color?.trim() ? item.color : '—',
+          cutWidthDisplay: cutW,
+          segments,
+        });
+      }
+    }
+    if (pages.length === 0) {
+      toast.error('No trim lines match your selection.');
+      return;
+    }
+    setTrimPdfExporting(true);
+    try {
+      const base = sanitizeTrimPdfFilenameBase(`${job.name || 'Job'}-Trim-Pack`);
+      await downloadTrimWorkbookPdf(`${base}.pdf`, pages, { reportTitle: job.name ?? undefined });
+      toast.success('Trim pack PDF downloaded.');
+      setShowTrimPdfExportDialog(false);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to build trim PDF.');
+    } finally {
+      setTrimPdfExporting(false);
+    }
+  }
+
+  const workbookTrimLinesForPdfExport = useMemo(() => {
+    if (!workbook?.sheets) return [];
+    const rows: { item: MaterialItem; sheetName: string }[] = [];
+    for (const sheet of workbook.sheets) {
+      for (const item of sheet.items) {
+        if (isTrimMaterialCategory(item.category)) {
+          rows.push({ item, sheetName: sheet.sheet_name });
+        }
+      }
+    }
+    return rows;
+  }, [workbook?.sheets]);
 
   async function setFlatstockWidthInches(width: number | null) {
     if (!workbook?.id) return;
@@ -625,7 +782,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   ) {
     if (!workbook?.id) return;
     if (!canUseShopTrimAndZohoOnThisWorkbook) {
-      toast.error('Slitting plan can only be saved on the working workbook or the signed contract workbook.');
+      toast.error('Slitting plan can only be saved on the job workbook or the proposal workbook.');
       return;
     }
     const plan = buildTrimSlittingPlan(demands, flatstockW, FLATSTOCK_STICK_LENGTH_INCHES);
@@ -669,7 +826,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   ) {
     if (!workbook?.id) return;
     if (!canUseShopTrimAndZohoOnThisWorkbook) {
-      toast.error('Trim cut list can only be applied on the working or signed contract workbook.');
+      toast.error('Trim cut list can only be applied on the job workbook or the proposal workbook.');
       return;
     }
 
@@ -803,7 +960,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   ) {
     if (!workbook?.id) return;
     if (!canUseShopTrimAndZohoOnThisWorkbook) {
-      toast.error('Cut status can only be updated on the working or signed contract workbook.');
+      toast.error('Cut status can only be updated on the job workbook or the proposal workbook.');
       return;
     }
     const { error } = await supabase.from('material_items').update({ trim_cut_state: state }).eq('id', itemId);
@@ -912,20 +1069,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const [creatingWorkingFromLocked, setCreatingWorkingFromLocked] = useState(false);
   /** True when this quote has at least one `working` material_workbook row (even if UI is viewing a locked snapshot). */
   const [hasWorkingWorkbookForQuote, setHasWorkingWorkbookForQuote] = useState(false);
+  /** Bumps when materials save so proposal panel can refresh job-workbook total while viewing signed workbook. */
+  const [jobWbMaterialsRefreshSeq, setJobWbMaterialsRefreshSeq] = useState(0);
   /** Auto-manage locked snapshot + working copy for signed contracts (no manual Lock workbook). */
   const [ensuringContractWorkbookPair, setEnsuringContractWorkbookPair] = useState(false);
   /** Fresh sent/signed/office-lock fields for the selected quote (Materials jobQuotes can lag JobFinancials). */
   const [contractQuoteFields, setContractQuoteFields] = useState<ContractQuoteFields | null>(null);
-
-  const signedContractAllowsLockedWorkbookEdits = useMemo(
-    () => quoteHasActiveContract(buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields) as any),
-    [jobQuotes, effectiveQuoteId, contractQuoteFields]
-  );
-
-  /** Working copy, or signed-contract locked row (editable proposal-priced workbook). */
-  const canUseShopTrimAndZohoOnThisWorkbook =
-    workbook?.status === 'working' ||
-    (workbook?.status === 'locked' && signedContractAllowsLockedWorkbookEdits);
 
   // Load job quotes (proposals) so we can scope materials per proposal
   useEffect(() => {
@@ -1125,6 +1274,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           .order('created_at', { ascending: false });
         if (!error && jq) setJobQuotes(jq as JobQuote[]);
         await loadWorkbook(true);
+        setJobWbMaterialsRefreshSeq((s) => s + 1);
       })();
     };
     window.addEventListener('materials-workbook-updated', handler as EventListener);
@@ -1302,7 +1452,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   /** Refresh cost/price/length for all material_items in the current workbook from materials_catalog (Zoho Books source). */
   async function refreshWorkbookPricesFromCatalog() {
     if (!canUseShopTrimAndZohoOnThisWorkbook) {
-      toast.error('Refresh prices is only available on the working workbook or the signed contract workbook.');
+      toast.error('Refresh prices is only available on the job workbook or the proposal workbook.');
       return;
     }
     if (!workbook?.sheets?.length) return;
@@ -1728,7 +1878,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         try {
           const lockedCnt = await countMaterialItemsForWorkbook(lockedList[0].id);
           if (lockedCnt > 0) {
-            if (!silent) toast.info('Working copy was empty — cloning line items from the signed workbook…');
+            if (!silent) toast.info('Job workbook was empty — cloning line items from the signed workbook…');
             await deleteMaterialWorkbookCascade(workbookData.id);
             for (const key of workbookCache.keys()) {
               if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
@@ -1738,7 +1888,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           }
         } catch (reErr: any) {
           console.error('repair empty working workbook:', reErr);
-          if (!silent) toast.error(reErr?.message || 'Could not rebuild working copy from the signed workbook.');
+          if (!silent) toast.error(reErr?.message || 'Could not rebuild job workbook from the signed workbook.');
         }
       }
 
@@ -1842,7 +1992,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           return createWorkingFromLatestLocked({ ...opts, silent, _retriedAfterEmptyPurge: true });
         }
         if (wCount > 0) {
-          if (!silent) toast.info('A working workbook already exists for this proposal.');
+          if (!silent) toast.info('A job workbook already exists for this proposal.');
           for (const key of workbookCache.keys()) {
             if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
           }
@@ -2010,14 +2160,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
       }
       if (!silent) {
-        toast.success('Working workbook created. Field requests and edits use this copy; locked snapshots stay unchanged.');
+        toast.success('Job workbook created. Field requests and internal edits use this copy; proposal snapshots stay unchanged.');
       }
       setSnapshotWorkbookId(null);
       await loadWorkbook(false, undefined, null, { preferWorking: true });
       window.dispatchEvent(new CustomEvent('materials-workbook-updated', { detail: { jobId: job.id, quoteId: qid } }));
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.message || 'Failed to create working workbook.');
+      toast.error(e?.message || 'Failed to create job workbook.');
     } finally {
       setCreatingWorkingFromLocked(false);
     }
@@ -3183,7 +3333,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   function openZohoOrderDialogForMaterial(item: MaterialItem) {
     if (!canUseShopTrimAndZohoOnThisWorkbook) {
-      toast.error('Zoho orders are only available on the working workbook or the signed contract workbook.');
+      toast.error('Zoho orders are only available on the job workbook or the proposal workbook.');
       return;
     }
     setSelectedMaterialsForOrder([item]);
@@ -3192,7 +3342,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
 
   function openZohoOrderDialogForCategory(categoryItems: MaterialItem[]) {
     if (!canUseShopTrimAndZohoOnThisWorkbook) {
-      toast.error('Zoho orders are only available on the working workbook or the signed contract workbook.');
+      toast.error('Zoho orders are only available on the job workbook or the proposal workbook.');
       return;
     }
     if (categoryItems.length === 0) {
@@ -3907,22 +4057,108 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   const quoteContractFrozen = isQuoteContractFrozen(quoteForContractUi as any);
   const quoteHasSignedContract = quoteHasActiveContract(quoteForContractUi as any);
 
-  /** Sum of extended sell price for all lines on the working workbook only (internal; not customer proposal). */
-  const internalWorkingMaterialsExtendedTotal = useMemo(() => {
-    if (!quoteHasSignedContract || !workbook?.sheets?.length) return null;
-    if (workbook.status !== 'working' || snapshotWorkbookId) return null;
-    if (!hasWorkingWorkbookForQuote) return null;
-    let sum = 0;
-    for (const sheet of workbook.sheets) {
-      const groups = groupByCategory(sheet.items || [], sheet.category_order);
-      for (const cg of groups) {
-        for (const item of cg.items || []) {
-          sum += getDisplayExtended(item).price;
+  // Push job-workbook extended sell total to the proposal panel and in-card display (signed contract only).
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchWorkingWorkbookExtendedSellTotal(quoteId: string): Promise<number | null> {
+      const { data: allWorkbooks, error } = await supabase
+        .from('material_workbooks')
+        .select('id, quote_id, status, version_number')
+        .eq('job_id', job.id)
+        .order('updated_at', { ascending: false });
+      if (error || !allWorkbooks?.length) return null;
+      const workingList = allWorkbooks
+        .filter((w: { quote_id?: string | null; status?: string }) => w.quote_id === quoteId && w.status === 'working')
+        .sort((a: { version_number?: number }, b: { version_number?: number }) => (b.version_number ?? 0) - (a.version_number ?? 0));
+      const wbRow = workingList[0];
+      if (!wbRow) return null;
+      const { data: sheetsRows, error: sheetsErr } = await supabase
+        .from('material_sheets')
+        .select('*')
+        .eq('workbook_id', (wbRow as { id: string }).id)
+        .order('order_index');
+      if (sheetsErr) return null;
+      const sheets = sheetsRows || [];
+      const sheetIds = sheets.map((s: { id: string }) => s.id);
+      let itemsData: any[] = [];
+      if (sheetIds.length > 0) {
+        const { data: itemsRes, error: itemsErr } = await supabase
+          .from('material_items')
+          .select('*')
+          .in('sheet_id', sheetIds)
+          .order('order_index');
+        if (itemsErr) return null;
+        itemsData = itemsRes || [];
+      }
+      itemsData = await enrichItemsWithCatalogPrices(itemsData);
+      sheets.sort((a: any, b: any) => {
+        const typeA = a.sheet_type === 'change_order' ? 1 : 0;
+        const typeB = b.sheet_type === 'change_order' ? 1 : 0;
+        if (typeA !== typeB) return typeA - typeB;
+        return (a.order_index ?? 0) - (b.order_index ?? 0);
+      });
+      const sheetsWithItems: MaterialSheet[] = sheets.map((sheet: any) => ({
+        ...sheet,
+        items: itemsData.filter((item: any) => item.sheet_id === sheet.id),
+      }));
+      let sum = 0;
+      for (const sheet of sheetsWithItems) {
+        const groups = groupByCategory(sheet.items || [], sheet.category_order);
+        for (const cg of groups) {
+          for (const item of cg.items || []) {
+            sum += getDisplayExtended(item).price;
+          }
         }
       }
+      return sum;
     }
-    return sum;
-  }, [quoteHasSignedContract, workbook, snapshotWorkbookId, hasWorkingWorkbookForQuote]);
+
+    function pushTotal(value: number | null) {
+      if (cancelled) return;
+      onJobWorkbookMaterialsTotalSync?.(value);
+    }
+
+    async function run() {
+      // Any quote with both a locked snapshot row and a working row uses the working row for this total only;
+      // do not require contract flags (they can lag) so the materials-column strip + JobFinancials stay in sync.
+      if (!effectiveQuoteId || !hasWorkingWorkbookForQuote || lockedSnapshotsMeta.length === 0) {
+        pushTotal(null);
+        return;
+      }
+      if (workbook?.status === 'working' && !snapshotWorkbookId && workbook.sheets) {
+        let sum = 0;
+        for (const sheet of workbook.sheets) {
+          const groups = groupByCategory(sheet.items || [], sheet.category_order);
+          for (const cg of groups) {
+            for (const item of cg.items || []) {
+              sum += getDisplayExtended(item).price;
+            }
+          }
+        }
+        pushTotal(sum);
+        return;
+      }
+      const total = await fetchWorkingWorkbookExtendedSellTotal(effectiveQuoteId);
+      pushTotal(total);
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    onJobWorkbookMaterialsTotalSync,
+    hasWorkingWorkbookForQuote,
+    lockedSnapshotsMeta.length,
+    effectiveQuoteId,
+    job.id,
+    workbook?.id,
+    workbook?.status,
+    snapshotWorkbookId,
+    workbook?.sheets,
+    jobWbMaterialsRefreshSeq,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps -- getDisplayExtended/groupByCategory/enrichItems; sheets + refresh capture edits
 
   // Mirror the same locked logic used in JobFinancials. Put change order proposal last; then sort regular quotes by proposal_number descending.
   const sortedQuotes = [...jobQuotes].sort((a, b) => {
@@ -3934,15 +4170,23 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     return nb.localeCompare(na, undefined, { numeric: true });
   });
   const latestQuoteId = sortedQuotes.find(q => !q.is_change_order_proposal)?.id ?? sortedQuotes[0]?.id;
-  // Read-only: office/sent lock without a signed contract keeps locked rows read-only.
-  // Signed contract (customer sign and/or signed_version): the locked proposal workbook is still editable here so
-  // proposal-priced line items can be corrected; JobFinancials continues to read this locked row for materials totals.
-  const isWorkbookReadOnly =
-    (!!snapshotWorkbookId || workbook?.status === 'locked') && !quoteHasSignedContract;
+  // Same read-only gate as JobFinancials (contract, office lock, older proposal, minus session unlock).
+  const jobQuotesSortedLikeFinancials = useMemo(() => sortQuotesLikeJobFinancials(jobQuotes), [jobQuotes]);
+  const proposalPanelReadOnly = useMemo(
+    () =>
+      quoteForContractUi
+        ? isProposalPanelReadOnly(quoteForContractUi as any, jobQuotesSortedLikeFinancials, historicalUnlockedQuoteId)
+        : false,
+    [quoteForContractUi, jobQuotesSortedLikeFinancials, historicalUnlockedQuoteId],
+  );
+  const viewingProposalLockedWorkbook = !!snapshotWorkbookId || workbook?.status === 'locked';
+  const isWorkbookReadOnly = viewingProposalLockedWorkbook && proposalPanelReadOnly;
   const materialsWorkbookLocked = isWorkbookReadOnly;
-  /** Shop / order controls on both working copy and signed-contract locked workbook (not on sent-only lock). */
-  const showShopOrderControls =
-    workbook?.status === 'working' || (quoteHasSignedContract && workbook?.status === 'locked');
+  /** Shop / trim / Zoho: job workbook always; signed-contract locked snapshot only when proposal panel allows edits. */
+  const canUseShopTrimAndZohoOnThisWorkbook =
+    workbook?.status === 'working' ||
+    (workbook?.status === 'locked' && quoteHasSignedContract && !isWorkbookReadOnly);
+  const showShopOrderControls = canUseShopTrimAndZohoOnThisWorkbook;
   /** Unsigned / draft proposals: optional manual lock. Sent or signed contracts auto-manage locked + working copies. */
   const showManualLockWorkbook =
     !!workbook && workbook.status === 'working' && !quoteContractFrozen && !isWorkbookReadOnly;
@@ -3951,6 +4195,8 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   /** User manually locked while still editable — keep older “view snapshot” row. */
   const showLegacyLockedSnapshotButtons =
     !quoteContractFrozen && workbook?.status === 'working' && lockedSnapshotsMeta.length > 0;
+  /** Viewing a locked snapshot overlay while a job/working row exists — Job workbook switch lives in the top strip. */
+  const showSnapshotExitToJobWorkbook = !!snapshotWorkbookId && hasWorkingWorkbookForQuote;
 
   const materialsSlot = useMaterialsToolbarSlot();
   const portalTarget = materialsSlot?.ready && materialsSlot?.ref?.current ? materialsSlot.ref.current : null;
@@ -3966,6 +4212,47 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     !snapshotWorkbookId &&
     hasWorkingWorkbookForQuote;
   const workingCopyToggleDisabled = !hasWorkingWorkbookForQuote;
+  /** Snapshot exit button is redundant when the signed-contract Job | Proposal toggle is shown. */
+  const showSnapshotExitJobWbButton = showSnapshotExitToJobWorkbook && !showContractWorkingToggle;
+  /** Signed contract pair: which workbook the grid is showing (proposal-priced vs internal job copy). */
+  const workbookLocationIndicator =
+    showContractWorkingToggle && workbook ? (
+      <div
+        className="flex flex-col gap-0.5 shrink-0 min-w-0"
+        role="status"
+        aria-label={
+          viewingWorkingCopy
+            ? 'You are viewing the job workbook'
+            : 'You are viewing the proposal workbook'
+        }
+      >
+        <span className="text-[9px] font-semibold uppercase tracking-wide text-cyan-950/70 whitespace-nowrap">
+          You are viewing
+        </span>
+        <div className="inline-flex rounded-lg border-2 border-cyan-800/30 bg-white/80 p-0.5 gap-0.5 shadow-sm">
+          <span
+            className={cn(
+              'rounded-md px-2 py-1 text-[10px] sm:text-[11px] font-bold whitespace-nowrap transition-colors',
+              viewingSignedContractWorkbook
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-slate-600 bg-transparent',
+            )}
+          >
+            Proposal workbook
+          </span>
+          <span
+            className={cn(
+              'rounded-md px-2 py-1 text-[10px] sm:text-[11px] font-bold whitespace-nowrap transition-colors',
+              viewingWorkingCopy
+                ? 'bg-cyan-800 text-white shadow-sm'
+                : 'text-slate-600 bg-transparent',
+            )}
+          >
+            Job workbook
+          </span>
+        </div>
+      </div>
+    ) : null;
 
   if (loading) {
     return (
@@ -3982,7 +4269,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
       <div
         className="flex flex-col gap-0.5 shrink-0"
         role="group"
-        aria-label="Two workbooks: signed contract snapshot (proposal price) vs editable working copy"
+        aria-label="Switch between proposal workbook and job workbook"
       >
         <div className="inline-flex rounded-md border-2 border-amber-600 bg-white/95 dark:bg-slate-900/90 p-0.5 shadow-sm">
           <button
@@ -4002,12 +4289,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             title={
               workingCopyToggleDisabled
                 ? ensuringContractWorkbookPair
-                  ? 'Creating working copy…'
-                  : 'Working copy is being prepared for this signed contract'
-                : 'Job-tracking copy — edits here do not change the signed contract workbook unless you sync manually; proposal totals follow the Signed contract workbook'
+                  ? 'Creating job workbook…'
+                  : 'Job workbook is being prepared for this signed contract'
+                : 'Job workbook — internal only. Does not change customer proposal totals (left follows proposal workbook).'
             }
           >
-            Working copy
+            Job workbook
           </button>
           <button
             type="button"
@@ -4020,15 +4307,12 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'text-amber-950 hover:bg-amber-50',
             )}
-            title="Signed contract workbook — proposal-priced line items (editable; changes update proposal materials totals)"
+            title="Proposal workbook (signed contract snapshot) — drives customer materials total on the left"
           >
-            Signed contract{' '}
+            Proposal workbook{' '}
             <span className="opacity-90 font-semibold">v{lockedSnapshotsMeta[0].version_number}</span>
           </button>
         </div>
-        <p className="text-[9px] sm:text-[10px] text-amber-900/80 max-w-[14rem] leading-tight hidden sm:block">
-          Signed contract = proposal-priced workbook (editable). Working copy = shop/crew tracking; Financials totals follow the contract workbook.
-        </p>
       </div>
     ) : null;
 
@@ -4173,12 +4457,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
           <span>Upload</span>
         </TabsTrigger>
       </TabsList>
-      {activeTab === 'manage' && contractWorkbookViewToggle && (
-        <>
-          <div className="h-6 w-px bg-yellow-500/50 flex-shrink-0 hidden sm:block" aria-hidden />
-          {contractWorkbookViewToggle}
-        </>
-      )}
     </div>
   );
 
@@ -4213,7 +4491,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 </Select>
                 <div className="flex-1" />
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {contractWorkbookViewToggle}
                   {workbookActionButtons}
                 </div>
               </div>
@@ -4255,7 +4532,6 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
               {/* Single/no proposal: toggle + buttons beside the tab strip */}
               {jobQuotes.length <= 1 && (
                 <div className="flex items-center gap-2 flex-wrap shrink-0">
-                  {contractWorkbookViewToggle}
                   {workbookActionButtons}
                 </div>
               )}
@@ -4266,80 +4542,87 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         {quoteHasSignedContract && ensuringContractWorkbookPair && (
           <div className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-950 mb-2 flex items-center gap-2">
             <div className="w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0" />
-            <span>Preparing working copy for shop, crew orders, and edits…</span>
+            <span>Preparing job workbook for shop, crew orders, and field edits…</span>
           </div>
         )}
 
-        {quoteHasSignedContract &&
-          viewingWorkingCopy &&
-          internalWorkingMaterialsExtendedTotal != null && (
-            <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-800 mb-2">
-              <span className="font-semibold text-slate-900">Internal workbook (not on customer proposal)</span>
-              <span className="mx-2 text-slate-400 hidden sm:inline">·</span>
-              <span className="block sm:inline mt-0.5 sm:mt-0">
-                Materials extended (this copy):{' '}
-                <span className="font-mono font-semibold tabular-nums">
+        {(typeof jobWorkbookMaterialsTotalForStrip === 'number' ||
+          showLegacyLockedSnapshotButtons ||
+          showSnapshotExitJobWbButton ||
+          showContractWorkingToggle) && (
+          <div
+            className={cn(
+              'sticky top-0 z-20 mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0',
+              (typeof jobWorkbookMaterialsTotalForStrip === 'number' ||
+                showSnapshotExitJobWbButton ||
+                showContractWorkingToggle) &&
+                'border-b-2 border-cyan-600 bg-gradient-to-r from-cyan-50 via-sky-50 to-cyan-50 px-3 py-2 shadow-sm',
+              typeof jobWorkbookMaterialsTotalForStrip !== 'number' &&
+                !showSnapshotExitJobWbButton &&
+                !showContractWorkingToggle &&
+                showLegacyLockedSnapshotButtons &&
+                'justify-end',
+            )}
+          >
+            {workbookLocationIndicator}
+            {typeof jobWorkbookMaterialsTotalForStrip === 'number' && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 flex-1 min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-900 whitespace-nowrap">
+                  Job workbook total
+                </span>
+                <span className="text-slate-400 hidden sm:inline">|</span>
+                <span className="text-cyan-950/90 text-xs">Materials (internal):</span>
+                <span className="font-bold tabular-nums text-cyan-950 text-base">
                   $
-                  {internalWorkingMaterialsExtendedTotal.toLocaleString(undefined, {
+                  {jobWorkbookMaterialsTotalForStrip.toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
                 </span>
-              </span>
-              <p className="text-[10px] text-slate-600 mt-1 max-w-2xl">
-                The proposal totals on the left follow the signed contract workbook, not these line items.
-              </p>
-            </div>
-          )}
-
-        {showLegacyLockedSnapshotButtons && (
-          <div className="flex flex-wrap items-center gap-2 justify-end mb-2">
-            {snapshotWorkbookId ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-9 text-xs font-semibold"
-                onClick={() => exitLockedSnapshotView()}
-                title="Return to the working workbook"
-              >
-                <LockOpen className="w-3.5 h-3.5 mr-1.5" />
-                Working copy
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                className="h-9 text-xs font-semibold bg-amber-100 border-2 border-amber-400 text-amber-950 hover:bg-amber-200 shadow-sm"
-                onClick={() => openLockedSnapshotView(lockedSnapshotsMeta[0].id)}
-                title="Open the latest locked snapshot (read-only)"
-              >
-                <Lock className="w-3.5 h-3.5 mr-1.5" />
-                Locked
-              </Button>
+                <span className="text-[10px] text-cyan-900/85 max-w-[20rem] leading-tight">
+                  Not included in customer proposal subtotal or GRAND TOTAL (left column).
+                </span>
+              </div>
             )}
-          </div>
-        )}
-
-        {workbook && quoteHasSignedContract && !!snapshotWorkbookId && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50/95 px-3 py-2 text-sm text-amber-950 mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <Lock className="w-4 h-4 shrink-0" />
-              <span className="text-xs sm:text-sm">
-                Viewing <strong>signed contract</strong> (read-only) · v{workbook.version_number}. Use <strong>Working copy</strong> in the bar above for edits and crew orders.
-              </span>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="h-8 text-xs shrink-0"
-              onClick={() => exitLockedSnapshotView()}
-              title="Open or create the editable working workbook. The signed contract snapshot is not changed."
-            >
-              <LockOpen className="w-3 h-3 mr-1" />
-              Unlock for edits (working copy)
-            </Button>
+            {showContractWorkingToggle && contractWorkbookViewToggle && (
+              <div className="shrink-0">{contractWorkbookViewToggle}</div>
+            )}
+            {(showLegacyLockedSnapshotButtons || showSnapshotExitJobWbButton) && (
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-2 shrink-0',
+                  (typeof jobWorkbookMaterialsTotalForStrip === 'number' ||
+                    showSnapshotExitJobWbButton ||
+                    showContractWorkingToggle) &&
+                    'ml-auto',
+                )}
+              >
+                {showSnapshotExitJobWbButton ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-9 text-xs font-semibold"
+                    onClick={() => exitLockedSnapshotView()}
+                    title="Switch to the job workbook (internal only). Does not unlock or replace the proposal workbook."
+                  >
+                    <LockOpen className="w-3.5 h-3.5 mr-1.5" />
+                    Job workbook
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 text-xs font-semibold bg-amber-100 border-2 border-amber-400 text-amber-950 hover:bg-amber-200 shadow-sm"
+                    onClick={() => openLockedSnapshotView(lockedSnapshotsMeta[0].id)}
+                    title="Open the proposal workbook (locked snapshot)"
+                  >
+                    <Lock className="w-3.5 h-3.5 mr-1.5" />
+                    Proposal workbook
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -4352,13 +4635,13 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
             <div className="rounded-lg border p-3 px-3 flex flex-col gap-2 text-sm border-amber-300 bg-amber-50 text-amber-950 mb-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Lock className="w-4 h-4 shrink-0" />
-                <span className="font-semibold">Signed contract workbook — add a working copy</span>
+                <span className="font-semibold">Proposal workbook — add a job workbook</span>
                 <Badge variant="outline" className="bg-white/80">
                   v{workbook.version_number}
                 </Badge>
               </div>
               <p className="text-xs opacity-90 pl-6">
-                If automatic setup did not finish, create a working copy for shop and crew (the signed version stays unchanged).
+                If automatic setup did not finish, add a job workbook for shop and crew (internal only — customer pricing stays on this proposal workbook).
               </p>
               <Button
                 type="button"
@@ -4367,86 +4650,38 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 disabled={creatingWorkingFromLocked}
                 onClick={() => createWorkingFromLatestLocked()}
               >
-                {creatingWorkingFromLocked ? 'Creating…' : 'Create working copy'}
+                {creatingWorkingFromLocked ? 'Creating…' : 'Create job workbook'}
               </Button>
             </div>
           )}
 
         {workbook &&
           !quoteContractFrozen &&
-          (snapshotWorkbookId || (workbook.status === 'locked' && !snapshotWorkbookId)) && (
-            <div className="rounded-lg border p-3 px-3 flex flex-col gap-2 text-sm border-amber-300 bg-amber-50 text-amber-950">
-              {snapshotWorkbookId ? (
-                <>
-                  <div className="flex flex-wrap items-start gap-2 w-full">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Lock className="w-4 h-4 shrink-0" />
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
-                            Locked snapshot
-                          </span>
-                          <span className="font-semibold">Read-only snapshot (line items & totals)</span>
-                          <Badge variant="outline" className="bg-white/80">
-                            v{workbook.version_number}
-                          </Badge>
-                        </div>
-                        <p className="text-xs opacity-90 mt-1 max-w-[56rem]">
-                          The locked snapshot stays read-only so proposal pricing does not change. Use <strong>Unlock for edits (working copy)</strong> to edit line items — a working workbook is opened or created automatically if you do not have one yet.
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 text-xs shrink-0"
-                      onClick={() => exitLockedSnapshotView()}
-              title="Open or create the editable working workbook. Line-item changes apply there only; this locked snapshot is unchanged."
-            >
-              <LockOpen className="w-3 h-3 mr-1" />
-              Unlock for edits (working copy)
-            </Button>
-                    {!hasWorkingWorkbookForQuote && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8 text-xs shrink-0 gradient-primary"
-                        disabled={creatingWorkingFromLocked}
-                        onClick={() => createWorkingFromLatestLocked()}
-                        title="Create an editable working copy from this locked snapshot"
-                      >
-                        {creatingWorkingFromLocked ? 'Creating…' : 'Create working copy'}
-                      </Button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Lock className="w-4 h-4 shrink-0" />
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
-                      Locked only
-                    </span>
-                    <span className="font-semibold">No working copy yet</span>
-                    <Badge variant="outline" className="bg-white/80">
-                      v{workbook.version_number}
-                    </Badge>
-                  </div>
-                  <p className="text-xs opacity-90 pl-6">
-                    Create a working copy for crew orders, shop status, and edits — this locked version stays unchanged.
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 text-xs w-fit gradient-primary"
-                    disabled={creatingWorkingFromLocked}
-                    onClick={() => createWorkingFromLatestLocked()}
-                  >
-                    {creatingWorkingFromLocked ? 'Creating…' : 'Create working copy from snapshot'}
-                  </Button>
-                </>
-              )}
+          !snapshotWorkbookId &&
+          workbook.status === 'locked' && (
+            <div className="rounded-lg border p-3 px-3 flex flex-col gap-2 text-sm border-amber-300 bg-amber-50 text-amber-950 mb-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Lock className="w-4 h-4 shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
+                  Proposal workbook only
+                </span>
+                <span className="font-semibold">No job workbook yet</span>
+                <Badge variant="outline" className="bg-white/80">
+                  v{workbook.version_number}
+                </Badge>
+              </div>
+              <p className="text-xs opacity-90 pl-6">
+                Add a job workbook for crew orders, shop status, and field edits — internal only; this proposal workbook stays the customer pricing source.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 text-xs w-fit gradient-primary"
+                disabled={creatingWorkingFromLocked}
+                onClick={() => createWorkingFromLatestLocked()}
+              >
+                {creatingWorkingFromLocked ? 'Creating…' : 'Create job workbook from proposal workbook'}
+              </Button>
             </div>
           )}
 
@@ -4765,7 +5000,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                             title={
                                               catGroup.category === 'Metal'
                                                 ? materialsWorkbookLocked
-                                                  ? 'Metal PLF from SKU (import); locked workbook — open working copy to edit'
+                                                  ? 'Metal PLF from SKU (import); locked workbook — open job workbook to edit'
                                                   : 'Click to edit lineal ft cost/price for all Metal items'
                                                 : undefined
                                             }
@@ -4790,6 +5025,19 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                           Order All
                                         </Button>
                                       )}
+                                      {isTrimMaterialCategory(catGroup.category) &&
+                                        workbookTrimLinesForPdfExport.length > 0 && (
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={openTrimPdfExportDialog}
+                                            className="h-6 text-[10px] px-2 border-indigo-300 bg-white hover:bg-indigo-50 text-indigo-900"
+                                          >
+                                            <Download className="w-2.5 h-2.5 mr-0.5" />
+                                            Export trim PDF
+                                          </Button>
+                                        )}
                                       <Button
                                         size="sm"
                                         onClick={() => openAddDialog(catGroup.category)}
@@ -5268,7 +5516,7 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                                       ) : (
                                         <div
                                           className={`h-6 text-[10px] font-semibold border rounded-md px-2 flex items-center justify-center ${getStatusColor(item.status || 'not_ordered')}`}
-                                          title="Shop status is only editable on the working workbook"
+                                          title="Shop status is only editable on the job workbook"
                                         >
                                           {formatStatusLabel(item.status || 'not_ordered')}
                                         </div>
@@ -6623,6 +6871,93 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 Cancel
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showTrimPdfExportDialog} onOpenChange={setShowTrimPdfExportDialog}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Export trim PDF</DialogTitle>
+            <p className="text-sm text-muted-foreground font-normal pt-1">
+              Portrait PDF with several trims per page as table rows: length, color, cut width (stretch-out), and a
+              compact profile image when a drawing is linked. Uncheck lines to omit them.
+            </p>
+          </DialogHeader>
+          <div className="flex flex-wrap items-center gap-2 py-2 border-b">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setAllTrimPdfExportSelected(true)}
+            >
+              Select all
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setAllTrimPdfExportSelected(false)}
+            >
+              Clear
+            </Button>
+            <span className="text-xs text-muted-foreground ml-auto">
+              {trimPdfExportSelectedIds.size} of {workbookTrimLinesForPdfExport.length} selected
+            </span>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-0.5 pr-1">
+            {workbookTrimLinesForPdfExport.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">No trim lines in this workbook.</p>
+            ) : (
+              workbookTrimLinesForPdfExport.map(({ item, sheetName }) => (
+                <label
+                  key={item.id}
+                  className="flex items-start gap-3 rounded-md border border-transparent hover:border-slate-200 hover:bg-slate-50/80 px-2 py-2 cursor-pointer"
+                >
+                  <Checkbox
+                    checked={trimPdfExportSelectedIds.has(item.id)}
+                    onCheckedChange={() => toggleTrimPdfExportItem(item.id)}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium leading-tight">{item.material_name}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {sheetName}
+                      {item.trim_saved_config_id ? '' : ' · no trim drawing linked'}
+                    </div>
+                  </div>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex gap-2 justify-end pt-4 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowTrimPdfExportDialog(false)}
+              disabled={trimPdfExporting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleDownloadTrimWorkbookPdf()}
+              disabled={trimPdfExporting || trimPdfExportSelectedIds.size === 0}
+            >
+              {trimPdfExporting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Building…
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download PDF
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

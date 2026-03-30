@@ -660,17 +660,21 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   }
 
   async function reloadSelectedJob() {
-    if (!selectedJob) return;
-    
+    const id = detailDialogJobId ?? selectedJob?.id;
+    if (!id) return;
+
     try {
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
-        .eq('id', selectedJob.id)
+        .eq('id', id)
         .single();
 
       if (error) throw error;
-      if (data) openJobDetail(data);
+      if (data) {
+        setJobs((prev) => prev.map((j) => (j.id === data.id ? data : j)));
+        openJobDetail(data);
+      }
     } catch (error) {
       console.error('Error reloading job:', error);
     }
@@ -2350,6 +2354,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                     onEdit={() => {
                       setShowEditDialog(true);
                     }}
+                    onJobUpdate={reloadSelectedJob}
                     initialTab={selectedTab}
                   />
                 </div>

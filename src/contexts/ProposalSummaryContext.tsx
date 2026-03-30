@@ -7,6 +7,8 @@ export interface ProposalSummary {
   subtotal: number;
   tax: number;
   grandTotal: number;
+  /** Signed contract: job workbook materials extended sell; not part of proposal subtotal/grand total */
+  jobWorkbookMaterials?: number | null;
 }
 
 type SetProposalSummary = (summary: ProposalSummary | null) => void;
@@ -44,6 +46,15 @@ export function ProposalSummaryRow({ className }: { className?: string }) {
       <span className="text-yellow-600/80">|</span>
       <span className="text-yellow-100/90">Materials:</span>
       <span className="font-semibold text-yellow-100">${fmt(s.materials)}</span>
+      {typeof s.jobWorkbookMaterials === 'number' && (
+        <>
+          <span className="text-yellow-600/80">|</span>
+          <span className="text-yellow-100/80" title="Internal job workbook — not in proposal total">
+            Job WB:
+          </span>
+          <span className="font-semibold text-cyan-100">${fmt(s.jobWorkbookMaterials)}</span>
+        </>
+      )}
       <span className="text-yellow-100/90">Labor:</span>
       <span className="font-semibold text-yellow-100">${fmt(s.labor)}</span>
       <span className="text-yellow-600/80">|</span>

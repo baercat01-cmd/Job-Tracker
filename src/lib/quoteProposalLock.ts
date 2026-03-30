@@ -10,8 +10,10 @@
  * - Draft: one `working` row per proposal holds price + line items; header/portal track this workbook.
  * - Office-locked proposal: that same row becomes `locked` (still the only row for that quote).
  * - Signed contract: current workbook is set `locked` (proposal price / contract snapshot), then a second row is inserted as
- *   `working` for shop/COS/job tracking. JobFinancials reads the locked row for materials totals; Materials allows editing that
- *   locked workbook so proposal-priced lines can be corrected (totals update with those edits).
+ *   `working` (UI: "job workbook") for shop/COS/field tracking only — it does not drive customer proposal totals. JobFinancials
+ *   reads the locked row for materials totals. The proposal-priced workbook is read-only whenever the left proposal panel
+ *   is read-only (contract, office lock, or older proposal version), and becomes editable after Unlock — same session flag as JobFinancials.
+ *   The job workbook (`working` row) stays a separate editable book.
  */
 
 export function quoteHasActiveContract(
@@ -21,6 +23,62 @@ export function quoteHasActiveContract(
   const sv = q.signed_version;
   const hasSignedVersion = sv != null && String(sv).trim() !== '' && Number(sv) > 0;
   return !!(q.customer_signed_at || hasSignedVersion);
+}
+
+export type QuoteNavSortFields = {
+  id: string;
+  proposal_number?: string | null;
+  quote_number?: string | null;
+};
+
+/** Same ordering as JobFinancials `loadQuoteData` (highest proposal number first). */
+export function sortQuotesLikeJobFinancials<T extends QuoteNavSortFields>(quotes: T[]): T[] {
+  return [...quotes].sort((a, b) => {
+    const na = (a.proposal_number || a.quote_number || '').toString();
+    const nb = (b.proposal_number || b.quote_number || '').toString();
+    if (na === nb) return 0;
+    return nb.localeCompare(na, undefined, { numeric: true });
+  });
+}
+
+/** Matches JobFinancials default lock: not the newest quote in the job list, signed contract, or `locked_for_editing`. */
+export function isQuoteDefaultLockedForProposalPanel(
+  quote: {
+    id: string;
+    locked_for_editing?: boolean | null;
+    signed_version?: unknown;
+    customer_signed_at?: string | null;
+  } | null | undefined,
+  allJobQuotesSortedLikeFinancials: { id: string }[]
+): boolean {
+  if (!quote) return false;
+  return (
+    (allJobQuotesSortedLikeFinancials.length > 0 && quote.id !== allJobQuotesSortedLikeFinancials[0]?.id) ||
+    quoteHasActiveContract(quote) ||
+    !!quote.locked_for_editing
+  );
+}
+
+/**
+ * Matches JobFinancials `isReadOnly`: office lock (`locked_for_editing`) always read-only. Otherwise contract / older
+ * proposal stays read-only until session unlock (`historicalUnlockedQuoteId` in JobFinancials).
+ */
+export function isProposalPanelReadOnly(
+  quote: {
+    id: string;
+    locked_for_editing?: boolean | null;
+    signed_version?: unknown;
+    customer_signed_at?: string | null;
+  } | null | undefined,
+  allJobQuotesSortedLikeFinancials: { id: string }[],
+  sessionUnlockedQuoteId: string | null
+): boolean {
+  if (!quote) return false;
+  if (quote.locked_for_editing) return true;
+  const otherReasonLocked =
+    (allJobQuotesSortedLikeFinancials.length > 0 && quote.id !== allJobQuotesSortedLikeFinancials[0]?.id) ||
+    quoteHasActiveContract(quote);
+  return otherReasonLocked && quote.id !== sessionUnlockedQuoteId;
 }
 
 /** True when materials / proposal financials should be read-only from quote flags (not workbook row status). */

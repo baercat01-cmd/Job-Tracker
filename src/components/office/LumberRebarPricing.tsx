@@ -111,6 +111,113 @@ interface PriceEntry {
   material?: Material;
 }
 
+type HistoryPriceEditForm = { mbf: string; perUnit: string; truckload: string; notes: string };
+
+function VendorHistoryPriceRow({
+  entry,
+  material,
+  category,
+  isEditing,
+  editForm,
+  saving,
+  calculateBoardFeet,
+  onStartEdit,
+  onCancelEdit,
+  onChangeField,
+  onSave,
+}: {
+  entry: PriceEntry;
+  material: Material | undefined;
+  category: 'lumber' | 'rebar';
+  isEditing: boolean;
+  editForm: HistoryPriceEditForm;
+  saving: boolean;
+  calculateBoardFeet: (materialName: string, length: number) => number;
+  onStartEdit: (entry: PriceEntry) => void;
+  onCancelEdit: () => void;
+  onChangeField: (field: keyof HistoryPriceEditForm, value: string, mat: Material | undefined) => void;
+  onSave: () => void;
+}) {
+  const boardFeet =
+    category === 'lumber' && material?.unit === 'board foot'
+      ? calculateBoardFeet(material.name, material.standard_length)
+      : null;
+  const perPieceLocked = category === 'lumber' && !!boardFeet && !!editForm.mbf;
+
+  if (isEditing) {
+    return (
+      <tr className="border-t bg-amber-50/40">
+        <td className="p-2 font-medium">{material?.name}</td>
+        {category === 'lumber' && (
+          <td className="p-2">
+            <Input
+              type="number"
+              step="0.01"
+              className="h-8 text-sm"
+              value={editForm.mbf}
+              onChange={(e) => onChangeField('mbf', e.target.value, material)}
+            />
+          </td>
+        )}
+        <td className="p-2">
+          <Input
+            type="number"
+            step="0.01"
+            className={`h-8 text-sm ${perPieceLocked ? 'bg-slate-100' : ''}`}
+            value={editForm.perUnit}
+            onChange={(e) => onChangeField('perUnit', e.target.value, material)}
+            readOnly={perPieceLocked}
+          />
+        </td>
+        <td className="p-2">
+          <Input
+            type="number"
+            className="h-8 text-sm"
+            placeholder="—"
+            value={editForm.truckload}
+            onChange={(e) => onChangeField('truckload', e.target.value, material)}
+          />
+        </td>
+        <td className="p-2">
+          <Input
+            className="h-8 text-sm"
+            placeholder="Notes"
+            value={editForm.notes}
+            onChange={(e) => onChangeField('notes', e.target.value, material)}
+          />
+        </td>
+        <td className="p-2 text-right whitespace-nowrap">
+          <div className="flex justify-end gap-1">
+            <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={saving} onClick={onCancelEdit}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" className="h-7 px-2 text-xs" disabled={saving} onClick={onSave}>
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr className="border-t">
+      <td className="p-2 font-medium">{material?.name}</td>
+      {category === 'lumber' && (
+        <td className="p-2">{entry.mbf_price != null ? `$${entry.mbf_price.toFixed(2)}` : '-'}</td>
+      )}
+      <td className="p-2 font-semibold text-green-700">${entry.price_per_unit.toFixed(2)}</td>
+      <td className="p-2">{entry.truckload_quantity ?? '-'}</td>
+      <td className="p-2 text-xs text-muted-foreground">{entry.notes || '-'}</td>
+      <td className="p-2 text-right">
+        <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onStartEdit(entry)} title="Edit row">
+          <Edit className="w-3.5 h-3.5" />
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
 interface LumberRebarPricingProps {
   category: 'lumber' | 'rebar';
 }
@@ -164,6 +271,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   // Vendor submission history
   const [showVendorHistoryDialog, setShowVendorHistoryDialog] = useState(false);
   const [historyVendor, setHistoryVendor] = useState<Vendor | null>(null);
+  const [editingHistoryPriceId, setEditingHistoryPriceId] = useState<string | null>(null);
+  const [historyPriceEdit, setHistoryPriceEdit] = useState<HistoryPriceEditForm>({
+    mbf: '',
+    perUnit: '',
+    truckload: '',
+    notes: '',
+  });
+  const [savingHistoryPrice, setSavingHistoryPrice] = useState(false);
 
   // Analytics filters
   const [timeRange, setTimeRange] = useState<'30' | '90' | '180' | '365'>('90');
@@ -462,6 +577,88 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     } catch (error: any) {
       console.error('Error deleting price:', error);
       toast.error('Failed to delete price entry');
+    }
+  }
+
+  function startEditHistoryPrice(entry: PriceEntry) {
+    setEditingHistoryPriceId(entry.id);
+    setHistoryPriceEdit({
+      mbf: entry.mbf_price != null ? String(entry.mbf_price) : '',
+      perUnit: String(entry.price_per_unit),
+      truckload: entry.truckload_quantity != null ? String(entry.truckload_quantity) : '',
+      notes: entry.notes ?? '',
+    });
+  }
+
+  function cancelEditHistoryPrice() {
+    setEditingHistoryPriceId(null);
+  }
+
+  function changeHistoryPriceEditField(field: keyof HistoryPriceEditForm, value: string, material: Material | undefined) {
+    setHistoryPriceEdit((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'mbf' && value && category === 'lumber' && material?.unit === 'board foot') {
+        const bf = calculateBoardFeet(material.name, material.standard_length);
+        const pricePerBF = parseFloat(value) / 1000;
+        if (Number.isFinite(pricePerBF) && bf > 0) {
+          next.perUnit = (pricePerBF * bf).toFixed(2);
+        }
+      }
+      return next;
+    });
+  }
+
+  async function saveHistoryPriceEdit() {
+    if (!editingHistoryPriceId) return;
+    const perUnit = parseFloat(historyPriceEdit.perUnit);
+    if (!Number.isFinite(perUnit) || perUnit <= 0) {
+      toast.error('Enter a valid price per piece');
+      return;
+    }
+
+    const truckParsed = historyPriceEdit.truckload.trim()
+      ? parseInt(historyPriceEdit.truckload, 10)
+      : null;
+    const truckload_quantity =
+      truckParsed != null && Number.isFinite(truckParsed) && truckParsed > 0 ? truckParsed : null;
+
+    const payload: {
+      price_per_unit: number;
+      truckload_quantity: number | null;
+      notes: string | null;
+      mbf_price?: number | null;
+    } = {
+      price_per_unit: perUnit,
+      truckload_quantity,
+      notes: historyPriceEdit.notes.trim() || null,
+    };
+
+    if (category === 'lumber') {
+      const mbfRaw = historyPriceEdit.mbf.trim();
+      if (mbfRaw) {
+        const mbfNum = parseFloat(mbfRaw);
+        if (!Number.isFinite(mbfNum)) {
+          toast.error('Enter a valid MBF price or leave it blank');
+          return;
+        }
+        payload.mbf_price = mbfNum;
+      } else {
+        payload.mbf_price = null;
+      }
+    }
+
+    setSavingHistoryPrice(true);
+    try {
+      const { error } = await supabase.from('lumber_rebar_prices').update(payload).eq('id', editingHistoryPriceId);
+      if (error) throw error;
+      toast.success('Price updated');
+      cancelEditHistoryPrice();
+      await loadPrices();
+    } catch (error: any) {
+      console.error('Error updating price:', error);
+      toast.error('Failed to update price');
+    } finally {
+      setSavingHistoryPrice(false);
     }
   }
 
@@ -1213,6 +1410,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                             stroke={CHART_COLORS[i % CHART_COLORS.length]}
                                             strokeWidth={2}
                                             dot={{ r: 4 }}
+                                            connectNulls
                                           />
                                         ))}
                                         {/* PO price markers — horizontal dashed lines */}
@@ -1544,7 +1742,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       </Dialog>
 
       {/* Vendor History Dialog */}
-      <Dialog open={showVendorHistoryDialog} onOpenChange={setShowVendorHistoryDialog}>
+      <Dialog
+        open={showVendorHistoryDialog}
+        onOpenChange={(open) => {
+          setShowVendorHistoryDialog(open);
+          if (!open) cancelEditHistoryPrice();
+        }}
+      >
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1619,29 +1823,27 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                               <th className="text-left p-2">Price/Piece</th>
                               <th className="text-left p-2">Units</th>
                               <th className="text-left p-2">Notes</th>
+                              <th className="text-right p-2 w-[104px]">Actions</th>
                             </tr>
                           </thead>
                           <tbody className="text-sm">
                             {entries.map(entry => {
                               const material = materials.find(m => m.id === entry.material_id);
                               return (
-                                <tr key={entry.id} className="border-t">
-                                  <td className="p-2 font-medium">{material?.name}</td>
-                                  {category === 'lumber' && (
-                                    <td className="p-2">
-                                      {entry.mbf_price ? `$${entry.mbf_price.toFixed(2)}` : '-'}
-                                    </td>
-                                  )}
-                                  <td className="p-2 font-semibold text-green-700">
-                                    ${entry.price_per_unit.toFixed(2)}
-                                  </td>
-                                  <td className="p-2">
-                                    {entry.truckload_quantity || '-'}
-                                  </td>
-                                  <td className="p-2 text-xs text-muted-foreground">
-                                    {entry.notes || '-'}
-                                  </td>
-                                </tr>
+                                <VendorHistoryPriceRow
+                                  key={entry.id}
+                                  entry={entry}
+                                  material={material}
+                                  category={category}
+                                  isEditing={editingHistoryPriceId === entry.id}
+                                  editForm={historyPriceEdit}
+                                  saving={savingHistoryPrice}
+                                  calculateBoardFeet={calculateBoardFeet}
+                                  onStartEdit={startEditHistoryPrice}
+                                  onCancelEdit={cancelEditHistoryPrice}
+                                  onChangeField={changeHistoryPriceEditField}
+                                  onSave={saveHistoryPriceEdit}
+                                />
                               );
                             })}
                           </tbody>
@@ -1661,29 +1863,27 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                             <th className="text-left p-2">Price/Piece</th>
                             <th className="text-left p-2">Units</th>
                             <th className="text-left p-2">Notes</th>
+                            <th className="text-right p-2 w-[104px]">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="text-sm">
                           {noColorEntries.map(entry => {
                             const material = materials.find(m => m.id === entry.material_id);
                             return (
-                              <tr key={entry.id} className="border-t">
-                                <td className="p-2 font-medium">{material?.name}</td>
-                                {category === 'lumber' && (
-                                  <td className="p-2">
-                                    {entry.mbf_price ? `$${entry.mbf_price.toFixed(2)}` : '-'}
-                                  </td>
-                                )}
-                                <td className="p-2 font-semibold text-green-700">
-                                  ${entry.price_per_unit.toFixed(2)}
-                                </td>
-                                <td className="p-2">
-                                  {entry.truckload_quantity || '-'}
-                                </td>
-                                <td className="p-2 text-xs text-muted-foreground">
-                                  {entry.notes || '-'}
-                                </td>
-                              </tr>
+                              <VendorHistoryPriceRow
+                                key={entry.id}
+                                entry={entry}
+                                material={material}
+                                category={category}
+                                isEditing={editingHistoryPriceId === entry.id}
+                                editForm={historyPriceEdit}
+                                saving={savingHistoryPrice}
+                                calculateBoardFeet={calculateBoardFeet}
+                                onStartEdit={startEditHistoryPrice}
+                                onCancelEdit={cancelEditHistoryPrice}
+                                onChangeField={changeHistoryPriceEditField}
+                                onSave={saveHistoryPriceEdit}
+                              />
                             );
                           })}
                         </tbody>

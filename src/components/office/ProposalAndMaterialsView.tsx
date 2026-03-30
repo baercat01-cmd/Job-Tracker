@@ -40,10 +40,18 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
   const [showDocumentsInPanel, setShowDocumentsInPanel] = useState(false);
   const [breakdownSheetPrices, setBreakdownSheetPrices] = useState<BreakdownSheetPrice[]>([]);
   const [materialsWorkbookView, setMaterialsWorkbookView] = useState<{ workbookId: string | null; status: 'working' | 'locked' | null } | null>(null);
+  const [jobWorkbookMaterialsTotal, setJobWorkbookMaterialsTotal] = useState<number | null>(null);
+  /** Session-only unlock; shared with JobFinancials + Materials so the proposal workbook matches the left panel lock. */
+  const [historicalUnlockedQuoteId, setHistoricalUnlockedQuoteId] = useState<string | null>(null);
 
   const isControlled = controlledQuoteId !== undefined;
   const selectedQuoteId = isControlled ? (controlledQuoteId ?? null) : internalQuoteId;
   const setSelectedQuoteId = isControlled ? (onQuoteChange ?? (() => {})) : setInternalQuoteId;
+
+  useEffect(() => {
+    setJobWorkbookMaterialsTotal(null);
+    setHistoricalUnlockedQuoteId(null);
+  }, [selectedQuoteId]);
 
   // When uncontrolled and job changes, set proposal to most recent only if we don't already have a valid selection for this job
   useEffect(() => {
@@ -122,6 +130,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
                 onSheetSelect={setLinkedSheetId}
                 externalBreakdownSheetPrices={breakdownSheetPrices}
                 externalMaterialsWorkbookView={materialsWorkbookView}
+                externalJobWorkbookMaterialsTotal={jobWorkbookMaterialsTotal}
               />
             </div>
           </div>
@@ -152,6 +161,11 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
                   externalActiveSheetId={linkedSheetId}
                   onBreakdownPriceSync={setBreakdownSheetPrices}
                   onWorkbookViewSync={setMaterialsWorkbookView}
+                  onJobWorkbookMaterialsTotalSync={setJobWorkbookMaterialsTotal}
+                  historicalUnlockedQuoteId={historicalUnlockedQuoteId}
+                  jobWorkbookMaterialsTotalForStrip={
+                    typeof jobWorkbookMaterialsTotal === 'number' ? jobWorkbookMaterialsTotal : undefined
+                  }
                 />
               </Suspense>
             )}

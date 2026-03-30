@@ -46,6 +46,8 @@ interface JobDetailedViewProps {
   getPortalJobId?: () => string | null;
   onBack?: () => void;
   onEdit?: () => void;
+  /** Refetch job from DB after nested edits (e.g. components, documents) so `job` prop stays in sync. */
+  onJobUpdate?: () => void;
   initialTab?: string;
 }
 
@@ -388,7 +390,7 @@ interface DailyLog {
   created_at: string;
 }
 
-export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEdit, initialTab = 'overview' }: JobDetailedViewProps) {
+export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEdit, onJobUpdate, initialTab = 'overview' }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [proposalNumber, setProposalNumber] = useState<string | null>(null);
@@ -1842,7 +1844,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
 
         <TabsContent value="components" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
-            <JobComponents job={job} onUpdate={() => {}} />
+            <JobComponents job={job} onUpdate={() => onJobUpdate?.()} />
           </div>
         </TabsContent>
 
@@ -1854,7 +1856,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
 
         <TabsContent value="documents" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
-            <JobDocuments job={job} onUpdate={() => {}} />
+            <JobDocuments job={job} onUpdate={() => onJobUpdate?.()} />
           </div>
         </TabsContent>
 

@@ -500,23 +500,23 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated, onW
       <div className="space-y-4">
         {(hiddenWorkingCount > 0 || hiddenLockedCount > 0) && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Showing the active workbook pair only (1 working + 1 locked snapshot).
-            {hiddenWorkingCount > 0 ? ` Hidden working versions: ${hiddenWorkingCount}.` : ''}
-            {hiddenLockedCount > 0 ? ` Hidden locked versions: ${hiddenLockedCount}.` : ''}
+            Showing the active pair only (1 proposal workbook + 1 job workbook).
+            {hiddenWorkingCount > 0 ? ` Hidden job workbook versions: ${hiddenWorkingCount}.` : ''}
+            {hiddenLockedCount > 0 ? ` Hidden proposal workbook versions: ${hiddenLockedCount}.` : ''}
           </div>
         )}
 
-        {/* Working Copy */}
+        {/* Job workbook (DB status: working) */}
         {activeWorkingVersion && (
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Working Copy</h3>
+            <h3 className="text-lg font-semibold">Job workbook</h3>
             <Card className="border-2 border-green-500">
               <CardHeader className="bg-green-50">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
                     <CardTitle className="flex items-center gap-2">
                       <LockOpen className="w-5 h-5 text-green-600" />
-                      Working Version (v{activeWorkingVersion.version_number})
+                      Job workbook (v{activeWorkingVersion.version_number})
                     </CardTitle>
                     {quote && (
                       <div className="flex items-center gap-2 text-sm">
@@ -562,13 +562,23 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated, onW
                       {new Date(activeWorkingVersion.created_at).toLocaleDateString()}
                     </div>
                     <Badge variant="outline" className="bg-green-100 text-green-800">
-                      Quoting Mode - Editable
+                      {proposalLockedVersion ? 'Internal / job tracking' : 'Quoting — editable'}
                     </Badge>
                   </div>
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                     <p className="text-sm text-amber-900">
-                      <strong>📝 Note:</strong> This is the editable copy for this proposal. The locked snapshot is
-                      the pricing record used for the proposal.
+                      {proposalLockedVersion ? (
+                        <>
+                          <strong>Note:</strong> A proposal workbook (locked snapshot) exists for this job. This job workbook is for shop,
+                          crew, and field tracking only — it does <strong>not</strong> drive customer proposal pricing (the
+                          proposal workbook does).
+                        </>
+                      ) : (
+                        <>
+                          <strong>Note:</strong> This is the editable materials workbook for this proposal (no separate
+                          locked snapshot yet).
+                        </>
+                      )}
                     </p>
                   </div>
                   {job?.zoho_quote_number && (
@@ -588,16 +598,16 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated, onW
           </div>
         )}
 
-        {/* Locked Proposal Snapshot */}
+        {/* Proposal workbook (DB status: locked — customer-facing pricing) */}
         {proposalLockedVersion && (
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Locked Proposal Snapshot</h3>
+            <h3 className="text-lg font-semibold">Proposal workbook</h3>
             <Card>
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Lock className="w-4 h-4 text-muted-foreground" />
-                    Version {proposalLockedVersion.version_number} (Locked)
+                    Proposal workbook (v{proposalLockedVersion.version_number})
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     <Button
@@ -614,7 +624,8 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated, onW
               <CardContent>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <div>
-                    Locked: {proposalLockedVersion.locked_at ? new Date(proposalLockedVersion.locked_at).toLocaleDateString() : 'Unknown'}
+                    Snapshot locked:{' '}
+                    {proposalLockedVersion.locked_at ? new Date(proposalLockedVersion.locked_at).toLocaleDateString() : 'Unknown'}
                   </div>
                 </div>
               </CardContent>

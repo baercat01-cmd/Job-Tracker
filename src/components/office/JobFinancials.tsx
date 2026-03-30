@@ -30,7 +30,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, ChevronLeft, ChevronRight, Briefcase, Edit, Upload, MoreVertical, List, Eye, EyeOff, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, Settings, Printer, Send, CheckCircle, GitCompare, Link2, PauseCircle, PlayCircle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
-import { isQuoteContractFrozen, quoteHasActiveContract } from '@/lib/quoteProposalLock';
+import {
+  isQuoteContractFrozen,
+  isProposalPanelReadOnly,
+  isQuoteDefaultLockedForProposalPanel,
+  quoteHasActiveContract,
+} from '@/lib/quoteProposalLock';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
@@ -200,6 +205,11 @@ interface JobFinancialsProps {
   externalBreakdownSheetPrices?: { sheetId: string; sheetName: string; categories: Record<string, number> }[];
   /** When split-view materials panel is viewing a locked workbook snapshot, mirror that here for pricing isolation. */
   externalMaterialsWorkbookView?: { workbookId: string | null; status: 'working' | 'locked' | null } | null;
+  /** Signed contract: extended sell total of job workbook (`working` row), separate from proposal materials. */
+  externalJobWorkbookMaterialsTotal?: number | null;
+  /** Split view: lift session "unlock for editing" so Materials uses the same read-only gate as this panel. */
+  historicalUnlockedQuoteId?: string | null;
+  onHistoricalUnlockedQuoteIdChange?: (id: string | null) => void;
 }
 
 /** Nested material_sheets select variants for cloning (most complete → oldest DBs). */
@@ -322,6 +332,30 @@ function lookupCategoryMarkup(
   return Number(defaultMarkup) || 0;
 }
 
+/** Matches `sumLinkedRowTotals` / DB rows where total_cost is empty but quantity×unit_cost is set. */
+function effectiveCustomRowLineItemBase(item: any): number {
+  return (
+    Number((item as any)?.total_price ?? (item as any)?.total_cost) ||
+    (Number((item as any)?.quantity) || 0) * (Number((item as any)?.unit_cost) || 0)
+  );
+}
+
+/** Workbook category treated as section labor in the narrow Materials/Labor column (not material_sheet_labor). */
+function isWorkbookLaborCategoryName(name: unknown): boolean {
+  const n = String(name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (!n) return false;
+  return (
+    n === 'labor' ||
+    n === 'labor & installation' ||
+    n === 'labor and installation' ||
+    n === 'installation labor' ||
+    n === 'labor/installation'
+  );
+}
+
 /** Linked custom row totals split by item_type and per-line-item markup. */
 function sumLinkedRowTotals(
   linkedRows: any[],
@@ -333,9 +367,7 @@ function sumLinkedRowTotals(
 
       if (lineItems.length > 0) {
         for (const item of lineItems) {
-          const itemCost =
-            Number((item as any)?.total_price ?? (item as any)?.total_cost) ||
-            (Number((item as any)?.quantity) || 0) * (Number((item as any)?.unit_cost) || 0);
+          const itemCost = effectiveCustomRowLineItemBase(item);
           const itemMarkup = Number(item?.markup_percent ?? row?.markup_percent ?? 0) || 0;
           const itemPrice = itemCost * (1 + itemMarkup / 100);
           const itemType = (item?.item_type || 'material') === 'labor' ? 'labor' : 'material';
@@ -343,10 +375,13 @@ function sumLinkedRowTotals(
           else acc.materialTotal += itemPrice;
         }
       } else {
-        // Backward-compatible fallback for rows without line items.
-        const baseCost = Number(row?.total_cost) || 0;
+        const baseCost =
+          Number(row?.total_cost) ||
+          (Number(row?.quantity) || 0) * (Number(row?.unit_cost) || 0);
         const rowMarkup = Number(row?.markup_percent ?? 0) || 0;
-        acc.materialTotal += baseCost * (1 + rowMarkup / 100);
+        const price = baseCost * (1 + rowMarkup / 100);
+        if (row.category === 'labor') acc.laborTotal += price;
+        else acc.materialTotal += price;
       }
 
       return acc;
@@ -367,9 +402,7 @@ function sumLinkedRowMaterialTotals(
         for (const item of lineItems) {
           const itemType = (item?.item_type || 'material') === 'labor' ? 'labor' : 'material';
           if (itemType !== 'material') continue;
-          const itemCost =
-            Number((item as any)?.total_price ?? (item as any)?.total_cost) ||
-            (Number((item as any)?.quantity) || 0) * (Number((item as any)?.unit_cost) || 0);
+          const itemCost = effectiveCustomRowLineItemBase(item);
           const itemMarkup = Number(item?.markup_percent ?? row?.markup_percent ?? 0) || 0;
           const itemPrice = itemCost * (1 + itemMarkup / 100);
           acc.materialTotal += itemPrice;
@@ -476,12 +509,13 @@ function SortableRow({
   const content = (() => {
     if (item.type === 'material') {
       const sheet = item.data;
-      const sheetIdForMatch = String((sheet as any)?.sheetId ?? (sheet as any)?.id ?? '').trim();
+      const sectionSheetId = String((sheet as any)?.sheetId ?? (sheet as any)?.id ?? '').trim();
+      const sheetIdForMatch = sectionSheetId;
       const sheetNameForMatch = String((sheet as any)?.sheetName ?? (sheet as any)?.sheet_name ?? '').trim().toLowerCase();
       const breakdownSheet = materialsBreakdown.sheetBreakdowns.find((s: any) => String(s?.sheetId ?? s?.id ?? '').trim() === sheetIdForMatch)
         || materialsBreakdown.sheetBreakdowns.find((s: any) => String(s?.sheetName ?? s?.sheet_name ?? '').trim().toLowerCase() === sheetNameForMatch);
-      const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
-      const linkedSubs = linkedSubcontractors[sheet.sheetId] || [];
+      const linkedRows = customRows.filter((r: any) => String(r.sheet_id ?? '').trim() === sectionSheetId);
+      const linkedSubs = linkedSubcontractors[sectionSheetId] || [];
       
       const linkedRowTotals = sumLinkedRowTotals(linkedRows, customRowLineItems);
       
@@ -489,23 +523,36 @@ function SortableRow({
       const linkedSubsMaterialsTotal = sumLinkedSubMaterialsFromSubs(linkedSubs, subcontractorLineItems);
       const linkedSubsLaborTotal = sumLinkedSubLaborFromSubs(linkedSubs, subcontractorLineItems);
       
-      // Calculate sheet labor
-      const sheetLaborTotal = sheetLabor[sheet.sheetId] ? sheetLabor[sheet.sheetId].total_labor_cost : 0;
+      // Sheet labor: tolerate map key mismatch; use hours×rate when total_labor_cost is missing/zero
+      let sheetLaborRow: any;
+      if (sectionSheetId) {
+        sheetLaborRow = sheetLabor[sectionSheetId];
+        if (!sheetLaborRow) {
+          for (const k of Object.keys(sheetLabor)) {
+            if (String(k).trim() === sectionSheetId) {
+              sheetLaborRow = sheetLabor[k];
+              break;
+            }
+          }
+        }
+      }
+      const sheetLaborTotal = sheetLaborRow
+        ? Number(sheetLaborRow.total_labor_cost) ||
+          Number(sheetLaborRow.estimated_hours || 0) * Number(sheetLaborRow.hourly_rate || 0)
+        : 0;
       
       // Calculate labor from sheet line items (with markup, same as line item display)
-      const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
+      const sheetLaborItems = customRowLineItems[sectionSheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
       const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => {
         const itemMarkup = item.markup_percent ?? 0;
-        const base = Number(item.total_price ?? item.total_cost) || 0;
-        return sum + (base * (1 + itemMarkup / 100));
+        return sum + effectiveCustomRowLineItemBase(item) * (1 + itemMarkup / 100);
       }, 0);
 
       // Sheet-level material line items (Add Material Row from section) — include in section total
-      const sheetMaterialItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'material') || [];
+      const sheetMaterialItems = customRowLineItems[sectionSheetId]?.filter((item: any) => (item.item_type || 'material') === 'material') || [];
       const sheetMaterialLineItemsTotal = sheetMaterialItems.reduce((sum: number, item: any) => {
         const itemMarkup = item.markup_percent ?? 0;
-        const base = Number(item.total_price ?? item.total_cost) || 0;
-        return sum + (base * (1 + itemMarkup / 100));
+        return sum + effectiveCustomRowLineItemBase(item) * (1 + itemMarkup / 100);
       }, 0);
       
       const categorySource = ((breakdownSheet as any)?.categories?.length ? (breakdownSheet as any).categories : sheet.categories) || [];
@@ -559,42 +606,43 @@ function SortableRow({
         return { price: getCategoryBreakdownPrice(cat), isFinal: false };
       };
 
-      // Materials total for this section header = sum of each category "Price" (same as rows below:
-      // getCategoryBreakdownPrice × (1 + category markup)) plus sheet material rows and linked material rows.
+      // Materials vs labor: categories named "Labor" (common workbook layout) count in the Labor column, not Materials.
       const displayCategoriesForMaterialsSum =
         breakdownCategories.length > 0 ? breakdownCategories : categorySource;
-      const materialsSubtotalFromCategories = displayCategoriesForMaterialsSum.reduce(
-        (sum: number, cat: any) => {
-          const sheetId = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
-          const categoryMarkup = lookupCategoryMarkup(
-            categoryMarkups,
-            sheetId,
-            cat?.name,
-            (sheet.markup_percent ?? 10)
-          );
-          const { price, isFinal } = getCategoryDisplayPrice(cat);
-          return sum + (isFinal ? price : price * (1 + (Number(categoryMarkup) || 0) / 100));
-        },
-        0
-      );
+      let materialsSubtotalFromCategories = 0;
+      let laborSubtotalFromCategories = 0;
+      for (const cat of displayCategoriesForMaterialsSum) {
+        const catSheetId = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
+        const categoryMarkup = lookupCategoryMarkup(
+          categoryMarkups,
+          catSheetId,
+          cat?.name,
+          (sheet.markup_percent ?? 10)
+        );
+        const { price, isFinal } = getCategoryDisplayPrice(cat);
+        const lineTotal = isFinal ? price : price * (1 + (Number(categoryMarkup) || 0) / 100);
+        if (isWorkbookLaborCategoryName(cat?.name)) laborSubtotalFromCategories += lineTotal;
+        else materialsSubtotalFromCategories += lineTotal;
+      }
       const sheetFinalPrice =
         materialsSubtotalFromCategories +
         sheetMaterialLineItemsTotal +
         linkedRowTotals.materialTotal +
         linkedSubsMaterialsTotal;
       
-      // Total labor: legacy sheet labor + sheet labor line items + linked custom-row labor + subcontractor labor lines
+      // Total labor: DB sheet labor + line items + linked rows/subs + workbook "Labor" category
       const totalLaborCost =
         sheetLaborTotal +
         sheetLaborLineItemsTotal +
         linkedRowTotals.laborTotal +
-        linkedSubsLaborTotal;
+        linkedSubsLaborTotal +
+        laborSubtotalFromCategories;
       const sectionTotal = sheetFinalPrice + totalLaborCost;
 
       return (
         <Collapsible
           className="border border-slate-300 rounded-lg bg-white py-2 px-3 shadow-sm"
-          onClickCapture={() => onSheetSelect?.(sheet.sheetId)}
+          onClickCapture={() => onSheetSelect?.(sectionSheetId || null)}
         >
           <div className="flex items-start gap-2">
             {/* Drag Handle */}
@@ -611,7 +659,7 @@ function SortableRow({
 
             {/* Title */}
             <div className="flex-1 min-w-0">
-              {editingRowName === sheet.sheetId && editingRowNameType === 'sheet' ? (
+              {editingRowName === sectionSheetId && editingRowNameType === 'sheet' ? (
                 <div className="flex items-center gap-1">
                   <Input
                     value={tempRowName}
@@ -647,7 +695,7 @@ function SortableRow({
                     size="sm"
                     variant="ghost"
                     className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                    onClick={() => startEditingRowName(sheet.sheetId, 'sheet', sheet.sheetName)}
+                    onClick={() => startEditingRowName(sectionSheetId, 'sheet', sheet.sheetName)}
                   >
                     <Edit className="w-3 h-3 text-slate-500" />
                   </Button>
@@ -662,7 +710,7 @@ function SortableRow({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[14rem]">
-                <DropdownMenuItem onClick={() => openSheetDescDialog(sheet.sheetId, sheet.sheetDescription)}>
+                <DropdownMenuItem onClick={() => openSheetDescDialog(sectionSheetId, sheet.sheetDescription)}>
                   <Edit className="w-3 h-3 mr-2" />
                   Edit Description
                 </DropdownMenuItem>
@@ -704,7 +752,7 @@ function SortableRow({
                   !(quote as any).is_change_order_proposal &&
                   sheet.sheetType !== 'change_order' && (
                     <DropdownMenuItem
-                      onClick={() => onOpenCopyToChangeOrder(sheet.sheetId, sheet.sheetName || 'Section')}
+                      onClick={() => onOpenCopyToChangeOrder(sectionSheetId, sheet.sheetName || 'Section')}
                       className="text-orange-800 focus:text-orange-900 focus:bg-orange-50"
                     >
                       <Send className="w-3 h-3 mr-2 text-orange-600" />
@@ -716,27 +764,27 @@ function SortableRow({
                   (sheet as any).isOptional ? (
                     <>
                       <DropdownMenuItem onClick={async () => {
-                        setOptionalSheetOverlay(prev => ({ ...prev, [sheet.sheetId]: false }));
+                        setOptionalSheetOverlay(prev => ({ ...prev, [sectionSheetId]: false }));
                         // Always update is_option first (column is guaranteed to exist)
-                        const { error } = await supabase.from('material_sheets').update({ is_option: false }).eq('id', sheet.sheetId);
+                        const { error } = await supabase.from('material_sheets').update({ is_option: false }).eq('id', sectionSheetId);
                         if (error) {
                           toast.error(error.message || 'Failed to update optional state');
                           return;
                         }
                         // Best-effort: clear comparison link (column may not exist on older DBs)
-                        await supabase.from('material_sheets').update({ compare_to_sheet_id: null } as any).eq('id', sheet.sheetId);
+                        await supabase.from('material_sheets').update({ compare_to_sheet_id: null } as any).eq('id', sectionSheetId);
                         await loadMaterialsData(quote?.id ?? null, false);
                       }}>
                         <Check className="w-3 h-3 mr-2 text-green-600" />
                         Include in Total
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => { setComparePickerSheetId(sheet.sheetId); setShowComparePickerDialog(true); }}>
+                      <DropdownMenuItem onClick={() => { setComparePickerSheetId(sectionSheetId); setShowComparePickerDialog(true); }}>
                         <GitCompare className="w-3 h-3 mr-2 text-blue-600" />
                         {(sheet as any).compareToSheetId ? 'Change Comparison Section' : 'Compare with Section...'}
                       </DropdownMenuItem>
                       {(sheet as any).compareToSheetId && (
                         <DropdownMenuItem onClick={async () => {
-                          await supabase.from('material_sheets').update({ compare_to_sheet_id: null } as any).eq('id', sheet.sheetId);
+                          await supabase.from('material_sheets').update({ compare_to_sheet_id: null } as any).eq('id', sectionSheetId);
                           await loadMaterialsData(quote?.id ?? null, false);
                         }}>
                           <X className="w-3 h-3 mr-2 text-slate-500" />
@@ -746,8 +794,8 @@ function SortableRow({
                     </>
                   ) : (
                     <DropdownMenuItem onClick={async () => {
-                      setOptionalSheetOverlay(prev => ({ ...prev, [sheet.sheetId]: true }));
-                      const { error } = await supabase.from('material_sheets').update({ is_option: true }).eq('id', sheet.sheetId);
+                      setOptionalSheetOverlay(prev => ({ ...prev, [sectionSheetId]: true }));
+                      const { error } = await supabase.from('material_sheets').update({ is_option: true }).eq('id', sectionSheetId);
                       if (error) {
                         toast.error(error.message || 'Failed to update optional state');
                         return;
@@ -759,19 +807,19 @@ function SortableRow({
                     </DropdownMenuItem>
                   )
                 )}
-                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'material', 'sheet')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sectionSheetId, undefined, 'material', 'sheet')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material Row
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'labor', 'sheet')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sectionSheetId, undefined, 'labor', 'sheet')}>
                   <DollarSign className="w-3 h-3 mr-2" />
                   Add Labor
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'combined', 'sheet')}>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sectionSheetId, undefined, 'combined', 'sheet')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material + Labor
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
+                <DropdownMenuItem onClick={() => openSubcontractorDialog(sectionSheetId, 'sheet')}>
                   <Briefcase className="w-3 h-3 mr-2" />
                   Add Subcontractor
                 </DropdownMenuItem>
@@ -785,7 +833,7 @@ function SortableRow({
             <div className="flex-1 min-w-0">
               {sheet.sheetDescription ? (
                 <Textarea
-                  key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
+                  key={`sheet-desc-${sectionSheetId}-${sheet.sheetDescription}`}
                   defaultValue={sheet.sheetDescription || ''}
                   placeholder="Click to add description..."
                   className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
@@ -808,7 +856,7 @@ function SortableRow({
                         await supabase
                           .from('material_sheets')
                           .update({ description: newValue || null })
-                          .eq('id', sheet.sheetId);
+                          .eq('id', sectionSheetId);
                         await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
                       } catch (error) {
                         console.error('Error saving description:', error);
@@ -819,7 +867,7 @@ function SortableRow({
               ) : (
                 <div 
                   className="text-xs text-muted-foreground italic cursor-pointer hover:text-foreground py-1"
-                  onClick={() => openSheetDescDialog(sheet.sheetId, '')}
+                  onClick={() => openSheetDescDialog(sectionSheetId, '')}
                 >
                   No description
                 </div>
@@ -859,7 +907,7 @@ function SortableRow({
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Material Items</p>
                   {displayCategories.map((category: any, catIdx: number) => {
-                    const categoryKey = `${sheet.sheetId}_${category.name}`;
+                    const categoryKey = `${sectionSheetId}_${category.name}`;
                     const categoryMarkup = categoryMarkups[categoryKey] ?? (sheet.markup_percent ?? 10);
                     const breakdownCategory = category;
                     const baseCategoryCost = (category.items || []).reduce((sum: number, item: any) => {
@@ -884,14 +932,14 @@ function SortableRow({
                             )}
                             {!isReadOnly && (() => {
                               const handleOptionToggle = async (value: boolean) => {
-                                const key = `${sheet.sheetId}_${category.name}`;
+                                const key = `${sectionSheetId}_${category.name}`;
                                 setOptCatOverlay(prev => ({ ...prev, [key]: value }));
                                 await loadMaterialsData(quote?.id ?? null, !!isReadOnly, { [key]: value });
                                 try {
                                   const { error } = await supabase
                                     .from('material_category_options')
                                     .upsert(
-                                      { sheet_id: sheet.sheetId, category_name: category.name, is_optional: value },
+                                      { sheet_id: sectionSheetId, category_name: category.name, is_optional: value },
                                       { onConflict: 'sheet_id,category_name' }
                                     );
                                   if (error) throw error;
@@ -936,7 +984,7 @@ function SortableRow({
                                 value={categoryMarkup}
                                 onChange={async (e) => {
                                   const newMarkup = parseFloat(e.target.value) || 0;
-                                  const categoryKey = `${sheet.sheetId}_${category.name}`;
+                                  const categoryKey = `${sectionSheetId}_${category.name}`;
                                   
                                   // Update local state immediately for responsive UI
                                   setCategoryMarkups(prev => ({
@@ -948,13 +996,13 @@ function SortableRow({
                                     // Mark this markup as being saved
                                     savingMarkupsRef.current.add(categoryKey);
                                     
-                                    console.log(`[MARKUP SAVE] Starting save: ${newMarkup}% for category "${category.name}" in sheet ${sheet.sheetId}`);
+                                    console.log(`[MARKUP SAVE] Starting save: ${newMarkup}% for category "${category.name}" in sheet ${sectionSheetId}`);
                                     
                                     // Save to database with explicit conflict resolution
                                     const { data: upsertData, error: upsertError } = await supabase
                                       .from('material_category_markups')
                                       .upsert({
-                                        sheet_id: sheet.sheetId,
+                                        sheet_id: sectionSheetId,
                                         category_name: category.name,
                                         markup_percent: newMarkup,
                                         updated_at: new Date().toISOString(),
@@ -1119,7 +1167,7 @@ function SortableRow({
 
               {/* Sheet-level Line Items (material + labor) - unified list so Add Labor appears in this section */}
               {(() => {
-                const sheetLineItems = (customRowLineItems[sheet.sheetId] || [])
+                const sheetLineItems = (customRowLineItems[sectionSheetId] || [])
                   .slice()
                   .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
                 if (sheetLineItems.length === 0) return null;
@@ -1209,7 +1257,7 @@ function SortableRow({
                                   <EyeOff className="w-3 h-3" />
                                 </span>
                               )}
-                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, lineItem, isLabor ? 'labor' : 'material', 'sheet')}>
+                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sectionSheetId, lineItem, isLabor ? 'labor' : 'material', 'sheet')}>
                                 <Edit className="w-3 h-3" />
                               </Button>
                               <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteLineItem(lineItem.id)}>
@@ -1225,25 +1273,25 @@ function SortableRow({
               })()}
 
               {/* Legacy Sheet Labor (for backward compatibility) */}
-              {sheetLabor[sheet.sheetId] && (
+              {sheetLaborRow && (
                 <div className="bg-amber-50 border border-amber-200 rounded p-2">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <p className="text-xs font-semibold text-slate-900">{sheetLabor[sheet.sheetId].description}</p>
+                      <p className="text-xs font-semibold text-slate-900">{sheetLaborRow.description}</p>
                       <p className="text-xs text-slate-600">
-                        {sheetLabor[sheet.sheetId].estimated_hours}h × ${sheetLabor[sheet.sheetId].hourly_rate}/hr
+                        {sheetLaborRow.estimated_hours}h × ${sheetLaborRow.hourly_rate}/hr
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-bold text-slate-900">
-                        ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${(Number(sheetLaborRow.total_labor_cost) || Number(sheetLaborRow.estimated_hours || 0) * Number(sheetLaborRow.hourly_rate || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                       {!isReadOnly && (
                         <>
-                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
+                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sectionSheetId)}>
                             <Edit className="w-3 h-3" />
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteSheetLabor(sheetLabor[sheet.sheetId].id)}>
+                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteSheetLabor(sheetLaborRow.id)}>
                             <Trash2 className="w-3 h-3 text-red-600" />
                           </Button>
                         </>
@@ -1463,7 +1511,7 @@ function SortableRow({
               const baseTotal = baseFinalPrice + baseLaborCost;
               const optionTotal = sheetFinalPrice + totalLaborCost;
               const priceDiff = optionTotal - baseTotal;
-              const isExpanded = expandedComparisons.has(sheet.sheetId);
+              const isExpanded = expandedComparisons.has(sectionSheetId);
 
               return (
                 <div className="mt-3 border border-blue-200 rounded-lg overflow-hidden">
@@ -1471,8 +1519,8 @@ function SortableRow({
                     className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
                     onClick={() => {
                       const next = new Set(expandedComparisons);
-                      if (next.has(sheet.sheetId)) next.delete(sheet.sheetId);
-                      else next.add(sheet.sheetId);
+                      if (next.has(sectionSheetId)) next.delete(sectionSheetId);
+                      else next.add(sectionSheetId);
                       setExpandedComparisons(next);
                     }}
                   >
@@ -1511,7 +1559,7 @@ function SortableRow({
                               const baseCat = (baseSheet.categories || []).find((c: any) => c.name === catName);
                               const optCat = (sheet.categories || []).find((c: any) => c.name === catName);
                               const baseCatMarkup = categoryMarkups[`${baseSheet.sheetId}_${catName}`] ?? 10;
-                              const optCatMarkup = categoryMarkups[`${sheet.sheetId}_${catName}`] ?? 10;
+                              const optCatMarkup = categoryMarkups[`${sectionSheetId}_${catName}`] ?? 10;
                               const baseCatCostDisplay = baseCat
                                 ? (Number(baseCat.totalPrice) > 0
                                   ? Number(baseCat.totalPrice)
@@ -2401,7 +2449,17 @@ function SortableRow({
 
 const headerBtn = 'bg-white text-black hover:bg-slate-100 border-slate-400 text-xs h-8 px-2';
 
-export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSelect, externalBreakdownSheetPrices, externalMaterialsWorkbookView }: JobFinancialsProps) {
+export function JobFinancials({
+  job,
+  controlledQuoteId,
+  onQuoteChange,
+  onSheetSelect,
+  externalBreakdownSheetPrices,
+  externalMaterialsWorkbookView,
+  externalJobWorkbookMaterialsTotal,
+  historicalUnlockedQuoteId: historicalUnlockedQuoteIdProp,
+  onHistoricalUnlockedQuoteIdChange,
+}: JobFinancialsProps) {
   const { profile } = useAuth();
   const setProposalToolbar = useProposalToolbar();
   const proposalSummaryCtx = useProposalSummary();
@@ -2497,6 +2555,10 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   // Supabase Realtime broadcast channel for instant cross-user sync
   const taxExemptChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const quoteIdForSubsRef = useRef<string | null>(null);
+  /** Incremented on each full `loadData` so superseded async loads cannot overwrite materials/labor state. */
+  const financialLoadCoopGenRef = useRef(0);
+  const isFinancialLoadStale = (gen?: number) =>
+    gen != null && gen !== financialLoadCoopGenRef.current;
 
   // Subcontractor dialog state
   const [copyCoDialogOpen, setCopyCoDialogOpen] = useState(false);
@@ -2604,8 +2666,16 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [initializingVersions, setInitializingVersions] = useState(false);
-  // When user explicitly unlocks a historical proposal for editing, allow edits until they lock again or switch proposal
-  const [historicalUnlockedQuoteId, setHistoricalUnlockedQuoteId] = useState<string | null>(null);
+  // When user explicitly unlocks a default-locked proposal for editing, allow edits until they lock again or switch proposal.
+  // Parent may control this (split view) so Materials shares the same gate.
+  const [internalHistoricalUnlockedQuoteId, setInternalHistoricalUnlockedQuoteId] = useState<string | null>(null);
+  const historicalUnlockFromParent = typeof onHistoricalUnlockedQuoteIdChange === 'function';
+  const effectiveHistoricalUnlockedQuoteId = historicalUnlockFromParent
+    ? (historicalUnlockedQuoteIdProp ?? null)
+    : internalHistoricalUnlockedQuoteId;
+  const setEffectiveHistoricalUnlockedQuoteId = historicalUnlockFromParent
+    ? onHistoricalUnlockedQuoteIdChange!
+    : setInternalHistoricalUnlockedQuoteId;
 
 
   // Ref always holding the latest values needed by the materials-workbook-updated event handler,
@@ -2614,7 +2684,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
     jobId: string;
     quoteId: string | null;
     allJobQuotesFirstId: string | undefined;
-    historicalUnlockedQuoteId: string | null;
+    historicalUnlockedQuoteId: string | null; // effective session unlock id (parent or internal)
     loadMaterialsData: (targetQuoteId: string | null, isHistorical?: boolean) => void;
     loadSubcontractorEstimates: (targetQuoteId: string | null, isHistorical?: boolean) => Promise<void>;
   }>({
@@ -2626,37 +2696,31 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange, onSheetSe
     loadSubcontractorEstimates: async () => {},
   });
 
-  // Clear unlock when switching to a different proposal so each historical proposal starts locked
+  // Clear session unlock when switching to a different proposal (internal state only; parent clears its own when controlled).
   useEffect(() => {
-    if (quote?.id && quote.id !== historicalUnlockedQuoteId) setHistoricalUnlockedQuoteId(null);
-  }, [quote?.id]);
+    if (historicalUnlockFromParent) return;
+    setInternalHistoricalUnlockedQuoteId((prev) => {
+      if (!quote?.id || prev == null) return prev;
+      return quote.id !== prev ? null : prev;
+    });
+  }, [quote?.id, historicalUnlockFromParent]);
 
   // Optional-category overlay is per workbook/sheet keys — must not carry over to another proposal
   useEffect(() => {
     setOptionalCategoryOverlay({});
   }, [quote?.id]);
 
-  // Default locked: historical (not first), active contract/signature, or office lock. "Mark as sent" alone does not lock.
-  const isDefaultLocked = !!quote && (
-    (allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id) ||
-    quoteHasActiveContract(quote as any) ||
-    !!(quote as any).locked_for_editing
-  );
-  // Read-only when default locked and user hasn't unlocked this historical proposal for editing
-  const isReadOnly = isDefaultLocked && quote?.id !== historicalUnlockedQuoteId;
+  const isDefaultLocked = isQuoteDefaultLockedForProposalPanel(quote, allJobQuotes);
+  const isReadOnly = isProposalPanelReadOnly(quote, allJobQuotes, effectiveHistoricalUnlockedQuoteId);
   const isExternallyViewingLockedWorkbook = externalMaterialsWorkbookView?.status === 'locked';
   const isPriceIsolated = isReadOnly || isExternallyViewingLockedWorkbook;
 
   // Build a fast lookup from the structured Breakdown prices: (sheetId|sheetName) → categoryName → price.
-  // When a signed contract exists and the Materials panel is on the internal **working** workbook, do not apply
-  // those category prices here — they would override locked contract math via sheet-name matching and change the
-  // customer proposal header while shop edits the copy.
+  // Signed contract: only apply Materials-panel category sync when that panel reports the **locked** contract workbook.
+  // If status is working, null (before sync), or anything other than locked, ignore external prices so the header
+  // stays on DB-loaded locked snapshot totals instead of the job-tracking working copy (~$ mismatch while editing).
   const externalPriceLookup = useMemo(() => {
-    if (
-      quote &&
-      quoteHasActiveContract(quote as any) &&
-      externalMaterialsWorkbookView?.status === 'working'
-    ) {
+    if (quote && quoteHasActiveContract(quote as any) && externalMaterialsWorkbookView?.status !== 'locked') {
       return new Map<string, Record<string, number>>();
     }
     const map = new Map<string, Record<string, number>>();
@@ -5332,7 +5396,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   async function unlockHistoricalForEditing() {
     if (!quote || !isDefaultLocked) return;
     await syncMaterialWorkbookLockForQuote(quote.id, false);
-    setHistoricalUnlockedQuoteId(quote.id);
+    setEffectiveHistoricalUnlockedQuoteId(quote.id);
     await loadData(false, quote, { forceLive: true });
     try {
       window.dispatchEvent(new CustomEvent('proposal-editing-unlocked', { detail: { quoteId: quote.id } }));
@@ -5344,7 +5408,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
   function lockHistoricalAgain() {
     if (!quote) return;
-    setHistoricalUnlockedQuoteId(null);
+    setEffectiveHistoricalUnlockedQuoteId(null);
     setTimeout(() => loadData(false, quote), 0);
     toast.info('Proposal locked. Viewing read-only.');
   }
@@ -5402,7 +5466,13 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     }
     await syncMaterialWorkbookLockForQuote(quote.id, false);
     const refreshed = await loadQuoteData();
-    await loadData(false, refreshed ?? quote);
+    const qAfter = refreshed ?? quote;
+    await loadData(false, qAfter);
+    // Signed jobs stay "default locked" by contract flag alone; grant the same session edit pass as Unlock for historical
+    // so one click clears office lock and enables the proposal workbook + left panel together.
+    if (qAfter && quoteHasActiveContract(qAfter as any)) {
+      setEffectiveHistoricalUnlockedQuoteId(qAfter.id);
+    }
     try {
       window.dispatchEvent(new CustomEvent('proposal-editing-unlocked', { detail: { quoteId: quote.id } }));
     } catch {
@@ -5440,41 +5510,44 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     const isHistorical = !options?.forceLive && !!effectiveQuote
       && allJobQuotes.length > 0
       && effectiveQuote.id !== allJobQuotes[0]?.id
-      && effectiveQuote.id !== historicalUnlockedQuoteId;
+      && effectiveQuote.id !== effectiveHistoricalUnlockedQuoteId;
 
     if (!silent) {
       setLoading(true);
     }
+    const loadCoopGen = ++financialLoadCoopGenRef.current;
     try {
       // IMPORTANT: When a proposal is locked (either contract-frozen OR office-locked), `loadCustomRows` relies on the
       // currently displayed sheet IDs to fetch sheet-linked line items (Add Labor). Load materials first to avoid a
       // race where sheet IDs are empty and labor disappears from locked totals until a later refresh/unlock cycle.
       if (contractFrozen || officeLocked) {
-        await loadMaterialsData(targetQuoteId, isHistorical);
+        await loadMaterialsData(targetQuoteId, isHistorical, undefined, loadCoopGen);
+        if (isFinancialLoadStale(loadCoopGen)) return;
         await Promise.all([
-          loadCustomRows(targetQuoteId, isHistorical),
+          loadCustomRows(targetQuoteId, isHistorical, loadCoopGen),
           loadLaborPricing(),
           loadLaborHours(),
-          loadSubcontractorEstimates(targetQuoteId, isHistorical),
+          loadSubcontractorEstimates(targetQuoteId, isHistorical, loadCoopGen),
         ]);
       } else {
         // Even when editable, sheet-linked line items (Add Labor) can depend on workbook/sheet resolution.
         // Load materials first whenever a quote is active to prevent races when switching proposals.
         if (targetQuoteId) {
-          await loadMaterialsData(targetQuoteId, isHistorical);
+          await loadMaterialsData(targetQuoteId, isHistorical, undefined, loadCoopGen);
+          if (isFinancialLoadStale(loadCoopGen)) return;
           await Promise.all([
-            loadCustomRows(targetQuoteId, isHistorical),
+            loadCustomRows(targetQuoteId, isHistorical, loadCoopGen),
             loadLaborPricing(),
             loadLaborHours(),
-            loadSubcontractorEstimates(targetQuoteId, isHistorical),
+            loadSubcontractorEstimates(targetQuoteId, isHistorical, loadCoopGen),
           ]);
         } else {
           await Promise.all([
-            loadCustomRows(targetQuoteId, isHistorical),
+            loadCustomRows(targetQuoteId, isHistorical, loadCoopGen),
             loadLaborPricing(),
             loadLaborHours(),
-            loadMaterialsData(targetQuoteId, isHistorical),
-            loadSubcontractorEstimates(targetQuoteId, isHistorical),
+            loadMaterialsData(targetQuoteId, isHistorical, undefined, loadCoopGen),
+            loadSubcontractorEstimates(targetQuoteId, isHistorical, loadCoopGen),
           ]);
         }
       }
@@ -5490,7 +5563,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     }
   }
 
-  async function loadSubcontractorEstimates(targetQuoteId: string | null = null, isHistorical: boolean = false) {
+  async function loadSubcontractorEstimates(
+    targetQuoteId: string | null = null,
+    isHistorical: boolean = false,
+    cooperativeGen?: number
+  ) {
     try {
       // Locked/historical proposals: always load live data so subcontractor rows and pricing always show
       if (isHistorical && targetQuoteId) {
@@ -5568,6 +5645,8 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         if (error) throw error;
         rawData = data || [];
       }
+
+      if (isFinancialLoadStale(cooperativeGen)) return;
 
       // Strip the nested relation out so state only holds flat estimate objects
       const scopeId = targetQuoteId ? `quote:${targetQuoteId}` : `job:${job.id}`;
@@ -5726,12 +5805,17 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     jobId: job.id,
     quoteId: quote?.id ?? null,
     allJobQuotesFirstId: allJobQuotes[0]?.id,
-    historicalUnlockedQuoteId,
+    historicalUnlockedQuoteId: effectiveHistoricalUnlockedQuoteId,
     loadMaterialsData,
     loadSubcontractorEstimates,
   };
 
-  async function loadMaterialsData(targetQuoteId: string | null = null, isHistorical: boolean = false, overlayOverride?: Record<string, boolean>) {
+  async function loadMaterialsData(
+    targetQuoteId: string | null = null,
+    isHistorical: boolean = false,
+    overlayOverride?: Record<string, boolean>,
+    cooperativeGen?: number
+  ) {
     const wasHistoricalRequest = isHistorical;
     try {
       // Historical (locked/older) proposals: always load live data from DB so labor and materials
@@ -5955,6 +6039,18 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           .maybeSingle();
         contractFrozen = isQuoteContractFrozen(quoteRowForMaterials as any);
 
+        // Locked + working rows for the same quote = contract snapshot + job workbook. Proposal totals must always
+        // read the locked row so edits on the job workbook never move Materials / GRAND TOTAL (even if quote contract
+        // flags are missing or momentarily out of sync with the DB).
+        const { data: wbPairProbe } = await supabase
+          .from('material_workbooks')
+          .select('status')
+          .eq('quote_id', targetQuoteId);
+        const pairStatuses = new Set((wbPairProbe || []).map((r: { status?: string }) => r.status));
+        if (pairStatuses.has('locked') && pairStatuses.has('working')) {
+          contractFrozen = true;
+        }
+
         // Non–first-proposal tab: same workbook priority as MaterialsManagement (workingList[0] ?? lockedList[0]),
         // both sorted by version_number desc — NOT updated_at alone, or locking the working copy can surface an
         // older locked snapshot and change materials totals on the left panel.
@@ -6097,6 +6193,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       if (workbookError) throw workbookError;
       // Air-gap: never load job-level workbook when a quote is active — each proposal stays isolated
       if (!workbookData) {
+        if (isFinancialLoadStale(cooperativeGen)) return;
         setMaterialsBreakdown({
           sheetBreakdowns: [],
           totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
@@ -6108,6 +6205,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         setSheetMarkups({});
         return;
       }
+      if (isFinancialLoadStale(cooperativeGen)) return;
       setActiveWorkbookId(String(workbookData.id ?? '') || null);
       setActiveWorkbookStatus((workbookData.status as any) ?? null);
 
@@ -6118,7 +6216,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       // Build flat sheet objects (strip nested children for state storage)
       const sheetsFlat = sheetsData.map(({ material_items: _i, material_sheet_labor: _l, material_category_markups: _m, ...s }: any) => s);
       if (JSON.stringify(sheetsFlat) !== JSON.stringify(materialSheets)) {
-        setMaterialSheets(sheetsFlat);
+        if (!isFinancialLoadStale(cooperativeGen)) {
+          setMaterialSheets(sheetsFlat);
+        }
       }
 
       // Build labor map from nested data (include total_labor_cost so UI displays correctly)
@@ -6126,7 +6226,8 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       sheetsData.forEach((sheet: any) => {
         (sheet.material_sheet_labor || []).forEach((labor: any) => {
           const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
-          laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
+          const lk = String(labor.sheet_id ?? '').trim();
+          if (lk) laborMap[lk] = { ...labor, total_labor_cost: total, sheet_id: lk };
         });
       });
       // For locked/sent proposals, nested material_sheet_labor may be missing; supplement from DB so labor always shows.
@@ -6139,7 +6240,16 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           .in('sheet_id', sheetIdsForLabor);
         (liveLaborRows || []).forEach((labor: any) => {
           const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
-          if (!laborMap[labor.sheet_id]) laborMap[labor.sheet_id] = { ...labor, total_labor_cost: total };
+          const lk = String(labor.sheet_id ?? '').trim();
+          if (!lk) return;
+          const prev = laborMap[lk];
+          const prevTotal = prev
+            ? Number(prev.total_labor_cost) ||
+              Number(prev.estimated_hours || 0) * Number(prev.hourly_rate || 0)
+            : 0;
+          if (!prev || total > prevTotal) {
+            laborMap[lk] = { ...labor, total_labor_cost: total, sheet_id: lk };
+          }
         });
       }
       // When we displayed a fallback workbook (proposal had no sheets/items), labor was on the proposal's workbook;
@@ -6173,8 +6283,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         }
       }
 
-      // When viewing a LOCKED workbook, labor may have been entered on the WORKING copy (different sheet_ids).
-      // Pull labor from the newest working workbook and map to displayed locked sheets by name/order_index.
+      // When viewing the contract LOCKED workbook, sheet-level labor often lives on another row for the same quote
+      // (working job workbook, an older locked version, etc.) with different material_sheets.id values.
+      // Merge labor from every *other* workbook for this quote onto displayed sheets by name, then order_index.
       if (hasQuote && (workbookData.status as any) === 'locked') {
         try {
           const normalizeSheetName = (v: unknown) =>
@@ -6182,6 +6293,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               .toLowerCase()
               .trim()
               .replace(/\s+/g, ' ');
+          const effectiveLaborTotal = (lab: any) => {
+            const direct = Number(lab?.total_labor_cost);
+            if (Number.isFinite(direct) && direct > 0) return direct;
+            return Number(lab?.estimated_hours || 0) * Number(lab?.hourly_rate || 0);
+          };
           const displayedByName = new Map<string, string>();
           const displayedByOrder = new Map<number, string>();
           sheetsData.forEach((s: any) => {
@@ -6193,46 +6309,132 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             if (Number.isFinite(oi) && !displayedByOrder.has(oi)) displayedByOrder.set(oi, sid);
           });
 
-          const { data: workingWb } = await supabase
-            .from('material_workbooks')
-            .select('id, material_sheets(id, sheet_name, order_index)')
-            .eq('quote_id', targetQuoteId)
-            .eq('status', 'working')
-            .order('version_number', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          const ws = (workingWb as any)?.material_sheets || [];
-          const workingSheetIds = (ws || []).map((s: any) => s.id).filter(Boolean);
-          if (workingSheetIds.length > 0) {
-            const { data: workingLaborRows } = await supabase
-              .from('material_sheet_labor')
-              .select('*')
-              .in('sheet_id', workingSheetIds);
-            (workingLaborRows || []).forEach((labor: any) => {
-              const workingSheet = (ws || []).find((s: any) => s.id === labor.sheet_id);
-              if (!workingSheet) return;
-              const byName = displayedByName.get(normalizeSheetName(workingSheet.sheet_name));
-              const byOrder = displayedByOrder.get(Number(workingSheet.order_index));
-              const mappedSheetId = byName || byOrder;
-              if (!mappedSheetId) return;
-              const total =
-                labor.total_labor_cost ??
-                (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
-              // Prefer existing locked labor if it's already set and non-zero; otherwise allow working labor to fill in.
-              const existing = laborMap[mappedSheetId];
-              const existingTotal = Number(existing?.total_labor_cost) || 0;
-              if (existing && existingTotal > 0) return;
-              if (!(Number.isFinite(total) && total > 0)) return;
-              laborMap[mappedSheetId] = { ...labor, sheet_id: mappedSheetId, total_labor_cost: total };
-            });
+          const displayedWbId = String(workbookData.id ?? '').trim();
+          const { data: quoteWbs } = await supabase.from('material_workbooks').select('id').eq('quote_id', targetQuoteId);
+          const otherWbIds = (quoteWbs || [])
+            .map((w: any) => String(w?.id ?? '').trim())
+            .filter((id: string) => id && id !== displayedWbId);
+          if (otherWbIds.length > 0) {
+            const { data: otherSheets } = await supabase
+              .from('material_sheets')
+              .select('id, sheet_name, order_index')
+              .in('workbook_id', otherWbIds);
+            const otherSheetRows = (otherSheets || []) as { id: string; sheet_name?: string; order_index?: number }[];
+            const otherIds = otherSheetRows.map((s) => s.id).filter(Boolean);
+            if (otherIds.length > 0) {
+              const { data: otherLaborRows } = await supabase
+                .from('material_sheet_labor')
+                .select('*')
+                .in('sheet_id', otherIds);
+              const metaBySheetId = new Map<string, { sheet_name?: string; order_index?: number }>();
+              otherSheetRows.forEach((s) => {
+                if (s.id) metaBySheetId.set(String(s.id), s);
+              });
+              (otherLaborRows || []).forEach((labor: any) => {
+                const sid = String(labor.sheet_id ?? '').trim();
+                const meta = metaBySheetId.get(sid);
+                if (!meta) return;
+                const byName = displayedByName.get(normalizeSheetName(meta.sheet_name));
+                const oi = Number(meta.order_index);
+                const byOrder = Number.isFinite(oi) ? displayedByOrder.get(oi) : undefined;
+                const mappedSheetId = byName || byOrder;
+                if (!mappedSheetId) return;
+                const total =
+                  labor.total_labor_cost ??
+                  (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
+                if (!(Number.isFinite(total) && total > 0)) return;
+                const existing = laborMap[mappedSheetId];
+                const existingTotal = existing ? effectiveLaborTotal(existing) : 0;
+                if (total <= existingTotal) return;
+                laborMap[mappedSheetId] = { ...labor, sheet_id: mappedSheetId, total_labor_cost: total };
+              });
+            }
           }
         } catch (e) {
-          console.warn('merge working labor into locked view:', e);
+          console.warn('merge sibling workbook labor into locked view:', e);
         }
+      }
+
+      // Labor sometimes remains only on another job workbook (e.g. quote_id null COS copy) while the UI shows the contract workbook.
+      if (job?.id && sheetsData.length > 0) {
+        try {
+          const normalizeSheetNameJl = (v: unknown) =>
+            String(v ?? '')
+              .toLowerCase()
+              .trim()
+              .replace(/\s+/g, ' ');
+          const effectiveLaborTotalJl = (lab: any) => {
+            const direct = Number(lab?.total_labor_cost);
+            if (Number.isFinite(direct) && direct > 0) return direct;
+            return Number(lab?.estimated_hours || 0) * Number(lab?.hourly_rate || 0);
+          };
+          const displayedByNameJl = new Map<string, string>();
+          const displayedByOrderJl = new Map<number, string>();
+          sheetsData.forEach((s: any) => {
+            const sid = String(s?.id ?? '').trim();
+            if (!sid) return;
+            const nameKey = normalizeSheetNameJl(s?.sheet_name);
+            if (nameKey && !displayedByNameJl.has(nameKey)) displayedByNameJl.set(nameKey, sid);
+            const oi = Number(s?.order_index);
+            if (Number.isFinite(oi) && !displayedByOrderJl.has(oi)) displayedByOrderJl.set(oi, sid);
+          });
+          const displayedIdSet = new Set(
+            sheetsData.map((s: any) => String(s?.id ?? '').trim()).filter(Boolean)
+          );
+          const { data: jobWbList } = await supabase.from('material_workbooks').select('id').eq('job_id', job.id);
+          const jobWbIds = (jobWbList || []).map((w: any) => String(w?.id ?? '').trim()).filter(Boolean);
+          if (jobWbIds.length > 0) {
+            const { data: jobSheetsAll } = await supabase
+              .from('material_sheets')
+              .select('id, sheet_name, order_index')
+              .in('workbook_id', jobWbIds);
+            const orphanSheets = ((jobSheetsAll || []) as { id: string; sheet_name?: string; order_index?: number }[]).filter(
+              (s) => s?.id && !displayedIdSet.has(String(s.id).trim())
+            );
+            const orphanIds = orphanSheets.map((s) => s.id).filter(Boolean);
+            if (orphanIds.length > 0) {
+              const { data: orphanLabor } = await supabase
+                .from('material_sheet_labor')
+                .select('*')
+                .in('sheet_id', orphanIds);
+              const metaBySheetIdJl = new Map<string, { sheet_name?: string; order_index?: number }>();
+              orphanSheets.forEach((s) => {
+                if (s.id) metaBySheetIdJl.set(String(s.id), s);
+              });
+              (orphanLabor || []).forEach((labor: any) => {
+                const sid = String(labor.sheet_id ?? '').trim();
+                const meta = metaBySheetIdJl.get(sid);
+                if (!meta) return;
+                const byName = displayedByNameJl.get(normalizeSheetNameJl(meta.sheet_name));
+                const oi = Number(meta.order_index);
+                const byOrder = Number.isFinite(oi) ? displayedByOrderJl.get(oi) : undefined;
+                const mappedSheetId = byName || byOrder;
+                if (!mappedSheetId) return;
+                const total =
+                  labor.total_labor_cost ??
+                  (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
+                if (!(Number.isFinite(total) && total > 0)) return;
+                const existing = laborMap[mappedSheetId];
+                const existingTotal = existing ? effectiveLaborTotalJl(existing) : 0;
+                if (total <= existingTotal) return;
+                laborMap[mappedSheetId] = { ...labor, sheet_id: mappedSheetId, total_labor_cost: total };
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('merge job-level workbook labor onto displayed sheets:', e);
+        }
+      }
+
+      if (isFinancialLoadStale(cooperativeGen)) return;
+      const sheetLaborPayload: Record<string, any> = {};
+      for (const [k, v] of Object.entries(laborMap)) {
+        const nk = String(k).trim();
+        if (nk) sheetLaborPayload[nk] = v;
       }
       // Merge in any existing sheet labor not in fetch (e.g. just-saved row not yet visible) so it doesn't glitch away
       setSheetLabor(prev => {
-        const next = { ...laborMap };
+        const next = { ...sheetLaborPayload };
         if (prev && typeof prev === 'object') {
           Object.keys(prev).forEach(sid => {
             if (!(sid in next)) next[sid] = prev[sid];
@@ -6252,7 +6454,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         if (categoryMarkups[key] !== undefined) freshMarkups[key] = categoryMarkups[key];
       });
       if (JSON.stringify(freshMarkups) !== JSON.stringify(categoryMarkups)) {
-        setCategoryMarkups(freshMarkups);
+        if (!isFinancialLoadStale(cooperativeGen)) {
+          setCategoryMarkups(freshMarkups);
+        }
       }
 
       // itemsData is still needed for breakdown calculation below — collect from nested sheets
@@ -6392,7 +6596,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       };
       
       if (JSON.stringify(newBreakdown) !== JSON.stringify(materialsBreakdown)) {
-        setMaterialsBreakdown(newBreakdown);
+        if (!isFinancialLoadStale(cooperativeGen)) {
+          setMaterialsBreakdown(newBreakdown);
+        }
       }
     } catch (error: any) {
       console.error('Error loading materials breakdown:', error);
@@ -6427,7 +6633,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     return Array.from(byDesc.values()).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
   }
 
-  async function loadCustomRows(targetQuoteId: string | null = null, isHistorical: boolean = false) {
+  async function loadCustomRows(
+    targetQuoteId: string | null = null,
+    isHistorical: boolean = false,
+    cooperativeGen?: number
+  ) {
     // Locked/historical proposals: always load live data so labor and custom rows always show
     if (isHistorical && targetQuoteId) {
       console.log('📝 Loading live custom rows for locked/historical proposal');
@@ -6552,6 +6762,8 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       rawRows = data || [];
     }
 
+    if (isFinancialLoadStale(cooperativeGen)) return;
+
     // Strip nested line items out of the row objects for state
     const newData: CustomFinancialRow[] = rawRows.map((row: any) => {
       const { custom_financial_row_items: _items, ...rowData } = row;
@@ -6586,6 +6798,8 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         console.warn(`Skipped auto-delete of ${duplicateIds.length} rows (cap is ${maxAutoDelete}). Duplicates may be in this proposal only; check that you are viewing one proposal.`);
       }
     }
+
+    if (isFinancialLoadStale(cooperativeGen)) return;
 
     const laborMap: Record<string, any> = {};
     dedupedRows.forEach(row => {
@@ -6628,8 +6842,19 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     // We attach them to the currently displayed sheets by matching section_name (and fall back to sheet_id).
     let sheetLinkedItems: CustomRowLineItem[] = [];
     let sheetIds: string[] = [];
-    /** Resolved early from DB — do not use React state timing (see workbookIdForSheetMap below). */
-    let displayedWorkbookIdForLineItems: string | null = activeWorkbookId || null;
+    /**
+     * Workbook whose sheet IDs define the proposal column (locked contract vs working draft).
+     * Do NOT seed from `activeWorkbookId`: after `await loadMaterialsData()` React has not re-rendered,
+     * so that state is often still the previous quote/job and sheet-linked labor never maps onto sections.
+     */
+    let displayedWorkbookIdForLineItems: string | null = null;
+    if (
+      targetQuoteId &&
+      externalMaterialsWorkbookView?.status === 'locked' &&
+      externalMaterialsWorkbookView?.workbookId
+    ) {
+      displayedWorkbookIdForLineItems = String(externalMaterialsWorkbookView.workbookId).trim() || null;
+    }
     const displayedSheetIds = Array.from(
       new Set((materialsBreakdown.sheetBreakdowns || []).map((s: any) => String(s?.sheetId || '').trim()).filter(Boolean))
     );
@@ -6652,13 +6877,21 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     const displayedSheetOrderToId = new Map<number, string>();
     /** All sheet ids on the displayed (usually locked / contract) workbook — must feed sheet line-item fetch even when React `materialsBreakdown` is stale after `loadMaterialsData`. */
     let displayedLockedSheetIds: string[] = [];
-    if (!displayedWorkbookIdForLineItems && targetQuoteId) {
+    if (targetQuoteId && !displayedWorkbookIdForLineItems) {
       const { data: quoteRowLineItems } = await supabase
         .from('quotes')
         .select('locked_for_editing, signed_version, customer_signed_at')
         .eq('id', targetQuoteId)
         .maybeSingle();
-      const preferLockedWb = isQuoteContractFrozen(quoteRowLineItems as any);
+      let preferLockedWb = isQuoteContractFrozen(quoteRowLineItems as any);
+      const { data: wbPairProbe } = await supabase
+        .from('material_workbooks')
+        .select('status')
+        .eq('quote_id', targetQuoteId);
+      const pairStatuses = new Set((wbPairProbe || []).map((r: { status?: string }) => r.status));
+      if (pairStatuses.has('locked') && pairStatuses.has('working')) {
+        preferLockedWb = true;
+      }
 
       if (preferLockedWb) {
         const lockedTop = await supabase
@@ -6704,6 +6937,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         }
       }
     }
+    if (!targetQuoteId) {
+      displayedWorkbookIdForLineItems = activeWorkbookId || null;
+    }
     if (displayedWorkbookIdForLineItems) {
       const { data: liveDisplayedSheets } = await supabase
         .from('material_sheets')
@@ -6731,28 +6967,30 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     }
     const workingSheetIdToDisplayedId = new Map<string, string>();
     const extraWorkingSheetIds: string[] = [];
-    // Map working sheet_ids → displayed sheet_ids whenever both exist (not only `isReadOnly` — office lock can differ).
+    // Map non-displayed workbook sheet_ids → displayed (contract) sheet_ids by section name / order.
+    // Signed contract + locked proposal: labor line items may reference the job workbook or an older workbook row, not only `status=working`.
     if (targetQuoteId) {
-      const { data: workingWb } = await supabase
+      const anchorWbId = String(displayedWorkbookIdForLineItems ?? activeWorkbookId ?? '').trim();
+      const { data: allQuoteWbs } = await supabase
         .from('material_workbooks')
         .select('id, material_sheets(id, sheet_name, order_index)')
-        .eq('quote_id', targetQuoteId)
-        .eq('status', 'working')
-        .order('version_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const ws = (workingWb as any)?.material_sheets || [];
-      ws.forEach((s: any) => {
-        const wid = String(s?.id ?? '').trim();
-        if (!wid) return;
-        extraWorkingSheetIds.push(wid);
-        const byName = displayedSheetNameToId.get(normalizeSheetName(s?.sheet_name));
-        if (byName) {
-          workingSheetIdToDisplayedId.set(wid, byName);
-          return;
-        }
-        const byOrder = displayedSheetOrderToId.get(Number(s?.order_index));
-        if (byOrder) workingSheetIdToDisplayedId.set(wid, byOrder);
+        .eq('quote_id', targetQuoteId);
+      (allQuoteWbs || []).forEach((wb: any) => {
+        const wbid = String(wb?.id ?? '').trim();
+        if (!wbid || (anchorWbId && wbid === anchorWbId)) return;
+        const ws = ((wb?.material_sheets || []) as any[]) || [];
+        ws.forEach((s: any) => {
+          const wid = String(s?.id ?? '').trim();
+          if (!wid) return;
+          extraWorkingSheetIds.push(wid);
+          const byName = displayedSheetNameToId.get(normalizeSheetName(s?.sheet_name));
+          if (byName) {
+            workingSheetIdToDisplayedId.set(wid, byName);
+            return;
+          }
+          const byOrder = displayedSheetOrderToId.get(Number(s?.order_index));
+          if (byOrder) workingSheetIdToDisplayedId.set(wid, byOrder);
+        });
       });
     }
     if (extraWorkingSheetIds.length > 0) {
@@ -6966,6 +7204,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     Object.keys(lineItemsMap).forEach(k => {
       lineItemsMap[k].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     });
+    if (isFinancialLoadStale(cooperativeGen)) return;
     // Preserve optimistic items (e.g., when RLS blocks returning/select) so the user still sees what they just added.
     // A later successful reload will replace these with real DB rows.
     setCustomRowLineItems(prev => {
@@ -9037,7 +9276,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     materialsBreakdown.sheetBreakdowns.filter((s: any) => s.isOptional).map((s: any) => s.sheetId)
   );
 
-  const getSheetCategoryPriceTotal = (sheet: any): number => {
+  const getSheetCategoryPriceSplit = (sheet: any): { materials: number; labor: number } => {
     const sheetIdForMatch = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
     const sheetNameForMatch = String(sheet?.sheetName ?? sheet?.sheet_name ?? '').trim().toLowerCase();
     const normalizeCategoryName = (name: unknown) => String(name ?? '').trim().toLowerCase();
@@ -9099,7 +9338,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       return { price: getCategoryBreakdownPrice(cat), isFinal: false };
     };
 
-    return displayCategories.reduce((sum: number, cat: any) => {
+    let materials = 0;
+    let labor = 0;
+    for (const cat of displayCategories) {
       const sheetId = String(sheet?.sheetId ?? sheet?.id ?? '').trim();
       const categoryMarkup = lookupCategoryMarkup(
         categoryMarkups,
@@ -9108,15 +9349,19 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         ((sheet as any).markup_percent ?? 10)
       );
       const { price, isFinal } = getCategoryDisplayPrice(cat);
-      return sum + (isFinal ? price : price * (1 + (Number(categoryMarkup) || 0) / 100));
-    }, 0);
+      const lineTotal = isFinal ? price : price * (1 + (Number(categoryMarkup) || 0) / 100);
+      if (isWorkbookLaborCategoryName(cat?.name)) labor += lineTotal;
+      else materials += lineTotal;
+    }
+    return { materials, labor };
   };
 
   // Materials: material sheets + custom material rows (ALL materials, not just taxable)
   // Also track taxable-only materials for tax calculation
   let materialSheetsPrice = 0;
   let materialSheetsTaxableOnly = 0;
-  
+  let materialSheetsCategoryLaborTotal = 0;
+
   materialsBreakdown.sheetBreakdowns.forEach(sheet => {
     // Same scope as visible proposal sections (excludes optional/C.O./Field Request workbooks)
     if (!materialSheetCountsTowardProposalSubtotal(sheet as any)) return;
@@ -9177,9 +9422,10 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         return sum + item.total_cost * (1 + m / 100);
       }, 0);
     
-    const categoryTotals = getSheetCategoryPriceTotal(sheet);
-    // Category materials are treated as taxable by default in current model.
-    const categoryTaxableOnly = categoryTotals;
+    const { materials: categoryMaterialsTotals, labor: categoryLaborTotals } = getSheetCategoryPriceSplit(sheet);
+    materialSheetsCategoryLaborTotal += categoryLaborTotals;
+    // Category materials are treated as taxable by default in current model (labor categories excluded from materials).
+    const categoryTaxableOnly = categoryMaterialsTotals;
 
     // Section-level markup (shown as "+ %") applies to non-category material totals in the UI
     // (sheet-level material line items + linked custom rows + linked subs). Categories already include markup.
@@ -9188,8 +9434,8 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     const nonCategoryMaterials = sheetMatLinePrice + linkedRowsMaterialsTotal + linkedSubsMaterialsTotal;
     const nonCategoryTaxableOnly = sheetMatLineTaxable + linkedRowsMaterialsTaxableOnly + linkedSubsMaterialsTaxableOnly;
     
-    // Final = categories (already marked-up) + (non-category materials × sheet markup)
-    materialSheetsPrice += categoryTotals + nonCategoryMaterials * sheetMu;
+    // Final = non-labor categories (already marked-up) + (non-category materials × sheet markup)
+    materialSheetsPrice += categoryMaterialsTotals + nonCategoryMaterials * sheetMu;
     materialSheetsTaxableOnly += categoryTaxableOnly + nonCategoryTaxableOnly * sheetMu;
   });
 
@@ -9251,7 +9497,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     const sheetLaborLineItems = sheetLineItems.filter((item: any) => (item.item_type || 'material') === 'labor');
     const sheetLaborLineItemsTotal = sheetLaborLineItems.reduce((itemSum: number, item: any) => {
       const itemMarkup = item.markup_percent || 0;
-      return itemSum + (item.total_cost * (1 + itemMarkup / 100));
+      return itemSum + effectiveCustomRowLineItemBase(item) * (1 + itemMarkup / 100);
     }, 0);
     
     // Add labor from linked custom rows (labor line items)
@@ -9265,10 +9511,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       if (lineItems.length > 0) {
         rowLaborTotal = laborLineItems.reduce((itemSum: number, item: any) => {
           const itemMarkup = item.markup_percent || 0;
-          return itemSum + (item.total_cost * (1 + itemMarkup / 100));
+          return itemSum + effectiveCustomRowLineItemBase(item) * (1 + itemMarkup / 100);
         }, 0);
       } else if (row.category === 'labor') {
-        rowLaborTotal = row.total_cost;
+        rowLaborTotal =
+          Number(row.total_cost) || (Number(row.quantity) || 0) * (Number(row.unit_cost) || 0);
       }
       linkedSubs.forEach((sub: any) => {
         const subLineItems = subcontractorLineItems[sub.id] || [];
@@ -9292,7 +9539,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       return subSum + (laborTotal * (1 + estMarkup / 100));
     }, 0);
     
-    return sum + (labor ? labor.total_labor_cost : 0) + sheetLaborLineItemsTotal + linkedRowsLaborTotal + linkedSubsLaborTotal;
+    const sheetLaborDb =
+      labor &&
+      (Number(labor.total_labor_cost) ||
+        Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
+    return sum + (sheetLaborDb || 0) + sheetLaborLineItemsTotal + linkedRowsLaborTotal + linkedSubsLaborTotal;
   }, 0);
   
   // Custom row labor (estimated_hours * rate) only for rows that don't already have labor line items,
@@ -9318,7 +9569,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     return sum + (labor.estimated_hours * labor.hourly_rate);
   }, 0);
   
-  const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customRowsLaborTotal + subcontractorLaborPrice;
+  const proposalLaborPrice =
+    totalSheetLaborCost +
+    totalCustomRowLaborCost +
+    customRowsLaborTotal +
+    subcontractorLaborPrice +
+    materialSheetsCategoryLaborTotal;
   
   // Combine materials with subcontractor materials for display
   const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + subcontractorMaterialsPrice;
@@ -9423,7 +9679,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       if (!sheetId) return 0;
       const sheetBd = bySheetId.get(sheetId) || sheet;
 
-      const categoryTotals = getSheetCategoryPriceTotal(sheetBd);
+      const categoryMaterialsOnly = getSheetCategoryPriceSplit(sheetBd).materials;
 
       const sheetMaterialItems = (customRowLineItems[sheetId] || []).filter(
         (item: any) => (item.item_type || 'material') === 'material'
@@ -9438,7 +9694,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       const linkedSubs = linkedSubcontractors[sheetId] || [];
       const linkedSubsMaterialsTotal = sumLinkedSubMaterialsFromSubs(linkedSubs, subcontractorLineItems);
 
-      return (Number(categoryTotals) || 0) + sheetMaterialLineItemsTotal + (Number(linkedRowTotals.materialTotal) || 0) + (Number(linkedSubsMaterialsTotal) || 0);
+      return (Number(categoryMaterialsOnly) || 0) + sheetMaterialLineItemsTotal + (Number(linkedRowTotals.materialTotal) || 0) + (Number(linkedSubsMaterialsTotal) || 0);
     };
 
     const customRowBlue = (row: any): number => {
@@ -9685,7 +9941,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       </div>
     );
     return () => { setProposalToolbar(null); };
-  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, historicalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version, (quote as any)?.customer_signed_at, jobHasContract, (quote as any)?.is_change_order_proposal, job.id, job.status]);
+  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, effectiveHistoricalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version, (quote as any)?.customer_signed_at, jobHasContract, (quote as any)?.is_change_order_proposal, job.id, job.status]);
 
   // Sync proposal summary to green header bar (Proposal #, Materials, Labor, Grand Total)
   useEffect(() => {
@@ -9702,9 +9958,20 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       subtotal: Number(proposalSubtotal) || 0,
       tax: Number(proposalTotalTax) || 0,
       grandTotal: Number(proposalGrandTotal) || 0,
+      jobWorkbookMaterials:
+        typeof externalJobWorkbookMaterialsTotal === 'number' ? externalJobWorkbookMaterialsTotal : null,
     });
     return () => setSummary(null);
-  }, [proposalSummaryCtx?.setSummary, quote, proposalMaterialsTotalWithSubcontractors, proposalLaborPrice, proposalSubtotal, proposalTotalTax, proposalGrandTotal]);
+  }, [
+    proposalSummaryCtx?.setSummary,
+    quote,
+    proposalMaterialsTotalWithSubcontractors,
+    proposalLaborPrice,
+    proposalSubtotal,
+    proposalTotalTax,
+    proposalGrandTotal,
+    externalJobWorkbookMaterialsTotal,
+  ]);
 
   // Sync proposal totals to quote so customer portal can display the same numbers (single source of truth)
   const lastSyncedTotalsRef = useRef<{ quoteId: string; sub: number; tax: number; grand: number } | null>(null);
@@ -9790,39 +10057,58 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             </Button>
           </div>
           <span className="text-slate-300">|</span>
-          <span className="text-slate-600">Materials:</span>
-          <span className="font-bold text-slate-900">
-            ${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-          {debugMaterialsBuckets && (
-            <span
-              className="text-[11px] text-slate-500"
-              title={JSON.stringify(debugMaterialsBuckets)}
-            >
-              (sheets ${materialSheetsPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, rows{' '}
-              {customRowsMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, subs{' '}
-              {subcontractorMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-slate-200 bg-slate-50/90 px-2.5 py-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+              Customer proposal
             </span>
-          )}
-          <span className="text-slate-600">Labor:</span>
-          <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          <span className="text-slate-300">|</span>
-          <span className="text-slate-600">Subtotal:</span>
-          <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          {taxExemptChecked ? null : (
-            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-          )}
-          {!isReadOnly && (
-            <label className="flex items-center gap-1.5 cursor-pointer text-slate-600" title={taxExemptChecked && taxExemptSaved ? 'Saved — all users will see this job as tax exempt' : taxExemptChecked ? 'Not yet saved to database' : 'Mark this job as tax exempt'}>
-              <Checkbox checked={taxExemptChecked} onCheckedChange={(c) => setQuoteTaxExempt(!!c)} />
-              <span className="text-xs">Tax exempt</span>
-              {taxExemptChecked && taxExemptSaved && (
-                <CheckCircle className="w-3 h-3 text-green-600" />
-              )}
-            </label>
-          )}
-          <span className="text-slate-300">|</span>
-          <span className="text-base font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-slate-300 hidden sm:inline">|</span>
+            <span className="text-slate-600">Materials:</span>
+            <span className="font-bold text-slate-900">
+              ${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {debugMaterialsBuckets && (
+              <span
+                className="text-[11px] text-slate-500"
+                title={JSON.stringify(debugMaterialsBuckets)}
+              >
+                (sheets ${materialSheetsPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, rows{' '}
+                {customRowsMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, subs{' '}
+                {subcontractorMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
+            )}
+            <span className="text-slate-600">Labor:</span>
+            <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-slate-600">Subtotal:</span>
+            <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            {taxExemptChecked ? null : (
+              <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+            )}
+            {!isReadOnly && (
+              <label className="flex items-center gap-1.5 cursor-pointer text-slate-600" title={taxExemptChecked && taxExemptSaved ? 'Saved — all users will see this job as tax exempt' : taxExemptChecked ? 'Not yet saved to database' : 'Mark this job as tax exempt'}>
+                <Checkbox checked={taxExemptChecked} onCheckedChange={(c) => setQuoteTaxExempt(!!c)} />
+                <span className="text-xs">Tax exempt</span>
+                {taxExemptChecked && taxExemptSaved && (
+                  <CheckCircle className="w-3 h-3 text-green-600" />
+                )}
+              </label>
+            )}
+            <span className="text-slate-300">|</span>
+            <span
+              className="text-base font-bold text-green-700"
+              title={
+                typeof externalJobWorkbookMaterialsTotal === 'number'
+                  ? 'Signed contract / proposal workbook only. Job workbook total is shown above the materials workbook column — not included here.'
+                  : 'Customer proposal total'
+              }
+            >
+              GRAND TOTAL: $
+              {(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </span>
+          </div>
           {quote && (
             <Button
               variant="ghost"
@@ -10021,23 +10307,54 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
         {/* Compact Project Total row above proposal (hidden when in green header bar) */}
         {!setProposalToolbar && (
-        <div className="flex flex-wrap items-center gap-4 py-2 px-3 mb-3 rounded-lg bg-gradient-to-r from-slate-100 to-slate-50 border border-slate-200 text-sm">
-          <span className="font-semibold text-slate-700">Materials:</span>
-          <span className="font-bold text-slate-900">${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          {proposalLaborPrice > 0 && (
-            <>
-              <span className="font-semibold text-slate-700">Labor:</span>
-              <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </>
+        <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
+          <div className="flex flex-wrap items-center gap-3 py-2 px-3 rounded-lg bg-gradient-to-r from-slate-100 to-slate-50 border border-slate-200">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Customer proposal</span>
+            <span className="text-slate-400">|</span>
+            <span className="font-semibold text-slate-700">Materials:</span>
+            <span className="font-bold text-slate-900">${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            {proposalLaborPrice > 0 && (
+              <>
+                <span className="font-semibold text-slate-700">Labor:</span>
+                <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </>
+            )}
+            <span className="text-slate-400">|</span>
+            <span className="text-slate-600">Subtotal:</span>
+            <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            {taxExemptChecked ? null : (
+              <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+            )}
+            <span className="text-slate-400">|</span>
+            <span
+              className="text-lg font-bold text-green-700"
+              title={
+                typeof externalJobWorkbookMaterialsTotal === 'number'
+                  ? 'Signed contract workbook only — job workbook is separate'
+                  : 'Customer proposal total'
+              }
+            >
+              GRAND TOTAL: $
+              {(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </span>
+          </div>
+          {typeof externalJobWorkbookMaterialsTotal === 'number' && (
+            <div className="flex flex-wrap items-center gap-2 py-2 px-3 rounded-lg border-2 border-cyan-500/60 bg-cyan-50">
+              <span className="text-[10px] font-bold uppercase text-cyan-900">Job workbook</span>
+              <span className="text-cyan-900 text-xs">Materials (internal):</span>
+              <span className="font-bold tabular-nums text-cyan-950">
+                $
+                {externalJobWorkbookMaterialsTotal.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+              <span className="text-[10px] text-cyan-800/90">Not in GRAND TOTAL</span>
+            </div>
           )}
-          <span className="text-slate-400">|</span>
-          <span className="text-slate-600">Subtotal:</span>
-          <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          {taxExemptChecked ? null : (
-            <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-          )}
-          <span className="text-slate-400">|</span>
-          <span className="text-lg font-bold text-green-700">GRAND TOTAL: ${(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
         )}
 
