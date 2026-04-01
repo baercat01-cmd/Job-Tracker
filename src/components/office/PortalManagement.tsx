@@ -296,7 +296,7 @@ export function PortalManagement() {
     const url = `${window.location.origin}/subcontractor-portal`;
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Subcontractor portal link copied');
+      toast.success('Base URL copied — subs need a ?token=… link from Subcontractor Hub');
     } catch {
       toast.error('Could not copy link');
     }
@@ -338,12 +338,17 @@ export function PortalManagement() {
               <div className="flex items-start gap-3">
                 <Link2 className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-medium">Subcontractor portal URL</p>
+                  <p className="font-medium">Subcontractor portal (no login)</p>
                   <p className="text-sm text-muted-foreground">
-                    Share this link with subs. They sign in with the email and password you create here, then see only jobs you grant.
+                    Each sub gets a customer-style share link with <code className="text-xs">?token=…</code> from{' '}
+                    <span className="font-medium">Office → Subcontractor Hub</span>. You manage which jobs they see there
+                    (or per job under the job’s Subcontractor portal tab). This screen is for legacy portal logins if you
+                    still use them.
                   </p>
                   <code className="text-xs block mt-2 bg-muted px-2 py-1 rounded break-all">
-                    {typeof window !== 'undefined' ? `${window.location.origin}/subcontractor-portal` : '/subcontractor-portal'}
+                    {typeof window !== 'undefined'
+                      ? `${window.location.origin}/subcontractor-portal?token=…`
+                      : '/subcontractor-portal?token=…'}
                   </code>
                 </div>
               </div>

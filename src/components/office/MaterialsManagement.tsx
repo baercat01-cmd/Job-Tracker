@@ -726,6 +726,10 @@ export function MaterialsManagement({
 
   async function setFlatstockWidthInches(width: number | null) {
     if (!workbook?.id) return;
+    if (isWorkbookReadOnlyRef.current) {
+      toast.error('Cannot change flatstock while the proposal is locked (read-only).');
+      return;
+    }
     const next =
       width === null || Number.isNaN(Number(width))
         ? null
@@ -1007,6 +1011,10 @@ export function MaterialsManagement({
 
   async function linkTrimConfigToItem(configId: string) {
     if (!openLinkTrimForItem) return;
+    if (isWorkbookReadOnlyRef.current) {
+      toast.error('Cannot link trim while the proposal is locked (read-only).');
+      return;
+    }
     setLinkingTrimConfigId(configId);
     try {
       await setMaterialItemTrimConfig(openLinkTrimForItem.id, configId);
@@ -1027,6 +1035,10 @@ export function MaterialsManagement({
 
   async function unlinkTrimFromItem() {
     if (!openLinkTrimForItem) return;
+    if (isWorkbookReadOnlyRef.current) {
+      toast.error('Cannot unlink trim while the proposal is locked (read-only).');
+      return;
+    }
     setLinkingTrimConfigId('unlink');
     try {
       await setMaterialItemTrimConfig(openLinkTrimForItem.id, null);
@@ -1075,6 +1087,10 @@ export function MaterialsManagement({
   const [ensuringContractWorkbookPair, setEnsuringContractWorkbookPair] = useState(false);
   /** Fresh sent/signed/office-lock fields for the selected quote (Materials jobQuotes can lag JobFinancials). */
   const [contractQuoteFields, setContractQuoteFields] = useState<ContractQuoteFields | null>(null);
+  /** Mirrors `isWorkbookReadOnly` for async callbacks (e.g. loadWorkbook → backfill) that close over stale renders. */
+  const isWorkbookReadOnlyRef = useRef(false);
+  /** Latest workbook row status for `proposal-editing-unlocked` (avoid effect deps flipping on each load). */
+  const proposalUnlockListenerWorkbookStatusRef = useRef<string | null>(null);
 
   // Load job quotes (proposals) so we can scope materials per proposal
   useEffect(() => {
@@ -1389,6 +1405,7 @@ export function MaterialsManagement({
    */
   async function backfillMissingPricesFromCatalog(items: any[]) {
     try {
+      if (isWorkbookReadOnlyRef.current) return;
       const needsPrice = items.filter(
         (i: any) => i.sku && (i.cost_per_unit == null || i.price_per_unit == null)
       );
@@ -1638,6 +1655,11 @@ export function MaterialsManagement({
       // Draft: default to working (price + edits). Signed contract: default to locked snapshot (proposal price).
       // Office-only lock: still one row — usually `locked` only; working-first ordering still resolves to that row.
       const shouldDefaultToLockedWorkbook = quoteHasActiveContract(selectedQuoteForDefaultView as any);
+      /** Left panel "Unlock for editing" / office unlock on signed jobs — keep job/working copy across reloads (saves, events, realtime). */
+      const preferWorkingForSessionUnlock =
+        !!quoteIdForLoad &&
+        !!historicalUnlockedQuoteId &&
+        historicalUnlockedQuoteId === quoteIdForLoad;
       const sameProposalQuoteIds = selectedQuote
         ? new Set(
             jobQuotes
@@ -1673,6 +1695,12 @@ export function MaterialsManagement({
         // User explicitly left signed-contract snapshot / chose "working copy" — must land on working, not locked-first.
         if (opts?.preferWorking && workingList.length > 0) {
           workbookData = workingList[0];
+        } else if (
+          shouldDefaultToLockedWorkbook &&
+          preferWorkingForSessionUnlock &&
+          workingList.length > 0
+        ) {
+          workbookData = workingList[0];
         } else {
           workbookData = shouldDefaultToLockedWorkbook
             ? (lockedList[0] ?? workingList[0] ?? null)
@@ -1683,21 +1711,30 @@ export function MaterialsManagement({
         // Quote-scoped view: never fall back to another quote's workbook.
         // Proposal-family fallback: allow workbooks tied to another quote row with the same proposal number.
         // Legacy fallback: allow quote_id NULL workbooks for this job (older data before per-proposal linkage).
-        workbookData = shouldDefaultToLockedWorkbook
-          ? (wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
-              wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
-              wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
-              wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
-              wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
-              wbs.find((w) => w.status === 'working' && !w.quote_id) ??
-              null)
-          : (wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
-              wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
-              wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
-              wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
-              wbs.find((w) => w.status === 'working' && !w.quote_id) ??
-              wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
-              null);
+        workbookData =
+          shouldDefaultToLockedWorkbook && preferWorkingForSessionUnlock
+            ? (wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
+                wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
+                wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
+                wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
+                wbs.find((w) => w.status === 'working' && !w.quote_id) ??
+                wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
+                null)
+            : shouldDefaultToLockedWorkbook
+              ? (wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
+                  wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
+                  wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
+                  wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
+                  wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
+                  wbs.find((w) => w.status === 'working' && !w.quote_id) ??
+                  null)
+              : (wbs.find((w) => w.status === 'working' && w.quote_id === quoteIdForLoad) ??
+                  wbs.find((w) => w.status === 'locked' && w.quote_id === quoteIdForLoad) ??
+                  wbs.find((w) => w.status === 'working' && matchProposalFamily(w)) ??
+                  wbs.find((w) => w.status === 'locked' && matchProposalFamily(w)) ??
+                  wbs.find((w) => w.status === 'working' && !w.quote_id) ??
+                  wbs.find((w) => w.status === 'locked' && !w.quote_id) ??
+                  null);
       }
       if (!workbookData && !quoteIdForLoad) {
         workbookData = wbs.find((w) => w.status === 'working') ?? wbs[0] ?? null;
@@ -1943,6 +1980,8 @@ export function MaterialsManagement({
     }
   }
 
+  proposalUnlockListenerWorkbookStatusRef.current = workbook?.status ?? null;
+
   // When the proposal is unlocked for editing from the left panel (JobFinancials),
   // automatically switch Materials out of the locked snapshot view and into the working copy.
   // The locked workbook remains the proposal-price source of truth; edits happen on working.
@@ -1950,7 +1989,8 @@ export function MaterialsManagement({
     const handler = (e: Event) => {
       const { quoteId } = (e as CustomEvent).detail ?? {};
       if (!quoteId || !effectiveQuoteId || quoteId !== effectiveQuoteId) return;
-      const viewingLocked = !!snapshotWorkbookId || workbook?.status === 'locked';
+      const viewingLocked =
+        !!snapshotWorkbookId || proposalUnlockListenerWorkbookStatusRef.current === 'locked';
       if (!viewingLocked) return;
       // Always attempt to exit locked view when proposal unlocks.
       // If no working workbook exists yet, loadWorkbook will keep the best available view.
@@ -1958,7 +1998,7 @@ export function MaterialsManagement({
     };
     window.addEventListener('proposal-editing-unlocked', handler as EventListener);
     return () => window.removeEventListener('proposal-editing-unlocked', handler as EventListener);
-  }, [effectiveQuoteId, snapshotWorkbookId, workbook?.status]);
+  }, [effectiveQuoteId, snapshotWorkbookId]);
 
   async function createWorkingFromLatestLocked(opts?: { silent?: boolean; _retriedAfterEmptyPurge?: boolean }) {
     const silent = !!opts?.silent;
@@ -2348,6 +2388,10 @@ export function MaterialsManagement({
   }
 
   async function bulkMoveMaterials() {
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
+      return;
+    }
     if (!bulkMoveTargetSheetId) {
       toast.error('Please select a target sheet');
       return;
@@ -2422,6 +2466,10 @@ export function MaterialsManagement({
   }
 
   async function addSelectedMaterialsToSelectedPackage() {
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
+      return;
+    }
     if (!targetPackageId) {
       toast.error('Please select a package');
       return;
@@ -2490,6 +2538,10 @@ export function MaterialsManagement({
   }
 
   async function addMaterialToPackage(materialId: string, packageId: string) {
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
+      return;
+    }
     try {
       // Save current scroll position
       scrollPositionRef.current = window.scrollY;
@@ -2528,6 +2580,10 @@ export function MaterialsManagement({
   }
 
   async function removeMaterialFromPackage(materialId: string, packageId: string) {
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
+      return;
+    }
     try {
       // Save current scroll position
       scrollPositionRef.current = window.scrollY;
@@ -3743,6 +3799,10 @@ export function MaterialsManagement({
    */
   async function saveSortOrder() {
     if (!activeSheet) return;
+    if (isWorkbookReadOnly) {
+      toast.error('This workbook is read-only.');
+      return;
+    }
     setSavingSortOrder(true);
 
     const invalidateCache = () => {
@@ -4020,7 +4080,14 @@ export function MaterialsManagement({
   const categoryGroups = groupByCategory(filteredItems, activeSheet?.category_order);
 
   useEffect(() => {
-    if (!workbook?.sheets?.length) return;
+    const qid = effectiveQuoteId ?? null;
+    const wbQuoteId = (workbook as { quote_id?: string | null } | null)?.quote_id ?? null;
+    const quoteMismatch = qid != null && wbQuoteId != null && wbQuoteId !== qid;
+
+    if (!workbook?.sheets?.length || quoteMismatch) {
+      onBreakdownPriceSync?.([]);
+      return;
+    }
     // Signed contract + internal working copy: do not push category prices to the proposal panel (customer totals).
     const signedContract = quoteHasActiveContract(
       buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields) as any
@@ -4044,8 +4111,16 @@ export function MaterialsManagement({
   }, [workbook, onBreakdownPriceSync, jobQuotes, effectiveQuoteId, contractQuoteFields, snapshotWorkbookId]);
 
   useEffect(() => {
-    onWorkbookViewSync?.({ workbookId: workbook?.id ?? null, status: (workbook?.status as any) ?? null });
-  }, [workbook?.id, workbook?.status, onWorkbookViewSync]);
+    const qid = effectiveQuoteId ?? null;
+    const wbQuoteId = (workbook as { quote_id?: string | null } | null)?.quote_id ?? null;
+    const quoteMismatch = qid != null && wbQuoteId != null && wbQuoteId !== qid;
+
+    if (!workbook || quoteMismatch) {
+      onWorkbookViewSync?.({ workbookId: null, status: null });
+      return;
+    }
+    onWorkbookViewSync?.({ workbookId: workbook.id ?? null, status: (workbook.status as any) ?? null });
+  }, [workbook, effectiveQuoteId, onWorkbookViewSync]);
 
   const selectedQuote = jobQuotes.find(q => q.id === effectiveQuoteId);
   const quoteForContractUi = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
@@ -4179,13 +4254,17 @@ export function MaterialsManagement({
         : false,
     [quoteForContractUi, jobQuotesSortedLikeFinancials, historicalUnlockedQuoteId],
   );
-  const viewingProposalLockedWorkbook = !!snapshotWorkbookId || workbook?.status === 'locked';
-  const isWorkbookReadOnly = viewingProposalLockedWorkbook && proposalPanelReadOnly;
+  /** Signed-contract job workbook (working row): shop/COS/field edits allowed even when the proposal panel is read-only. */
+  const isViewingSignedContractJobWorkbook =
+    quoteHasSignedContract && workbook?.status === 'working' && !snapshotWorkbookId;
+  /** Same read-only rules as JobFinancials (office lock, contract, older proposal, session unlock) for every grid row. */
+  const isWorkbookReadOnly = proposalPanelReadOnly && !isViewingSignedContractJobWorkbook;
+  isWorkbookReadOnlyRef.current = isWorkbookReadOnly;
   const materialsWorkbookLocked = isWorkbookReadOnly;
-  /** Shop / trim / Zoho: job workbook always; signed-contract locked snapshot only when proposal panel allows edits. */
+  /** Shop / trim / Zoho / workbook-level mutations — only when the visible grid is editable. */
   const canUseShopTrimAndZohoOnThisWorkbook =
-    workbook?.status === 'working' ||
-    (workbook?.status === 'locked' && quoteHasSignedContract && !isWorkbookReadOnly);
+    !isWorkbookReadOnly &&
+    (workbook?.status === 'working' || (workbook?.status === 'locked' && quoteHasSignedContract));
   const showShopOrderControls = canUseShopTrimAndZohoOnThisWorkbook;
   /** Unsigned / draft proposals: optional manual lock. Sent or signed contracts auto-manage locked + working copies. */
   const showManualLockWorkbook =
@@ -4571,16 +4650,12 @@ export function MaterialsManagement({
                   Job workbook total
                 </span>
                 <span className="text-slate-400 hidden sm:inline">|</span>
-                <span className="text-cyan-950/90 text-xs">Materials (internal):</span>
                 <span className="font-bold tabular-nums text-cyan-950 text-base">
                   $
                   {jobWorkbookMaterialsTotalForStrip.toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
-                </span>
-                <span className="text-[10px] text-cyan-900/85 max-w-[20rem] leading-tight">
-                  Not included in customer proposal subtotal or GRAND TOTAL (left column).
                 </span>
               </div>
             )}
@@ -4715,8 +4790,9 @@ export function MaterialsManagement({
             <>
               <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
                 <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
-                  <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b">
-                    <div className="flex items-center gap-1 px-1.5 py-0.5 overflow-x-auto whitespace-nowrap">
+                  {/* Sheets + workbook actions in one white toolbar (sheet tabs sit with Move / Sort / etc.) */}
+                  <div className="p-1.5 bg-white border-b flex flex-col gap-1.5 min-w-0">
+                    <div className="flex items-center gap-1 min-h-[28px] overflow-x-auto overflow-y-hidden pb-0.5 border-b border-slate-200/80">
                       {workbook.sheets.map((sheet, idx) => {
                         const isChangeOrder = sheet.sheet_type === 'change_order';
                         const prevIsProposal = idx > 0 && workbook.sheets[idx - 1].sheet_type !== 'change_order';
@@ -4735,13 +4811,12 @@ export function MaterialsManagement({
                             title={sheet.sheet_name}
                             className={`flex items-center gap-1 min-w-[100px] max-w-[min(280px,40vw)] justify-start h-7 px-2.5 text-sm leading-tight ${
                               activeSheetId === sheet.id
-                                ? 'font-bold text-slate-900 bg-white shadow-sm border-2 border-primary/90 ring-1 ring-primary/20 hover:bg-white'
-                                : 'font-semibold text-slate-700 hover:text-slate-900 hover:bg-white/80 border border-transparent'
+                                ? 'font-bold text-slate-900 bg-slate-100 shadow-sm border-2 border-primary/90 ring-1 ring-primary/20 hover:bg-slate-100'
+                                : 'font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 border border-transparent'
                             }`}
                           >
                             <span className="truncate">{sheet.sheet_name}</span>
                           </Button>
-                          {/* Delete: active sheet only; trash hidden until tab row hover; confirm step always visible */}
                           {workbook.status === 'working' && activeSheetId === sheet.id && (
                             sheetDeleteConfirmId === sheet.id ? (
                               <div className="flex items-center gap-0.5 shrink-0 animate-in fade-in duration-150">
@@ -4794,7 +4869,6 @@ export function MaterialsManagement({
                         </Fragment>
                       ); })}
 
-                      {/* Add Sheet Button */}
                       {workbook.status === 'working' && (
                         <Button
                           variant="outline"
@@ -4814,10 +4888,8 @@ export function MaterialsManagement({
                         </Button>
                       )}
                     </div>
-                  </div>
 
-                  <div className="p-1.5 bg-white border-b">
-                    <div className="flex items-center gap-2 flex-wrap bg-white text-right">
+                    <div className="flex items-center gap-2 flex-wrap bg-white text-right min-w-0">
                       <div className="relative w-48 max-w-[200px] flex-shrink-0">
                         <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                         <Input

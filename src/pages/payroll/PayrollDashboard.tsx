@@ -88,7 +88,12 @@ interface WeekData {
 
 type PeriodType = 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
 
-export function PayrollDashboard() {
+export type PayrollDashboardProps = {
+  /** When true, hides the standalone payroll header (logout). Used inside Office dashboard. */
+  embed?: boolean;
+};
+
+export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
   const { profile, clearUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [periodType, setPeriodType] = useState<PeriodType>('weekly');
@@ -424,20 +429,13 @@ export function PayrollDashboard() {
         periods.push({ value, label });
       }
     } else if (periodType === 'yearly') {
-      // Generate last 5 years
-      for (let i = 0; i < 5; i++) {
-        const year = today.getFullYear() - i;
-        const yearStart = new Date(year, 0, 1);
-        yearStart.setHours(0, 0, 0, 0);
-        
-        const yearEnd = new Date(year, 11, 31);
-        yearEnd.setHours(23, 59, 59, 999);
-        
-        const value = yearStart.toISOString().split('T')[0];
-        const label = year.toString();
-        
-        periods.push({ value, label });
-      }
+      // Year-to-date: Jan 1 of current calendar year through today
+      const year = today.getFullYear();
+      const yearStart = new Date(year, 0, 1);
+      yearStart.setHours(0, 0, 0, 0);
+      const value = yearStart.toISOString().split('T')[0];
+      const label = `YTD ${year} (${yearStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
+      periods.push({ value, label });
     }
     
     setPeriodOptions(periods);
@@ -469,7 +467,7 @@ export function PayrollDashboard() {
       } else if (periodType === 'quarterly') {
         periodEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() + 3, 0);
       } else if (periodType === 'yearly') {
-        periodEnd = new Date(periodStart.getFullYear(), 11, 31);
+        periodEnd = new Date();
       }
     }
     
@@ -878,33 +876,33 @@ export function PayrollDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      {/* Header */}
-      <header className="border-b bg-card sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-primary" />
+    <div className={embed ? 'min-h-0' : 'min-h-screen bg-muted/30'}>
+      {!embed && (
+        <header className="border-b bg-card sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <DollarSign className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold">Payroll Dashboard</h1>
+                  <p className="text-sm text-muted-foreground">{profile?.username}</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl font-bold">Payroll Dashboard</h1>
-                <p className="text-sm text-muted-foreground">{profile?.username}</p>
-              </div>
+              <Button variant="outline" onClick={() => {
+                clearUser();
+                window.location.reload();
+              }}>
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
+              </Button>
             </div>
-            <Button variant="outline" onClick={() => {
-              clearUser();
-              window.location.reload();
-            }}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
-            </Button>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-6 space-y-6">
+      <main className={embed ? 'w-full space-y-6' : 'container mx-auto px-4 py-6 space-y-6'}>
         {/* Tab Navigation */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'time-entries' | 'time-off' | 'job-hours')} className="w-full">
           <TabsList className="grid w-full max-w-2xl grid-cols-3">

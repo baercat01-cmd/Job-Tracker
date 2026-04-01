@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   BuildingPlanModel,
   PlanEntityId,
@@ -6,12 +6,18 @@ import type {
   PlanOverheadStyle,
   PlanRoomLevel,
 } from '@/lib/buildingPlanModel';
-import { clamp, DEFAULT_OVERHEAD_STYLE } from '@/lib/buildingPlanModel';
+import {
+  clamp,
+  DEFAULT_OVERHEAD_STYLE,
+  getRoomFloorElevation,
+  normalizeRoomLevel,
+} from '@/lib/buildingPlanModel';
 import { applyOp, type PlanOp } from '@/lib/planOps';
 import {
   Plan2DEditor,
   type DoorPlacementOptions,
   type PlanActiveRoomFloor,
+  type PlanFocusedSpace,
   type PlanRoomPlacementSpec,
 } from '@/components/plans/Plan2DEditor';
 import { PlanElevationPreview } from '@/components/plans/PlanElevationPreview';
@@ -104,6 +110,8 @@ export function PlanLocalWorkspace(props: {
     loftId: null,
   });
   const [showEditLoft, setShowEditLoft] = useState(false);
+  /** Double-click / drill-in: zoom to one room or loft and sync floor for doors & windows. */
+  const [focusedSpace, setFocusedSpace] = useState<PlanFocusedSpace | null>(null);
   /** Loft being edited in the dialog (stable if selection changes while open). */
   const [editLoftTargetId, setEditLoftTargetId] = useState<PlanEntityId | null>(null);
   const [editLoftDraft, setEditLoftDraft] = useState<{
@@ -121,6 +129,33 @@ export function PlanLocalWorkspace(props: {
 
   const selectedLoft = selectedId ? plan.lofts.find((l) => l.id === selectedId) ?? null : null;
   const loftBeingEdited = editLoftTargetId ? plan.lofts.find((l) => l.id === editLoftTargetId) ?? null : null;
+
+  const focusedRoom =
+    focusedSpace?.kind === 'room' ? plan.rooms.find((r) => r.id === focusedSpace.id) ?? null : null;
+  const focusedLoftEntity =
+    focusedSpace?.kind === 'loft' ? plan.lofts.find((l) => l.id === focusedSpace.id) ?? null : null;
+
+  useEffect(() => {
+    if (!focusedSpace) return;
+    if (focusedSpace.kind === 'room' && !plan.rooms.some((r) => r.id === focusedSpace.id)) {
+      setFocusedSpace(null);
+    }
+    if (focusedSpace.kind === 'loft' && !plan.lofts.some((l) => l.id === focusedSpace.id)) {
+      setFocusedSpace(null);
+    }
+  }, [focusedSpace, plan.rooms, plan.lofts]);
+
+  useEffect(() => {
+    if (!focusedSpace) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setFocusedSpace(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [focusedSpace]);
 
   const canDelete = !!selectedId;
   const deleteSelected = () => {
@@ -158,6 +193,20 @@ export function PlanLocalWorkspace(props: {
     if (a === 'deck' && id) return { level: 'loft_deck', loftId: id };
     if (a === 'upper' && id) return { level: 'loft_upper', loftId: id };
     return { level: 'main', loftId: null };
+  }
+
+  function applyFloorForFocusedSpace(focus: PlanFocusedSpace) {
+    if (focus.kind === 'loft') {
+      setActiveRoomFloorKey(`deck:${focus.id}`);
+      return;
+    }
+    const room = plan.rooms.find((r) => r.id === focus.id);
+    if (!room) return;
+    const lvl = normalizeRoomLevel(room);
+    if (lvl === 'main') setActiveRoomFloorKey('main');
+    else if (lvl === 'loft_deck' && room.loftId) setActiveRoomFloorKey(`deck:${room.loftId}`);
+    else if (lvl === 'loft_upper' && room.loftId) setActiveRoomFloorKey(`upper:${room.loftId}`);
+    else setActiveRoomFloorKey('main');
   }
 
   return (
@@ -384,9 +433,66 @@ export function PlanLocalWorkspace(props: {
         </div>
 
         <div className="text-xs text-slate-600 max-w-md text-right">
-          Tip: choose <strong>Room floor</strong> for main vs on-loft vs above-loft rooms. Drag <strong>Door</strong> / <strong>Window</strong> chips onto a wall, or use <strong>Door</strong> for measured multi-door spacing. With <strong>Select</strong>, drag openings along walls.
+          <strong>Double-click</strong> a room or loft to open it, place doors/windows on its walls, and read details.{' '}
+          <strong>Esc</strong> or <strong>Back to full plan</strong> returns. Drag chips onto walls; room floor updates
+          automatically in space view.
         </div>
       </div>
+
+      {focusedSpace && (focusedRoom || focusedLoftEntity) ? (
+        <div className="shrink-0 border-b border-emerald-200 bg-emerald-50/95 px-3 py-2 flex flex-wrap items-center gap-3 text-sm">
+          <div className="font-semibold text-emerald-950 shrink-0">Space view</div>
+          <div className="text-emerald-900 flex flex-wrap gap-x-4 gap-y-1 min-w-0">
+            {focusedRoom ? (
+              <>
+                <span className="font-medium truncate">{focusedRoom.name || 'Room'}</span>
+                <span>
+                  {focusedRoom.width.toFixed(1)}′ × {focusedRoom.depth.toFixed(1)}′
+                </span>
+                <span className="text-emerald-800">
+                  {normalizeRoomLevel(focusedRoom) === 'main'
+                    ? 'Main floor'
+                    : normalizeRoomLevel(focusedRoom) === 'loft_deck'
+                      ? `On loft (${plan.lofts.find((l) => l.id === focusedRoom.loftId)?.name ?? 'loft'})`
+                      : `Above loft +${(focusedRoom.loftUpperFloorOffsetFt ?? 0).toFixed(1)}′`}
+                </span>
+                <span>
+                  Floor elev. {getRoomFloorElevation(plan, focusedRoom).toFixed(2)}′ ·{' '}
+                  {(focusedRoom.wallTopMode ?? 'to_ceiling') === 'custom'
+                    ? `walls ${(focusedRoom.customWallHeightFt ?? 0).toFixed(1)}′`
+                    : 'walls to ceiling'}
+                </span>
+              </>
+            ) : focusedLoftEntity ? (
+              <>
+                <span className="font-medium truncate">{focusedLoftEntity.name ?? 'Loft'}</span>
+                <span>
+                  {focusedLoftEntity.width.toFixed(1)}′ × {focusedLoftEntity.depth.toFixed(1)}′ deck
+                </span>
+                <span>
+                  Deck {focusedLoftEntity.elevation.toFixed(1)}′ · clear {(focusedLoftEntity.clearHeight ?? 8).toFixed(1)}′
+                </span>
+                {focusedLoftEntity.stairOpening ? (
+                  <span className="text-emerald-800">
+                    Stair opening {focusedLoftEntity.stairOpening.width.toFixed(1)}′ ×{' '}
+                    {focusedLoftEntity.stairOpening.depth.toFixed(1)}′
+                  </span>
+                ) : (
+                  <span className="text-emerald-800">No stair opening yet</span>
+                )}
+              </>
+            ) : null}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto border-emerald-600 text-emerald-900 hover:bg-emerald-100"
+            onClick={() => setFocusedSpace(null)}
+          >
+            Back to full plan
+          </Button>
+        </div>
+      ) : null}
 
       <div className="flex-1 min-h-0">
         {viewMode === 'floor' ? (
@@ -419,6 +525,12 @@ export function PlanLocalWorkspace(props: {
             onOp={onOp}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            focusedSpace={focusedSpace}
+            onRequestFocusSpace={(f) => {
+              setFocusedSpace(f);
+              setSelectedId(f.id);
+              applyFloorForFocusedSpace(f);
+            }}
           />
         ) : (
           <div className="w-full h-full bg-white p-6">

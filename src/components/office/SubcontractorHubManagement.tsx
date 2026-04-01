@@ -10,13 +10,18 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Copy, Plus, Trash2 } from 'lucide-react';
+import { Copy, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { insertPortalJobAccess, deletePortalJobAccess } from '@/lib/portalJobAccess';
 import {
   getOrCreatePortalUserForSubcontractor,
   resolvePortalUserIdForSubcontractor,
 } from '@/lib/subcontractorPortalUser';
+import {
+  buildSubcontractorPortalUrl,
+  ensureSubcontractorPortalShareLink,
+  rotateSubcontractorPortalShareToken,
+} from '@/lib/subcontractorPortalLink';
 
 interface SubcontractorRow {
   id: string;
@@ -81,6 +86,8 @@ export function SubcontractorHubManagement() {
   const [accessRows, setAccessRows] = useState<AccessRow[]>([]);
   const [grantOpen, setGrantOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [portalShareUrl, setPortalShareUrl] = useState<string | null>(null);
+  const [shareLinkLoading, setShareLinkLoading] = useState(false);
 
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -104,10 +111,35 @@ export function SubcontractorHubManagement() {
   useEffect(() => {
     if (!selectedSubId) {
       setAccessRows([]);
+      setPortalShareUrl(null);
       return;
     }
     void loadAccess(selectedSubId);
+    void loadPortalShareUrl(selectedSubId);
   }, [selectedSubId]);
+
+  async function loadPortalShareUrl(subId: string) {
+    setShareLinkLoading(true);
+    setPortalShareUrl(null);
+    try {
+      const { data, error } = await supabase
+        .from('subcontractor_portal_links')
+        .select('access_token')
+        .eq('subcontractor_id', subId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (error) {
+        if (!/subcontractor_portal_links|schema cache|PGRST205/i.test(String(error.message))) {
+          console.warn('[SubcontractorHub] subcontractor_portal_links', error);
+        }
+        return;
+      }
+      const tok = (data as { access_token?: string } | null)?.access_token;
+      if (tok) setPortalShareUrl(buildSubcontractorPortalUrl(String(tok)));
+    } finally {
+      setShareLinkLoading(false);
+    }
+  }
 
   async function loadBase() {
     setLoading(true);
@@ -147,17 +179,45 @@ export function SubcontractorHubManagement() {
   async function copySubLink() {
     if (!selectedSubId) return;
     try {
-      const { portalUserId, error } = await getOrCreatePortalUserForSubcontractor(
+      const { access_token, error } = await ensureSubcontractorPortalShareLink(
         supabase,
         selectedSubId,
         profile?.id
       );
-      if (error || !portalUserId) throw error ?? new Error('No portal user id');
-      const url = `${window.location.origin}/subcontractor-portal?sub=${encodeURIComponent(portalUserId)}`;
+      if (error || !access_token) throw error ?? new Error('Could not create or load portal link');
+      const url = buildSubcontractorPortalUrl(access_token);
       await navigator.clipboard.writeText(url);
-      toast.success('Subcontractor hub link copied');
+      setPortalShareUrl(url);
+      toast.success('Subcontractor portal link copied (same idea as customer portal — one token, you control jobs below)');
     } catch (e: any) {
-      toast.error(e?.message || 'Could not copy link');
+      const msg = e?.message || 'Could not copy link';
+      if (/subcontractor_portal_links|relation|does not exist/i.test(msg)) {
+        toast.error(
+          'Database migration missing: run supabase/migrations/20260330120000_subcontractor_portal_share_links.sql (or push migrations), then reload.',
+          { duration: 14000 }
+        );
+      } else {
+        toast.error(msg);
+      }
+    }
+  }
+
+  async function rotateSubLink() {
+    if (!selectedSubId) return;
+    if (!confirm('Generate a new link? The old link will stop working immediately.')) return;
+    try {
+      const { access_token, error } = await rotateSubcontractorPortalShareToken(supabase, selectedSubId);
+      if (error) throw error;
+      if (!access_token) {
+        toast.error('No existing link to rotate — use Copy shared link first');
+        return;
+      }
+      const url = buildSubcontractorPortalUrl(access_token);
+      setPortalShareUrl(url);
+      await navigator.clipboard.writeText(url);
+      toast.success('New link generated and copied');
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not rotate link');
     }
   }
 
@@ -272,32 +332,55 @@ export function SubcontractorHubManagement() {
             Manage all subcontractors, all job access, and what they can see from one place.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Select value={selectedSubId} onValueChange={setSelectedSubId}>
-            <SelectTrigger className="w-[320px]">
-              <SelectValue placeholder="Select subcontractor" />
-            </SelectTrigger>
-            <SelectContent>
-              {subcontractors.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                  {s.company_name ? ` (${s.company_name})` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={copySubLink} disabled={!selectedSubId}>
-            <Copy className="w-4 h-4 mr-2" />
-            Copy Shared Link
-          </Button>
-          <Button onClick={() => setGrantOpen(true)} disabled={!selectedSubId}>
-            <Plus className="w-4 h-4 mr-2" />
-            Grant Job
-          </Button>
-          <Button variant="outline" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Subcontractor
-          </Button>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Select value={selectedSubId} onValueChange={setSelectedSubId}>
+              <SelectTrigger className="w-[320px]">
+                <SelectValue placeholder="Select subcontractor" />
+              </SelectTrigger>
+              <SelectContent>
+                {subcontractors.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                    {s.company_name ? ` (${s.company_name})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={() => void copySubLink()} disabled={!selectedSubId}>
+              <Copy className="w-4 h-4 mr-2" />
+              Copy portal link
+            </Button>
+            <Button variant="outline" onClick={() => void rotateSubLink()} disabled={!selectedSubId || !portalShareUrl}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              New token
+            </Button>
+            <Button onClick={() => setGrantOpen(true)} disabled={!selectedSubId}>
+              <Plus className="w-4 h-4 mr-2" />
+              Grant job
+            </Button>
+            <Button variant="outline" onClick={() => setCreateOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              New subcontractor
+            </Button>
+          </div>
+          <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+            <p className="text-sm font-medium">Their no-login link (customer-portal style)</p>
+            <p className="text-xs text-muted-foreground">
+              One link per subcontractor. You add or remove jobs in <span className="font-medium">Job visibility</span>{' '}
+              below — the URL does not change when jobs change. Use <span className="font-medium">New token</span> only if
+              the link was leaked.
+            </p>
+            {shareLinkLoading ? (
+              <p className="text-sm text-muted-foreground">Loading link…</p>
+            ) : portalShareUrl ? (
+              <code className="block text-xs break-all bg-background border rounded px-2 py-2">{portalShareUrl}</code>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No token yet — click <span className="font-medium">Copy portal link</span> to create one.
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
 

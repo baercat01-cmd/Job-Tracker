@@ -12,6 +12,7 @@ import { buildProposalHtmlForPortal } from '@/lib/proposalPortalHtml';
 import { isFieldRequestSheetName } from '@/lib/materialWorkbook';
 import { fetchPortalJobAccessRowsForSubcontractor } from '@/lib/portalJobAccess';
 import { resolvePortalUserIdForSubcontractor } from '@/lib/subcontractorPortalUser';
+import { resolveSubcontractorPortalByToken } from '@/lib/subcontractorPortalLink';
 
 interface PortalUser {
   id: string;
@@ -57,6 +58,7 @@ function normalizeAccess(raw: Record<string, unknown>): JobAccess {
 
 export default function SubcontractorPortal() {
   const [searchParams] = useSearchParams();
+  const shareToken = (searchParams.get('token') || '').trim();
   const subId = (searchParams.get('sub') || '').trim();
 
   const [loading, setLoading] = useState(true);
@@ -144,12 +146,36 @@ export default function SubcontractorPortal() {
 
   useEffect(() => {
     async function boot() {
-      if (!subId) {
+      if (!shareToken && !subId) {
         setAccessDenied(true);
         setLoading(false);
         return;
       }
       try {
+        if (shareToken) {
+          const { row, error: tokErr } = await resolveSubcontractorPortalByToken(supabase, shareToken);
+          if (tokErr) {
+            console.error(tokErr);
+            toast.error('Could not validate subcontractor portal link');
+            setAccessDenied(true);
+            setLoading(false);
+            return;
+          }
+          if (!row) {
+            setAccessDenied(true);
+            setLoading(false);
+            return;
+          }
+          setUser({
+            id: row.subcontractor_id,
+            full_name: row.full_name,
+            company_name: row.company_name,
+            is_active: true,
+          });
+          await loadJobsForSub(row.portal_user_id);
+          return;
+        }
+
         const { data: subFromSubs, error: subsErr } = await supabase
           .from('subcontractors')
           .select('id, name, company_name, active')
@@ -192,7 +218,7 @@ export default function SubcontractorPortal() {
       }
     }
     void boot();
-  }, [subId, loadJobsForSub]);
+  }, [shareToken, subId, loadJobsForSub]);
 
   useEffect(() => {
     const jobId = selectedJob?.id;
@@ -248,7 +274,10 @@ export default function SubcontractorPortal() {
             <CardTitle>Invalid subcontractor link</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Ask your office manager to send the current subcontractor link.
+            Use the portal link your office sent you (it looks like a customer portal link, with{' '}
+            <code className="text-xs bg-muted px-1 rounded">?token=…</code>
+            ). Older links may use <code className="text-xs bg-muted px-1 rounded">?sub=…</code> instead. Ask your office
+            manager for the current link if this one does not work.
           </CardContent>
         </Card>
       </div>

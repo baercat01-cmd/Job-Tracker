@@ -3,6 +3,10 @@
  * Used by both customer portal and JobFinancials to ensure consistent totals
  */
 
+function toBoolOption(v: unknown): boolean {
+  return v === true || v === 1 || v === 'true' || v === '1' || v === 't' || v === 'yes';
+}
+
 interface MaterialItem {
   id?: string;
   category?: string;
@@ -233,6 +237,7 @@ export function computeProposalTotals(input: {
 
   const standaloneRows = input.customRows.filter(row => !row.sheet_id);
   for (const row of standaloneRows) {
+    if (toBoolOption(row.is_option)) continue;
     const rowLineItems = input.customRowLineItems[row.id] || [];
     for (const item of rowLineItems) {
       const itemCost = Number(item.total_cost) || (item.quantity ?? 0) * (item.unit_cost ?? 0);
@@ -280,7 +285,7 @@ export function computeProposalTotals(input: {
   let subMaterialsTaxableOnly = 0;
 
   const standaloneSubs = input.subcontractorEstimates.filter(
-    sub => !sub.sheet_id && !sub.row_id
+    sub => !sub.sheet_id && !sub.row_id && !toBoolOption(sub.is_option)
   );
   for (const sub of standaloneSubs) {
     const subLineItems = input.subcontractorLineItems[sub.id] || [];

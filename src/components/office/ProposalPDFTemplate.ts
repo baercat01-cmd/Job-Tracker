@@ -1,4 +1,166 @@
 // PDF Template for Proposal Export
+
+function escapeHtmlBid(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderBidSpecScopeSection(
+  section: {
+    name: string;
+    description: string;
+    optional?: boolean;
+    items?: Array<{ description: string; quantity?: number; unit?: string }>;
+  },
+  showQuantities: boolean
+): string {
+  let qtyBlock = '';
+  if (showQuantities && section.items && section.items.length > 0) {
+    const rows = section.items
+      .map((item) => {
+        const qty = item.quantity ?? 1;
+        const unit = item.unit ? String(item.unit) : '—';
+        return `<tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.description}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center; white-space: nowrap;">${qty}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${unit}</td>
+        </tr>`;
+      })
+      .join('');
+    qtyBlock = `<table class="items-table" style="margin-top: 8px;"><thead><tr>
+      <th style="width: 58%;">Item / scope detail</th>
+      <th style="width: 14%; text-align: center;">Qty</th>
+      <th style="width: 28%;">Unit / notes</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  return `<div class="section-wrapper">
+    <div class="section-title" style="display: block; margin-top: 0;">${section.name}</div>
+    ${section.description ? `<div class="section-content">${section.description}</div>` : ''}
+    ${qtyBlock}
+  </div>`;
+}
+
+function buildBidSpecBody(params: {
+  proposalNumber: string;
+  date: string;
+  bidDueDate?: string;
+  instructions?: string;
+  showQuantities: boolean;
+  job: {
+    client_name: string;
+    address: string;
+    name: string;
+    customer_phone?: string;
+    description?: string;
+  };
+  sections: Array<{
+    name: string;
+    description: string;
+    optional?: boolean;
+    items?: Array<{ description: string; quantity?: number; unit?: string }>;
+  }>;
+  bodyFontSize: number;
+}): string {
+  const { proposalNumber, date, bidDueDate, instructions, showQuantities, job, sections, bodyFontSize } = params;
+
+  const requiredSections = sections.filter((s) => !s.optional);
+  const optionalSections = sections.filter((s) => s.optional);
+
+  const instructionsBlock =
+    instructions && instructions.trim()
+      ? `<div class="intro-box" style="margin-top: 14px;">
+          <div class="box-header">Instructions to bidders</div>
+          <div style="padding: 12px 14px; font-size: ${bodyFontSize}pt; line-height: 1.55;">
+            ${escapeHtmlBid(instructions.trim()).replace(/\n/g, '<br/>')}
+          </div>
+        </div>`
+      : '';
+
+  const overviewBlock =
+    job.description && String(job.description).trim()
+      ? `<div class="intro-box" style="margin-top: 14px;">
+          <div class="box-header">Project overview</div>
+          <div style="padding: 12px 14px; font-size: ${bodyFontSize}pt; line-height: 1.55; white-space: pre-wrap;">${job.description}</div>
+        </div>`
+      : '';
+
+  const baseScopeInner =
+    requiredSections.length > 0
+      ? requiredSections.map((s) => renderBidSpecScopeSection(s, showQuantities)).join('')
+      : `<p style="padding: 12px 14px; margin: 0; color: #555; font-size: ${bodyFontSize}pt;">No base-scope sections are defined on this proposal. Add materials sheets or custom rows in Job Financials, or export after building scope.</p>`;
+
+  const optionalBlock =
+    optionalSections.length > 0
+      ? `<div class="intro-box" style="margin-top: 14px; border-color: #d97706;">
+          <div class="box-header" style="background: #b45309;">Optional / alternate scope <span style="font-size: 9pt; font-weight: normal;">(bid separately unless noted)</span></div>
+          <div style="padding: 12px 14px 14px 14px;">
+            ${optionalSections.map((s) => renderBidSpecScopeSection(s, showQuantities)).join('')}
+          </div>
+        </div>`
+      : '';
+
+  const infoTableRows = bidDueDate
+    ? `<tr><th>Date issued</th><th>Reference #</th><th>Bid due</th></tr>
+       <tr><td>${date}</td><td>${proposalNumber}</td><td>${escapeHtmlBid(bidDueDate)}</td></tr>`
+    : `<tr><th>Date issued</th><th>Reference #</th></tr>
+       <tr><td>${date}</td><td>${proposalNumber}</td></tr>`;
+
+  return `
+        <header style="border-bottom: 2px solid #111; padding-bottom: 14px; margin-bottom: 18px;">
+          <p style="margin: 0 0 6px 0; font-size: ${Math.max(bodyFontSize - 1, 9)}pt; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #444;">
+            Bid specification
+          </p>
+          <h1 style="margin: 0; font-size: 22pt; font-weight: 700; line-height: 1.2; color: #0a0a0a;">
+            ${job.name}
+          </h1>
+        </header>
+
+        <div class="intro-box" style="margin-top: 0; margin-bottom: 16px;">
+          <div class="box-header">Job information</div>
+          <div style="padding: 12px 14px; font-size: ${bodyFontSize}pt; line-height: 1.55;">
+            <p style="margin: 0 0 10px 0;">
+              <strong style="display: block; font-size: ${Math.max(bodyFontSize - 1, 9)}pt; color: #333; margin-bottom: 2px;">Site address</strong>
+              ${job.address || '—'}
+            </p>
+            <p style="margin: 0 0 10px 0;">
+              <strong style="display: block; font-size: ${Math.max(bodyFontSize - 1, 9)}pt; color: #333; margin-bottom: 2px;">Customer / owner</strong>
+              ${job.client_name || '—'}
+            </p>
+            <p style="margin: 0;">
+              <strong style="display: block; font-size: ${Math.max(bodyFontSize - 1, 9)}pt; color: #333; margin-bottom: 2px;">Phone</strong>
+              ${job.customer_phone || '—'}
+            </p>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <table class="proposal-info-table" style="margin-left: 0;">${infoTableRows}</table>
+        </div>
+
+        <p style="margin: 0 0 18px 0; font-size: ${bodyFontSize}pt; line-height: 1.5; color: #333;">
+          Scope and quantities for estimating only. <strong>No pricing</strong> appears in this document.
+        </p>
+
+        ${overviewBlock}
+        ${instructionsBlock}
+
+        <div class="intro-box" style="margin-top: 14px;">
+          <div class="box-header">Base bid scope</div>
+          <div style="padding: 4px 14px 14px 14px;">${baseScopeInner}</div>
+        </div>
+
+        ${optionalBlock}
+
+        <div style="margin-top: 22px; padding: 14px; border: 1px solid #94a3b8; background: #f8fafc; font-size: ${Math.max(bodyFontSize - 1, 9)}pt; line-height: 1.5; color: #334155;">
+          <p style="margin: 0 0 8px 0;"><strong>Submission &amp; attachments</strong></p>
+          <p style="margin: 0;">Pricing is intentionally omitted. Use attached drawings, portal documents, and site visits as applicable. Submit bids and questions per your invitation from the general contractor.</p>
+        </div>
+      `;
+}
+
 export function generateProposalHTML(data: {
   proposalNumber: string;
   date: string;
@@ -39,6 +201,12 @@ export function generateProposalHTML(data: {
   showInternalDetails?: boolean;
   /** Scope text only: section titles + descriptions. No customer/job info, pricing, totals, payment, signatures, or terms. */
   descriptionsOnly?: boolean;
+  /** Subcontractor-facing bid package: job + scope + optional quantities; no pricing, terms, or signatures. */
+  bidSpec?: {
+    bidDueDate?: string;
+    instructions?: string;
+    showQuantities?: boolean;
+  };
   templateSettings?: any; // Template customization settings
   theme?: 'default' | 'premium'; // premium = dark green + gold modern look
   taxExempt?: boolean; // when true, show "Tax Exempt" on printout and tax amount is 0
@@ -53,6 +221,7 @@ export function generateProposalHTML(data: {
     showSectionPrices = false,
     showInternalDetails = false,
     descriptionsOnly = false,
+    bidSpec,
     templateSettings,
     theme = 'default',
     taxExempt = false,
@@ -93,7 +262,7 @@ export function generateProposalHTML(data: {
     <html>
       <head>
         <meta charset="UTF-8">
-        <title>Proposal-${proposalNumber}</title>
+        <title>${bidSpec ? 'Bid-spec' : 'Proposal'}-${proposalNumber}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
@@ -472,9 +641,20 @@ export function generateProposalHTML(data: {
           
         </style>
       </head>
-      <body class="${isPremium ? 'theme-premium' : ''}">
+      <body class="${bidSpec ? '' : isPremium ? 'theme-premium' : ''}">
         ${
-          descriptionsOnly
+          bidSpec
+            ? buildBidSpecBody({
+                proposalNumber,
+                date,
+                bidDueDate: bidSpec.bidDueDate,
+                instructions: bidSpec.instructions,
+                showQuantities: bidSpec.showQuantities !== false,
+                job,
+                sections,
+                bodyFontSize,
+              })
+            : descriptionsOnly
             ? sections
                 .map((section: any) => {
                   const optSuffix = section.optional

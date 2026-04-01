@@ -5,6 +5,14 @@ export function subcontractorPortalUsername(subcontractorId: string): string {
   return `sub:${subcontractorId}`;
 }
 
+/** Inverse of subcontractorPortalUsername — used when resolving share links from a portal_users row. */
+export function subcontractorIdFromPortalUsername(username: string): string | null {
+  const t = String(username ?? '').trim();
+  if (!t.startsWith('sub:')) return null;
+  const id = t.slice(4).trim();
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+}
+
 function unwrapRpcJsonb(data: unknown): unknown {
   if (typeof data === 'string') {
     try {
@@ -23,7 +31,15 @@ function isRpcArgMismatch(err: unknown): boolean {
 
 function isRpcNotDeployed(err: unknown): boolean {
   const m = String((err as { message?: string })?.message ?? '');
-  return /Could not find the function|schema cache|does not exist/i.test(m);
+  return /Could not find the function|schema cache|does not exist|PGRST202|PGRST301/i.test(m);
+}
+
+function isLikelyPortalUsersRlsInsert(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  const msg = String((err as { message?: string })?.message ?? '');
+  if (/portal_users/i.test(msg) && /row-level security|RLS policy|violates row-level/i.test(msg)) return true;
+  if (code === '42501' && /portal_users|row-level security|rls/i.test(msg)) return true;
+  return false;
 }
 
 async function rpcEnsurePortalUserForSubcontractor(
@@ -122,6 +138,24 @@ export async function getOrCreatePortalUserForSubcontractor(
   if (/duplicate key|unique constraint|23505/i.test(msg)) {
     const again = await resolvePortalUserIdForSubcontractor(client, subcontractorId);
     if (again.portalUserId) return { portalUserId: again.portalUserId, error: null };
+  }
+
+  if (insErr && isLikelyPortalUsersRlsInsert(insErr) && rpc.error && isRpcNotDeployed(rpc.error)) {
+    return {
+      portalUserId: null,
+      error: new Error(
+        'Subcontractor portal user could not be created: PostgREST does not see office_portal_user_ensure_for_subcontractor_json yet, and portal_users has RLS blocking inserts. In Supabase → SQL Editor, run migration 20260330130000_portal_users_subcontractor_access_fix.sql (or scripts/fix-portal-users-rls.sql + 20260327000000_portal_user_ensure_subcontractor_json.sql), then run: NOTIFY pgrst, \'reload schema\';'
+      ),
+    };
+  }
+
+  if (insErr && isLikelyPortalUsersRlsInsert(insErr)) {
+    return {
+      portalUserId: null,
+      error: new Error(
+        `${msg} — Fix: run supabase/migrations/20260330130000_portal_users_subcontractor_access_fix.sql in the SQL Editor, or scripts/fix-portal-users-rls.sql, then NOTIFY pgrst, 'reload schema'.`
+      ),
+    };
   }
 
   return { portalUserId: null, error: insErr ? (insErr as Error) : new Error('Could not create portal user') };

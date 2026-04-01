@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid, ShoppingCart, Key } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid, ShoppingCart, Key, StickyNote, FileDown } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,12 +14,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { MaterialsManagement } from './MaterialsManagement';
 import { JobComponents } from './JobComponents';
 import { JobSchedule } from './JobSchedule';
 import { JobDocuments } from './JobDocuments';
 import { JobPhotosView } from './JobPhotosView';
-import { JobFinancials } from './JobFinancials';
 import { ProposalAndMaterialsView } from './ProposalAndMaterialsView';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorPortalJobPanel } from './SubcontractorPortalJobPanel';
@@ -33,10 +42,14 @@ import { format } from 'date-fns';
 
 import { useAuth } from '@/hooks/useAuth';
 import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
+import { loadProposalFinancialData } from '@/lib/loadProposalFinancialData';
+import { requestJobBidSpecExport } from '@/lib/jobBidExportBridge';
+import { computeProposalCostBudget } from '@/lib/proposalCostBudget';
 import type { Job } from '@/types';
 import { JobDetailProposalToolbarContext } from '@/contexts/JobDetailProposalToolbarContext';
 import { JobDetailMaterialsToolbarSlotContext } from '@/contexts/JobDetailMaterialsToolbarContext';
 import { ProposalSummaryProvider } from '@/contexts/ProposalSummaryContext';
+import { JobProposalBudgetBreakdownPanel } from '@/components/office/JobProposalBudgetBreakdownPanel';
 
 interface JobDetailedViewProps {
   job: Job;
@@ -86,7 +99,7 @@ interface DateGroup {
 }
 
 interface ComponentGroup {
-  component_id: string;
+  component_id: string | null;
   component_name: string;
   total_duration: number;
   total_man_hours: number;
@@ -390,6 +403,21 @@ interface DailyLog {
   created_at: string;
 }
 
+const PROPOSAL_MATERIALS_VIEW_MODE_KEY = 'jobDetailed.proposalMaterialsViewMode';
+
+type ProposalMaterialsLayoutMode = 'split' | 'proposal' | 'materials';
+
+function readStoredProposalMaterialsViewMode(): ProposalMaterialsLayoutMode {
+  if (typeof window === 'undefined') return 'split';
+  try {
+    const v = window.localStorage.getItem(PROPOSAL_MATERIALS_VIEW_MODE_KEY);
+    if (v === 'split' || v === 'proposal' || v === 'materials') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'split';
+}
+
 export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEdit, onJobUpdate, initialTab = 'overview' }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -421,12 +449,55 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
   const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab === 'financials' || initialTab === 'materials' ? 'proposal-materials' : initialTab);
   const [proposalToolbarContent, setProposalToolbarContent] = useState<React.ReactNode>(null);
-  type ProposalViewMode = 'split' | 'proposal' | 'materials';
-  const [proposalViewMode, setProposalViewMode] = useState<ProposalViewMode>('split');
+  type ProposalViewMode = ProposalMaterialsLayoutMode;
+  const [proposalViewMode, setProposalViewMode] = useState<ProposalViewMode>(() => readStoredProposalMaterialsViewMode());
   /** Shared proposal selection so Subcontractors tab and Proposal & Materials show the same proposal. */
   const [selectedProposalQuoteId, setSelectedProposalQuoteId] = useState<string | null>(null);
+  /** False until the default quote for this job has been resolved (avoids flashing "no proposal" before quotes load). */
+  const [proposalQuoteSelectionReady, setProposalQuoteSelectionReady] = useState(false);
+  /** Stored proposal totals for the selected quote (same source as JobFinancials / customer portal RPC). */
+  const [proposalBudget, setProposalBudget] = useState<{
+    proposalLabel: string;
+    subtotal: number;
+    tax: number;
+    grandTotal: number;
+  } | null>(null);
+  const [proposalBudgetLoading, setProposalBudgetLoading] = useState(false);
+  /** Internal cost rollup for black header bar (same rules as Cost budget office page). */
+  const [headerProposalCostTotal, setHeaderProposalCostTotal] = useState<number | null>(null);
+  const [headerProposalCostLoading, setHeaderProposalCostLoading] = useState(false);
   const materialsToolbarSlotRef = useRef<HTMLDivElement>(null);
   const [materialsToolbarSlotReady, setMaterialsToolbarSlotReady] = useState(false);
+  const [proposalPageNotesOpen, setProposalPageNotesOpen] = useState(false);
+  const [proposalNotesDraft, setProposalNotesDraft] = useState('');
+  const [savingProposalNotes, setSavingProposalNotes] = useState(false);
+  /** `__clock_in__` or stringified component id — opens worker breakdown dialog on Overview */
+  const [overviewComponentBreakdownKey, setOverviewComponentBreakdownKey] = useState<string | null>(null);
+
+  async function saveProposalPageNotes() {
+    if (profile?.role !== 'office') {
+      toast.error('Only office staff can edit job notes');
+      return;
+    }
+    setSavingProposalNotes(true);
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({
+          notes: proposalNotesDraft.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+      if (error) throw error;
+      toast.success('Notes saved');
+      onJobUpdate?.();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to save notes';
+      toast.error(message);
+    } finally {
+      setSavingProposalNotes(false);
+    }
+  }
 
   function toggleDate(date: string) {
     setExpandedDates(prev => {
@@ -489,51 +560,150 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
     setExpandedLogs(new Set());
   }
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PROPOSAL_MATERIALS_VIEW_MODE_KEY, proposalViewMode);
+    } catch {
+      /* ignore */
+    }
+  }, [proposalViewMode]);
+
   // Keep shared proposal selection in sync with job quotes (same order as Proposal & Materials: highest proposal number first)
   useEffect(() => {
     if (!job?.id) {
       setSelectedProposalQuoteId(null);
+      setProposalQuoteSelectionReady(true);
+      setProposalBudget(null);
+      setHeaderProposalCostTotal(null);
       return;
     }
     let mounted = true;
+    setProposalQuoteSelectionReady(false);
+    setProposalBudget(null);
+    setHeaderProposalCostTotal(null);
     (async () => {
-      const { data: quotes, error } = await supabase
-        .from('quotes')
-        .select(
-          'id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, signed_version, customer_signed_at, is_change_order_proposal'
-        )
-        .eq('job_id', job.id)
-        .order('created_at', { ascending: false });
-      if (!mounted) return;
-      if (error || !quotes?.length) {
-        setSelectedProposalQuoteId(null);
-        return;
-      }
-      const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
-      const frozenMain = mainQuotes.filter((q: any) => isQuoteContractFrozen(q));
+      try {
+        const { data: quotes, error } = await supabase
+          .from('quotes')
+          .select(
+            'id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, signed_version, customer_signed_at, is_change_order_proposal'
+          )
+          .eq('job_id', job.id)
+          .order('created_at', { ascending: false });
+        if (!mounted) return;
+        if (error || !quotes?.length) {
+          setSelectedProposalQuoteId(null);
+          return;
+        }
+        const mainQuotes = (quotes || []).filter((q: any) => !q.is_change_order_proposal);
+        const frozenMain = mainQuotes.filter((q: any) => isQuoteContractFrozen(q));
 
-      // If this job has a contract-frozen main quote, default selection to it.
-      // This prevents Materials from loading "No Material Workbook" when the locked workbook exists only for the contract quote.
-      if (frozenMain.length > 0) {
-        setSelectedProposalQuoteId((prev) => {
-          if (prev && frozenMain.some((q: any) => q.id === prev)) return prev;
-          return frozenMain[0]?.id ?? null; // quotes already sorted by created_at desc
+        // If this job has a contract-frozen main quote, default selection to it.
+        // This prevents Materials from loading "No Material Workbook" when the locked workbook exists only for the contract quote.
+        if (frozenMain.length > 0) {
+          setSelectedProposalQuoteId((prev) => {
+            if (prev && frozenMain.some((q: any) => q.id === prev)) return prev;
+            return frozenMain[0]?.id ?? null; // quotes already sorted by created_at desc
+          });
+          return;
+        }
+
+        const sorted = [...quotes].sort((a: any, b: any) => {
+          const na = (a.proposal_number || a.quote_number || '').toString();
+          const nb = (b.proposal_number || b.quote_number || '').toString();
+          return nb.localeCompare(na, undefined, { numeric: true });
         });
-        return;
+        setSelectedProposalQuoteId((prev) => {
+          if (prev && sorted.some((q: any) => q.id === prev)) return prev;
+          return sorted[0]?.id ?? null;
+        });
+      } finally {
+        if (mounted) setProposalQuoteSelectionReady(true);
       }
-
-      const sorted = [...quotes].sort((a: any, b: any) => {
-        const na = (a.proposal_number || a.quote_number || '').toString();
-        const nb = (b.proposal_number || b.quote_number || '').toString();
-        return nb.localeCompare(na, undefined, { numeric: true });
-      });
-      setSelectedProposalQuoteId((prev) => {
-        if (prev && sorted.some((q: any) => q.id === prev)) return prev;
-        return sorted[0]?.id ?? null;
-      });
     })();
     return () => { mounted = false; };
   }, [job?.id]);
+
+  // Load proposal budget totals from stored quote fields (written by JobFinancials)
+  useEffect(() => {
+    if (!proposalQuoteSelectionReady) return;
+    let cancelled = false;
+    if (!selectedProposalQuoteId) {
+      setProposalBudget(null);
+      setProposalBudgetLoading(false);
+      return;
+    }
+    setProposalBudgetLoading(true);
+    (async () => {
+      const [totalsRes, quoteRes] = await Promise.all([
+        supabase.rpc('get_quote_proposal_totals', { p_quote_id: selectedProposalQuoteId }),
+        supabase
+          .from('quotes')
+          .select('proposal_number, quote_number')
+          .eq('id', selectedProposalQuoteId)
+          .maybeSingle(),
+      ]);
+      if (cancelled) return;
+      const label =
+        (quoteRes.data?.proposal_number ?? quoteRes.data?.quote_number)?.toString() || '—';
+      if (totalsRes.error || !totalsRes.data?.length) {
+        setProposalBudget(null);
+      } else {
+        const row = totalsRes.data[0] as { subtotal?: number | null; tax?: number | null; grand_total?: number | null };
+        const sub = row.subtotal != null ? Number(row.subtotal) : NaN;
+        const tax = row.tax != null ? Number(row.tax) : 0;
+        const grand = row.grand_total != null ? Number(row.grand_total) : NaN;
+        if (Number.isFinite(sub) && Number.isFinite(grand)) {
+          setProposalBudget({
+            proposalLabel: label,
+            subtotal: sub,
+            tax: Number.isFinite(tax) ? tax : 0,
+            grandTotal: grand,
+          });
+        } else {
+          setProposalBudget(null);
+        }
+      }
+      setProposalBudgetLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [proposalQuoteSelectionReady, selectedProposalQuoteId]);
+
+  // Header bar: internal cost total from workbook + financial rows (no sell markup)
+  useEffect(() => {
+    if (!proposalQuoteSelectionReady || !selectedProposalQuoteId || !job?.id) {
+      setHeaderProposalCostTotal(null);
+      setHeaderProposalCostLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setHeaderProposalCostLoading(true);
+    (async () => {
+      try {
+        const payload = await loadProposalFinancialData(job.id, selectedProposalQuoteId);
+        if (cancelled) return;
+        if (!payload) {
+          setHeaderProposalCostTotal(null);
+          return;
+        }
+        const costs = computeProposalCostBudget({
+          materialSheets: payload.materialSheets,
+          customRows: payload.customRows,
+          subcontractorEstimates: payload.subcontractorEstimates,
+          customRowLineItems: payload.customRowLineItems,
+          subcontractorLineItems: payload.subcontractorLineItems,
+        });
+        setHeaderProposalCostTotal(costs.totalCost);
+      } catch {
+        if (!cancelled) setHeaderProposalCostTotal(null);
+      } finally {
+        if (!cancelled) setHeaderProposalCostLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [proposalQuoteSelectionReady, selectedProposalQuoteId, job?.id]);
 
   useEffect(() => {
     loadData();
@@ -581,6 +751,57 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
       supabase.removeChannel(materialsChannel);
     };
   }, [job.id]);
+
+  const overviewComponentTimeRows = useMemo(() => {
+    return componentGroups
+      .filter((g) => g.component_id != null)
+      .map((g) => ({
+        key: String(g.component_id),
+        name: g.component_name,
+        manHours: g.total_man_hours,
+        wallHours: g.total_duration,
+        entries: g.entry_count,
+      }));
+  }, [componentGroups]);
+
+  const overviewComponentBreakdown = useMemo(() => {
+    if (!overviewComponentBreakdownKey) return null;
+    const group =
+      overviewComponentBreakdownKey === '__clock_in__'
+        ? componentGroups.find((g) => g.component_id == null) ?? null
+        : componentGroups.find(
+            (g) => g.component_id != null && String(g.component_id) === overviewComponentBreakdownKey
+          ) ?? null;
+    if (!group) return null;
+
+    const byUser = new Map<string, { manHours: number; wallHours: number; entryCount: number }>();
+    const allEntries: ComponentWorkEntry[] = [];
+    for (const d of group.dates) {
+      for (const e of d.entries) {
+        allEntries.push(e);
+        const uname = e.user_name;
+        const mh = (e.total_hours || 0) * (e.crew_count || 1);
+        const wh = e.total_hours || 0;
+        if (!byUser.has(uname)) {
+          byUser.set(uname, { manHours: 0, wallHours: 0, entryCount: 0 });
+        }
+        const u = byUser.get(uname)!;
+        u.manHours += mh;
+        u.wallHours += wh;
+        u.entryCount += 1;
+      }
+    }
+    allEntries.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+    const workers = Array.from(byUser.entries())
+      .map(([userName, v]) => ({ userName, ...v }))
+      .sort((a, b) => b.manHours - a.manHours);
+
+    return {
+      title: group.component_id == null ? 'Clock-in / not on a component' : group.component_name,
+      workers,
+      allEntries,
+    };
+  }, [overviewComponentBreakdownKey, componentGroups]);
 
   async function loadData() {
     setLoading(true);
@@ -1294,15 +1515,39 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
   const isOverBudget = totalClockInHours > estimatedHours && estimatedHours > 0;
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
+  const headerBudgetProfit =
+    proposalBudget != null && headerProposalCostTotal != null
+      ? proposalBudget.grandTotal - headerProposalCostTotal
+      : null;
+
+  const fmtHeaderUsd = (n: number) =>
+    n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+  const jobBudgetHeaderTitle =
+    proposalBudgetLoading
+      ? 'Loading proposal totals…'
+      : proposalBudget
+        ? [
+            `Proposal #${proposalBudget.proposalLabel}. Sell (saved): ${fmtHeaderUsd(proposalBudget.grandTotal)}.`,
+            headerProposalCostTotal != null ? ` Cost: ${fmtHeaderUsd(headerProposalCostTotal)}.` : '',
+            headerBudgetProfit != null ? ` Profit: ${fmtHeaderUsd(headerBudgetProfit)}.` : '',
+            ' Click for full breakdown.',
+          ].join('')
+        : 'Sell total appears when saved on the quote. Click for budget breakdown.';
+
   return (
     <JobDetailProposalToolbarContext.Provider value={setProposalToolbarContent}>
     <JobDetailMaterialsToolbarSlotContext.Provider value={{ ref: materialsToolbarSlotRef, ready: materialsToolbarSlotReady }}>
     <ProposalSummaryProvider>
-    <div className="min-h-screen bg-background">
+    <div className="w-full min-h-0 bg-background">
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
-        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-[30px]' : 'pt-14'}`}
+        className={`w-full ${
+          activeTab === 'proposal-materials'
+            ? 'pt-[calc(3.5rem+2.5rem)]'
+            : 'pt-14'
+        }`}
       >
         {/* Main Navigation Tabs - Black bar always at top; green bar below when on Proposal & Materials */}
         <div className="fixed top-0 left-0 right-0 z-50 border-b-4 border-yellow-600 shadow-2xl bg-black">
@@ -1321,6 +1566,32 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
             <h1 className="text-lg font-bold text-yellow-500 truncate shrink-0 max-w-[180px] sm:max-w-[240px]">
               {job.name}
             </h1>
+            <button
+              type="button"
+              onClick={() => setActiveTab('job-budget')}
+              className="hidden md:inline-flex flex-row items-center gap-1.5 shrink-0 border-l border-yellow-600/50 pl-2.5 ml-1 py-0 max-w-[min(200px,22vw)] rounded-md hover:bg-yellow-950/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 transition-colors self-center"
+              title={jobBudgetHeaderTitle}
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-yellow-600 whitespace-nowrap">
+                Budget
+              </span>
+              {proposalBudgetLoading ? (
+                <span className="h-3.5 w-16 bg-yellow-900/50 animate-pulse rounded shrink-0" aria-hidden />
+              ) : proposalBudget ? (
+                <>
+                  <span className="text-[10px] text-yellow-200/75 tabular-nums whitespace-nowrap">
+                    #{proposalBudget.proposalLabel}
+                  </span>
+                  <span className="text-sm font-bold text-emerald-400 tabular-nums truncate leading-none">
+                    {fmtHeaderUsd(proposalBudget.grandTotal)}
+                  </span>
+                </>
+              ) : (
+                <span className="text-[10px] text-yellow-200/65 leading-none whitespace-nowrap">
+                  Set totals
+                </span>
+              )}
+            </button>
             <TabsList className="flex-1 min-w-0 grid grid-cols-12 h-11 rounded-none bg-transparent p-0 gap-0 border-0 overflow-x-auto">
             <TabsTrigger 
               value="overview" 
@@ -1421,7 +1692,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
 
           {/* Proposal & Materials: green bar below black bar */}
           {activeTab === 'proposal-materials' && (
-            <div className="border-t border-yellow-600/30 bg-green-900/95 text-xs">
+            <div className="relative z-[1] border-t border-yellow-600/30 bg-green-900/95 text-xs shadow-sm">
               <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
                 <div className="flex items-center gap-1">
                   <DropdownMenu>
@@ -1460,6 +1731,89 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 text-yellow-100 border-yellow-600/40 px-2 shrink-0"
+                  title="Subcontractor bid spec — print or Save as PDF"
+                  onClick={() => requestJobBidSpecExport()}
+                >
+                  <FileDown className="w-3 h-3 shrink-0 opacity-90" />
+                  Export bid PDF
+                </Button>
+                <Popover
+                  open={proposalPageNotesOpen}
+                  onOpenChange={(open) => {
+                    setProposalPageNotesOpen(open);
+                    if (open) setProposalNotesDraft(job.notes ?? '');
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 text-yellow-100 border-yellow-600/40 px-2 shrink-0"
+                      aria-label={job.notes?.trim() ? 'Edit job page notes' : 'Open job page notes'}
+                    >
+                      <StickyNote className="w-3 h-3 shrink-0 opacity-90" />
+                      Notes
+                      {job.notes?.trim() ? (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0"
+                          title="Has saved notes"
+                          aria-hidden
+                        />
+                      ) : null}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={6}
+                    className="w-[min(calc(100vw-1.5rem),28rem)] p-3 bg-slate-950 border border-yellow-600/40 text-yellow-50 shadow-xl"
+                  >
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs font-semibold text-yellow-200/95">Job page notes</p>
+                        <p className="text-[11px] text-yellow-100/55 mt-0.5">
+                          Same notes as Overview and Edit Job. Scratchpad while you work here.
+                        </p>
+                      </div>
+                      <Textarea
+                        value={proposalNotesDraft}
+                        onChange={(e) => setProposalNotesDraft(e.target.value)}
+                        placeholder="Phone calls, follow-ups, pricing reminders…"
+                        rows={9}
+                        readOnly={profile?.role !== 'office'}
+                        className="text-sm bg-green-950/40 border-yellow-600/35 text-yellow-50 placeholder:text-yellow-200/35 min-h-[180px] resize-y"
+                      />
+                      {profile?.role !== 'office' ? (
+                        <p className="text-[11px] text-amber-200/80">Office role required to save changes.</p>
+                      ) : null}
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs text-yellow-200/90 hover:text-yellow-100 hover:bg-green-900/60"
+                          onClick={() => setProposalPageNotesOpen(false)}
+                        >
+                          Close
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 text-xs bg-yellow-600 text-black hover:bg-yellow-500"
+                          disabled={profile?.role !== 'office' || savingProposalNotes}
+                          onClick={() => void saveProposalPageNotes()}
+                        >
+                          {savingProposalNotes ? 'Saving…' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 {proposalToolbarContent && (
                   <>
                     <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
@@ -1531,6 +1885,109 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
                   </div>
                 </div>
               </CardHeader>
+            </Card>
+
+            {/* Job budget from stored proposal totals (JobFinancials / quotes row) */}
+            <Card className="border-2 border-emerald-200 bg-gradient-to-r from-emerald-50 to-slate-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="w-6 h-6 text-emerald-700" />
+                  Job budget (from proposal)
+                </CardTitle>
+                <p className="text-sm text-muted-foreground font-normal">
+                  Uses the saved proposal subtotal, tax, and grand total for the proposal selected on this job (same as Proposal & Materials when totals are stored).
+                </p>
+              </CardHeader>
+              <CardContent>
+                {!proposalQuoteSelectionReady || proposalBudgetLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                    Loading proposal totals…
+                  </div>
+                ) : !selectedProposalQuoteId ? (
+                  <p className="text-sm text-muted-foreground">No proposal is linked to this job yet.</p>
+                ) : !proposalBudget ? (
+                  <p className="text-sm text-muted-foreground">
+                    No saved proposal totals for this quote yet. Open Proposal & Materials so the proposal can be calculated and totals saved to the quote.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Proposal</p>
+                        <p className="text-lg font-semibold text-emerald-900 tabular-nums">#{proposalBudget.proposalLabel}</p>
+                      </div>
+                      <div className="sm:text-right">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Price (customer total)</p>
+                        <p className="text-2xl font-bold text-emerald-800 tabular-nums">
+                          {proposalBudget.grandTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1">Saved grand total on the quote</p>
+                      </div>
+                      <div className="sm:text-right border-t sm:border-t-0 sm:border-l border-emerald-200 pt-3 sm:pt-0 sm:pl-4">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cost (internal)</p>
+                        {headerProposalCostLoading ? (
+                          <p className="text-sm text-muted-foreground mt-1">Loading…</p>
+                        ) : headerProposalCostTotal != null ? (
+                          <p className="text-xl font-semibold text-slate-800 tabular-nums mt-0.5">
+                            {headerProposalCostTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground mt-1">—</p>
+                        )}
+                        {proposalBudget != null && headerProposalCostTotal != null && (
+                          <>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mt-3">Profit (price − cost)</p>
+                            <p
+                              className={`text-xl font-bold tabular-nums ${
+                                proposalBudget.grandTotal - headerProposalCostTotal >= 0
+                                  ? 'text-emerald-700'
+                                  : 'text-destructive'
+                              }`}
+                            >
+                              {(proposalBudget.grandTotal - headerProposalCostTotal).toLocaleString('en-US', {
+                                style: 'currency',
+                                currency: 'USD',
+                              })}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Subtotal </span>
+                        <span className="font-medium tabular-nums">
+                          {proposalBudget.subtotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Tax </span>
+                        <span className="font-medium tabular-nums">
+                          {proposalBudget.tax === 0 ? (
+                            <span className="text-amber-800">Tax exempt</span>
+                          ) : (
+                            proposalBudget.tax.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {selectedProposalQuoteId && proposalQuoteSelectionReady && (
+                  <div className="pt-4 mt-2 border-t border-emerald-200">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="border-emerald-600 text-emerald-900 hover:bg-emerald-100"
+                      onClick={() => setActiveTab('job-budget')}
+                    >
+                      Open full budget breakdown
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
             </Card>
 
             {/* Email Communications Quick Access */}
@@ -1665,6 +2122,91 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
                 </CardContent>
               </Card>
             </div>
+
+            {/* Time logged by component (from time entries) */}
+            <Card className="border-2 border-slate-200">
+              <CardHeader>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <CardTitle className="flex items-center gap-2">
+                      <Briefcase className="w-5 h-5 text-slate-700" />
+                      Components and time
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground font-normal">
+                      Hours from field time entries: <span className="font-medium text-foreground">Man-hours</span> counts crew
+                      (hours × crew). <span className="font-medium text-foreground">Clock hrs</span> is elapsed time per entry without multiplying by crew.
+                      Click a row for each worker&apos;s totals and a dated entry log.
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('components')}>
+                    Components tab
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {overviewComponentTimeRows.length === 0 && totalClockInHours <= 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No time entries on this job yet. Crew time will appear here once logged and assigned to components where applicable.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Component</TableHead>
+                        <TableHead className="text-right w-[120px]">Man-hours</TableHead>
+                        <TableHead className="text-right w-[100px]">Clock hrs</TableHead>
+                        <TableHead className="text-right w-[90px]">Entries</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {overviewComponentTimeRows.map((row) => (
+                        <TableRow
+                          key={row.key}
+                          role="button"
+                          tabIndex={0}
+                          className="cursor-pointer hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          onClick={() => setOverviewComponentBreakdownKey(row.key)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setOverviewComponentBreakdownKey(row.key);
+                            }
+                          }}
+                        >
+                          <TableCell className="font-medium">{row.name}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.manHours.toFixed(1)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {row.wallHours.toFixed(1)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{row.entries}</TableCell>
+                        </TableRow>
+                      ))}
+                      {totalClockInHours > 0 ? (
+                        <TableRow
+                          role="button"
+                          tabIndex={0}
+                          className="bg-muted/40 cursor-pointer hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          onClick={() => setOverviewComponentBreakdownKey('__clock_in__')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setOverviewComponentBreakdownKey('__clock_in__');
+                            }
+                          }}
+                        >
+                          <TableCell className="font-medium text-muted-foreground">
+                            Clock-in / not on a component
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{totalClockInHours.toFixed(1)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">—</TableCell>
+                          <TableCell className="text-right text-muted-foreground">—</TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Progress Card */}
             {estimatedHours > 0 && (
@@ -1830,8 +2372,29 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
           </div>
         </TabsContent>
 
+        <TabsContent value="job-budget" className="w-full">
+          <div className="max-w-5xl mx-auto space-y-4 pt-4 px-4 pb-12">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-foreground tracking-tight">Budget breakdown</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Uses the same proposal as the header and Proposal & Materials. Switch proposal there if you need a different version.
+                </p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('overview')}>
+                Back to overview
+              </Button>
+            </div>
+            <JobProposalBudgetBreakdownPanel jobId={job.id} quoteId={selectedProposalQuoteId} />
+          </div>
+        </TabsContent>
+
         {/* forceMount keeps the panel alive across tab switches — data persists, no cold-restart */}
-        <TabsContent forceMount value="proposal-materials" className="w-full flex flex-col min-h-0 data-[state=inactive]:hidden h-[calc(100vh-8rem)] min-h-[400px] sm:min-h-[520px]">
+        <TabsContent
+          forceMount
+          value="proposal-materials"
+          className="relative z-0 mt-0 flex h-[calc(100dvh-9rem)] w-full min-h-[400px] flex-col overflow-hidden data-[state=inactive]:hidden sm:min-h-[520px]"
+        >
           <ProposalAndMaterialsView
               job={job}
               userId={profile?.id}
@@ -1909,6 +2472,93 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={!!overviewComponentBreakdownKey}
+        onOpenChange={(open) => {
+          if (!open) setOverviewComponentBreakdownKey(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[min(85vh,720px)] flex flex-col gap-0 p-0 overflow-hidden sm:max-w-2xl">
+          <div className="p-6 pb-0 shrink-0">
+            <DialogHeader>
+              <DialogTitle>{overviewComponentBreakdown?.title ?? 'Time breakdown'}</DialogTitle>
+              <DialogDescription className="text-left">
+                Totals by worker (man-hours include crew). Below is every time entry for this scope, newest first.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          {overviewComponentBreakdown ? (
+            <div className="px-6 pb-6 flex flex-col gap-4 min-h-0 flex-1 overflow-hidden">
+              <div className="shrink-0">
+                <p className="text-sm font-semibold text-foreground mb-2">By worker</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Worker</TableHead>
+                      <TableHead className="text-right w-[110px]">Man-hours</TableHead>
+                      <TableHead className="text-right w-[100px]">Clock hrs</TableHead>
+                      <TableHead className="text-right w-[80px]">Entries</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {overviewComponentBreakdown.workers.map((w) => (
+                      <TableRow key={w.userName}>
+                        <TableCell className="font-medium">{w.userName}</TableCell>
+                        <TableCell className="text-right tabular-nums">{w.manHours.toFixed(1)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {w.wallHours.toFixed(1)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">{w.entryCount}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-col min-h-0 flex-1 border rounded-md bg-muted/25">
+                <p className="text-sm font-semibold text-foreground px-3 pt-3 pb-2 shrink-0 border-b bg-muted/40">
+                  Entry log
+                </p>
+                <ul className="overflow-y-auto px-3 py-2 space-y-2 text-sm max-h-[min(40vh,280px)]">
+                  {overviewComponentBreakdown.allEntries.map((e) => {
+                    const man = (e.total_hours || 0) * (e.crew_count || 1);
+                    return (
+                      <li
+                        key={e.id}
+                        className="rounded-md border bg-background/80 px-3 py-2 space-y-1"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="font-medium">{e.user_name}</span>
+                          <span className="tabular-nums text-muted-foreground">
+                            {format(new Date(e.start_time), 'MMM d, yyyy')}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+                          <span className="tabular-nums font-medium text-foreground">{man.toFixed(1)} man-hrs</span>
+                          <span className="tabular-nums">{(e.total_hours || 0).toFixed(2)} clock hrs</span>
+                          {e.crew_count > 1 ? <span>{e.crew_count} crew</span> : null}
+                          {e.is_manual ? (
+                            <Badge variant="outline" className="text-xs">
+                              Manual
+                            </Badge>
+                          ) : (
+                            <span>
+                              {formatTime(e.start_time)} – {e.end_time ? formatTime(e.end_time) : '—'}
+                            </span>
+                          )}
+                        </div>
+                        {e.notes ? <p className="text-xs text-muted-foreground pt-1">{e.notes}</p> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          ) : overviewComponentBreakdownKey ? (
+            <div className="px-6 pb-6 text-sm text-muted-foreground">No entries found for this selection.</div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Email Communications Modal - Custom Implementation */}
       {showEmailDialog && (

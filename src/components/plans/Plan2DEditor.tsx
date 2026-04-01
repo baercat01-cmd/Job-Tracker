@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   BuildingPlanModel,
   PlanEntityId,
@@ -70,6 +70,11 @@ export type PlanRoomPlacementSpec = {
   customWallHeightFt: number;
 };
 
+/** Isolated “space” view: one room footprint or one loft deck area (SmartDraw-style drill-in). */
+export type PlanFocusedSpace = { kind: 'room'; id: PlanEntityId } | { kind: 'loft'; id: PlanEntityId };
+
+const ROOM_SCREEN_DRAG_THRESHOLD_PX = 6;
+
 export function Plan2DEditor(props: {
   plan: BuildingPlanModel;
   canEdit: boolean;
@@ -93,6 +98,10 @@ export function Plan2DEditor(props: {
   onOp: (op: PlanOp) => void;
   selectedId: PlanEntityId | null;
   onSelect: (id: PlanEntityId | null) => void;
+  /** When set, the canvas zooms to this footprint and dims the rest of the plan. */
+  focusedSpace?: PlanFocusedSpace | null;
+  /** Double-click a room or loft to request entering focused editing (parent sets `focusedSpace`). */
+  onRequestFocusSpace?: (focus: PlanFocusedSpace) => void;
 }) {
   const {
     plan,
@@ -112,6 +121,8 @@ export function Plan2DEditor(props: {
     onOp,
     selectedId,
     onSelect,
+    focusedSpace = null,
+    onRequestFocusSpace,
   } = props;
 
   const activeRoomFloor: PlanActiveRoomFloor = activeRoomFloorProp ?? { kind: 'main' };
@@ -132,6 +143,13 @@ export function Plan2DEditor(props: {
   const [loftStairHoleCorner, setLoftStairHoleCorner] = useState<PlanPoint | null>(null);
   const [loftStairHoleHover, setLoftStairHoleHover] = useState<PlanPoint | null>(null);
   const [openingGhost, setOpeningGhost] = useState<{ a: PlanPoint; b: PlanPoint; kind: DroppableItem } | null>(null);
+  const [roomDragPending, setRoomDragPending] = useState<{
+    roomId: PlanEntityId;
+    startClientX: number;
+    startClientY: number;
+    startPlan: PlanPoint;
+    startOrigin: PlanPoint;
+  } | null>(null);
   const [draggingRoom, setDraggingRoom] = useState<{
     roomId: PlanEntityId;
     startPlan: PlanPoint;
@@ -243,6 +261,10 @@ export function Plan2DEditor(props: {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (draggingRoom) return; // let pointer-up commit; user can drop outside to cancel later if desired
+      if (roomDragPending) {
+        setRoomDragPending(null);
+        return;
+      }
       if (wallDraft) {
         setWallDraft(null);
         return;
@@ -277,7 +299,11 @@ export function Plan2DEditor(props: {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [draggingOpening, draggingRoom, draggingStairOpening, mode, onCancelPlacement, wallDraft]);
+  }, [draggingOpening, draggingRoom, draggingStairOpening, mode, onCancelPlacement, roomDragPending, wallDraft]);
+
+  useEffect(() => {
+    if (mode !== 'select') setRoomDragPending(null);
+  }, [mode]);
 
   const bounds = useMemo(() => {
     const w = orientation === 'lengthX' ? plan.dims.length : plan.dims.width;
@@ -300,6 +326,64 @@ export function Plan2DEditor(props: {
     }
     return (p: PlanPoint): PlanPoint => p;
   }, [orientation]);
+
+  const prevHadFocusRef = useRef(false);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!focusedSpace) {
+      if (prevHadFocusRef.current && el) {
+        setPan({ x: 40, y: 40 });
+        setZoom(10);
+      }
+      prevHadFocusRef.current = false;
+      return;
+    }
+    prevHadFocusRef.current = true;
+    if (!el) return;
+
+    const fit = () => {
+      const room = focusedSpace.kind === 'room' ? plan.rooms.find((r) => r.id === focusedSpace.id) : null;
+      const loft = focusedSpace.kind === 'loft' ? plan.lofts.find((l) => l.id === focusedSpace.id) : null;
+      const fp = room
+        ? { origin: room.origin, width: room.width, depth: room.depth }
+        : loft
+          ? { origin: loft.origin, width: loft.width, depth: loft.depth }
+          : null;
+      if (!fp) return;
+
+      const padFt = 2;
+      const corners: PlanPoint[] = [
+        { x: fp.origin.x - padFt, y: fp.origin.y - padFt },
+        { x: fp.origin.x + fp.width + padFt, y: fp.origin.y - padFt },
+        { x: fp.origin.x + fp.width + padFt, y: fp.origin.y + fp.depth + padFt },
+        { x: fp.origin.x - padFt, y: fp.origin.y + fp.depth + padFt },
+      ];
+      const vpts = corners.map((c) => planToView(c));
+      const vx0 = Math.min(...vpts.map((p) => p.x));
+      const vx1 = Math.max(...vpts.map((p) => p.x));
+      const vy0 = Math.min(...vpts.map((p) => p.y));
+      const vy1 = Math.max(...vpts.map((p) => p.y));
+      const vw = Math.max(0.5, vx1 - vx0);
+      const vh = Math.max(0.5, vy1 - vy0);
+
+      const rect = el.getBoundingClientRect();
+      const margin = 48;
+      const availW = Math.max(80, rect.width - margin);
+      const availH = Math.max(80, rect.height - margin);
+      const zw = availW / vw;
+      const zh = availH / vh;
+      const newZoom = clamp(Math.min(zw, zh), 4, 40);
+      const cvx = (vx0 + vx1) / 2;
+      const cvy = (vy0 + vy1) / 2;
+      setZoom(newZoom);
+      setPan({ x: rect.width / 2 - cvx * newZoom, y: rect.height / 2 - cvy * newZoom });
+    };
+
+    fit();
+    const ro = new ResizeObserver(() => fit());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [focusedSpace, plan.rooms, plan.lofts, plan.meta?.rev, planToView]);
 
   function screenToPlan(evt: React.PointerEvent): PlanPoint | null {
     const el = wrapRef.current;
@@ -566,11 +650,12 @@ export function Plan2DEditor(props: {
       if (hit) {
         evt.preventDefault();
         onSelect(hit.id);
-        setDraggingRoom({
+        setRoomDragPending({
           roomId: hit.id,
+          startClientX: evt.clientX,
+          startClientY: evt.clientY,
           startPlan: p,
           startOrigin: hit.origin,
-          currentOrigin: hit.origin,
         });
         return;
       }
@@ -730,6 +815,10 @@ export function Plan2DEditor(props: {
 
   function handlePointerUp() {
     if (panning) setPanning(null);
+    if (roomDragPending) {
+      setRoomDragPending(null);
+      return;
+    }
     if (draggingOpening) {
       const o = plan.openings.find((x) => x.id === draggingOpening.openingId);
       if (o) {
@@ -779,6 +868,30 @@ export function Plan2DEditor(props: {
     if (!raw) return;
     lastPointerPlanRef.current = raw;
     const p = snap(raw);
+
+    if (roomDragPending && !draggingRoom) {
+      const dx = evt.clientX - roomDragPending.startClientX;
+      const dy = evt.clientY - roomDragPending.startClientY;
+      if (hypot(dx, dy) >= ROOM_SCREEN_DRAG_THRESHOLD_PX) {
+        const pending = roomDragPending;
+        const r = plan.rooms.find((rr) => rr.id === pending.roomId);
+        if (r) {
+          const ddx = p.x - pending.startPlan.x;
+          const ddy = p.y - pending.startPlan.y;
+          const nextOrigin = snapRoomOrigin(
+            { x: pending.startOrigin.x + ddx, y: pending.startOrigin.y + ddy },
+            { width: r.width, depth: r.depth }
+          );
+          setDraggingRoom({
+            roomId: pending.roomId,
+            startPlan: pending.startPlan,
+            startOrigin: pending.startOrigin,
+            currentOrigin: nextOrigin,
+          });
+        }
+        setRoomDragPending(null);
+      }
+    }
 
     if (draggingRoom) {
       const dx = p.x - draggingRoom.startPlan.x;
@@ -924,6 +1037,36 @@ export function Plan2DEditor(props: {
     else onSelect(null);
   }
 
+  function handleDoubleClickFocus(evt: React.MouseEvent) {
+    if (!onRequestFocusSpace) return;
+    if (mode !== 'select') return;
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const sx = evt.clientX - r.left;
+    const sy = evt.clientY - r.top;
+    const vp: PlanPoint = { x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom };
+    const p: PlanPoint = viewToPlan(vp);
+
+    const roomHit = hitTestRoom(p, plan.rooms);
+    if (roomHit) {
+      onRequestFocusSpace({ kind: 'room', id: roomHit.id });
+      evt.preventDefault();
+      return;
+    }
+    const stairLoft = hitTestLoftStairOpening(p, plan.lofts);
+    if (stairLoft) {
+      onRequestFocusSpace({ kind: 'loft', id: stairLoft.id });
+      evt.preventDefault();
+      return;
+    }
+    const loftHit = hitTestLoft(p, plan.lofts);
+    if (loftHit) {
+      onRequestFocusSpace({ kind: 'loft', id: loftHit.id });
+      evt.preventDefault();
+    }
+  }
+
   const viewW = (bounds.w * zoom) + 200;
   const viewH = (bounds.l * zoom) + 200;
 
@@ -965,6 +1108,7 @@ export function Plan2DEditor(props: {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onClick={handleClickSelect}
+        onDoubleClick={handleDoubleClickFocus}
       >
         <rect x={0} y={0} width={viewW} height={viewH} fill="#ffffff" />
 
@@ -984,9 +1128,10 @@ export function Plan2DEditor(props: {
           y={pan.y}
           width={bounds.w * zoom}
           height={bounds.l * zoom}
-          fill="#f8fafc"
+          fill={focusedSpace ? '#e2e8f0' : '#f8fafc'}
           stroke="#0f172a"
           strokeWidth={2}
+          opacity={focusedSpace ? 0.35 : 1}
         />
 
         {/* Post markers (8' OC + overhead jamb posts; matches 3D layout) */}
@@ -1002,7 +1147,7 @@ export function Plan2DEditor(props: {
               width={px}
               height={px}
               fill="#0f172a"
-              opacity={0.55}
+              opacity={focusedSpace ? 0.2 : 0.55}
             />
           );
         })}
@@ -1012,6 +1157,7 @@ export function Plan2DEditor(props: {
           const onFloor = roomMatchesFloor(r, activeRoomFloor);
           const lvl = normalizeRoomLevel(r);
           const sel = selectedId === r.id;
+          const isFocusTarget = focusedSpace?.kind === 'room' && focusedSpace.id === r.id;
           let fill = sel ? '#dcfce7' : '#fefce8';
           let stroke = sel ? '#16a34a' : '#a16207';
           if (lvl === 'loft_deck') {
@@ -1033,6 +1179,14 @@ export function Plan2DEditor(props: {
               : 'to ceiling';
           const lvlTag =
             lvl === 'main' ? 'main' : lvl === 'loft_deck' ? 'on loft' : `above +${(r.loftUpperFloorOffsetFt ?? 0).toFixed(1)}′`;
+          let roomOpacity = onFloor ? 0.92 : 0.3;
+          if (focusedSpace?.kind === 'room') {
+            roomOpacity = isFocusTarget ? 1 : onFloor ? 0.22 : 0.12;
+          } else if (focusedSpace?.kind === 'loft') {
+            const sameLoft = r.loftId === focusedSpace.id;
+            if (sameLoft) roomOpacity = onFloor ? 0.9 : 0.35;
+            else roomOpacity = onFloor ? 0.2 : 0.12;
+          }
           return (
             <g key={r.id}>
               <rect
@@ -1041,9 +1195,9 @@ export function Plan2DEditor(props: {
                 width={(orientation === 'lengthX' ? r.depth : r.width) * zoom}
                 height={(orientation === 'lengthX' ? r.width : r.depth) * zoom}
                 fill={fill}
-                stroke={stroke}
-                strokeWidth={Math.max(2, r.wallThickness * zoom)}
-                opacity={onFloor ? 0.92 : 0.3}
+                stroke={isFocusTarget ? '#15803d' : stroke}
+                strokeWidth={Math.max(isFocusTarget ? 3 : 2, r.wallThickness * zoom)}
+                opacity={roomOpacity}
               />
               <text
                 x={pan.x + cv.x * zoom}
@@ -1086,6 +1240,9 @@ export function Plan2DEditor(props: {
 
         {/* Lofts */}
         {plan.lofts.map((loft) => {
+          const isFocusLoft = focusedSpace?.kind === 'loft' && focusedSpace.id === loft.id;
+          const loftBaseOpacity =
+            !focusedSpace ? 0.7 : isFocusLoft ? 0.92 : focusedSpace.kind === 'room' ? 0.14 : 0.2;
           const o = planToView(loft.origin);
           const rw = (orientation === 'lengthX' ? loft.depth : loft.width) * zoom;
           const rh = (orientation === 'lengthX' ? loft.width : loft.depth) * zoom;
@@ -1122,10 +1279,10 @@ export function Plan2DEditor(props: {
                 y={pan.y + o.y * zoom}
                 width={rw}
                 height={rh}
-                fill={selectedId === loft.id ? '#bbf7d0' : '#e0f2fe'}
-                stroke={selectedId === loft.id ? '#16a34a' : '#0284c7'}
-                strokeWidth={2}
-                opacity={0.7}
+                fill={selectedId === loft.id || isFocusLoft ? '#bbf7d0' : '#e0f2fe'}
+                stroke={isFocusLoft ? '#15803d' : selectedId === loft.id ? '#16a34a' : '#0284c7'}
+                strokeWidth={isFocusLoft ? 3 : 2}
+                opacity={loftBaseOpacity}
               />
               <text
                 pointerEvents="none"

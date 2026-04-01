@@ -23,6 +23,7 @@ import { OverheadManagement } from './OverheadManagement';
 import { JobBudgetManagement } from './JobBudgetManagement';
 import { ProfitabilityReports } from './ProfitabilityReports';
 import { ZohoDataManagement } from './ZohoDataManagement';
+import { ProfitMarginOverheadDashboard } from './ProfitMarginOverheadDashboard';
 import {
   Dialog,
   DialogContent,
@@ -413,8 +414,9 @@ export function FinancialDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="margin">Margin & overhead</TabsTrigger>
           <TabsTrigger value="orders">All Orders</TabsTrigger>
           <TabsTrigger value="overhead">Overhead</TabsTrigger>
           <TabsTrigger value="budgets">Job Budgets</TabsTrigger>
@@ -572,6 +574,10 @@ export function FinancialDashboard() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="margin" className="space-y-6">
+          <ProfitMarginOverheadDashboard />
         </TabsContent>
 
         <TabsContent value="orders" className="space-y-6">

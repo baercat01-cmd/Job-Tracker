@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
+import { registerJobBidSpecExporter } from '@/lib/jobBidExportBridge';
 import { generateProposalHTML } from './ProposalPDFTemplate';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 import { ProposalTemplateEditor } from './ProposalTemplateEditor';
@@ -83,6 +84,8 @@ interface CustomFinancialRow {
   taxable: boolean;
   created_at: string;
   updated_at: string;
+  /** Standalone rows only: exclude from proposal totals when true */
+  is_option?: boolean;
 }
 
 interface CustomRowLineItem {
@@ -340,6 +343,47 @@ function effectiveCustomRowLineItemBase(item: any): number {
   );
 }
 
+/** Detect when a server row is the persisted form of an optimistic row (avoid duplicate cards + undeletable ghosts). */
+function lineItemOptimisticFingerprint(it: any): string {
+  const base = effectiveCustomRowLineItemBase(it);
+  return [
+    String(it?.description ?? '').trim(),
+    Number(it?.quantity) || 0,
+    Number(it?.unit_cost) || 0,
+    Math.round(base * 100) / 100,
+    String(it?.item_type ?? 'material'),
+    String(it?.notes ?? ''),
+  ].join('\u241e');
+}
+
+/** Labor portion stored inside `notes` JSON for combined material+labor line items. */
+function parseLineItemEmbeddedLabor(
+  notes: string | null | undefined
+): { hours: number; rate: number; markup: number } | null {
+  if (!notes || typeof notes !== 'string') return null;
+  const s = notes.trim();
+  if (!s.startsWith('{')) return null;
+  try {
+    const o = JSON.parse(s) as { labor?: { hours?: unknown; rate?: unknown; markup?: unknown } };
+    const L = o?.labor;
+    if (!L || typeof L !== 'object') return null;
+    const hours = Number(L.hours) || 0;
+    const rate = Number(L.rate) || 0;
+    if (hours <= 0 || rate <= 0) return null;
+    return {
+      hours,
+      rate,
+      markup: L.markup != null && L.markup !== '' ? Number(L.markup) || 0 : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isCombinedMaterialLaborLineItem(lineItem: any): boolean {
+  return (lineItem.item_type || 'material') !== 'labor' && parseLineItemEmbeddedLabor(lineItem.notes) != null;
+}
+
 /** Workbook category treated as section labor in the narrow Materials/Labor column (not material_sheet_labor). */
 function isWorkbookLaborCategoryName(name: unknown): boolean {
   const n = String(name ?? '')
@@ -481,11 +525,14 @@ function SortableRow({
     toggleSubcontractorLineItemType,
     unlinkSubcontractor,
     toggleSubcontractorOptional = async () => {},
+    toggleCustomRowOptional = async () => {},
     deleteSubcontractorSection = async () => {},
     updateSubcontractorMarkup,
     updateCustomRowMarkup,
     updateCustomRowBaseCost,
     updateLineItemCost,
+    updateCombinedLineItemMaterialBase = async () => {},
+    updateLineItemEmbeddedLaborMarkup = async () => {},
     deleteLineItem,
     loadMaterialsData,
     loadCustomRows,
@@ -1178,10 +1225,175 @@ function SortableRow({
                       Line Items
                     </p>
                     {sheetLineItems.map((lineItem: any) => {
+                      if (isCombinedMaterialLaborLineItem(lineItem)) {
+                        const embedded = parseLineItemEmbeddedLabor(lineItem.notes)!;
+                        const matQty = Number(lineItem.quantity) || 0;
+                        const matUnit = Number(lineItem.unit_cost) || 0;
+                        const materialBase = Math.round(matQty * matUnit * 100) / 100;
+                        const laborBase = Math.round(embedded.hours * embedded.rate * 100) / 100;
+                        const matMarkup = lineItem.markup_percent || 0;
+                        const labMarkup = embedded.markup || 0;
+                        const matPrice = materialBase * (1 + matMarkup / 100);
+                        const labPrice = laborBase * (1 + labMarkup / 100);
+                        const combinedPrice = matPrice + labPrice;
+                        let userNotesFromJson: string | null = null;
+                        try {
+                          const o = JSON.parse(lineItem.notes || '{}') as { notes?: unknown };
+                          if (typeof o.notes === 'string' && o.notes.trim()) userNotesFromJson = o.notes.trim();
+                        } catch {
+                          /* ignore */
+                        }
+                        const money = (n: number) =>
+                          n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        return (
+                          <div key={lineItem.id} className="space-y-1">
+                            <div className="rounded p-2 border bg-slate-50 border-slate-200">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
+                                  <p className="text-xs text-slate-600">
+                                    {matQty} × ${money(matUnit)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge variant="default" className="text-xs h-5">
+                                    📦 Material
+                                  </Badge>
+                                  <div className="flex items-center gap-1">
+                                    <Input
+                                      type="number"
+                                      key={`sheet-li-mat-${lineItem.id}-${materialBase}`}
+                                      defaultValue={materialBase}
+                                      onBlur={(e) => {
+                                        if (isReadOnly) return;
+                                        const raw = parseFloat(e.target.value);
+                                        if (!Number.isFinite(raw) || raw < 0) return;
+                                        const v = Math.round(raw * 100) / 100;
+                                        if (Math.abs(v - materialBase) < 0.01) return;
+                                        void updateCombinedLineItemMaterialBase(lineItem.id, v, lineItem);
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
+                                      step="0.01"
+                                      min="0"
+                                    />
+                                    <span className="text-xs text-slate-500">+</span>
+                                    <Input
+                                      type="number"
+                                      value={matMarkup}
+                                      onChange={async (e) => {
+                                        const newMarkup = parseFloat(e.target.value) || 0;
+                                        try {
+                                          const { data, error } = await supabase
+                                            .from('custom_financial_row_items')
+                                            .update({ markup_percent: newMarkup })
+                                            .eq('id', lineItem.id)
+                                            .select('id');
+                                          if (error) throw error;
+                                          if (!data?.length) {
+                                            toast.error('Could not update markup (permission or row missing).');
+                                            return;
+                                          }
+                                          await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+                                          await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+                                        } catch (err: any) {
+                                          console.error('Error updating markup:', err);
+                                          toast.error('Failed to update markup');
+                                        }
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-14 h-5 text-xs px-1 text-center"
+                                      step="1"
+                                      min="0"
+                                    />
+                                    <span className="text-xs text-slate-500">%</span>
+                                  </div>
+                                  <p className="text-xs font-bold text-blue-700">${money(matPrice)}</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded p-2 border bg-amber-50 border-amber-200">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
+                                  <p className="text-xs text-slate-600">
+                                    {embedded.hours}h × ${money(embedded.rate)}/hr
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge variant="secondary" className="text-xs h-5">
+                                    👷 Labor
+                                  </Badge>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs text-slate-500 w-20 text-right tabular-nums" title="Labor cost (edit in dialog)">
+                                      ${money(laborBase)}
+                                    </span>
+                                    <span className="text-xs text-slate-500">+</span>
+                                    <Input
+                                      type="number"
+                                      value={labMarkup}
+                                      onChange={(e) => {
+                                        const newMarkup = parseFloat(e.target.value) || 0;
+                                        void updateLineItemEmbeddedLaborMarkup(lineItem.id, lineItem, newMarkup);
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-14 h-5 text-xs px-1 text-center"
+                                      step="1"
+                                      min="0"
+                                    />
+                                    <span className="text-xs text-slate-500">%</span>
+                                  </div>
+                                  <p className="text-xs font-bold text-amber-800">${money(labPrice)}</p>
+                                </div>
+                              </div>
+                            </div>
+                            {userNotesFromJson ? (
+                              <p className="text-xs text-slate-500 px-1">{userNotesFromJson}</p>
+                            ) : null}
+                            <div className="flex flex-wrap items-center justify-end gap-2 px-1">
+                              <span className="text-xs text-slate-600">
+                                Line total:{' '}
+                                <span className="font-bold text-emerald-700">${money(combinedPrice)}</span>
+                              </span>
+                              {(lineItem as any).hide_from_customer && (
+                                <span className="text-slate-400" title="Hidden from customer portal">
+                                  <EyeOff className="w-3 h-3" />
+                                </span>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openLineItemDialog(sectionSheetId, lineItem, 'combined', 'sheet');
+                                }}
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void deleteLineItem(lineItem.id);
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3 text-red-600" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       const isLabor = (lineItem.item_type || 'material') === 'labor';
                       const itemMarkup = lineItem.markup_percent || 0;
                       const itemCost = Number(lineItem.total_price ?? lineItem.total_cost) || 0;
                       const itemPrice = itemCost * (1 + itemMarkup / 100);
+                      const notesStr = String(lineItem.notes || '');
+                      const hideNotesLine =
+                        notesStr.trim().startsWith('{') && notesStr.includes('"labor"');
                       return (
                         <div key={lineItem.id} className={`rounded p-2 border ${isLabor ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
                           <div className="flex items-center justify-between">
@@ -1192,7 +1404,7 @@ function SortableRow({
                                   ? `${lineItem.quantity}h × $${(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hr`
                                   : `${lineItem.quantity} × $${(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </p>
-                              {lineItem.notes && (
+                              {lineItem.notes && !hideNotesLine && (
                                 <p className="text-xs text-slate-500 mt-0.5">{lineItem.notes}</p>
                               )}
                             </div>
@@ -1257,10 +1469,31 @@ function SortableRow({
                                   <EyeOff className="w-3 h-3" />
                                 </span>
                               )}
-                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sectionSheetId, lineItem, isLabor ? 'labor' : 'material', 'sheet')}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openLineItemDialog(
+                                    sectionSheetId,
+                                    lineItem,
+                                    isLabor ? 'labor' : 'material',
+                                    'sheet'
+                                  );
+                                }}
+                              >
                                 <Edit className="w-3 h-3" />
                               </Button>
-                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteLineItem(lineItem.id)}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void deleteLineItem(lineItem.id);
+                                }}
+                              >
                                 <Trash2 className="w-3 h-3 text-red-600" />
                               </Button>
                             </div>
@@ -1713,8 +1946,13 @@ function SortableRow({
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-base font-bold text-slate-900 truncate">{row.description}</h3>
+                  {toBool((row as any).is_option) && (
+                    <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
+                      Optional
+                    </Badge>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1739,11 +1977,25 @@ function SortableRow({
                     <MoreVertical className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="min-w-[14rem]">
                   <DropdownMenuItem onClick={() => openAddDialog(row)}>
                   <Edit className="w-3 h-3 mr-2" />
                   Edit Description
                 </DropdownMenuItem>
+                {!isReadOnly && !(row as any).sheet_id && (
+                  toBool((row as any).is_option) ? (
+                    <DropdownMenuItem onSelect={() => toggleCustomRowOptional(row.id, false)}>
+                      <Check className="w-3 h-3 mr-2 text-green-600" />
+                      Include in Total
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onSelect={() => toggleCustomRowOptional(row.id, true)}>
+                      <Eye className="w-3 h-3 mr-2 text-amber-600" />
+                      Mark as Optional (exclude from total)
+                    </DropdownMenuItem>
+                  )
+                )}
+                {!isReadOnly && !(row as any).sheet_id && <DropdownMenuSeparator />}
                 <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material', 'row')}>
                   <Plus className="w-3 h-3 mr-2" />
                   Add Material Row
@@ -1847,11 +2099,11 @@ function SortableRow({
                 </div>
               )}
               <p className="text-sm text-slate-500">Materials</p>
-              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className={`text-base font-bold ${toBool((row as any).is_option) ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               {Number.isFinite(totalLaborCost) && totalLaborCost > 0 ? (
                 <>
                   <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className={`text-base font-bold ${toBool((row as any).is_option) ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </>
               ) : null}
             </div>
@@ -1868,20 +2120,186 @@ function SortableRow({
                       Line Items
                     </p>
                     {lineItems.map((lineItem: any) => {
-                      const isLabor = (lineItem as any).item_type === 'labor';
+                      if (isCombinedMaterialLaborLineItem(lineItem)) {
+                        const embedded = parseLineItemEmbeddedLabor(lineItem.notes)!;
+                        const matQty = Number(lineItem.quantity) || 0;
+                        const matUnit = Number(lineItem.unit_cost) || 0;
+                        const materialBase = Math.round(matQty * matUnit * 100) / 100;
+                        const laborBase = Math.round(embedded.hours * embedded.rate * 100) / 100;
+                        const matMarkup = lineItem.markup_percent || 0;
+                        const labMarkup = embedded.markup || 0;
+                        const matPrice = materialBase * (1 + matMarkup / 100);
+                        const labPrice = laborBase * (1 + labMarkup / 100);
+                        const combinedPrice = matPrice + labPrice;
+                        let userNotesFromJson: string | null = null;
+                        try {
+                          const o = JSON.parse(lineItem.notes || '{}') as { notes?: unknown };
+                          if (typeof o.notes === 'string' && o.notes.trim()) userNotesFromJson = o.notes.trim();
+                        } catch {
+                          /* ignore */
+                        }
+                        const money = (n: number) =>
+                          n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        return (
+                          <div key={lineItem.id} className="space-y-1">
+                            <div className="rounded p-2 border bg-slate-50 border-slate-200">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
+                                  <p className="text-xs text-slate-600">
+                                    {matQty} × ${money(matUnit)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge variant="default" className="text-xs h-5">
+                                    📦 Material
+                                  </Badge>
+                                  <div className="flex items-center gap-1">
+                                    <Input
+                                      type="number"
+                                      key={`row-li-mat-${lineItem.id}-${materialBase}`}
+                                      defaultValue={materialBase}
+                                      onBlur={(e) => {
+                                        if (isReadOnly) return;
+                                        const raw = parseFloat(e.target.value);
+                                        if (!Number.isFinite(raw) || raw < 0) return;
+                                        const v = Math.round(raw * 100) / 100;
+                                        if (Math.abs(v - materialBase) < 0.01) return;
+                                        void updateCombinedLineItemMaterialBase(lineItem.id, v, lineItem);
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
+                                      step="0.01"
+                                      min="0"
+                                    />
+                                    <span className="text-xs text-slate-500">+</span>
+                                    <Input
+                                      type="number"
+                                      value={matMarkup}
+                                      onChange={async (e) => {
+                                        const newMarkup = parseFloat(e.target.value) || 0;
+                                        try {
+                                          const { data, error } = await supabase
+                                            .from('custom_financial_row_items')
+                                            .update({ markup_percent: newMarkup })
+                                            .eq('id', lineItem.id)
+                                            .select('id');
+                                          if (error) throw error;
+                                          if (!data?.length) {
+                                            toast.error('Could not update markup (permission or row missing).');
+                                            return;
+                                          }
+                                          await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+                                          await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+                                        } catch (err: any) {
+                                          console.error('Error updating markup:', err);
+                                          toast.error('Failed to update markup');
+                                        }
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-14 h-5 text-xs px-1 text-center"
+                                      step="1"
+                                      min="0"
+                                    />
+                                    <span className="text-xs text-slate-500">%</span>
+                                  </div>
+                                  <p className="text-xs font-bold text-blue-700">${money(matPrice)}</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded p-2 border bg-amber-50 border-amber-200">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
+                                  <p className="text-xs text-slate-600">
+                                    {embedded.hours}h × ${money(embedded.rate)}/hr
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge variant="secondary" className="text-xs h-5">
+                                    👷 Labor
+                                  </Badge>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs text-slate-500 w-20 text-right tabular-nums" title="Labor cost (edit in dialog)">
+                                      ${money(laborBase)}
+                                    </span>
+                                    <span className="text-xs text-slate-500">+</span>
+                                    <Input
+                                      type="number"
+                                      value={labMarkup}
+                                      onChange={(e) => {
+                                        const newMarkup = parseFloat(e.target.value) || 0;
+                                        void updateLineItemEmbeddedLaborMarkup(lineItem.id, lineItem, newMarkup);
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-14 h-5 text-xs px-1 text-center"
+                                      step="1"
+                                      min="0"
+                                    />
+                                    <span className="text-xs text-slate-500">%</span>
+                                  </div>
+                                  <p className="text-xs font-bold text-amber-800">${money(labPrice)}</p>
+                                </div>
+                              </div>
+                            </div>
+                            {userNotesFromJson ? (
+                              <p className="text-xs text-slate-500 px-1">{userNotesFromJson}</p>
+                            ) : null}
+                            <div className="flex flex-wrap items-center justify-end gap-2 px-1">
+                              <span className="text-xs text-slate-600">
+                                Line total:{' '}
+                                <span className="font-bold text-emerald-700">${money(combinedPrice)}</span>
+                              </span>
+                              {(lineItem as any).hide_from_customer && (
+                                <span className="text-slate-400" title="Hidden from customer portal">
+                                  <EyeOff className="w-3 h-3" />
+                                </span>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openLineItemDialog(row.id, lineItem, 'combined', 'row');
+                                }}
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void deleteLineItem(lineItem.id);
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3 text-red-600" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const isLabor = (lineItem.item_type || 'material') === 'labor';
                       const itemMarkup = lineItem.markup_percent || 0;
-                      const itemCost = lineItem.total_cost;
+                      const itemCost = Number(lineItem.total_price ?? lineItem.total_cost) || 0;
                       const itemPrice = itemCost * (1 + itemMarkup / 100);
-                      
+                      const notesStr = String(lineItem.notes || '');
+                      const hideNotesLine = notesStr.trim().startsWith('{') && notesStr.includes('"labor"');
+
                       return (
                         <div key={lineItem.id} className={`rounded p-2 border ${isLabor ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
                               <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
                               <p className="text-xs text-slate-600">
-                                {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {isLabor
+                                  ? `${lineItem.quantity}h × $${Number(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hr`
+                                  : `${lineItem.quantity} × $${Number(lineItem.unit_cost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </p>
-                              {lineItem.notes && (
+                              {lineItem.notes && !hideNotesLine && (
                                 <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
                               )}
                             </div>
@@ -1950,7 +2368,10 @@ function SortableRow({
                                 size="sm"
                                 variant="ghost"
                                 className="h-5 w-5 p-0"
-                                onClick={() => openLineItemDialog(row.id, lineItem, isLabor ? 'labor' : 'material', 'row')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openLineItemDialog(row.id, lineItem, isLabor ? 'labor' : 'material', 'row');
+                                }}
                               >
                                 <Edit className="w-3 h-3" />
                               </Button>
@@ -1958,7 +2379,10 @@ function SortableRow({
                                 size="sm"
                                 variant="ghost"
                                 className="h-5 w-5 p-0"
-                                onClick={() => deleteLineItem(lineItem.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void deleteLineItem(lineItem.id);
+                                }}
                               >
                                 <Trash2 className="w-3 h-3 text-red-600" />
                               </Button>
@@ -2603,15 +3027,28 @@ export function JobFinancials({
   // Export dialog state
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLineItems, setShowLineItems] = useState(false); // Default to false - no row pricing by default
-  const [exportViewType, setExportViewType] = useState<'customer' | 'office' | 'descriptions_only'>('customer');
+  const [exportViewType, setExportViewType] = useState<
+    'customer' | 'office' | 'descriptions_only' | 'bid_spec'
+  >('customer');
   const [exportTheme, setExportTheme] = useState<'default' | 'premium'>('default'); // default = black & white; premium = dark green + gold
+  const [bidSpecDueDate, setBidSpecDueDate] = useState('');
+  const [bidSpecInstructions, setBidSpecInstructions] = useState('');
+  const [bidSpecShowQuantities, setBidSpecShowQuantities] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [showPdfView, setShowPdfView] = useState(false);
   const [pdfViewHtml, setPdfViewHtml] = useState<string | null>(null);
   const [pdfViewFilename, setPdfViewFilename] = useState<string>('');
   const [pdfPrintUrl, setPdfPrintUrl] = useState<string | null>(null);
   const pdfIframeRef = useRef<HTMLIFrameElement>(null);
-  
+
+  useEffect(() => {
+    registerJobBidSpecExporter(() => {
+      setExportViewType('bid_spec');
+      setShowExportDialog(true);
+    });
+    return () => registerJobBidSpecExporter(null);
+  }, []);
+
   // Proposal state - each proposal is independent
   const [currentProposal, setCurrentProposal] = useState<any>(null);
   const [allProposals, setAllProposals] = useState<any[]>([]);
@@ -4226,6 +4663,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         quantity: row.quantity, unit_cost: row.unit_cost, total_cost: row.total_cost, markup_percent: row.markup_percent,
         selling_price: row.selling_price, notes: row.notes, order_index: row.order_index, taxable: row.taxable,
         sheet_id: row.sheet_id ? (sheetIdMap[row.sheet_id] ?? null) : null,
+        is_option: toBool((row as any).is_option),
       }).select('id').single();
       if (rErr || !newRow) continue;
       rowIdMap[row.id] = newRow.id;
@@ -6718,6 +7156,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         taxable: r.taxable ?? false,
         created_at: r.created_at ?? '',
         updated_at: r.updated_at ?? '',
+        is_option: toBool(r.is_option),
       }));
       if (JSON.stringify(asCustomRows) !== JSON.stringify(customRows)) setCustomRows(asCustomRows);
       setCustomRowLabor(laborMap);
@@ -6828,6 +7267,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         taxable: r.taxable ?? false,
         created_at: r.created_at ?? '',
         updated_at: r.updated_at ?? '',
+        is_option: toBool(r.is_option),
       }));
       setCustomRows(mapped);
     }
@@ -7205,15 +7645,20 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       lineItemsMap[k].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     });
     if (isFinancialLoadStale(cooperativeGen)) return;
-    // Preserve optimistic items (e.g., when RLS blocks returning/select) so the user still sees what they just added.
-    // A later successful reload will replace these with real DB rows.
+    // Preserve optimistic items only when the server list does not already include an equivalent row.
+    // Otherwise we show duplicates (real UUID + optimistic_*) and deleting only removes the DB row.
     setCustomRowLineItems(prev => {
       const next: Record<string, CustomRowLineItem[]> = { ...lineItemsMap };
       for (const parentId of Object.keys(prev || {})) {
         const optimistic = (prev[parentId] || []).filter((it: any) => String(it?.id || '').startsWith('optimistic_'));
         if (!optimistic.length) continue;
         const existingIds = new Set((next[parentId] || []).map((it: any) => String(it?.id || '')));
-        const toAdd = optimistic.filter((it: any) => !existingIds.has(String(it?.id || '')));
+        const serverFp = new Set((next[parentId] || []).map((it: any) => lineItemOptimisticFingerprint(it)));
+        const toAdd = optimistic.filter((it: any) => {
+          if (existingIds.has(String(it?.id || ''))) return false;
+          if (serverFp.has(lineItemOptimisticFingerprint(it))) return false;
+          return true;
+        });
         if (toAdd.length) next[parentId] = [...(next[parentId] || []), ...toAdd];
       }
       return next;
@@ -7444,7 +7889,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       } else {
         const { data, error } = await supabase
           .from('custom_financial_rows')
-          .insert([rowData])
+          .insert([{ ...rowData, is_option: false }])
           .select();
 
         if (error) throw error;
@@ -7760,48 +8205,17 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     parentType?: 'sheet' | 'row'
   ) {
     setLineItemParentRowId(parentId);
-    setLineItemType(itemType || 'combined');
     setLineItemParentType(parentType ?? (lineItem?.sheet_id ? 'sheet' : lineItem?.row_id ? 'row' : null));
-    
-    if (lineItem) {
-      setEditingLineItem(lineItem);
-      
-      // Try to parse labor data from notes
-      let laborData = { hours: 0, rate: 60, markup: 10 };
-      let actualNotes = lineItem.notes || '';
-      
-      if (lineItem.notes) {
-        try {
-          const parsed = JSON.parse(lineItem.notes);
-          if (parsed.labor) {
-            laborData = {
-              hours: parsed.labor.hours || 0,
-              rate: parsed.labor.rate || 60,
-              markup: parsed.labor.markup || 10,
-            };
-            actualNotes = parsed.notes || '';
-          }
-        } catch {
-          // Not JSON, use as regular notes
-        }
-      }
-      
-      setLineItemForm({
-        description: lineItem.description,
-        quantity: lineItem.quantity.toString(),
-        unit_cost: lineItem.unit_cost.toString(),
-        notes: actualNotes,
-        taxable: lineItem.taxable !== undefined ? lineItem.taxable : true,
-        item_type: (lineItem as any).item_type || 'material',
-        markup_percent: (lineItem.markup_percent ?? 10).toString(),
-        labor_hours: laborData.hours.toString(),
-        labor_rate: laborData.rate.toString(),
-        labor_markup_percent: laborData.markup.toString(),
-        hide_from_customer: !!(lineItem as any).hide_from_customer,
-      });
-    } else {
+
+    const numStr = (n: unknown, fallback: string) => {
+      if (n == null || n === '') return fallback;
+      const v = Number(n);
+      return Number.isFinite(v) ? String(v) : fallback;
+    };
+
+    if (!lineItem) {
+      setLineItemType(itemType || 'combined');
       setEditingLineItem(null);
-      // Set default item_type based on dialog type
       const defaultItemType = itemType === 'labor' ? 'labor' : 'material';
       setLineItemForm({
         description: '',
@@ -7816,8 +8230,76 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         labor_markup_percent: '10',
         hide_from_customer: false,
       });
+      setShowLineItemDialog(true);
+      return;
     }
-    
+
+    setEditingLineItem(lineItem);
+
+    // Labor in JSON notes (combined lines); otherwise plain text stays in notes
+    let laborData = { hours: 0, rate: 60, markup: 10 };
+    let actualNotes = lineItem.notes || '';
+    let laborFromNotesJson = false;
+
+    if (lineItem.notes) {
+      try {
+        const parsed = JSON.parse(lineItem.notes);
+        if (parsed && typeof parsed === 'object' && parsed.labor) {
+          laborFromNotesJson = true;
+          laborData = {
+            hours: Number(parsed.labor.hours) || 0,
+            rate: Number(parsed.labor.rate) || 60,
+            markup:
+              parsed.labor.markup != null && parsed.labor.markup !== ''
+                ? Number(parsed.labor.markup)
+                : 10,
+          };
+          actualNotes = typeof parsed.notes === 'string' ? parsed.notes : '';
+        }
+      } catch {
+        // Not JSON, use as regular notes
+      }
+    }
+
+    // Labor-only rows persist hours/rate in quantity & unit_cost (see saveLineItem); notes are often plain text
+    const isLaborRow = itemType === 'labor' || lineItem.item_type === 'labor';
+    if (isLaborRow && !laborFromNotesJson) {
+      laborData = {
+        hours: Number(lineItem.quantity) || 0,
+        rate: Number(lineItem.unit_cost) || 60,
+        markup:
+          lineItem.markup_percent != null && lineItem.markup_percent !== ''
+            ? Number(lineItem.markup_percent)
+            : 10,
+      };
+    }
+
+    const q = Number(lineItem.quantity) || 0;
+    const uc = Number(lineItem.unit_cost) || 0;
+    const hasMaterialPortion = !isLaborRow && (q * uc > 0 || q > 0 || uc > 0);
+    let dialogType: 'material' | 'labor' | 'combined' = itemType || 'combined';
+    if (laborFromNotesJson && hasMaterialPortion) {
+      dialogType = 'combined';
+    } else if (!itemType) {
+      dialogType = lineItem.item_type === 'labor' ? 'labor' : 'material';
+    }
+
+    setLineItemType(dialogType);
+
+    setLineItemForm({
+      description: lineItem.description ?? '',
+      quantity: numStr(lineItem.quantity, '1'),
+      unit_cost: numStr(lineItem.unit_cost, '0'),
+      notes: actualNotes,
+      taxable: lineItem.taxable !== undefined ? lineItem.taxable : true,
+      item_type: (lineItem as any).item_type || 'material',
+      markup_percent: numStr(lineItem.markup_percent, '10'),
+      labor_hours: numStr(laborData.hours, '0'),
+      labor_rate: numStr(laborData.rate, '60'),
+      labor_markup_percent: numStr(laborData.markup, '10'),
+      hide_from_customer: !!(lineItem as any).hide_from_customer,
+    });
+
     setShowLineItemDialog(true);
   }
 
@@ -7958,14 +8440,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       }
     }
 
+    // Only send proposal-scope columns for sheet line items. Row-linked items use row_id; sending
+    // quote_id/section_name/workbook_id as null still hits PostgREST "unknown column" on DBs that
+    // never migrated those columns.
     const itemDataBase: Record<string, any> = {
       row_id: isSheet ? null : lineItemParentRowId,
       sheet_id: isSheet ? persistSheetId : null,
-      quote_id: isSheet ? (quote?.id ?? null) : null,
-      workbook_id: isSheet ? effectiveWorkbookId : null,
-      section_name: isSheet
-        ? persistSectionName
-        : null,
       description: lineItemForm.description,
       quantity: qty,
       unit_cost: cost,
@@ -7978,11 +8458,29 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         : (customRowLineItems[lineItemParentRowId]?.length || 0),
       hide_from_customer: lineItemForm.hide_from_customer,
     };
+    if (isSheet) {
+      itemDataBase.quote_id = quote?.id ?? null;
+      itemDataBase.workbook_id = effectiveWorkbookId;
+      itemDataBase.section_name = persistSectionName;
+    }
 
     const isMissingColumnError = (err: any, col: string) => {
-      const msg = String(err?.message || '').toLowerCase();
-      return msg.includes(`could not find the '${col}' column`.toLowerCase()) || msg.includes(`column ${col}`.toLowerCase());
+      const blob = [err?.message, err?.details, err?.hint]
+        .filter(Boolean)
+        .map((x) => String(x).toLowerCase())
+        .join(' ');
+      const c = col.toLowerCase();
+      return (
+        blob.includes(`could not find the '${c}' column`) ||
+        blob.includes(`could not find the "${c}" column`) ||
+        blob.includes(`column ${c} does not exist`) ||
+        blob.includes(` '${c}' column`)
+      );
     };
+    const needsLegacyCustomRowItemPayload = (err: any) =>
+      ['quote_id', 'section_name', 'workbook_id', 'hide_from_customer', 'total_price', 'total_cost'].some(
+        (col) => isMissingColumnError(err, col),
+      );
     const withTotalCost = (d: Record<string, any>) => ({ ...d, total_cost: totalCost });
     const withTotalPrice = (d: Record<string, any>) => ({ ...d, total_price: totalCost });
     const toLegacyTotalCost = (d: Record<string, any>) => {
@@ -8009,17 +8507,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           .update(withTotalCost(itemDataBase))
           .eq('id', editingLineItem.id)
           .limit(1);
-        if (
-          error &&
-          isSheet &&
-          (isMissingColumnError(error, 'quote_id') ||
-            isMissingColumnError(error, 'section_name') ||
-            isMissingColumnError(error, 'workbook_id') ||
-            isMissingColumnError(error, 'total_price'))
-        ) {
+        if (error && needsLegacyCustomRowItemPayload(error)) {
           let legacyData: Record<string, any> = dropProposalScopeColumns(itemDataBase);
           if (isMissingColumnError(error, 'total_cost')) {
-            // If this DB doesn't have total_cost either, fall back to total_price.
             legacyData = withTotalPrice(legacyData);
           } else {
             legacyData = withTotalCost(legacyData);
@@ -8054,25 +8544,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               error = retry.error;
             }
           }
-          if (error) {
-            // 2) If DB lacks proposal-scope columns (quote_id/section_name/workbook_id), fall back to legacy payload.
-            if (
-              isSheet &&
-              (isMissingColumnError(error, 'quote_id') ||
-                isMissingColumnError(error, 'section_name') ||
-                isMissingColumnError(error, 'workbook_id') ||
-                isMissingColumnError(error, 'total_price') ||
-                isMissingColumnError(error, 'total_cost'))
-            ) {
-              attempts.push('retry(insert legacy sheet_id)');
-              const legacyBase = dropProposalScopeColumns(itemDataBase);
-              // Try total_cost first, then total_price if needed.
-              let retry = await supabase.from('custom_financial_row_items').insert([withTotalCost(legacyBase)]);
-              if (retry.error && isMissingColumnError(retry.error, 'total_cost')) {
-                retry = await supabase.from('custom_financial_row_items').insert([withTotalPrice(legacyBase)]);
-              }
-              error = retry.error;
+          if (error && needsLegacyCustomRowItemPayload(error)) {
+            attempts.push('retry(insert legacy sheet_id)');
+            const legacyBase = dropProposalScopeColumns(itemDataBase);
+            let retry = await supabase.from('custom_financial_row_items').insert([withTotalCost(legacyBase)]);
+            if (retry.error && isMissingColumnError(retry.error, 'total_cost')) {
+              retry = await supabase.from('custom_financial_row_items').insert([withTotalPrice(legacyBase)]);
             }
+            error = retry.error;
           }
           if (error) {
             console.warn('saveLineItem insert failed after retries:', { attempts, error });
@@ -8101,11 +8580,24 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             .maybeSingle();
 
           if (existing?.id) {
-            const { error } = await supabase
+            let { error: upErr } = await supabase
               .from('custom_financial_row_items')
               .update(withTotalCost(itemDataBase))
-              .eq('id', existing.id)
-            if (error) throw error;
+              .eq('id', existing.id);
+            if (upErr && needsLegacyCustomRowItemPayload(upErr)) {
+              let legacyData: Record<string, any> = dropProposalScopeColumns(itemDataBase);
+              if (isMissingColumnError(upErr, 'total_cost')) {
+                legacyData = withTotalPrice(legacyData);
+              } else {
+                legacyData = withTotalCost(legacyData);
+              }
+              const retry = await supabase
+                .from('custom_financial_row_items')
+                .update(legacyData)
+                .eq('id', existing.id);
+              upErr = retry.error;
+            }
+            if (upErr) throw upErr;
             toast.success('Line item updated');
           } else {
             const attempts: string[] = [];
@@ -8122,23 +8614,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                 error = retry.error;
               }
             }
-            if (error) {
-              if (
-                isSheet &&
-                (isMissingColumnError(error, 'quote_id') ||
-                  isMissingColumnError(error, 'section_name') ||
-                  isMissingColumnError(error, 'workbook_id') ||
-                  isMissingColumnError(error, 'total_price') ||
-                  isMissingColumnError(error, 'total_cost'))
-              ) {
-                attempts.push('retry(insert legacy sheet_id)');
-                const legacyBase = dropProposalScopeColumns(itemDataBase);
-                let retry = await supabase.from('custom_financial_row_items').insert([withTotalCost(legacyBase)]);
-                if (retry.error && isMissingColumnError(retry.error, 'total_cost')) {
-                  retry = await supabase.from('custom_financial_row_items').insert([withTotalPrice(legacyBase)]);
-                }
-                error = retry.error;
+            if (error && needsLegacyCustomRowItemPayload(error)) {
+              attempts.push('retry(insert legacy sheet_id)');
+              const legacyBase = dropProposalScopeColumns(itemDataBase);
+              let retry = await supabase.from('custom_financial_row_items').insert([withTotalCost(legacyBase)]);
+              if (retry.error && isMissingColumnError(retry.error, 'total_cost')) {
+                retry = await supabase.from('custom_financial_row_items').insert([withTotalPrice(legacyBase)]);
               }
+              error = retry.error;
             }
             if (error) {
               console.warn('saveLineItem insert failed after retries:', { attempts, error });
@@ -8203,23 +8686,48 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   }
 
   async function deleteLineItem(id: string) {
+    const cleanId = String(id ?? '').trim();
+    if (!cleanId) {
+      toast.error('Invalid line item');
+      return;
+    }
     if (!confirm('Delete this line item?')) return;
 
-    try {
-      const { error } = await supabase
-        .from('custom_financial_row_items')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+    const stripFromLocal = (matchId: string) => {
       setCustomRowLineItems(prev => {
         const next: Record<string, CustomRowLineItem[]> = {};
         for (const k of Object.keys(prev)) {
-          const filtered = (prev[k] || []).filter((it: any) => it.id !== id);
+          const filtered = (prev[k] || []).filter((it: any) => String(it?.id) !== matchId);
           if (filtered.length) next[k] = filtered;
         }
         return next;
       });
+    };
+
+    try {
+      if (cleanId.startsWith('optimistic_')) {
+        stripFromLocal(cleanId);
+        toast.success('Line item removed');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('custom_financial_row_items')
+        .delete()
+        .eq('id', cleanId)
+        .select('id');
+
+      if (error) throw error;
+
+      stripFromLocal(cleanId);
+
+      if (!data?.length) {
+        await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+        await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+        toast.error('Could not delete this line in the database. Try refreshing the page.');
+        return;
+      }
+
       toast.success('Line item deleted');
       await loadCustomRows(quote?.id ?? null, !!isReadOnly);
       await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
@@ -8598,6 +9106,32 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     }
   }
 
+  async function toggleCustomRowOptional(rowId: string, isOptional: boolean) {
+    if (isReadOnly) {
+      toast.error('Cannot edit in historical view');
+      return;
+    }
+    const row = customRows.find((r) => r.id === rowId);
+    if (!row || (row as any).sheet_id) return;
+
+    const prevSnapshot = customRows;
+    setCustomRows((prev) =>
+      prev.map((r) => (r.id === rowId ? { ...r, is_option: isOptional } : r))
+    );
+    try {
+      const { error } = await supabase
+        .from('custom_financial_rows')
+        .update({ is_option: isOptional } as any)
+        .eq('id', rowId);
+      if (error) throw error;
+      await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error updating custom row optional state:', error);
+      setCustomRows(prevSnapshot);
+      toast.error(error?.message || 'Failed to update optional state. Run DB migration if is_option column is missing.');
+    }
+  }
+
   async function updateSubcontractorMarkup(estimateId: string, newMarkup: number) {
     try {
       const { error } = await supabase
@@ -8691,6 +9225,91 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     } catch (error: any) {
       console.error('Error updating line item cost:', error);
       toast.error('Failed to update cost');
+    }
+  }
+
+  /** Update material base cost for a combined row; keeps labor (from notes JSON) and total_cost in sync. */
+  async function updateCombinedLineItemMaterialBase(lineItemId: string, newMaterialBase: number, lineItem: any) {
+    if (isReadOnly) return;
+    const embedded = parseLineItemEmbeddedLabor(lineItem.notes);
+    if (!embedded) {
+      await updateLineItemCost(lineItemId, newMaterialBase, Number(lineItem.quantity) || 1);
+      return;
+    }
+    const matQty = Number(lineItem.quantity) || 0;
+    if (matQty <= 0) return;
+    const materialBase = Math.max(0, Math.round(newMaterialBase * 100) / 100);
+    const laborBase = Math.round(embedded.hours * embedded.rate * 100) / 100;
+    const totalCost = Math.round((materialBase + laborBase) * 100) / 100;
+    const unitCost = Math.round((materialBase / matQty) * 10000) / 10000;
+    try {
+      let { data, error } = await supabase
+        .from('custom_financial_row_items')
+        .update({
+          total_price: totalCost,
+          quantity: matQty,
+          unit_cost: unitCost,
+        })
+        .eq('id', lineItemId)
+        .select('id');
+      if (error && String(error?.message || '').toLowerCase().includes("could not find the 'total_price' column")) {
+        const retry = await supabase
+          .from('custom_financial_row_items')
+          .update({
+            total_cost: totalCost,
+            quantity: matQty,
+            unit_cost: unitCost,
+          })
+          .eq('id', lineItemId)
+          .select('id');
+        data = retry.data;
+        error = retry.error;
+      }
+      if (error) throw error;
+      if (!data?.length) {
+        toast.error('Could not update cost (permission or row missing).');
+        return;
+      }
+      await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+      await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error updating combined line material cost:', error);
+      toast.error('Failed to update cost');
+    }
+  }
+
+  async function updateLineItemEmbeddedLaborMarkup(lineItemId: string, lineItem: any, newMarkup: number) {
+    if (isReadOnly) return;
+    const embedded = parseLineItemEmbeddedLabor(lineItem.notes);
+    if (!embedded) return;
+    let outer: Record<string, unknown> = {};
+    try {
+      outer = JSON.parse(lineItem.notes || '{}') as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    outer.labor = {
+      hours: embedded.hours,
+      rate: embedded.rate,
+      markup: newMarkup,
+    };
+    const notesStr = JSON.stringify(outer);
+    try {
+      const { data, error } = await supabase
+        .from('custom_financial_row_items')
+        .update({ notes: notesStr })
+        .eq('id', lineItemId)
+        .select('id');
+      if (error) throw error;
+      if (!data?.length) {
+        toast.error('Could not update labor markup.');
+        return;
+      }
+      await loadCustomRows(quote?.id ?? null, !!isReadOnly);
+      await loadMaterialsData(quote?.id ?? null, !!isReadOnly);
+    } catch (error: any) {
+      console.error('Error updating labor markup:', error);
+      toast.error('Failed to update labor markup');
     }
   }
 
@@ -8884,7 +9503,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     try {
       // Get proposal number from quote if available, otherwise use job ID
       const proposalNumber = quote?.proposal_number || job.id.split('-')[0].toUpperCase();
-      
+      const isBidSpec = exportViewType === 'bid_spec';
+      const includeLineItemsForPdf = showLineItems || (isBidSpec && bidSpecShowQuantities);
+
       // Prepare sections data for the template (required items first, then optional at end)
       const sections = allItemsUnsorted.map((item, index) => {
         if (item.type === 'material') {
@@ -8902,7 +9523,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
           // Build comparison data for optional sections that have a linked base section
           let comparisonData: any = undefined;
-          if ((sheet as any).isOptional && (sheet as any).compareToSheetId) {
+          if (!isBidSpec && (sheet as any).isOptional && (sheet as any).compareToSheetId) {
             const baseSheetBd = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === (sheet as any).compareToSheetId);
             if (baseSheetBd) {
               const baseLinkedRows2 = customRows.filter((r: any) => r.sheet_id === baseSheetBd.sheetId);
@@ -8978,7 +9599,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             price: sheetFinalPrice,
             optional: (sheet as any).isOptional ?? false,
             comparisonData,
-            items: showLineItems ? sheet.categories?.map((cat: any) => ({
+            items: includeLineItemsForPdf ? sheet.categories?.map((cat: any) => ({
               description: cat.name,
               quantity: cat.itemCount,
               unit: 'items',
@@ -9002,7 +9623,8 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             name: row.description,
             description: row.notes || '',
             price: finalPrice,
-            items: showLineItems && lineItems.length > 0 ? lineItems.map((li: any) => ({
+            optional: toBool((row as any).is_option),
+            items: includeLineItemsForPdf && lineItems.length > 0 ? lineItems.map((li: any) => ({
               description: li.description,
               quantity: li.quantity,
               unit: '',
@@ -9023,7 +9645,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             description: est.scope_of_work || '',
             price: finalPrice,
             optional: toBool((est as any).is_option),
-            items: showLineItems ? lineItems
+            items: includeLineItemsForPdf ? lineItems
               .filter((item: any) => !item.excluded)
               .map((li: any) => ({
                 description: li.description,
@@ -9057,6 +9679,13 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           tax: proposalTotalTax,
           grandTotal: proposalGrandTotal,
         },
+        bidSpec: isBidSpec
+          ? {
+              bidDueDate: bidSpecDueDate.trim() || undefined,
+              instructions: bidSpecInstructions.trim() || undefined,
+              showQuantities: bidSpecShowQuantities,
+            }
+          : undefined,
         descriptionsOnly,
         showLineItems: descriptionsOnly ? false : isOfficeView ? true : showLineItems,
         showSectionPrices: descriptionsOnly ? false : isOfficeView ? false : showLineItems, // Customer version: controlled by checkbox, Office view: always false
@@ -9201,6 +9830,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   let customRowsLaborTotal = 0;
   
   standaloneCustomRows.forEach(row => {
+    if (toBool((row as any).is_option)) return;
     const lineItems = customRowLineItems[row.id] || [];
     const linkedSubs = linkedSubcontractors[row.id] || [];
     const rowMarkupPct = Number(row.markup_percent) || 0;
@@ -9552,6 +10182,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   const totalCustomRowLaborCost = Object.entries(customRowLabor).reduce((sum: number, [rowId, labor]: [string, any]) => {
     const row = customRows.find(r => r.id === rowId);
     const rowSheetId = row ? (row as any).sheet_id : null;
+    if (row && !rowSheetId && toBool((row as any).is_option)) return sum;
     if (rowSheetId) {
       if (optionalSheetIds.has(rowSheetId)) return sum;
       const bd = materialsBreakdown.sheetBreakdowns.find((s: any) => s.sheetId === rowSheetId);
@@ -9655,12 +10286,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     item =>
       !(
         (item.type === 'material' && (item.data as any).isOptional) ||
+        (item.type === 'custom' && toBool((item.data as any).is_option)) ||
         (item.type === 'subcontractor' && toBool((item.data as any).is_option))
       )
   );
   const optionalItems = allItemsUnsorted.filter(
     item =>
       (item.type === 'material' && (item.data as any).isOptional) ||
+      (item.type === 'custom' && toBool((item.data as any).is_option)) ||
       (item.type === 'subcontractor' && toBool((item.data as any).is_option))
   );
 
@@ -10405,11 +11038,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                         toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                         unlinkSubcontractor={unlinkSubcontractor}
                         toggleSubcontractorOptional={toggleSubcontractorOptional}
+                        toggleCustomRowOptional={toggleCustomRowOptional}
                         deleteSubcontractorSection={deleteSubcontractorSection}
                         updateSubcontractorMarkup={updateSubcontractorMarkup}
                         updateCustomRowMarkup={updateCustomRowMarkup}
                         updateCustomRowBaseCost={updateCustomRowBaseCost}
                         updateLineItemCost={updateLineItemCost}
+                        updateCombinedLineItemMaterialBase={updateCombinedLineItemMaterialBase}
+                        updateLineItemEmbeddedLaborMarkup={updateLineItemEmbeddedLaborMarkup}
                         deleteLineItem={deleteLineItem}
                         loadMaterialsData={loadMaterialsData}
                         loadCustomRows={loadCustomRows}
@@ -10522,11 +11158,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                               toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                               unlinkSubcontractor={unlinkSubcontractor}
                               toggleSubcontractorOptional={toggleSubcontractorOptional}
+                              toggleCustomRowOptional={toggleCustomRowOptional}
                               deleteSubcontractorSection={deleteSubcontractorSection}
                               updateSubcontractorMarkup={updateSubcontractorMarkup}
                               updateCustomRowMarkup={updateCustomRowMarkup}
                               updateCustomRowBaseCost={updateCustomRowBaseCost}
                               updateLineItemCost={updateLineItemCost}
+                              updateCombinedLineItemMaterialBase={updateCombinedLineItemMaterialBase}
+                              updateLineItemEmbeddedLaborMarkup={updateLineItemEmbeddedLaborMarkup}
                               deleteLineItem={deleteLineItem}
                               loadMaterialsData={loadMaterialsData}
                               loadCustomRows={loadCustomRows}
@@ -10639,11 +11278,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                               toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                               unlinkSubcontractor={unlinkSubcontractor}
                               toggleSubcontractorOptional={toggleSubcontractorOptional}
+                              toggleCustomRowOptional={toggleCustomRowOptional}
                               deleteSubcontractorSection={deleteSubcontractorSection}
                               updateSubcontractorMarkup={updateSubcontractorMarkup}
                               updateCustomRowMarkup={updateCustomRowMarkup}
                               updateCustomRowBaseCost={updateCustomRowBaseCost}
                               updateLineItemCost={updateLineItemCost}
+                              updateCombinedLineItemMaterialBase={updateCombinedLineItemMaterialBase}
+                              updateLineItemEmbeddedLaborMarkup={updateLineItemEmbeddedLaborMarkup}
                               deleteLineItem={deleteLineItem}
                               loadMaterialsData={loadMaterialsData}
                               loadCustomRows={loadCustomRows}
@@ -11540,13 +12182,18 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           <DialogHeader>
             <DialogTitle>Export Proposal as PDF</DialogTitle>
             <DialogDescription>
-              Choose the version to export: customer-facing proposal, internal office view, or descriptions only (no pricing or terms).
+              Choose the version to export: customer proposal, office view, descriptions only, or a subcontractor bid specification PDF (no pricing).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label className="mb-2 block">Export Version</Label>
-              <Select value={exportViewType} onValueChange={(v) => setExportViewType(v as 'customer' | 'office' | 'descriptions_only')}>
+              <Select
+                value={exportViewType}
+                onValueChange={(v) =>
+                  setExportViewType(v as 'customer' | 'office' | 'descriptions_only' | 'bid_spec')
+                }
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -11554,23 +12201,26 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                   <SelectItem value="customer">Customer Version</SelectItem>
                   <SelectItem value="office">Office View (Internal)</SelectItem>
                   <SelectItem value="descriptions_only">Descriptions only</SelectItem>
+                  <SelectItem value="bid_spec">Bid spec (subcontractors)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div>
-              <Label className="mb-2 block">Style</Label>
-              <Select value={exportTheme} onValueChange={(v) => setExportTheme(v as 'default' | 'premium')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">Default (black &amp; white)</SelectItem>
-                  <SelectItem value="premium">Dark Green &amp; Gold</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">Premium uses dark green and gold for a modern, polished look.</p>
-            </div>
+            {exportViewType !== 'bid_spec' && (
+              <div>
+                <Label className="mb-2 block">Style</Label>
+                <Select value={exportTheme} onValueChange={(v) => setExportTheme(v as 'default' | 'premium')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default (black &amp; white)</SelectItem>
+                    <SelectItem value="premium">Dark Green &amp; Gold</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Premium uses dark green and gold for a modern, polished look.</p>
+              </div>
+            )}
 
             {exportViewType === 'customer' && (
               <div className="flex items-center gap-2">
@@ -11585,6 +12235,47 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               </div>
             )}
 
+            {exportViewType === 'bid_spec' && (
+              <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/80 p-3">
+                <div>
+                  <Label htmlFor="bid-spec-due" className="text-xs font-medium">
+                    Bid due (optional)
+                  </Label>
+                  <Input
+                    id="bid-spec-due"
+                    type="text"
+                    placeholder="e.g. March 15, 2026 at 4:00 PM"
+                    value={bidSpecDueDate}
+                    onChange={(e) => setBidSpecDueDate(e.target.value)}
+                    className="mt-1 h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="bid-spec-instructions" className="text-xs font-medium">
+                    Instructions to bidders (optional)
+                  </Label>
+                  <Textarea
+                    id="bid-spec-instructions"
+                    placeholder="How to submit pricing, alternates, exclusions, walkthrough dates, etc."
+                    value={bidSpecInstructions}
+                    onChange={(e) => setBidSpecInstructions(e.target.value)}
+                    rows={4}
+                    className="mt-1 text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="bid-spec-qty"
+                    checked={bidSpecShowQuantities}
+                    onChange={(e) => setBidSpecShowQuantities(e.target.checked)}
+                    className="rounded"
+                  />
+                  <Label htmlFor="bid-spec-qty">Include quantity breakdown tables (no pricing)</Label>
+                </div>
+              </div>
+            )}
+
             <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs">
               {exportViewType === 'office' ? (
                 <>
@@ -11594,6 +12285,17 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                     <li>Detailed breakdown for each section</li>
                     <li>No payment terms or signature sections</li>
                     <li>Internal use only - NOT for customer distribution</li>
+                  </ul>
+                </>
+              ) : exportViewType === 'bid_spec' ? (
+                <>
+                  <p className="font-semibold text-blue-900 mb-1">Bid spec (subcontractors) includes:</p>
+                  <ul className="list-disc list-inside text-blue-800 space-y-0.5">
+                    <li>Job-first layout: project name, site address, customer, and phone (no contractor letterhead)</li>
+                    <li>Reference # and date issued; optional bid-due and your instructions</li>
+                    <li>Base scope and optional/alternate scope from this proposal (no prices)</li>
+                    <li>Optional quantity tables per section when enabled — still no unit pricing or totals</li>
+                    <li>No payment terms, acceptance block, or standard customer contract terms</li>
                   </ul>
                 </>
               ) : exportViewType === 'descriptions_only' ? (
@@ -11636,7 +12338,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                       ? 'Office View'
                       : exportViewType === 'descriptions_only'
                         ? 'descriptions'
-                        : 'Customer PDF'}
+                        : exportViewType === 'bid_spec'
+                          ? 'bid spec PDF'
+                          : 'Customer PDF'}
                   </>
                 )}
               </Button>

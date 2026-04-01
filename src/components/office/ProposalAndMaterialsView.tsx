@@ -51,6 +51,10 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
   useEffect(() => {
     setJobWorkbookMaterialsTotal(null);
     setHistoricalUnlockedQuoteId(null);
+    // Avoid applying the previous proposal's workbook breakdown / view to the newly selected quote
+    // (Materials may still hold the old workbook for one frame while loadWorkbook runs).
+    setBreakdownSheetPrices([]);
+    setMaterialsWorkbookView(null);
   }, [selectedQuoteId]);
 
   // When uncontrolled and job changes, set proposal to most recent only if we don't already have a valid selection for this job
@@ -114,12 +118,13 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
 
   return (
     <DocumentPanelContext.Provider value={{ showDocumentsInPanel, setShowDocumentsInPanel }}>
-      <div className="flex flex-col h-full min-h-0 w-full">
-        <div className="flex-1 flex min-h-0 border-t border-slate-200 overflow-hidden">
+      <div className="flex min-h-0 w-full flex-1 flex-col">
+        {/* Row: explicit flex-row — avoid w-full on the second column in split mode or it can claim 100% of the row and hide the proposal panel */}
+        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
           {/* Proposal panel — narrower in split so materials workbook has more room */}
           <div
-            className={`min-w-0 flex flex-col bg-white overflow-auto transition-all ${
-              isSplit ? 'w-2/5 min-w-[260px] border-r border-slate-200' : 'w-full'
+            className={`flex min-h-0 min-w-0 flex-col overflow-auto bg-white transition-all ${
+              isSplit ? 'w-2/5 min-w-[260px] shrink-0 border-r border-slate-200' : 'w-full'
             } ${showProposal ? '' : 'hidden'}`}
           >
             <div className="w-full max-w-full mx-auto space-y-2 pt-0 pb-2 px-3">
@@ -131,15 +136,17 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
                 externalBreakdownSheetPrices={breakdownSheetPrices}
                 externalMaterialsWorkbookView={materialsWorkbookView}
                 externalJobWorkbookMaterialsTotal={jobWorkbookMaterialsTotal}
+                historicalUnlockedQuoteId={historicalUnlockedQuoteId}
+                onHistoricalUnlockedQuoteIdChange={setHistoricalUnlockedQuoteId}
               />
             </div>
           </div>
 
           {/* Materials panel — shows document viewer in same view when "Documents" is clicked from header */}
           <div
-            className={`min-w-0 flex flex-col bg-slate-50 overflow-auto flex-1 w-full ${
-              showMaterials ? '' : 'hidden'
-            }`}
+            className={`flex min-h-0 min-w-0 flex-col overflow-auto bg-slate-50 ${
+              isSplit ? 'flex-1' : 'w-full flex-1'
+            } ${showMaterials ? '' : 'hidden'}`}
           >
             {showDocumentsInPanel ? (
               <div className="flex flex-col h-full min-h-0 w-full p-2">

@@ -22,7 +22,11 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { insertPortalJobAccess, updatePortalJobAccess, deletePortalJobAccess } from '@/lib/portalJobAccess';
-import { getOrCreatePortalUserForSubcontractor } from '@/lib/subcontractorPortalUser';
+import {
+  getOrCreatePortalUserForSubcontractor,
+  subcontractorIdFromPortalUsername,
+} from '@/lib/subcontractorPortalUser';
+import { buildSubcontractorPortalUrl, ensureSubcontractorPortalShareLink } from '@/lib/subcontractorPortalLink';
 
 interface PortalUserRow {
   id: string;
@@ -180,16 +184,34 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
     [allSubUsers, grantedIds]
   );
 
-  async function copyPortalUrlForUser(userId: string, name?: string | null) {
+  async function copyPortalUrlForUser(portalUserId: string, portalUsername: string | undefined, name?: string | null) {
     try {
-      const { portalUserId, error } = await getOrCreatePortalUserForSubcontractor(supabase, userId, profile?.id);
-      if (error || !portalUserId) throw error ?? new Error('Could not resolve portal user');
+      const subProfileId = portalUsername ? subcontractorIdFromPortalUsername(portalUsername) : null;
+      if (subProfileId) {
+        const { access_token, error } = await ensureSubcontractorPortalShareLink(
+          supabase,
+          subProfileId,
+          profile?.id
+        );
+        if (error || !access_token) throw error ?? new Error('Could not create or load portal link');
+        await navigator.clipboard.writeText(buildSubcontractorPortalUrl(access_token));
+        toast.success(`${name || 'Subcontractor'} portal link copied (token — manage all their jobs in Subcontractor Hub)`);
+        return;
+      }
       const url = `${window.location.origin}/subcontractor-portal?sub=${encodeURIComponent(portalUserId)}`;
       await navigator.clipboard.writeText(url);
-      toast.success(`${name || 'Subcontractor'} multi-job link copied`);
+      toast.success(`${name || 'Subcontractor'} link copied (legacy URL)`);
     } catch (err: unknown) {
       console.error('[SubcontractorPortalJobPanel] copyPortalUrlForUser', err);
-      toast.error(`Could not copy link: ${formatSupabaseError(err)}`);
+      const msg = formatSupabaseError(err);
+      if (/subcontractor_portal_links|relation|does not exist/i.test(msg)) {
+        toast.error(
+          'Run DB migration 20260330120000_subcontractor_portal_share_links.sql (or use Subcontractor Hub after migrating).',
+          { duration: 12000 }
+        );
+      } else {
+        toast.error(`Could not copy link: ${msg}`);
+      }
     }
   }
 
@@ -348,17 +370,22 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Link2 className="w-5 h-5" />
-            Subcontractor shared link
+            Subcontractor portal link
           </CardTitle>
           <CardDescription>
-            Copy a no-login link from any subcontractor row below. That one link shows all jobs you grant to that subcontractor, with build info only (no prices).
+            Like the customer portal: each subcontractor gets one opaque link (
+            <code className="text-xs">?token=…</code>
+            ). They see every job you grant them, build info only (no prices). Use{' '}
+            <span className="font-medium">Office → Subcontractor Hub</span> to create the link, copy it, and manage which
+            jobs they can open. You can also use <span className="font-medium">Copy link</span> on a row below after you
+            grant access here.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row sm:items-center gap-3">
           <code className="flex-1 text-sm bg-muted px-3 py-2 rounded-md break-all">
             {typeof window !== 'undefined'
-              ? `${window.location.origin}/subcontractor-portal?sub=...`
-              : '/subcontractor-portal?sub=...'}
+              ? `${window.location.origin}/subcontractor-portal?token=…`
+              : '/subcontractor-portal?token=…'}
           </code>
         </CardContent>
       </Card>
@@ -418,7 +445,7 @@ export function SubcontractorPortalJobPanel({ jobId, jobName }: SubcontractorPor
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => copyPortalUrlForUser(row.portal_user_id, u.full_name)}
+                        onClick={() => copyPortalUrlForUser(row.portal_user_id, u.username, u.full_name)}
                       >
                         <Copy className="w-4 h-4 mr-1" />
                         Copy link

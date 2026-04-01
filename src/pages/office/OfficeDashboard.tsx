@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign, Mail } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign, Mail, Receipt, Scale } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -33,6 +33,7 @@ import { EmailCenterView } from '@/components/office/EmailCenterView';
 
 import { AllJobsTaskManagement } from '@/components/office/AllJobsTaskManagement';
 import { FinancialDashboard } from '@/components/office/FinancialDashboard';
+import { JobProposalCostBudgetPage } from '@/components/office/JobProposalCostBudgetPage';
 import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
@@ -48,6 +49,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
@@ -359,6 +361,32 @@ export function OfficeDashboard() {
               <span className="hidden sm:inline">Financials</span>
             </Button>
             <Button
+              variant={activeTab === 'proposal-cost-budget' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('proposal-cost-budget')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'proposal-cost-budget'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Scale className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Cost budget</span>
+            </Button>
+            <Button
+              variant={activeTab === 'payroll' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('payroll')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'payroll'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Receipt className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Payroll</span>
+            </Button>
+            <Button
               variant={activeTab === 'email' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTab('email')}
@@ -443,7 +471,7 @@ export function OfficeDashboard() {
                     setActiveTab('logs');
                     break;
                   case 'time_entry':
-                    setActiveTab('time');
+                    setActiveTab('payroll');
                     break;
                   case 'photos':
                     setActiveTab('photos');
@@ -604,6 +632,20 @@ export function OfficeDashboard() {
               <p className="text-yellow-400">Track overhead, job budgets, and profitability</p>
             </div>
             <FinancialDashboard />
+          </div>
+        )}
+
+        {activeTab === 'proposal-cost-budget' && <JobProposalCostBudgetPage />}
+
+        {activeTab === 'payroll' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Payroll & Job Time</h2>
+              <p className="text-yellow-400">
+                Period reports, time off, job hours, and PDF export (same tools as the payroll login)
+              </p>
+            </div>
+            <PayrollDashboard embed />
           </div>
         )}
 
