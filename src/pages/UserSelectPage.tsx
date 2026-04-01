@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { User, Briefcase, Shield, Settings, DollarSign, Users, Package } from 'lucide-react';
 import { InstallButton } from '@/components/ui/install-button';
 import type { UserProfile } from '@/types';
@@ -16,12 +17,15 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
   }, []);
 
   async function loadUsers() {
+    setLoadError(null);
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('user_profiles')
@@ -43,8 +47,14 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
       });
       
       setUsers(sorted);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error loading users:', error);
+      const message =
+        error && typeof error === 'object' && 'message' in error
+          ? String((error as { message?: string }).message)
+          : 'Could not load users from the database.';
+      setLoadError(message);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -104,19 +114,38 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
             <InstallButton />
           </div>
 
-          {users.length === 0 ? (
+          {loadError ? (
+            <Alert variant="destructive" className="mb-4 text-left">
+              <AlertTitle>Could not load users</AlertTitle>
+              <AlertDescription className="space-y-2 mt-2">
+                <p className="text-sm">{loadError}</p>
+                <p className="text-xs opacity-90">
+                  Check the browser console (F12) for details. Confirm <code className="rounded bg-background px-1">VITE_SUPABASE_URL</code> and{' '}
+                  <code className="rounded bg-background px-1">VITE_SUPABASE_ANON_KEY</code> match your Supabase project, and that Row Level Security on{' '}
+                  <code className="rounded bg-background px-1">user_profiles</code> allows <code className="rounded bg-background px-1">SELECT</code> for the{' '}
+                  <code className="rounded bg-background px-1">anon</code> role (or sign in if your project requires it).
+                </p>
+                <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => loadUsers()}>
+                  Try again
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {users.length === 0 && !loadError ? (
             <div className="text-center py-8">
               <User className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-muted-foreground mb-2">No users available</p>
               <p className="text-sm text-muted-foreground mb-4">
-                Click the button below to add your first user
+                This app signs in by choosing your name, then entering a PIN — not email on this screen. Add at least one user below, or ask an admin to add
+                rows in Supabase table <code className="text-xs bg-muted px-1 rounded">user_profiles</code>.
               </p>
               <Button onClick={() => setShowAdmin(true)} className="gradient-primary">
                 <Settings className="w-4 h-4 mr-2" />
                 Add Users
               </Button>
             </div>
-          ) : (
+          ) : users.length > 0 ? (
             <div className="grid gap-3 max-h-96 overflow-y-auto">
               {users.map((user) => (
                 <Button
@@ -150,7 +179,7 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
                 </Button>
               ))}
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>

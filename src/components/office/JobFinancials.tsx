@@ -9595,18 +9595,42 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             }
           }
           
+          const sheetFinancialLineItems = customRowLineItems[String(sheet.sheetId)] || [];
+          let materialPdfItems: Array<{
+            description: string;
+            quantity: number;
+            unit: string;
+            price: number;
+          }> | undefined;
+          if (includeLineItemsForPdf) {
+            if (isBidSpec) {
+              // Bid spec: proposal line items only — not workbook category / material rollups
+              materialPdfItems =
+                sheetFinancialLineItems.length > 0
+                  ? sheetFinancialLineItems.map((li: any) => ({
+                      description: li.description,
+                      quantity: li.quantity,
+                      unit: (li.item_type || 'material') === 'labor' ? 'hrs' : '',
+                      price: li.total_cost,
+                    }))
+                  : undefined;
+            } else {
+              materialPdfItems = sheet.categories?.map((cat: any) => ({
+                description: cat.name,
+                quantity: cat.itemCount,
+                unit: 'items',
+                price: cat.totalPrice,
+              }));
+            }
+          }
+
           return {
             name: sheet.sheetName,
             description: sheet.sheetDescription || '',
             price: sheetFinalPrice,
             optional: (sheet as any).isOptional ?? false,
             comparisonData,
-            items: includeLineItemsForPdf ? sheet.categories?.map((cat: any) => ({
-              description: cat.name,
-              quantity: cat.itemCount,
-              unit: 'items',
-              price: cat.totalPrice
-            })) : undefined
+            items: materialPdfItems,
           };
         } else if (item.type === 'custom') {
           const row = item.data;
@@ -12273,7 +12297,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                     onChange={(e) => setBidSpecShowQuantities(e.target.checked)}
                     className="rounded"
                   />
-                  <Label htmlFor="bid-spec-qty">Include quantity breakdown tables (no pricing)</Label>
+                  <Label htmlFor="bid-spec-qty">
+                    Include line-item quantity tables (proposal line items — not workbook materials; no pricing)
+                  </Label>
                 </div>
               </div>
             )}
@@ -12296,7 +12322,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                     <li>Job-first layout: project name, site address, customer, and phone (no contractor letterhead)</li>
                     <li>Reference # and date issued; optional bid-due and your instructions</li>
                     <li>Base scope and optional/alternate scope from this proposal (no prices)</li>
-                    <li>Optional quantity tables per section when enabled — still no unit pricing or totals</li>
+                    <li>Optional tables from proposal line items per section (not workbook material rows) — no pricing</li>
                     <li>No payment terms, acceptance block, or standard customer contract terms</li>
                   </ul>
                 </>
