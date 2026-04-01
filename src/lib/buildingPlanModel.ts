@@ -20,20 +20,17 @@ export interface PlanWall {
 
 export type PlanOpeningType = 'door' | 'window' | 'overhead_door';
 
-/** Visual / sectional-door options for overhead openings (3D + elevation). */
 export interface PlanOverheadStyle {
-  /** CSS-style hex, e.g. #334155 */
   colorHex: string;
   panelRows: number;
   panelCols: number;
-  /** Flat panel indices: row * panelCols + col */
   windowPanelIndices: number[];
 }
 
 export const DEFAULT_OVERHEAD_STYLE: PlanOverheadStyle = {
   colorHex: '#475569',
   panelRows: 4,
-  panelCols: 3,
+  panelCols: 4,
   windowPanelIndices: [],
 };
 
@@ -47,19 +44,15 @@ export interface PlanOpening {
   /** Sill height above floor in feet (doors typically 0). */
   sill: number;
   height: number; // feet
-  /** Only for `overhead_door`; omitted uses DEFAULT_OVERHEAD_STYLE in UI/3D. */
+  /** Style for overhead doors (only when type is 'overhead_door'). */
   overheadStyle?: PlanOverheadStyle;
 }
 
-/**
- * Rectangular cut in the loft deck for stair access (offsets from loft.origin, feet).
- * `width` and `depth` are the opening’s size on the plan (deck plane).
- */
 export interface PlanLoftStairOpening {
-  x: number;
-  y: number;
-  width: number;
-  depth: number;
+  x: number; // feet from loft origin
+  y: number; // feet from loft origin
+  width: number; // feet
+  depth: number; // feet
 }
 
 export interface PlanLoft {
@@ -68,28 +61,11 @@ export interface PlanLoft {
   origin: PlanPoint;
   width: number; // feet
   depth: number; // feet
-  /** Height of loft deck above main floor (feet). */
-  elevation: number;
-  /** Headroom inside loft under roof (feet); used for labels / 3D. */
-  clearHeight?: number;
-  /** Hole through loft deck for stairs. */
+  elevation: number; // feet above floor
+  clearHeight?: number; // feet
   stairOpening?: PlanLoftStairOpening | null;
 }
 
-/** Straight stair run on the main floor up toward a loft (plan view). */
-export interface PlanStair {
-  id: PlanEntityId;
-  /** Bottom end of the run (main floor). */
-  foot: PlanPoint;
-  width: number; // feet (tread width)
-  run: number; // horizontal run along angleDeg (feet)
-  rise: number; // total vertical to top of run (feet), usually ≈ loft deck elevation
-  /** 0° = +x in plan, 90° = +y (down on screen). */
-  angleDeg: number;
-  loftId?: PlanEntityId | null;
-}
-
-/** Where the room sits vertically. Omitted on old plans = main floor. */
 export type PlanRoomLevel = 'main' | 'loft_deck' | 'loft_upper';
 
 export interface PlanRoom {
@@ -99,21 +75,10 @@ export interface PlanRoom {
   width: number; // feet
   depth: number; // feet
   wallThickness: number; // feet
-  /** Default `main` (below loft). */
   level?: PlanRoomLevel;
-  /** Required when level is `loft_deck` or `loft_upper`. */
   loftId?: PlanEntityId | null;
-  /**
-   * For `loft_upper`: height from loft **deck** up to this room’s floor (feet).
-   * E.g. 4 = room starts 4′ above the deck; walls can extend to loft ceiling.
-   */
   loftUpperFloorOffsetFt?: number;
-  /**
-   * `to_ceiling` (default): wall tops meet ceiling for that story.
-   * `custom`: use `customWallHeightFt` from room floor.
-   */
   wallTopMode?: 'to_ceiling' | 'custom';
-  /** Used when `wallTopMode === 'custom'` (feet above room floor). */
   customWallHeightFt?: number;
 }
 
@@ -125,6 +90,22 @@ export interface PlanFixture {
   position: PlanPoint;
   elevation?: number; // feet
   label?: string;
+}
+
+export interface PlanStair {
+  id: PlanEntityId;
+  /** Bottom of stair run in plan. */
+  foot: PlanPoint;
+  /** Tread width. */
+  width: number; // feet
+  /** Horizontal run distance. */
+  run: number; // feet
+  /** Total vertical rise. */
+  rise: number; // feet
+  /** Angle in degrees from +x axis. */
+  angleDeg: number;
+  /** Associated loft (optional). */
+  loftId?: PlanEntityId | null;
 }
 
 export interface BuildingPlanModel {
@@ -144,9 +125,8 @@ export interface BuildingPlanModel {
   openings: PlanOpening[];
   rooms: PlanRoom[];
   lofts: PlanLoft[];
-  /** Omitted in older saved plans — treat as []. */
-  stairs?: PlanStair[];
   fixtures: PlanFixture[];
+  stairs?: PlanStair[];
   meta: {
     createdAt: string;
     updatedAt: string;
@@ -200,7 +180,6 @@ export function createDefaultRectPlan(opts: {
     openings: [],
     rooms: [],
     lofts: [],
-    stairs: [],
     fixtures: [],
     meta: { createdAt: now, updatedAt: now, rev: 1 },
   };
@@ -265,88 +244,6 @@ export function getWall(plan: BuildingPlanModel, wallId: PlanEntityId): PlanWall
   return plan.walls.find((w) => w.id === wallId);
 }
 
-export function getLoft(plan: BuildingPlanModel, loftId: PlanEntityId | null | undefined): PlanLoft | undefined {
-  if (!loftId) return undefined;
-  return plan.lofts.find((l) => l.id === loftId);
-}
-
-/**
- * Vertical thickness of the loft floor assembly (feet), same rule as the 3D deck slab:
- * wall height minus walkable deck elevation, with small minimums so geometry stays valid.
- */
-export function loftStructureThicknessFt(wallHeightFt: number, deckElevationFt: number): number {
-  const minT = 1 / 12;
-  const raw = wallHeightFt - deckElevationFt;
-  let t = raw > minT ? raw : minT;
-  if (t > deckElevationFt) t = Math.max(minT, deckElevationFt);
-  return t;
-}
-
-/** Keeps stair opening inside the loft footprint with sensible minimum sizes. */
-export function clampLoftStairOpeningToLoftBounds(loft: PlanLoft): PlanLoft {
-  if (!loft.stairOpening) return loft;
-  const lw = Math.max(1, loft.width);
-  const ld = Math.max(1, loft.depth);
-  const so = loft.stairOpening;
-  const hw = Math.max(0.5, so.width);
-  const hd = Math.max(0.5, so.depth);
-  const x = clamp(so.x, 0, Math.max(0, lw - hw));
-  const y = clamp(so.y, 0, Math.max(0, ld - hd));
-  return { ...loft, stairOpening: { ...so, x, y, width: hw, depth: hd } };
-}
-
-export function normalizeRoomLevel(room: PlanRoom): PlanRoomLevel {
-  return room.level ?? 'main';
-}
-
-/** Whether `room` belongs to the given floor slice (for 2D editing). */
-export function roomMatchesFloor(
-  room: PlanRoom,
-  floor:
-    | { kind: 'main' }
-    | { kind: 'loft_deck'; loftId: PlanEntityId }
-    | { kind: 'loft_upper'; loftId: PlanEntityId }
-): boolean {
-  const lvl = normalizeRoomLevel(room);
-  if (floor.kind === 'main') return lvl === 'main';
-  if (floor.kind === 'loft_deck') return lvl === 'loft_deck' && room.loftId === floor.loftId;
-  return lvl === 'loft_upper' && room.loftId === floor.loftId;
-}
-
-/** Elevation of room floor (feet above main slab). */
-export function getRoomFloorElevation(plan: BuildingPlanModel, room: PlanRoom): number {
-  const lvl = normalizeRoomLevel(room);
-  if (lvl === 'main') return 0;
-  const loft = getLoft(plan, room.loftId);
-  if (!loft) return 0;
-  if (lvl === 'loft_deck') return loft.elevation;
-  const off = Math.max(0, room.loftUpperFloorOffsetFt ?? 0);
-  return loft.elevation + off;
-}
-
-/** Elevation of wall top (feet). */
-export function getRoomWallTopElevation(plan: BuildingPlanModel, room: PlanRoom): number {
-  const floorEl = getRoomFloorElevation(plan, room);
-  const mode = room.wallTopMode ?? 'to_ceiling';
-  if (
-    mode === 'custom' &&
-    room.customWallHeightFt != null &&
-    Number.isFinite(room.customWallHeightFt) &&
-    room.customWallHeightFt > 0
-  ) {
-    return floorEl + room.customWallHeightFt;
-  }
-  const lvl = normalizeRoomLevel(room);
-  if (lvl === 'main') return plan.dims.height;
-  const loft = getLoft(plan, room.loftId);
-  if (!loft) return plan.dims.height;
-  return loft.elevation + (loft.clearHeight ?? 8);
-}
-
-export function getResolvedWallHeightFt(plan: BuildingPlanModel, room: PlanRoom): number {
-  return Math.max(0, getRoomWallTopElevation(plan, room) - getRoomFloorElevation(plan, room));
-}
-
 export function clampOpeningOffsetToWall(opening: PlanOpening, wall: PlanWall): PlanOpening {
   const wallLen = distance(wall.start, wall.end);
   const maxOffset = Math.max(0, wallLen - opening.width);
@@ -364,7 +261,42 @@ export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+export function normalizeRoomLevel(room: PlanRoom): PlanRoomLevel {
+  return room.level ?? 'main';
+}
+
+export function roomMatchesFloor(
+  room: PlanRoom,
+  activeFloor: { kind: 'main' } | { kind: 'loft_deck'; loftId: PlanEntityId } | { kind: 'loft_upper'; loftId: PlanEntityId }
+): boolean {
+  const level = normalizeRoomLevel(room);
+  if (activeFloor.kind === 'main') return level === 'main';
+  if (activeFloor.kind === 'loft_deck') {
+    return level === 'loft_deck' && room.loftId === activeFloor.loftId;
+  }
+  if (activeFloor.kind === 'loft_upper') {
+    return level === 'loft_upper' && room.loftId === activeFloor.loftId;
+  }
+  return false;
+}
+
 function clampPositive(n: number, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * Returns the floor elevation (in feet above grade) for a given room.
+ * - Main floor rooms: 0
+ * - Rooms on a loft deck: the loft's elevation
+ * - Rooms above a loft: the loft's elevation + the room's loftUpperFloorOffsetFt
+ */
+export function getRoomFloorElevation(plan: BuildingPlanModel, room: PlanRoom): number {
+  const level = normalizeRoomLevel(room);
+  if (level === 'main') return 0;
+  const loft = room.loftId ? plan.lofts.find((l) => l.id === room.loftId) : undefined;
+  if (!loft) return 0;
+  if (level === 'loft_deck') return loft.elevation;
+  if (level === 'loft_upper') return loft.elevation + (room.loftUpperFloorOffsetFt ?? 0);
+  return 0;
 }
 
