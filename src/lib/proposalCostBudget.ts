@@ -24,7 +24,7 @@ function materialItemCost(item: {
 }
 
 function sheetLaborCostOnly(sheet: {
-  laborTotal?: number;
+  laborTotal?: number | string | null;
   labor?: Array<{ total_labor_cost?: number; estimated_hours?: number; hourly_rate?: number }>;
 }): number {
   if (sheet.labor && Array.isArray(sheet.labor) && sheet.labor.length > 0) {
@@ -33,7 +33,8 @@ function sheetLaborCostOnly(sheet: {
       return sum + (Number(c) || 0);
     }, 0);
   }
-  if (sheet.laborTotal != null && sheet.laborTotal !== '') return Number(sheet.laborTotal) || 0;
+  const lt = sheet.laborTotal;
+  if (lt != null && lt !== '') return Number(lt) || 0;
   return 0;
 }
 

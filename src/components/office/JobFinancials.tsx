@@ -8267,10 +8267,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       laborData = {
         hours: Number(lineItem.quantity) || 0,
         rate: Number(lineItem.unit_cost) || 60,
-        markup:
-          lineItem.markup_percent != null && lineItem.markup_percent !== ''
-            ? Number(lineItem.markup_percent)
-            : 10,
+        markup: (() => {
+          const raw = lineItem.markup_percent as number | string | null | undefined;
+          if (raw == null || raw === '') return 10;
+          const n = Number(raw);
+          return Number.isFinite(n) ? n : 10;
+        })(),
       };
     }
 
