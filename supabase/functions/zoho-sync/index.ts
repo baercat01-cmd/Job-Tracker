@@ -1,6 +1,11 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 import { corsHeaders } from '../_shared/cors.ts';
+import {
+  getMaterialLineSellAndCost,
+  zohoRateFromLineTotal,
+  type MetalCatalogBySku,
+} from '../_shared/materialItemLineMoney.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -520,6 +525,54 @@ serve(async (req) => {
 
         const result: any = { success: true };
 
+        const itemsForOrders = Array.isArray(materialItems) ? materialItems : [];
+        const skusForCatalog = new Set<string>();
+        for (const raw of itemsForOrders) {
+          const row = raw as Record<string, unknown>;
+          const cat = row.category;
+          const sku = row.sku;
+          if (
+            cat === 'Metal' &&
+            sku &&
+            row.cost_per_unit == null &&
+            row.price_per_unit == null
+          ) {
+            skusForCatalog.add(String(sku));
+          }
+        }
+        let metalCatalogBySku: MetalCatalogBySku = {};
+        if (skusForCatalog.size > 0) {
+          const { data: catRows, error: catErr } = await supabase
+            .from('materials_catalog')
+            .select('sku, purchase_cost, unit_price')
+            .in('sku', [...skusForCatalog]);
+          if (!catErr && catRows) {
+            for (const row of catRows as {
+              sku: string;
+              purchase_cost: number | null;
+              unit_price: number | null;
+            }[]) {
+              metalCatalogBySku[row.sku] = {
+                purchase_cost: Number(row.purchase_cost) || 0,
+                unit_price: Number(row.unit_price) || 0,
+              };
+            }
+          }
+        }
+
+        function zohoLineMoneyInput(item: Record<string, unknown>) {
+          return {
+            category: String(item.category ?? ''),
+            quantity: Number(item.quantity) || 0,
+            length: (item.length ?? item.part_length ?? null) as string | null,
+            cost_per_unit: item.cost_per_unit as number | null | undefined,
+            price_per_unit: item.price_per_unit as number | null | undefined,
+            extended_cost: item.extended_cost as number | null | undefined,
+            extended_price: item.extended_price as number | null | undefined,
+            sku: item.sku as string | null | undefined,
+          };
+        }
+
         // Create Sales Order (if requested)
         if (!orderType || orderType === 'both' || orderType === 'sales_order') {
           console.log('📋 Creating Sales Order...');
@@ -531,11 +584,12 @@ serve(async (req) => {
           // Ensure all items exist in Zoho as sellable items
           // SKU is the defining factor - ensure material has SKU attached from catalog
           const lineItems = [];
-          for (const item of materialItems) {
-            const partLength = item.part_length ?? item.length ?? '';
+          for (const item of itemsForOrders) {
+            const row = item as Record<string, unknown>;
+            const partLength = row.part_length ?? row.length ?? '';
             const trimmedLength = partLength ? String(partLength).trim() : '';
-            const trimmedColor = item.color ? String(item.color).trim() : '';
-            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', trimmedLength, '- Color:', trimmedColor);
+            const trimmedColor = row.color ? String(row.color).trim() : '';
+            console.log('📦 Processing material for Sales Order - SKU:', row.sku, '- Name:', row.material_name, '- Part Length:', trimmedLength, '- Color:', trimmedColor);
             
             const itemId = await ensurePurchasableItem(
               accessToken,
@@ -547,13 +601,17 @@ serve(async (req) => {
             if (trimmedLength) customFields.push({ label: 'Part Length', value: trimmedLength });
             if (trimmedColor) customFields.push({ label: 'Color', value: trimmedColor });
             
+            const billedQty = Number(row.quantity);
+            const lineSell = getMaterialLineSellAndCost(zohoLineMoneyInput(row), metalCatalogBySku).price;
+            const salesRate = zohoRateFromLineTotal(lineSell, billedQty);
+
             const lineItem: any = {
               item_id: itemId,
-              name: item.material_name,
-              quantity: item.quantity,
-              rate: item.price_per_unit || item.cost_per_unit || 0,
+              name: row.material_name,
+              quantity: billedQty > 0 ? billedQty : 1,
+              rate: salesRate,
               unit: 'piece',
-              description: item.material_name,
+              description: row.material_name,
             };
 
             if (customFields.length > 0) lineItem.custom_fields = customFields;
@@ -568,24 +626,67 @@ serve(async (req) => {
             line_items: lineItems,
           };
 
-          const salesOrderResponse = await fetch(
-            `https://www.zohoapis.com/books/v3/salesorders?organization_id=${settings.countywide_org_id}`,
-            {
+          const salesOrderUrl = `https://www.zohoapis.com/books/v3/salesorders?organization_id=${settings.countywide_org_id}`;
+          let salesOrderResult: any = null;
+          let salesOrderBodyText = '';
+          for (let soAttempt = 0; soAttempt < 2; soAttempt++) {
+            const salesOrderResponse = await fetch(salesOrderUrl, {
               method: 'POST',
               headers: {
                 'Authorization': `Zoho-oauthtoken ${accessToken}`,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify(salesOrderData),
-            }
-          );
+            });
 
-          if (!salesOrderResponse.ok) {
-            const errorText = await salesOrderResponse.text();
-            throw new Error(`Failed to create Sales Order: ${errorText}`);
+            salesOrderBodyText = await salesOrderResponse.text();
+            try {
+              salesOrderResult = JSON.parse(salesOrderBodyText);
+            } catch {
+              salesOrderResult = null;
+            }
+            const salesOrderZohoError =
+              !salesOrderResponse.ok ||
+              (salesOrderResult &&
+                typeof salesOrderResult.code === 'number' &&
+                salesOrderResult.code !== 0);
+            if (!salesOrderZohoError) break;
+
+            const isInactiveLineError =
+              salesOrderResult?.code === 2007 &&
+              Array.isArray(salesOrderResult.error_info) &&
+              salesOrderResult.error_info.length > 0;
+            if (soAttempt === 0 && isInactiveLineError) {
+              const ids = new Set<string>();
+              for (const rawId of salesOrderResult.error_info) {
+                const zid = String(rawId).trim();
+                if (zid) ids.add(zid);
+              }
+              for (const li of lineItems) {
+                const lid = li?.item_id != null ? String(li.item_id).trim() : '';
+                if (lid) ids.add(lid);
+              }
+              const activationErrors: string[] = [];
+              for (const zid of ids) {
+                try {
+                  await reliableActivateZohoItem(accessToken, settings.countywide_org_id, zid);
+                } catch (e: any) {
+                  activationErrors.push(`${zid}: ${e?.message || String(e)}`);
+                }
+              }
+              if (activationErrors.length === ids.size && ids.size > 0) {
+                throw new Error(
+                  `Could not re-activate Zoho items before retrying sales order: ${activationErrors.join(' | ')}`
+                );
+              }
+              continue;
+            }
+
+            throw new Error(
+              formatZohoLineOrderError('Sales Order', salesOrderBodyText, salesOrderResult)
+            );
           }
 
-          const salesOrderResult = await salesOrderResponse.json();
           console.log('✅ Sales Order created:', salesOrderResult.salesorder?.salesorder_id);
 
           result.salesOrder = {
@@ -643,24 +744,67 @@ serve(async (req) => {
             line_items: lineItems,
           };
 
-          const purchaseOrderResponse = await fetch(
-            `https://www.zohoapis.com/books/v3/purchaseorders?organization_id=${settings.countywide_org_id}`,
-            {
+          const purchaseOrderUrl = `https://www.zohoapis.com/books/v3/purchaseorders?organization_id=${settings.countywide_org_id}`;
+          let purchaseOrderResult: any = null;
+          let purchaseOrderBodyText = '';
+          for (let poAttempt = 0; poAttempt < 2; poAttempt++) {
+            const purchaseOrderResponse = await fetch(purchaseOrderUrl, {
               method: 'POST',
               headers: {
                 'Authorization': `Zoho-oauthtoken ${accessToken}`,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify(purchaseOrderData),
-            }
-          );
+            });
 
-          if (!purchaseOrderResponse.ok) {
-            const errorText = await purchaseOrderResponse.text();
-            throw new Error(`Failed to create Purchase Order: ${errorText}`);
+            purchaseOrderBodyText = await purchaseOrderResponse.text();
+            try {
+              purchaseOrderResult = JSON.parse(purchaseOrderBodyText);
+            } catch {
+              purchaseOrderResult = null;
+            }
+            const purchaseOrderZohoError =
+              !purchaseOrderResponse.ok ||
+              (purchaseOrderResult &&
+                typeof purchaseOrderResult.code === 'number' &&
+                purchaseOrderResult.code !== 0);
+            if (!purchaseOrderZohoError) break;
+
+            const isInactiveLineError =
+              purchaseOrderResult?.code === 2007 &&
+              Array.isArray(purchaseOrderResult.error_info) &&
+              purchaseOrderResult.error_info.length > 0;
+            if (poAttempt === 0 && isInactiveLineError) {
+              const ids = new Set<string>();
+              for (const rawId of purchaseOrderResult.error_info) {
+                const zid = String(rawId).trim();
+                if (zid) ids.add(zid);
+              }
+              for (const li of lineItems) {
+                const lid = li?.item_id != null ? String(li.item_id).trim() : '';
+                if (lid) ids.add(lid);
+              }
+              const activationErrors: string[] = [];
+              for (const zid of ids) {
+                try {
+                  await reliableActivateZohoItem(accessToken, settings.countywide_org_id, zid);
+                } catch (e: any) {
+                  activationErrors.push(`${zid}: ${e?.message || String(e)}`);
+                }
+              }
+              if (activationErrors.length === ids.size && ids.size > 0) {
+                throw new Error(
+                  `Could not re-activate Zoho items before retrying purchase order: ${activationErrors.join(' | ')}`
+                );
+              }
+              continue;
+            }
+
+            throw new Error(
+              formatZohoLineOrderError('Purchase Order', purchaseOrderBodyText, purchaseOrderResult)
+            );
           }
 
-          const purchaseOrderResult = await purchaseOrderResponse.json();
           console.log('✅ Purchase Order created:', purchaseOrderResult.purchaseorder?.purchaseorder_id);
 
           result.purchaseOrder = {
@@ -1071,11 +1215,141 @@ function getPartLengthFromZohoItem(item: any): string | null {
 /** Treat inactive Zoho items as not importable into materials catalog. */
 function isZohoItemActive(item: any): boolean {
   if (!item || typeof item !== 'object') return true;
-  const status = String(item.status || '').trim().toLowerCase();
+  const status = String(item.status || item.item_status || '').trim().toLowerCase();
   if (status === 'inactive') return false;
-  if (item.is_active === false) return false;
+  if (status === 'active') return true;
+  if (item.is_active === false || item.is_active === 'false') return false;
+  if (item.is_active === true || item.is_active === 'true') return true;
   if (item.is_inactive === true) return false;
+  if (item.inactive === true) return false;
+  // List/search may omit status — treat as active for catalog import; orders use GET + reactivateZohoItemIfNeeded.
   return true;
+}
+
+function formatZohoLineOrderError(
+  kind: 'Sales Order' | 'Purchase Order',
+  raw: string,
+  parsed: any | null
+): string {
+  const code = parsed && typeof parsed.code === 'number' ? parsed.code : undefined;
+  const message = parsed && parsed.message != null ? String(parsed.message) : '';
+  const errorInfo =
+    parsed && Array.isArray(parsed.error_info)
+      ? parsed.error_info.map((x: unknown) => String(x))
+      : [];
+  const inactive =
+    code === 2007 ||
+    /inactive items cannot be added/i.test(message) ||
+    /inactive items cannot be added/i.test(raw);
+  if (inactive) {
+    const ids = errorInfo.length ? errorInfo.join(', ') : '';
+    return `Failed to create ${kind}: Inactive Zoho item(s) cannot be on this order${ids ? ` (Zoho item id: ${ids})` : ''}. In Zoho Books → Items, mark those items Active, then try again. Response: ${raw}`;
+  }
+  return `Failed to create ${kind}: ${raw}`;
+}
+
+/**
+ * When Zoho returns multiple rows for one SKU, prefer explicitly active, then unknown status, last inactive.
+ * (Previously we used find(isZohoItemActive) which treats missing status as active and could pick an inactive row first.)
+ */
+function pickBestZohoItemRowForOrder(items: any[]): any {
+  if (!items.length) return items[0];
+  const rank = (it: any): number => {
+    const s = String(it?.status ?? it?.item_status ?? '').trim().toLowerCase();
+    if (s === 'active') return 0;
+    if (s === 'inactive') return 2;
+    return 1;
+  };
+  return [...items].sort((a, b) => rank(a) - rank(b))[0];
+}
+
+/**
+ * Zoho 2007: inactive line items. POST /items/{id}/active may fail or be unsupported; fall back to PUT from GET item.
+ */
+async function reliableActivateZohoItem(
+  accessToken: string,
+  orgId: string,
+  itemId: string
+): Promise<void> {
+  const encId = encodeURIComponent(itemId);
+  const org = encodeURIComponent(orgId);
+  const postUrl = `https://www.zohoapis.com/books/v3/items/${encId}/active?organization_id=${org}`;
+  const postRes = await fetch(postUrl, {
+    method: 'POST',
+    headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+  });
+  const postText = await postRes.text();
+  let postData: any = {};
+  try {
+    postData = JSON.parse(postText);
+  } catch {
+    /* non-JSON */
+  }
+  if (postRes.ok && postData.code === 0) {
+    console.log('✅ Zoho item POST /active:', itemId);
+    return;
+  }
+  const postMsg = String(postData.message ?? postText).toLowerCase();
+  if (postRes.ok && /already|not\s*inactive|no\s*change/i.test(postMsg)) {
+    console.log('✅ Zoho item treat as active (POST):', itemId);
+    return;
+  }
+
+  const detail = await fetchZohoItemDetails(accessToken, orgId, itemId);
+  if (!detail) {
+    throw new Error(
+      `Cannot activate Zoho item ${itemId}: POST /active returned ${postText} and GET item failed`
+    );
+  }
+
+  const putBody: Record<string, unknown> = {
+    name: detail.name ?? 'Item',
+    sku: detail.sku ?? '',
+    rate: detail.rate ?? 0,
+    purchase_rate: detail.purchase_rate ?? detail.cost_price ?? 0,
+    unit: detail.unit || 'piece',
+    description: detail.description ?? detail.name ?? '',
+    item_type: detail.item_type || 'sales_and_purchases',
+    status: 'active',
+  };
+  if (Array.isArray(detail.custom_fields) && detail.custom_fields.length > 0) {
+    putBody.custom_fields = detail.custom_fields;
+  }
+
+  const putRes = await fetch(
+    `https://www.zohoapis.com/books/v3/items/${encId}?organization_id=${org}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(putBody),
+    }
+  );
+  const putText = await putRes.text();
+  let putData: any = {};
+  try {
+    putData = JSON.parse(putText);
+  } catch {
+    /* non-JSON */
+  }
+  if (putRes.ok && putData.code === 0) {
+    console.log('✅ Zoho item activated via PUT status=active:', itemId);
+    return;
+  }
+  throw new Error(
+    `Cannot activate Zoho item ${itemId} for sales order. POST /active: ${postText}; PUT: ${putText}`
+  );
+}
+
+/** Before sales/PO lines: always ensure item is active (GET can omit inactive flag on list/search). */
+async function reactivateZohoItemIfNeeded(
+  accessToken: string,
+  orgId: string,
+  itemId: string
+): Promise<void> {
+  await reliableActivateZohoItem(accessToken, orgId, itemId);
 }
 
 function isImportedSkuValue(sku: unknown): boolean {
@@ -1267,12 +1541,14 @@ async function ensurePurchasableItem(
   if (skuSearchResponse.ok) {
     const skuSearchData = await skuSearchResponse.json();
     if (skuSearchData.items && skuSearchData.items.length > 0) {
-      // Found item by SKU - this is the definitive match
-      const skuMatch = skuSearchData.items[0];
+      const items = skuSearchData.items as any[];
+      const skuMatch = pickBestZohoItemRowForOrder(items);
       console.log('✅ Found existing item by SKU:', skuMatch.item_id, '- SKU:', skuMatch.sku);
-      
+
+      await reactivateZohoItemIfNeeded(accessToken, orgId, skuMatch.item_id);
+
       // Update item to ensure it's purchasable and sellable with latest info from catalog
-      await updateItemPurchasable(accessToken, orgId, skuMatch.item_id, materialItem);
+      await updateItemPurchasable(accessToken, orgId, skuMatch.item_id, materialItem, true);
       
       return skuMatch.item_id;
     }
@@ -1294,6 +1570,7 @@ async function ensurePurchasableItem(
     is_taxable: materialItem.taxable !== false,
     tax_id: '',
     item_type: 'sales_and_purchases',
+    status: 'active',
   };
 
   const itemCustomFields: { label: string; value: string }[] = [];
@@ -1530,7 +1807,8 @@ async function updateItemPurchasable(
   accessToken: string,
   orgId: string,
   itemId: string,
-  materialItem: any
+  materialItem: any,
+  throwOnError = false
 ): Promise<void> {
   console.log('🔄 Updating item to be purchasable:', itemId, '- SKU:', materialItem.sku);
   
@@ -1546,6 +1824,7 @@ async function updateItemPurchasable(
     unit: 'piece',
     description: materialItem.material_name,
     item_type: 'sales_and_purchases',
+    status: 'active',
   };
 
   const updateCustomFields: { label: string; value: string }[] = [];
@@ -1565,11 +1844,20 @@ async function updateItemPurchasable(
     }
   );
 
-  if (!updateResponse.ok) {
-    const errorText = await updateResponse.text();
-    console.warn('⚠️ Failed to update item purchasable flag:', errorText);
-    // Don't throw - item exists, just might not be updated
-  } else {
-    console.log('✅ Item updated to be purchasable');
+  const errorText = await updateResponse.text();
+  let respData: any = {};
+  try {
+    respData = JSON.parse(errorText);
+  } catch {
+    /* non-JSON */
   }
+  const zohoOk =
+    updateResponse.ok && (respData.code === undefined || respData.code === 0);
+  if (!zohoOk) {
+    const msg = `Failed to update Zoho item ${itemId}: ${errorText}`;
+    console.warn('⚠️', msg);
+    if (throwOnError) throw new Error(msg);
+    return;
+  }
+  console.log('✅ Item updated to be purchasable');
 }

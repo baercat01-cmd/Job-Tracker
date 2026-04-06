@@ -3,6 +3,7 @@
  * Portrait letter, multiple trims per page as table rows with compact profile thumbnails.
  */
 import type { LineSegment, Point } from '@/components/office/TrimDrawingPreview';
+import { getOutsideBendAngleLabelBisectorRad } from '@/lib/trimAngleLabelPlacement';
 
 const DEFAULT_HEM_DEPTH_INCHES = 0.5;
 
@@ -214,27 +215,6 @@ function calculateCentroid(segments: LineSegment[]): Point {
   return { x: sumX / count, y: sumY / count };
 }
 
-function getExteriorBisector(prevSegment: LineSegment, segment: LineSegment, centroidPoint: Point): number {
-  const corner = segment.start;
-  const prevDx = prevSegment.end.x - prevSegment.start.x;
-  const prevDy = prevSegment.end.y - prevSegment.start.y;
-  const currDx = segment.end.x - segment.start.x;
-  const currDy = segment.end.y - segment.start.y;
-  const prevAngle = Math.atan2(prevDy, prevDx);
-  const currAngle = Math.atan2(currDy, currDx);
-  const fromCornerBack = prevAngle + Math.PI;
-  const fromCornerFwd = currAngle;
-  const bisector1 = (fromCornerBack + fromCornerFwd) / 2;
-  const bisector2 = bisector1 + Math.PI;
-  const dist = 1;
-  const pos1 = { x: corner.x + Math.cos(bisector1) * dist, y: corner.y + Math.sin(bisector1) * dist };
-  const pos2 = { x: corner.x + Math.cos(bisector2) * dist, y: corner.y + Math.sin(bisector2) * dist };
-  const d1 = Math.hypot(pos1.x - centroidPoint.x, pos1.y - centroidPoint.y);
-  const d2 = Math.hypot(pos2.x - centroidPoint.x, pos2.y - centroidPoint.y);
-  const isBottomBend = corner.y > centroidPoint.y;
-  return isBottomBend ? (d1 < d2 ? bisector1 : bisector2) : d1 > d2 ? bisector1 : bisector2;
-}
-
 function getRawTurnDegrees(seg1: LineSegment, seg2: LineSegment): number {
   const dx1 = seg1.end.x - seg1.start.x;
   const dy1 = seg1.end.y - seg1.start.y;
@@ -283,12 +263,12 @@ function drawTrimToPdfCanvas(
       points.push({ x: baseX + ux * hemDepth, y: baseY + uy * hemDepth });
     }
   });
-  const angleDistInches = 20 / 80;
+  const angleDistInches = 28 / 80;
   const centroid = calculateCentroid(segments);
   segments.forEach((segment, segmentIndex) => {
     if (segmentIndex > 0) {
       const prevSegment = segments[segmentIndex - 1];
-      const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
+      const exteriorBisector = getOutsideBendAngleLabelBisectorRad(prevSegment, segment);
       const cornerX = segment.start.x;
       const cornerY = segment.start.y;
       points.push({
@@ -363,8 +343,8 @@ function drawTrimToPdfCanvas(
       const angle = calculateAngleBetweenSegments(prevSegment, segment);
       const useComplement = angleDisplayModeRecord[segment.id] || false;
       const displayAngle = useComplement ? 360 - angle : angle;
-      const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
-      const angleDist = 20 * (scale / 80);
+      const exteriorBisector = getOutsideBendAngleLabelBisectorRad(prevSegment, segment);
+      const angleDist = 28 * (scale / 80);
       const angleX = startX + Math.cos(exteriorBisector) * angleDist;
       const angleY = startY + Math.sin(exteriorBisector) * angleDist;
       ctx.fillStyle = '#2563eb';

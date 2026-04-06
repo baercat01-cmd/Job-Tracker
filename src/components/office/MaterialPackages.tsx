@@ -45,6 +45,7 @@ import {
 import { toast } from 'sonner';
 import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
 import type { Job } from '@/types';
+import type { MetalCatalogBySku } from '@/lib/materialItemLineMoney';
 
 interface MaterialItem {
   id: string;
@@ -58,6 +59,8 @@ interface MaterialItem {
   usage: string | null;
   cost_per_unit: number | null;
   price_per_unit?: number | null;
+  extended_cost?: number | null;
+  extended_price?: number | null;
   sku?: string | null;
   zoho_sales_order_id?: string | null;
   zoho_sales_order_number?: string | null;
@@ -113,6 +116,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
   const [showZohoOrderDialog, setShowZohoOrderDialog] = useState(false);
   const [selectedPackageForOrder, setSelectedPackageForOrder] = useState<MaterialBundle | null>(null);
   const [selectedMaterialsForOrder, setSelectedMaterialsForOrder] = useState<MaterialItem[]>([]);
+  const [metalCatalogForZoho, setMetalCatalogForZoho] = useState<MetalCatalogBySku>({});
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,6 +220,57 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
     };
   }, [jobId, workbook]);
 
+  useEffect(() => {
+    if (!showZohoOrderDialog || selectedMaterialsForOrder.length === 0) {
+      setMetalCatalogForZoho({});
+      return;
+    }
+    const skus = [
+      ...new Set(
+        selectedMaterialsForOrder
+          .filter(
+            (m) =>
+              m.category === 'Metal' &&
+              m.sku &&
+              m.cost_per_unit == null &&
+              m.price_per_unit == null
+          )
+          .map((m) => m.sku as string)
+      ),
+    ];
+    if (skus.length === 0) {
+      setMetalCatalogForZoho({});
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('materials_catalog')
+      .select('sku, purchase_cost, unit_price')
+      .in('sku', skus)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data?.length) {
+          setMetalCatalogForZoho({});
+          return;
+        }
+        const map: MetalCatalogBySku = {};
+        for (const r of data as {
+          sku: string;
+          purchase_cost: number | null;
+          unit_price: number | null;
+        }[]) {
+          map[r.sku] = {
+            purchase_cost: Number(r.purchase_cost) || 0,
+            unit_price: Number(r.unit_price) || 0,
+          };
+        }
+        setMetalCatalogForZoho(map);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showZohoOrderDialog, selectedMaterialsForOrder]);
+
   async function loadPackages() {
     try {
       setLoading(true);
@@ -241,6 +296,8 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
               sku,
               cost_per_unit,
               price_per_unit,
+              extended_cost,
+              extended_price,
               zoho_sales_order_id,
               zoho_sales_order_number,
               zoho_purchase_order_id,
@@ -292,7 +349,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
       // Get all material items
       const { data: itemsData } = await supabase
         .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length, color, usage, sku, cost_per_unit, price_per_unit, zoho_sales_order_id, zoho_sales_order_number, zoho_purchase_order_id, zoho_purchase_order_number, ordered_at')
+        .select('id, sheet_id, category, material_name, quantity, length, color, usage, sku, cost_per_unit, price_per_unit, extended_cost, extended_price, zoho_sales_order_id, zoho_sales_order_number, zoho_purchase_order_id, zoho_purchase_order_number, ordered_at')
         .in('sheet_id', sheetIds)
         .order('material_name');
 
@@ -1439,6 +1496,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
           jobName={job.name}
           materials={selectedMaterialsForOrder}
           packageName={selectedPackageForOrder.name}
+          metalCatalogBySku={metalCatalogForZoho}
         />
       )}
     </div>

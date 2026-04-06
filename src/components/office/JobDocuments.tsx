@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { pdfUrlForIframeViewer } from '@/lib/pdfIframeUrl';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -1643,14 +1644,15 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                   </div>
                 );
               } else if (isPDF) {
+                const pdfSrc = pdfUrlForIframeViewer(viewingDocument.url);
                 return (
                   <object
-                    data={viewingDocument.url}
+                    data={pdfSrc}
                     type="application/pdf"
                     className="w-full h-[70vh] rounded-lg border"
                   >
                     <iframe
-                      src={viewingDocument.url}
+                      src={pdfSrc}
                       className="w-full h-[70vh] rounded-lg border"
                       title={viewingDocument.name}
                     />

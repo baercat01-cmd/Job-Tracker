@@ -5,10 +5,11 @@ import { usePlanRealtime } from '@/lib/usePlanRealtime';
 import { Plan2DEditor } from '@/components/plans/Plan2DEditor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { PlanElevationPage } from '@/components/plans/PlanElevationPage';
 import { PlanElevationPreview } from '@/components/plans/PlanElevationPreview';
 import { supabase } from '@/lib/supabase';
 
-type ToolMode = 'select' | 'wall' | 'window' | 'door' | 'outlet' | 'drain';
+type ToolMode = 'select' | 'wall' | 'window' | 'door' | 'overhead' | 'outlet' | 'drain';
 type ViewMode = 'floor' | 'Front' | 'Back' | 'Left' | 'Right' | '3d';
 
 export function PlanShareWorkspace(props: {
@@ -76,6 +77,9 @@ export function PlanShareWorkspace(props: {
     };
   }, [token, lastSavedAt]);
 
+  const isElevationSideView =
+    viewMode === 'Front' || viewMode === 'Back' || viewMode === 'Left' || viewMode === 'Right';
+
   return (
     <div className="w-full h-[calc(100dvh-64px)] flex flex-col">
       <div className="h-12 bg-white border-b flex items-center justify-between px-3 gap-2">
@@ -106,6 +110,14 @@ export function PlanShareWorkspace(props: {
             disabled={!canEdit}
           >
             Window
+          </Button>
+          <Button
+            size="sm"
+            variant={mode === 'overhead' ? 'default' : 'outline'}
+            onClick={() => setMode('overhead')}
+            disabled={!canEdit}
+          >
+            Overhead
           </Button>
           <Button
             size="sm"
@@ -145,45 +157,82 @@ export function PlanShareWorkspace(props: {
         <div className="bg-rose-50 border-b border-rose-200 text-rose-900 text-xs px-3 py-2">{lastSaveError}</div>
       ) : null}
 
-      <div className="flex-1 min-h-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white overflow-hidden">
         {viewMode === 'floor' ? (
-          <Plan2DEditor
-            plan={plan}
-            canEdit={canEdit}
-            mode={mode}
-            onOp={sendOp}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            orientation="lengthX"
-            onCancelPlacement={() => setMode('select')}
-          />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <Plan2DEditor
+              plan={plan}
+              canEdit={canEdit}
+              mode={mode}
+              onOp={sendOp}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              orientation="lengthX"
+              onCancelPlacement={() => setMode('select')}
+            />
+          </div>
         ) : viewMode === '3d' ? (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground bg-white">
+          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
             3D view wiring comes next.
           </div>
         ) : (
-          <div className="w-full h-full bg-white p-6">
-            <div className="max-w-3xl mx-auto">
-              <div className="text-sm font-bold mb-3">{viewMode} elevation</div>
-              <div className="aspect-[10/7] border rounded bg-slate-50">
-                <PlanElevationPreview plan={plan} side={viewMode} className="w-full h-full" />
-              </div>
-            </div>
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0">
+            <PlanElevationPage
+              plan={plan}
+              side={viewMode}
+              className="min-h-0 min-w-0 flex-1 overflow-hidden"
+              onEditOnFloor={() => {
+                setViewMode('floor');
+                setMode('select');
+              }}
+              onEditDoors={() => {
+                setViewMode('floor');
+                setMode('door');
+              }}
+              onEditWindows={() => {
+                setViewMode('floor');
+                setMode('window');
+              }}
+              onEditOverhead={() => {
+                setViewMode('floor');
+                setMode('overhead');
+              }}
+            />
           </div>
         )}
       </div>
 
       {/* Bottom preview strip */}
-      <div className="h-28 bg-white border-t px-3 py-2 flex items-center gap-2 overflow-x-auto">
-        <PreviewButton active={viewMode === 'floor'} label="Floor" onClick={() => setViewMode('floor')}>
+      <div
+        className={`shrink-0 bg-white border-t flex items-center gap-2 overflow-x-auto ${
+          isElevationSideView ? 'h-16 px-2 py-1' : 'h-28 px-3 py-2'
+        }`}
+      >
+        <PreviewButton
+          compact={isElevationSideView}
+          active={viewMode === 'floor'}
+          label="Floor"
+          onClick={() => setViewMode('floor')}
+        >
           <MiniFloor plan={plan} />
         </PreviewButton>
         {(['Front', 'Back', 'Left', 'Right'] as const).map((side) => (
-          <PreviewButton key={side} active={viewMode === side} label={side} onClick={() => setViewMode(side)}>
+          <PreviewButton
+            key={side}
+            compact={isElevationSideView}
+            active={viewMode === side}
+            label={side}
+            onClick={() => setViewMode(side)}
+          >
             <PlanElevationPreview plan={plan} side={side} className="w-full h-full" />
           </PreviewButton>
         ))}
-        <PreviewButton active={viewMode === '3d'} label="3D" onClick={() => setViewMode('3d')}>
+        <PreviewButton
+          compact={isElevationSideView}
+          active={viewMode === '3d'}
+          label="3D"
+          onClick={() => setViewMode('3d')}
+        >
           <Mini3D />
         </PreviewButton>
       </div>
@@ -196,19 +245,32 @@ function PreviewButton(props: {
   label: string;
   onClick: () => void;
   children: React.ReactNode;
+  compact?: boolean;
 }) {
-  const { active, label, onClick, children } = props;
+  const { active, label, onClick, children, compact } = props;
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-28 h-24 rounded border p-1 flex flex-col gap-1 shrink-0 ${
-        active ? 'border-green-600 ring-2 ring-green-200' : 'border-slate-200 hover:border-slate-300'
-      }`}
+      className={`rounded border flex flex-col gap-0.5 shrink-0 ${
+        compact ? 'w-[4.5rem] h-[3.25rem] p-0.5' : 'w-28 h-24 p-1 gap-1'
+      } ${active ? 'border-green-600 ring-2 ring-green-200' : 'border-slate-200 hover:border-slate-300'}`}
     >
-      <div className="flex-1 rounded bg-white overflow-hidden">{children}</div>
-      <div className="text-[10px] font-semibold text-slate-700 text-center">{label}</div>
+      <div className="flex-1 min-h-0 rounded bg-white overflow-hidden">{children}</div>
+      <div
+        className={`font-semibold text-slate-700 text-center leading-none ${
+          compact ? 'text-[8px]' : 'text-[10px]'
+        }`}
+      >
+        {label}
+      </div>
     </button>
   );
+}
+
+function shareMiniFloorAlongCenter(offsetFt: number, widthFt: number, wallLenFt: number): number {
+  const c = offsetFt + widthFt / 2;
+  return Math.max(0, Math.min(wallLenFt, c));
 }
 
 function MiniFloor({ plan }: { plan: BuildingPlanModel }) {
@@ -220,15 +282,25 @@ function MiniFloor({ plan }: { plan: BuildingPlanModel }) {
       {plan.openings.slice(0, 12).map((o) => {
         const wall = plan.walls.find((ww) => ww.id === o.wallId);
         if (!wall) return null;
-        // crude placement based on wall label and offset
-        const isHorizontal = wall.label === 'Front' || wall.label === 'Back';
         const along = wall.label === 'Front' || wall.label === 'Back' ? w : l;
-        const t = along > 0 ? o.offset / along : 0;
-        const ww = along > 0 ? (o.width / along) * 90 : 4;
-        const x = isHorizontal ? 5 + t * 90 : wall.label === 'Left' ? 5 : 95;
-        const y = isHorizontal ? (wall.label === 'Front' ? 5 : 65) : 5 + t * 60;
+        const mid = along > 0 ? shareMiniFloorAlongCenter(o.offset, o.width, along) / along : 0;
+        let cx: number;
+        let cy: number;
+        if (wall.label === 'Front') {
+          cx = 5 + mid * 90;
+          cy = 5;
+        } else if (wall.label === 'Back') {
+          cx = 5 + mid * 90;
+          cy = 65;
+        } else if (wall.label === 'Left') {
+          cx = 5;
+          cy = 65 - mid * 60;
+        } else {
+          cx = 95;
+          cy = 5 + mid * 60;
+        }
         return (
-          <circle key={o.id} cx={x} cy={y} r={3} fill={o.type === 'door' ? '#0284c7' : '#a16207'} opacity={0.8} />
+          <circle key={o.id} cx={cx} cy={cy} r={3} fill={o.type === 'door' ? '#0284c7' : '#a16207'} opacity={0.8} />
         );
       })}
     </svg>

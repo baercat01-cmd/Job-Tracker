@@ -9,6 +9,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Package, DollarSign, FileText, Loader2, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { FunctionsHttpError } from '@supabase/supabase-js';
+import {
+  getMaterialLineSellAndCost,
+  parseLengthToFeet,
+  type MetalCatalogBySku,
+} from '@/lib/materialItemLineMoney';
 
 interface MaterialItem {
   id: string;
@@ -19,6 +24,8 @@ interface MaterialItem {
   category?: string;
   cost_per_unit?: number | null;
   price_per_unit?: number | null;
+  extended_cost?: number | null;
+  extended_price?: number | null;
   /** Length from workbook sheet (maps to Part Length in Zoho Books sales order) */
   length?: string | null;
   part_length?: string | null;
@@ -34,6 +41,8 @@ interface ZohoOrderConfirmationDialogProps {
   jobName: string;
   materials: MaterialItem[];
   packageName?: string;
+  /** Metal rows without row-level $/ft use catalog PLF — same as workbook breakdown */
+  metalCatalogBySku?: MetalCatalogBySku;
 }
 
 export function ZohoOrderConfirmationDialog({
@@ -42,6 +51,7 @@ export function ZohoOrderConfirmationDialog({
   jobName,
   materials,
   packageName,
+  metalCatalogBySku,
 }: ZohoOrderConfirmationDialogProps) {
   const { profile } = useAuth();
   const [creating, setCreating] = useState(false);
@@ -51,8 +61,24 @@ export function ZohoOrderConfirmationDialog({
     purchaseOrder?: { id: string; number: string; url: string };
   } | null>(null);
 
-  const totalCost = materials.reduce((sum, m) => sum + ((m.cost_per_unit || 0) * m.quantity), 0);
-  const totalPrice = materials.reduce((sum, m) => sum + ((m.price_per_unit || 0) * m.quantity), 0);
+  function lineMoney(m: MaterialItem) {
+    return getMaterialLineSellAndCost(
+      {
+        category: m.category || '',
+        quantity: m.quantity,
+        length: m.length ?? m.part_length,
+        cost_per_unit: m.cost_per_unit,
+        price_per_unit: m.price_per_unit,
+        extended_cost: m.extended_cost,
+        extended_price: m.extended_price,
+        sku: m.sku,
+      },
+      metalCatalogBySku
+    );
+  }
+
+  const totalCost = materials.reduce((sum, m) => sum + lineMoney(m).cost, 0);
+  const totalPrice = materials.reduce((sum, m) => sum + lineMoney(m).price, 0);
 
   async function createOrders() {
     setCreating(true);
@@ -244,7 +270,10 @@ export function ZohoOrderConfirmationDialog({
                   Materials to Order ({materials.length})
                 </div>
                 <div className="max-h-64 overflow-y-auto divide-y">
-                  {materials.map((material) => (
+                  {materials.map((material) => {
+                    const line = lineMoney(material);
+                    const lenFt = parseLengthToFeet(material.length ?? material.part_length);
+                    return (
                     <div key={material.id} className="p-3 hover:bg-slate-50">
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
@@ -279,20 +308,26 @@ export function ZohoOrderConfirmationDialog({
                         </div>
                         <div className="text-right ml-4">
                           <p className="text-sm font-semibold">Qty: {material.quantity}</p>
-                          {material.price_per_unit && (
+                          {material.price_per_unit != null && Number(material.price_per_unit) > 0 && (
                             <p className="text-xs text-green-600">
-                              ${material.price_per_unit.toFixed(2)}/unit
+                              ${Number(material.price_per_unit).toFixed(2)}
+                              {material.category === 'Metal' && lenFt ? '/ft' : '/unit'}
                             </p>
                           )}
-                          {material.cost_per_unit && (
+                          {material.cost_per_unit != null && Number(material.cost_per_unit) > 0 && (
                             <p className="text-xs text-orange-600">
-                              Cost: ${material.cost_per_unit.toFixed(2)}
+                              Cost: ${Number(material.cost_per_unit).toFixed(2)}
+                              {material.category === 'Metal' && lenFt ? '/ft' : '/unit'}
                             </p>
                           )}
+                          <p className="text-xs font-medium text-slate-700 mt-0.5">
+                            Line sell ${line.price.toFixed(2)} · cost ${line.cost.toFixed(2)}
+                          </p>
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

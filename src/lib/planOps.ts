@@ -8,7 +8,16 @@ import type {
   PlanStair,
   PlanWall,
 } from '@/lib/buildingPlanModel';
-import { bumpRev, clampOpeningOffsetToWall, getWall, newId } from '@/lib/buildingPlanModel';
+import {
+  bumpRev,
+  clamp,
+  clampOpeningOffsetToWall,
+  DEFAULT_PERIMETER_POST_SETTINGS,
+  getWall,
+  newId,
+  resolvePerimeterPostSettings,
+  type PlanPerimeterPostSettings,
+} from '@/lib/buildingPlanModel';
 
 export type PlanActorId = string;
 
@@ -26,7 +35,8 @@ export type PlanOp =
   | { type: 'upsert_stair'; stair: PlanStair }
   | { type: 'delete_stair'; stairId: PlanEntityId }
   | { type: 'upsert_fixture'; fixture: PlanFixture }
-  | { type: 'delete_fixture'; fixtureId: PlanEntityId };
+  | { type: 'delete_fixture'; fixtureId: PlanEntityId }
+  | { type: 'set_perimeter_posts'; perimeterPosts: Partial<PlanPerimeterPostSettings> };
 
 export type PlanWireMessage = {
   opId: string;
@@ -114,6 +124,26 @@ export function applyOp(plan: BuildingPlanModel, op: PlanOp): BuildingPlanModel 
     }
     case 'delete_fixture': {
       return bumpRev({ ...plan, fixtures: plan.fixtures.filter((f) => f.id !== op.fixtureId) });
+    }
+    case 'set_perimeter_posts': {
+      const merged: PlanPerimeterPostSettings = {
+        ...DEFAULT_PERIMETER_POST_SETTINGS,
+        ...(plan.perimeterPosts ?? {}),
+        ...op.perimeterPosts,
+      };
+      const r = resolvePerimeterPostSettings({ ...plan, perimeterPosts: merged });
+      return bumpRev({
+        ...plan,
+        perimeterPosts: {
+          ocSpacingFt: r.ocSpacingFt,
+          firstBayFromCornerOutsideFt: r.firstBayFromCornerOutsideFt,
+          eaveWallPostWidthFt: r.eaveWallPostWidthFt,
+          gableWallPostWidthFt: r.gableWallPostWidthFt,
+          doorJambPostWidthFt: r.doorJambPostWidthFt,
+          overheadJambPostWidthFt: r.overheadJambPostWidthFt,
+          addWalkDoorJambPosts: r.addWalkDoorJambPosts,
+        },
+      });
     }
     default: {
       return plan;

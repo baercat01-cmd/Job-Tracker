@@ -4395,8 +4395,8 @@ export function MaterialsManagement({
       </div>
     ) : null;
 
-  // Action buttons that appear in the top bar (Move / Package / Documents / Export / Add Material).
-  // Only rendered when the Workbook tab is active and a workbook exists.
+  // Action buttons that appear in the top bar (Move / Package / Add Material, etc.).
+  // Only when Workbook tab is active and a workbook exists.
   const workbookActionButtons = activeTab === 'manage' && workbook ? (
     <div className="flex gap-0.5 flex-shrink-0 flex-wrap">
       {packageSelectionMode ? (
@@ -4470,23 +4470,35 @@ export function MaterialsManagement({
   ) : null;
 
   // Documents and Export XLSX — shown on the far right of the workbook toolbar with a gap from other buttons.
-  const workbookActionButtonsRight = activeTab === 'manage' && workbook ? (
-    <div className="flex gap-0.5 flex-shrink-0 flex-wrap">
-      <Button onClick={() => setShowDocumentViewer(true)} size="sm" variant="outline"
-        className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
-        <FileText className="w-2.5 h-2.5 mr-0.5" />Documents
-      </Button>
-      <Button onClick={exportMaterialWorkbookToXLSX} size="sm" variant="outline"
-        disabled={exportingXLSX}
-        className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-        <Download className="w-2.5 h-2.5 mr-0.5" />
-        {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
-      </Button>
-    </div>
-  ) : null;
+  const workbookActionButtonsRight =
+    activeTab === 'manage' ? (
+      <div className="flex gap-0.5 flex-shrink-0 flex-wrap">
+        <Button
+          onClick={() => setShowDocumentViewer(true)}
+          size="sm"
+          variant="outline"
+          className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
+        >
+          <FileText className="w-2.5 h-2.5 mr-0.5" />
+          Documents
+        </Button>
+        {workbook ? (
+          <Button
+            onClick={exportMaterialWorkbookToXLSX}
+            size="sm"
+            variant="outline"
+            disabled={exportingXLSX}
+            className="h-6 text-[10px] whitespace-nowrap px-1.5 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+          >
+            <Download className="w-2.5 h-2.5 mr-0.5" />
+            {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
+          </Button>
+        ) : null}
+      </div>
+    ) : null;
 
   const materialsToolbarContent = (
-    <div className="flex items-center gap-1 flex-wrap text-xs justify-end min-w-0">
+    <div className="flex items-center gap-2 flex-wrap text-xs justify-end min-w-0">
       <TabsList className="flex flex-wrap items-center gap-1 h-8 p-0 bg-transparent border-0">
         <TabsTrigger
           value="manage"
@@ -4536,6 +4548,18 @@ export function MaterialsManagement({
           <span>Upload</span>
         </TabsTrigger>
       </TabsList>
+      {(activeTab === 'manage' || activeTab === 'breakdown') && !workbook && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setShowDocumentViewer(true)}
+          className="h-8 text-xs px-2 border-blue-400/60 bg-blue-950/30 text-yellow-100 hover:bg-blue-900/40 hover:text-white"
+        >
+          <FileText className="w-3 h-3 mr-1.5" />
+          PDFs &amp; documents
+        </Button>
+      )}
     </div>
   );
 
@@ -4762,30 +4786,55 @@ export function MaterialsManagement({
 
         <TabsContent value="manage" className="space-y-3 flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
           {!workbook ? (
-            <Card className="w-full">
-              <CardContent className="py-12 text-center">
-                <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
-                <p className="text-sm text-muted-foreground mb-2">
-                  There is no workbook yet for this job{jobQuotes.length > 1 && effectiveQuoteId ? ' and proposal' : ''}. Workbooks are stored per job (and per proposal when you have multiple).
-                </p>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Go to the <strong>Upload</strong> tab to create an empty workbook or upload an Excel file to get started.
-                </p>
-                <Button onClick={() => setActiveTab('upload')} className="gradient-primary">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Workbook
-                </Button>
-              </CardContent>
-            </Card>
+            showDocumentViewer ? (
+              <div className="flex-1 min-h-0 flex flex-col min-h-[min(70vh,560px)] rounded-lg border border-slate-200 overflow-hidden bg-slate-50 shadow-sm">
+                <FloatingDocumentViewer
+                  jobId={job.id}
+                  open={true}
+                  onClose={() => setShowDocumentViewer(false)}
+                  embed
+                  backLabel="Back"
+                />
+              </div>
+            ) : (
+              <Card className="w-full">
+                <CardContent className="py-12 text-center">
+                  <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    There is no workbook yet for this job{jobQuotes.length > 1 && effectiveQuoteId ? ' and proposal' : ''}. Workbooks are stored per job (and per proposal when you have multiple).
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Open <strong>PDFs &amp; drawings</strong> from job documents here, or go to the <strong>Upload</strong> tab to create a workbook.
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowDocumentViewer(true)}
+                      className="border-blue-300 text-blue-800 hover:bg-blue-50"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      View PDFs &amp; documents
+                    </Button>
+                    <Button onClick={() => setActiveTab('upload')} className="gradient-primary">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Workbook
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
           ) : showDocumentViewer ? (
-            <FloatingDocumentViewer
-              jobId={job.id}
-              open={true}
-              onClose={() => setShowDocumentViewer(false)}
-              embed
-              backLabel="Back to Workbook"
-            />
+            <div className="flex-1 min-h-0 flex flex-col min-h-[min(70vh,560px)] rounded-lg border border-slate-200 overflow-hidden bg-slate-50 shadow-sm">
+              <FloatingDocumentViewer
+                jobId={job.id}
+                open={true}
+                onClose={() => setShowDocumentViewer(false)}
+                embed
+                backLabel="Back to Workbook"
+              />
+            </div>
           ) : (
             <>
               <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -5651,19 +5700,42 @@ export function MaterialsManagement({
 
         <TabsContent value="breakdown" className="space-y-2">
           {!workbook ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <DollarSign className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Create or upload a workbook on the <strong>Upload</strong> tab to view cost breakdown.
-                </p>
-                <Button onClick={() => setActiveTab('upload')} className="gradient-primary">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Workbook
-                </Button>
-              </CardContent>
-            </Card>
+            showDocumentViewer ? (
+              <div className="flex-1 min-h-0 flex flex-col min-h-[min(70vh,560px)] rounded-lg border border-slate-200 overflow-hidden bg-slate-50 shadow-sm">
+                <FloatingDocumentViewer
+                  jobId={job.id}
+                  open={true}
+                  onClose={() => setShowDocumentViewer(false)}
+                  embed
+                  backLabel="Back"
+                />
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <DollarSign className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Create or upload a workbook on the <strong>Upload</strong> tab to view cost breakdown. You can still open job PDFs and documents below.
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowDocumentViewer(true)}
+                      className="border-blue-300 text-blue-800 hover:bg-blue-50"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      View PDFs &amp; documents
+                    </Button>
+                    <Button onClick={() => setActiveTab('upload')} className="gradient-primary">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Workbook
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
           ) : (
             <Card className="border-2">
               <CardHeader className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2">
@@ -7040,6 +7112,7 @@ export function MaterialsManagement({
         onOpenChange={setShowZohoOrderDialog}
         jobName={job.name}
         materials={selectedMaterialsForOrder}
+        metalCatalogBySku={metalCatalogBySku}
       />
 
       {/* Bulk Move Materials Dialog */}
@@ -7127,14 +7200,18 @@ export function MaterialsManagement({
         </DialogContent>
       </Dialog>
 
-      {/* Floating Document Viewer (only when not showing in-place in manage tab) */}
-      {showDocumentViewer && !(activeTab === 'manage' && workbook) && (
-        <FloatingDocumentViewer
-          jobId={job.id}
-          open={true}
-          onClose={() => setShowDocumentViewer(false)}
-        />
-      )}
+      {/* Floating viewer when not embedded in Workbook / Breakdown panels */}
+      {showDocumentViewer &&
+        !(
+          activeTab === 'manage' ||
+          (activeTab === 'breakdown' && !workbook)
+        ) && (
+          <FloatingDocumentViewer
+            jobId={job.id}
+            open={true}
+            onClose={() => setShowDocumentViewer(false)}
+          />
+        )}
 
       {/* Zoho Sync Results Dialog */}
       <Dialog open={showSyncResults} onOpenChange={setShowSyncResults}>

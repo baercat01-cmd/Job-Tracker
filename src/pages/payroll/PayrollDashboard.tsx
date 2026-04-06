@@ -42,6 +42,38 @@ import { format } from 'date-fns';
 // DO NOT CHANGE THIS TIMEZONE - it must remain 'America/New_York'
 const PAYROLL_TIMEZONE = 'America/New_York';
 
+/** When stored start/end are missing or equal but hours > 0, extend end by reconcileHours for display. */
+function formatPayrollClockDisplay(
+  startIso: string,
+  endIso: string | null,
+  reconcileHours: number | null
+): { startLabel: string; endLabel: string } {
+  const fmt = (instantMs: number) =>
+    new Date(instantMs).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: PAYROLL_TIMEZONE,
+    });
+
+  const startMs = new Date(startIso).getTime();
+  if (!Number.isFinite(startMs)) {
+    return { startLabel: '—', endLabel: '—' };
+  }
+
+  let endMs = endIso ? new Date(endIso).getTime() : NaN;
+  const sameOrMissingEnd =
+    !Number.isFinite(endMs) || Math.abs(endMs - startMs) < 60 * 1000;
+
+  if (reconcileHours != null && reconcileHours > 0.01 && sameOrMissingEnd) {
+    endMs = startMs + reconcileHours * 60 * 60 * 1000;
+  }
+
+  return {
+    startLabel: fmt(startMs),
+    endLabel: Number.isFinite(endMs) ? fmt(endMs) : '—',
+  };
+}
+
 interface TimeEntryData {
   id: string;
   job_id: string;
@@ -55,6 +87,7 @@ interface TimeEntryData {
   notes: string | null;
   worker_names: string[];
   jobs?: { name: string; client_name: string };
+  /** Present when loading a row for edit (join from components table) */
   components?: { name: string } | null;
 }
 
@@ -64,13 +97,73 @@ interface DateEntryData {
     entryId: string;
     jobName: string;
     clientName: string;
+    /** Set when time is logged to a job component (foreman breakdown); shown as a tag in payroll */
+    componentName: string | null;
     startTime: string;
     endTime: string | null;
+    /** Job-level shift hours when this row uses session clock (component breakdown); for display repair */
+    jobShiftHoursForDisplay: number | null;
     totalHours: number;
     isManual: boolean;
     notes: string | null;
-  }[];
+  }[]; 
   totalHours: number;
+}
+
+/**
+ * Manual job + component breakdown saves one job-level row (component_id null) plus one row per component
+ * with the same start_time. For payroll we show component lines with tags and omit the duplicate job total
+ * so hours are not double-counted.
+ */
+function payrollSessionKey(entry: { user_id: string; job_id: string; start_time: string }) {
+  return `${entry.user_id}|${entry.job_id}|${entry.start_time}`;
+}
+
+function groupTimeEntriesBySession(entries: any[]): Map<string, any[]> {
+  const byKey = new Map<string, any[]>();
+  for (const e of entries) {
+    const key = payrollSessionKey(e);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key)!.push(e);
+  }
+  return byKey;
+}
+
+/**
+ * Job + component breakdown stores the crew's real clock-in/out on the job-level row only.
+ * Component rows share start_time and use synthetic end_time; payroll should show the entered shift times.
+ */
+function buildSessionClockDisplayByKey(
+  rawEntries: any[]
+): Map<string, { start: string; end: string | null; jobTotalHours: number | null }> {
+  const map = new Map<string, { start: string; end: string | null; jobTotalHours: number | null }>();
+  for (const [key, group] of groupTimeEntriesBySession(rawEntries)) {
+    const jobRow = group.find((row) => row.component_id == null);
+    if (jobRow) {
+      map.set(key, {
+        start: jobRow.start_time,
+        end: jobRow.end_time,
+        jobTotalHours:
+          jobRow.total_hours != null ? Number(jobRow.total_hours) : null,
+      });
+    }
+  }
+  return map;
+}
+
+function filterPayrollTimeEntries(entries: any[]): any[] {
+  const out: any[] = [];
+  for (const group of groupTimeEntriesBySession(entries).values()) {
+    const hasComponent = group.some((row) => row.component_id != null);
+    if (hasComponent) {
+      out.push(...group.filter((row) => row.component_id != null));
+    } else {
+      out.push(...group);
+    }
+  }
+  return out.sort(
+    (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+  );
 }
 
 interface UserTimeData {
@@ -480,8 +573,7 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
       const weekStart = periodStart;
       const weekEnd = periodEnd;
       
-      // Load ONLY clock-in time entries (component_id IS NULL) for payroll
-      const { data: timeEntries, error: timeError } = await supabase
+      const { data: rawTimeEntries, error: timeError } = await supabase
         .from('time_entries')
         .select(`
           *,
@@ -490,11 +582,15 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
         `)
         .gte('start_time', weekStart.toISOString())
         .lte('start_time', weekEnd.toISOString())
-        .is('component_id', null) // Only clock-in entries, no component time
+        .eq('is_active', false)
         .not('total_hours', 'is', null)
         .order('start_time', { ascending: true });
 
       if (timeError) throw timeError;
+
+      const rawList = rawTimeEntries || [];
+      const sessionClockByKey = buildSessionClockDisplayByKey(rawList);
+      const timeEntries = filterPayrollTimeEntries(rawList);
 
       // Load time off dates that overlap with this week
       const { data: timeOffDates, error: timeOffError } = await supabase
@@ -551,13 +647,23 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
             userData.dateEntries.push(dateData);
           }
           
+          const sk = payrollSessionKey(entry);
+          const sessionClock = sessionClockByKey.get(sk);
+          const useEnteredShiftClock =
+            entry.component_id != null && sessionClock != null;
+
           // Add entry to date
           dateData.entries.push({
             entryId: entry.id,
             jobName: entry.jobs?.name || 'Unknown Job',
             clientName: entry.jobs?.client_name || '',
-            startTime: entry.start_time,
-            endTime: entry.end_time,
+            componentName: entry.components?.name ?? null,
+            startTime: useEnteredShiftClock ? sessionClock.start : entry.start_time,
+            endTime: useEnteredShiftClock ? sessionClock.end : entry.end_time,
+            jobShiftHoursForDisplay:
+              useEnteredShiftClock && sessionClock.jobTotalHours != null
+                ? sessionClock.jobTotalHours
+                : null,
             totalHours: entry.total_hours || 0,
             isManual: entry.is_manual,
             notes: entry.notes,
@@ -608,8 +714,10 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
               entryId: `timeoff-${timeOff.user_id}-${dateStr}`,
               jobName: 'Time Off',
               clientName: timeOff.reason || 'Scheduled Time Off',
+              componentName: null,
               startTime: dateStr,
               endTime: null,
+              jobShiftHoursForDisplay: null,
               totalHours: 0,
               isManual: false,
               notes: timeOff.reason,
@@ -713,21 +821,18 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
               hasMultipleJobs: dateEntry.entries.filter(e => !e.entryId.startsWith('timeoff-')).length > 1,
               entries: dateEntry.entries.map(entry => {
                 const isTimeOff = entry.entryId.startsWith('timeoff-');
+                const reconcileCandidate = entry.jobShiftHoursForDisplay ?? entry.totalHours;
+                const reconcile =
+                  !isTimeOff && reconcileCandidate > 0.01 ? reconcileCandidate : null;
+                const clock = isTimeOff
+                  ? { startLabel: '-', endLabel: '-' }
+                  : formatPayrollClockDisplay(entry.startTime, entry.endTime, reconcile);
                 return {
                   jobName: entry.jobName,
                   clientName: entry.clientName,
-                  startTime: isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
-                  }),
-                  endTime: isTimeOff ? '-' : (entry.endTime 
-                    ? new Date(entry.endTime).toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
-                      })
-                    : '-'),
+                  componentName: entry.componentName,
+                  startTime: clock.startLabel,
+                  endTime: clock.endLabel,
                   hours: isTimeOff ? '-' : entry.totalHours.toFixed(2),
                   isTimeOff: isTimeOff,
                 };
@@ -793,7 +898,7 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
       // Fetch the full entry details
       const { data, error } = await supabase
         .from('time_entries')
-        .select('*')
+        .select('*, components(name)')
         .eq('id', entryId)
         .single();
 
@@ -1119,7 +1224,20 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
                                     const isTimeOff = entry.entryId.startsWith('timeoff-');
                                     const isFirstEntryOfDay = entryIdx === 0;
                                     const rowsForThisDay = dateEntry.entries.length;
-                                    
+                                    const reconcileCandidate =
+                                      entry.jobShiftHoursForDisplay ?? entry.totalHours;
+                                    const reconcile =
+                                      !isTimeOff && reconcileCandidate > 0.01
+                                        ? reconcileCandidate
+                                        : null;
+                                    const clock = isTimeOff
+                                      ? { startLabel: '-', endLabel: '-' }
+                                      : formatPayrollClockDisplay(
+                                          entry.startTime,
+                                          entry.endTime,
+                                          reconcile
+                                        );
+
                                     return (
                                       <tr 
                                         key={`${dateIdx}-${entryIdx}`}
@@ -1150,24 +1268,15 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
                                             {entry.clientName && !isTimeOff && (
                                               <div className="text-xs text-muted-foreground">{entry.clientName}</div>
                                             )}
+                                            {!isTimeOff && entry.componentName && (
+                                              <Badge variant="secondary" className="mt-1 text-xs font-normal">
+                                                {entry.componentName}
+                                              </Badge>
+                                            )}
                                           </div>
                                         </td>
-                                        <td className="p-2 font-mono text-xs">
-                                          {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString('en-US', {
-                                            hour: '2-digit',
-                                            minute: '2-digit',
-                                            timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
-                                          })}
-                                        </td>
-                                        <td className="p-2 font-mono text-xs">
-                                          {isTimeOff ? '-' : (entry.endTime 
-                                            ? new Date(entry.endTime).toLocaleTimeString('en-US', {
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
-                                              })
-                                            : '-')}
-                                        </td>
+                                        <td className="p-2 font-mono text-xs">{clock.startLabel}</td>
+                                        <td className="p-2 font-mono text-xs">{clock.endLabel}</td>
                                         <td className={`p-2 text-right font-bold ${
                                           isTimeOff ? 'text-amber-600' : 'text-primary'
                                         }`}>
@@ -1518,6 +1627,15 @@ export function PayrollDashboard({ embed = false }: PayrollDashboardProps) {
                     })}
                   </p>
                 </div>
+
+                {editingEntry.components?.name && (
+                  <div>
+                    <Label className="text-muted-foreground">Component</Label>
+                    <div className="mt-1">
+                      <Badge variant="secondary">{editingEntry.components.name}</Badge>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label>Time Worked</Label>

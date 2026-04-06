@@ -422,6 +422,17 @@ function generatePayrollHTML(data: any): string {
         margin-top: 2px;
       }
       
+      .component-tag {
+        display: inline-block;
+        margin-top: 4px;
+        padding: 2px 8px;
+        font-size: 10px;
+        font-weight: 600;
+        color: #374151;
+        background: #e5e7eb;
+        border-radius: 4px;
+      }
+      
       .time-cell {
         font-family: 'Courier New', monospace;
         font-size: 11px;
@@ -522,6 +533,7 @@ function generatePayrollHTML(data: any): string {
                       <td class="job-cell">
                         <div>${entry.jobName}</div>
                         ${entry.clientName && !isTimeOff ? `<div class="client-name">${entry.clientName}</div>` : ''}
+                        ${entry.componentName && !isTimeOff ? `<div><span class="component-tag">${String(entry.componentName).replace(/</g, '&lt;')}</span></div>` : ''}
                       </td>
                       <td class="time-cell">${entry.startTime}</td>
                       <td class="time-cell">${entry.endTime}</td>

@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,6 @@ import {
   Share2,
   Copy,
   ExternalLink,
-  BarChart3,
   Minus,
   Loader2,
   Settings,
@@ -45,6 +44,7 @@ import {
   ShoppingCart,
   CheckCircle2,
   Clock,
+  Upload,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -71,6 +71,97 @@ import {
 
 const CHART_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
+/** Stable color per vendor name so the same supplier matches across all lumber charts. */
+function buildVendorChartColorMap(vendorsList: { name: string }[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  [...vendorsList]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    .forEach((v, i) => {
+      map[v.name] = CHART_COLORS[i % CHART_COLORS.length];
+    });
+  return map;
+}
+
+function chartStrokeForVendorName(vendorName: string, colorByName: Record<string, string>): string {
+  const c = colorByName[vendorName];
+  if (c) return c;
+  let h = 0;
+  for (let i = 0; i < vendorName.length; i++) h = (Math.imul(31, h) + vendorName.charCodeAt(i)) | 0;
+  return CHART_COLORS[Math.abs(h) % CHART_COLORS.length];
+}
+
+type VendorPriceCompareRow = { vendorId: string; vendorName: string; price: number };
+
+/** Baseline for Δ columns: chosen vendor, or automatic lowest price. */
+function resolveVendorComparisonBaseline(
+  comparisonBaselineVendorId: string | null | undefined,
+  rows: VendorPriceCompareRow[],
+): {
+  mode: 'auto' | 'manual';
+  baselinePrice: number;
+  baselineLabel: string;
+  isBaselineRow: (r: VendorPriceCompareRow) => boolean;
+} {
+  const chosen = comparisonBaselineVendorId;
+  if (chosen) {
+    const row = rows.find((x) => x.vendorId === chosen);
+    if (row) {
+      return {
+        mode: 'manual',
+        baselinePrice: row.price,
+        baselineLabel: row.vendorName,
+        isBaselineRow: (r) => r.vendorId === chosen,
+      };
+    }
+  }
+  const minP = rows[0]!.price;
+  return {
+    mode: 'auto',
+    baselinePrice: minP,
+    baselineLabel: 'lowest quote',
+    isBaselineRow: (r) => Math.abs(r.price - minP) < 1e-6,
+  };
+}
+
+const COMPARISON_BASELINE_LOCAL_STORAGE_KEY = 'lumber_rebar_pricing_comparison_baselines';
+
+function loadComparisonBaselinesLocal(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(COMPARISON_BASELINE_LOCAL_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function persistComparisonBaselinesLocal(map: Record<string, string>) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(COMPARISON_BASELINE_LOCAL_STORAGE_KEY, JSON.stringify(map));
+}
+
+/**
+ * Prefer DB when PostgREST returns `comparison_baseline_vendor_id` on the row.
+ * If the column was never migrated, the key is missing — use per-browser storage.
+ */
+function getEffectiveComparisonBaselineVendorId(
+  material: Material,
+  localByMaterialId: Record<string, string>,
+): string | null | undefined {
+  if (Object.prototype.hasOwnProperty.call(material, 'comparison_baseline_vendor_id')) {
+    const db = material.comparison_baseline_vendor_id;
+    if (db != null && db !== '') return db;
+    const loc = localByMaterialId[material.id];
+    if (loc) return loc;
+    return db ?? null;
+  }
+  const fromLocal = localByMaterialId[material.id];
+  return fromLocal !== undefined ? fromLocal : undefined;
+}
+
 interface Material {
   id: string;
   name: string;
@@ -78,6 +169,10 @@ interface Material {
   unit: string;
   standard_length: number;
   sku: string | null;
+  /** Pieces per truck for this material; used for vendor comparison “full truck” $ columns. */
+  truckload_pieces?: number | null;
+  /** When set, Δ columns use this vendor’s latest price as baseline; when null, use lowest quote. */
+  comparison_baseline_vendor_id?: string | null;
   active: boolean;
   order_index: number;
   created_at: string;
@@ -294,6 +389,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     unit: 'board foot',
     standard_length: 16,
     sku: '',
+    truckload_pieces: '',
   });
 
   // Vendor form
@@ -312,6 +408,17 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   const [poMaterial, setPoMaterial] = useState<Material | null>(null);
   const [poVendor, setPoVendor] = useState<Vendor | null>(null);
   const [poDefaultPrice, setPoDefaultPrice] = useState(0);
+  const [uploadingVendorLogo, setUploadingVendorLogo] = useState(false);
+  const vendorLogoFileInputRef = useRef<HTMLInputElement>(null);
+  const [savingComparisonBaselineFor, setSavingComparisonBaselineFor] = useState<string | null>(null);
+  /** When DB column is missing, baseline vendor IDs persist here (this browser only). */
+  const [comparisonBaselinesLocal, setComparisonBaselinesLocal] = useState<Record<string, string>>(
+    loadComparisonBaselinesLocal,
+  );
+  /** Pieces/truck while this material’s comparison panel is open (live preview + save on blur). */
+  const [truckPiecesDraft, setTruckPiecesDraft] = useState('');
+
+  const vendorChartColorByName = useMemo(() => buildVendorChartColorMap(vendors), [vendors]);
 
   useEffect(() => {
     loadData();
@@ -349,6 +456,17 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       supabase.removeChannel(pricesChannel);
     };
   }, []);
+
+  useEffect(() => {
+    if (!expandedMaterial) {
+      setTruckPiecesDraft('');
+      return;
+    }
+    const m = materials.find((x) => x.id === expandedMaterial);
+    const v =
+      m?.truckload_pieces != null && m.truckload_pieces > 0 ? String(m.truckload_pieces) : '';
+    setTruckPiecesDraft(v);
+  }, [expandedMaterial, materials]);
 
   function calculateBoardFeet(materialName: string, length: number): number {
     const match = materialName.match(/(\d+)\s*x\s*(\d+)/i);
@@ -698,6 +816,10 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         unit: material.unit,
         standard_length: material.standard_length,
         sku: material.sku ?? '',
+        truckload_pieces:
+          material.truckload_pieces != null && material.truckload_pieces > 0
+            ? String(material.truckload_pieces)
+            : '',
       });
     } else {
       setEditingMaterial(null);
@@ -706,6 +828,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         unit: 'board foot',
         standard_length: 16,
         sku: '',
+        truckload_pieces: '',
       });
     }
   }
@@ -717,20 +840,29 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     }
 
     try {
-      const materialData = {
+      const tlp = materialForm.truckload_pieces.trim();
+      const truckload_pieces =
+        tlp === ''
+          ? null
+          : (() => {
+              const n = parseInt(tlp, 10);
+              return Number.isFinite(n) && n > 0 ? n : null;
+            })();
+
+      const materialPayload = {
         name: materialForm.name.trim(),
         category,
         unit: materialForm.unit,
         standard_length: materialForm.standard_length,
         sku: materialForm.sku.trim() || null,
+        truckload_pieces,
         active: true,
-        order_index: materials.length,
       };
 
       if (editingMaterial) {
         const { error } = await supabase
           .from('lumber_rebar_materials')
-          .update(materialData)
+          .update(materialPayload)
           .eq('id', editingMaterial.id);
 
         if (error) throw error;
@@ -738,19 +870,97 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       } else {
         const { error } = await supabase
           .from('lumber_rebar_materials')
-          .insert(materialData);
+          .insert({ ...materialPayload, order_index: materials.length });
 
         if (error) throw error;
         toast.success('Material added successfully');
       }
 
       setEditingMaterial(null);
-      setMaterialForm({ name: '', unit: 'board foot', standard_length: 16, sku: '' });
+      setMaterialForm({ name: '', unit: 'board foot', standard_length: 16, sku: '', truckload_pieces: '' });
       await loadMaterials();
     } catch (error: any) {
       console.error('Error saving material:', error);
       toast.error('Failed to save material');
     }
+  }
+
+  async function setMaterialComparisonBaseline(materialId: string, vendorId: string | null) {
+    setSavingComparisonBaselineFor(materialId);
+    try {
+      const { error } = await supabase
+        .from('lumber_rebar_materials')
+        .update({ comparison_baseline_vendor_id: vendorId })
+        .eq('id', materialId);
+
+      if (error) throw error;
+
+      const nextLocal = { ...loadComparisonBaselinesLocal() };
+      delete nextLocal[materialId];
+      persistComparisonBaselinesLocal(nextLocal);
+      setComparisonBaselinesLocal(nextLocal);
+
+      toast.success(vendorId ? 'Baseline vendor updated' : 'Using automatic lowest price');
+      await loadMaterials();
+    } catch (err: unknown) {
+      console.error(err);
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message?: string }).message)
+          : err instanceof Error
+            ? err.message
+            : '';
+
+      const nextLocal = { ...loadComparisonBaselinesLocal() };
+      if (vendorId == null) delete nextLocal[materialId];
+      else nextLocal[materialId] = vendorId;
+      persistComparisonBaselinesLocal(nextLocal);
+      setComparisonBaselinesLocal(nextLocal);
+
+      toast.warning('Baseline saved on this browser only', {
+        description: msg
+          ? msg.slice(0, 220)
+          : 'The database is missing column comparison_baseline_vendor_id. Run scripts/add-lumber-pricing-material-columns.sql in the Supabase SQL editor, then pick the baseline again to sync.',
+        duration: 12_000,
+      });
+    } finally {
+      setSavingComparisonBaselineFor(null);
+    }
+  }
+
+  async function setMaterialTruckloadPieces(materialId: string, pieces: number | null) {
+    try {
+      const { error } = await supabase
+        .from('lumber_rebar_materials')
+        .update({ truckload_pieces: pieces })
+        .eq('id', materialId);
+
+      if (error) throw error;
+      toast.success('Pieces per truckload saved');
+      await loadMaterials();
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error('Could not save pieces per truckload');
+    }
+  }
+
+  async function commitTruckPiecesForMaterial(materialId: string, raw: string) {
+    const m = materials.find((x) => x.id === materialId);
+    const cur = m?.truckload_pieces != null && m.truckload_pieces > 0 ? m.truckload_pieces : null;
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      if (cur == null) return;
+      await setMaterialTruckloadPieces(materialId, null);
+      return;
+    }
+    const n = parseInt(trimmed, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      toast.error('Use a positive whole number or leave blank to clear');
+      setTruckPiecesDraft(cur != null ? String(cur) : '');
+      return;
+    }
+    if (n === cur) return;
+    await setMaterialTruckloadPieces(materialId, n);
   }
 
   async function deleteMaterial(material: Material) {
@@ -838,6 +1048,41 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     }
   }
 
+  async function handleVendorLogoFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file (PNG, JPG, WebP, or GIF).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image must be 2 MB or smaller.');
+      return;
+    }
+    setUploadingVendorLogo(true);
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const safeExt = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext) ? ext : 'png';
+      const path = `lumber-vendor-logos/${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${safeExt}`;
+      const { error: uploadError } = await supabase.storage.from('job-files').upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type,
+      });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from('job-files').getPublicUrl(path);
+      setVendorForm((prev) => ({ ...prev, logo_url: urlData.publicUrl }));
+      toast.success('Logo uploaded — save the vendor to keep it.');
+    } catch (err: unknown) {
+      console.error(err);
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message?: string }).message) : 'Upload failed';
+      toast.error(msg);
+    } finally {
+      setUploadingVendorLogo(false);
+    }
+  }
+
   async function deleteVendor(vendor: Vendor) {
     if (!confirm(`Are you sure you want to delete "${vendor.name}"? This will also delete all associated prices.`)) {
       return;
@@ -865,6 +1110,28 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       .sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime());
 
     return materialPrices.length > 0 ? materialPrices[0] : null;
+  }
+
+  /** One row per vendor: most recent price for this material, sorted low → high. */
+  function getLatestVendorPriceRows(materialId: string) {
+    const latestByVendor = new Map<string, PriceEntry>();
+    prices
+      .filter(p => p.material_id === materialId)
+      .forEach(price => {
+        const existing = latestByVendor.get(price.vendor_id);
+        if (!existing || new Date(price.effective_date) > new Date(existing.effective_date)) {
+          latestByVendor.set(price.vendor_id, price);
+        }
+      });
+    return Array.from(latestByVendor.values())
+      .map(p => ({
+        vendorId: p.vendor_id,
+        vendorName: p.vendor?.name || 'Unknown',
+        price: p.price_per_unit,
+        effectiveDate: p.effective_date,
+        truckloadQty: p.truckload_quantity,
+      }))
+      .sort((a, b) => a.price - b.price);
   }
 
   // Get all price history for a material (sorted by date descending)
@@ -1329,27 +1596,190 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                 </Button>
                               ) : null;
                             })()}
-
-                            {/* Expand Button */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="ml-2"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpandedMaterial(isExpanded ? null : info.material.id);
-                              }}
-                            >
-                              <LineChartIcon className="w-4 h-4" />
-                            </Button>
                           </div>
                         </div>
 
                         {/* Expanded: chart first, then per-vendor collapsible dropdowns */}
                         {isExpanded && (
-                          <div className="border-t bg-slate-50 p-4 space-y-4">
+                          <div
+                            className="border-t bg-slate-50 p-4 space-y-4"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            {/* ── Latest all-vendor snapshot + truckload savings vs lowest ── */}
+                            {(() => {
+                              const rows = getLatestVendorPriceRows(info.material.id);
+                              if (rows.length === 0) return null;
+                              const parsedDraft = parseInt(
+                                truckPiecesDraft.replace(/,/g, '').trim(),
+                                10,
+                              );
+                              const hasValidDraft =
+                                truckPiecesDraft.trim() !== '' &&
+                                Number.isFinite(parsedDraft) &&
+                                parsedDraft > 0;
+                              const truckPiecesFromDb =
+                                info.material.truckload_pieces != null &&
+                                info.material.truckload_pieces > 0
+                                  ? info.material.truckload_pieces
+                                  : null;
+                              const truckPieces = hasValidDraft ? parsedDraft : truckPiecesFromDb;
 
-                            {/* ── Price Chart (top) ── */}
+                              const storedBaselineId = getEffectiveComparisonBaselineVendorId(
+                                info.material,
+                                comparisonBaselinesLocal,
+                              );
+                              const baselineIdValid =
+                                !!storedBaselineId && rows.some((r) => r.vendorId === storedBaselineId);
+
+                              const baseline = resolveVendorComparisonBaseline(
+                                baselineIdValid ? storedBaselineId : undefined,
+                                rows,
+                              );
+                              const bPrice = baseline.baselinePrice;
+
+                              const fmtDeltaPc = (delta: number) => {
+                                if (Math.abs(delta) < 1e-6) return '—';
+                                if (delta > 0) return `+$${delta.toFixed(2)}`;
+                                return `−$${Math.abs(delta).toFixed(2)}`;
+                              };
+
+                              return (
+                                <div className="rounded-lg border bg-white p-3 shadow-sm">
+                                  {storedBaselineId && !baselineIdValid ? (
+                                    <p className="text-xs text-amber-800 mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
+                                      Saved baseline vendor has no current price for this item. Showing automatic lowest until you pick again.
+                                    </p>
+                                  ) : null}
+                                  <div className="overflow-x-auto rounded-md border">
+                                    <table className="w-full min-w-[460px] text-sm">
+                                      <thead>
+                                        <tr className="border-b bg-slate-100 text-left">
+                                          <th className="p-2 font-semibold">Vendor</th>
+                                          <th className="p-2 font-semibold text-right">$/piece</th>
+                                          <th className="p-2 font-semibold text-right">Δ vs baseline / pc</th>
+                                          <th className="p-2 py-1.5 text-right align-middle">
+                                            <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-0">
+                                              <span className="text-xs font-semibold leading-none">Vs baseline</span>
+                                              <Label
+                                                htmlFor={`truck-pieces-${info.material.id}`}
+                                                className="sr-only"
+                                              >
+                                                Pieces per truckload
+                                              </Label>
+                                              <Input
+                                                id={`truck-pieces-${info.material.id}`}
+                                                type="text"
+                                                inputMode="numeric"
+                                                placeholder="pc"
+                                                title="Pieces per truckload — full-truck $ vs baseline"
+                                                className="h-7 w-[4.25rem] px-1.5 text-right text-xs tabular-nums"
+                                                value={truckPiecesDraft}
+                                                onChange={(e) => setTruckPiecesDraft(e.target.value)}
+                                                onBlur={(e) =>
+                                                  void commitTruckPiecesForMaterial(
+                                                    info.material.id,
+                                                    e.target.value,
+                                                  )
+                                                }
+                                              />
+                                              {truckPieces != null ? (
+                                                <span className="text-[10px] font-normal tabular-nums leading-none text-muted-foreground">
+                                                  {truckPieces.toLocaleString()} pc
+                                                </span>
+                                              ) : null}
+                                            </div>
+                                          </th>
+                                          <th className="p-2 font-semibold text-center">As of</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {rows.map((r) => {
+                                          const deltaPc = r.price - bPrice;
+                                          const isBase = baseline.isBaselineRow(r);
+                                          const deltaColor =
+                                            isBase || Math.abs(deltaPc) < 1e-6
+                                              ? 'text-muted-foreground'
+                                              : deltaPc > 0
+                                                ? 'text-amber-800'
+                                                : 'text-green-700';
+                                          return (
+                                            <tr
+                                              key={r.vendorId}
+                                              className={`border-b last:border-0 ${isBase ? 'bg-green-50/80' : 'hover:bg-slate-50/80'}`}
+                                            >
+                                              <td className="p-2 font-medium">
+                                                <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                                                  <span>{r.vendorName}</span>
+                                                  <div className="flex flex-wrap items-center gap-2">
+                                                    {isBase ? (
+                                                      <Badge
+                                                        variant="secondary"
+                                                        className="text-[10px] bg-green-200 text-green-900"
+                                                      >
+                                                        {baseline.mode === 'manual' ? 'Baseline' : 'Lowest'}
+                                                      </Badge>
+                                                    ) : null}
+                                                    {!(baseline.mode === 'manual' && isBase) ? (
+                                                      <Button
+                                                        type="button"
+                                                        variant="link"
+                                                        className="h-auto p-0 text-xs font-normal text-blue-600"
+                                                        disabled={savingComparisonBaselineFor === info.material.id}
+                                                        onClick={(e) => {
+                                                          e.preventDefault();
+                                                          e.stopPropagation();
+                                                          void setMaterialComparisonBaseline(
+                                                            info.material.id,
+                                                            r.vendorId,
+                                                          );
+                                                        }}
+                                                      >
+                                                        Use as baseline
+                                                      </Button>
+                                                    ) : null}
+                                                  </div>
+                                                </div>
+                                              </td>
+                                              <td className="p-2 text-right font-mono tabular-nums">${r.price.toFixed(2)}</td>
+                                              <td className={`p-2 text-right font-mono tabular-nums ${deltaColor}`}>
+                                                {isBase ? '—' : fmtDeltaPc(deltaPc)}
+                                              </td>
+                                              {truckPieces != null ? (
+                                                <td className={`p-2 text-right font-mono tabular-nums ${deltaColor}`}>
+                                                  {isBase ? (
+                                                    <span className="text-green-800">$0.00</span>
+                                                  ) : (
+                                                    <span>
+                                                      {deltaPc > 1e-6 ? '+' : deltaPc < -1e-6 ? '−' : ''}
+                                                      {Math.abs(deltaPc * truckPieces).toLocaleString('en-US', {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                      })}
+                                                    </span>
+                                                  )}
+                                                </td>
+                                              ) : (
+                                                <td className="p-2 text-right text-xs text-muted-foreground">—</td>
+                                              )}
+                                              <td className="p-2 text-center text-xs text-muted-foreground whitespace-nowrap">
+                                                {new Date(r.effectiveDate).toLocaleDateString('en-US', {
+                                                  month: 'short',
+                                                  day: 'numeric',
+                                                  year: 'numeric',
+                                                })}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            {/* ── Price Chart ── */}
                             {info.recentHistory.length > 1 ? (
                               <div>
                                 <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
@@ -1402,12 +1832,12 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                           formatter={(v: number, name: string) => [`$${v.toFixed(2)}`, name]}
                                         />
                                         <Legend />
-                                        {uniqueVendors.map((vendorName, i) => (
+                                        {uniqueVendors.map((vendorName) => (
                                           <Line
                                             key={vendorName}
                                             type="monotone"
                                             dataKey={vendorName}
-                                            stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                                            stroke={chartStrokeForVendorName(vendorName, vendorChartColorByName)}
                                             strokeWidth={2}
                                             dot={{ r: 4 }}
                                             connectNulls
@@ -1999,6 +2429,20 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       placeholder="e.g. LBR-2x4-16"
                     />
                   </div>
+                  <div>
+                    <Label>Pieces per truckload</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={materialForm.truckload_pieces}
+                      onChange={(e) => setMaterialForm({ ...materialForm, truckload_pieces: e.target.value })}
+                      placeholder="e.g. 2646 for 2×4"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Full-truck vendor comparison uses this count per material. Leave blank if you only compare per-piece.
+                    </p>
+                  </div>
                   <div className="flex items-end">
                     <Button onClick={saveMaterial} className="w-full">
                       {editingMaterial ? 'Update' : 'Add'} Material
@@ -2016,6 +2460,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                         <div className="text-xs text-muted-foreground">
                           {material.unit} • {material.standard_length}ft
                           {material.sku && <span className="ml-2 text-blue-600">SKU: {material.sku}</span>}
+                          {material.truckload_pieces != null && material.truckload_pieces > 0 && (
+                            <span className="ml-2 text-slate-600">
+                              Truck: {material.truckload_pieces.toLocaleString()} pc
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -2076,13 +2525,59 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       placeholder="contact@vendor.com"
                     />
                   </div>
-                  <div className="col-span-2">
-                    <Label>Logo URL</Label>
-                    <Input
-                      value={vendorForm.logo_url}
-                      onChange={(e) => setVendorForm({ ...vendorForm, logo_url: e.target.value })}
-                      placeholder="https://example.com/logo.png"
+                  <div className="col-span-2 space-y-2">
+                    <Label>Logo</Label>
+                    <input
+                      ref={vendorLogoFileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                      className="sr-only"
+                      onChange={handleVendorLogoFileSelected}
                     />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={uploadingVendorLogo}
+                        onClick={() => vendorLogoFileInputRef.current?.click()}
+                      >
+                        {uploadingVendorLogo ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="w-4 h-4 mr-2" />
+                        )}
+                        Upload image
+                      </Button>
+                      {vendorForm.logo_url ? (
+                        <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1">
+                          <img
+                            src={vendorForm.logo_url}
+                            alt="Logo preview"
+                            className="h-10 w-auto max-w-[140px] object-contain"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs text-muted-foreground"
+                            onClick={() => setVendorForm((p) => ({ ...p, logo_url: '' }))}
+                          >
+                            Clear
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, WebP, or GIF — max 2 MB. Stored in job-files storage.</p>
+                    <div>
+                      <Label className="text-muted-foreground font-normal">Or paste image URL</Label>
+                      <Input
+                        className="mt-1"
+                        value={vendorForm.logo_url}
+                        onChange={(e) => setVendorForm({ ...vendorForm, logo_url: e.target.value })}
+                        placeholder="https://example.com/logo.png"
+                      />
+                    </div>
                   </div>
                   <div className="col-span-2">
                     <Button onClick={saveVendor} className="w-full">

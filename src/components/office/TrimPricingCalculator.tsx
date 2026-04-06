@@ -19,11 +19,12 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useSearchParams } from 'react-router-dom';
-import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, Undo2, Layers } from 'lucide-react';
+import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Download, Undo2, Layers, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { isAbortLikeError } from '@/lib/error-handler';
 import { TrimDrawingPreview } from '@/components/office/TrimDrawingPreview';
+import { getOutsideBendAngleLabelBisectorRad } from '@/lib/trimAngleLabelPlacement';
 
 // Settings are now stored in database, not localStorage
 
@@ -204,10 +205,12 @@ export function TrimPricingCalculator() {
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const [deletingConfigId, setDeletingConfigId] = useState<string | null>(null);
+  const [reclassifyingConfigId, setReclassifyingConfigId] = useState<string | null>(null);
   /** Save dialog: standard (default) vs custom trim classification */
   const [saveAsCustomTrim, setSaveAsCustomTrim] = useState(false);
   /** Load saved config dialog: default tab is always standard library */
   const [loadSavedTrimTab, setLoadSavedTrimTab] = useState<'standard' | 'custom'>('standard');
+  const [loadConfigSearch, setLoadConfigSearch] = useState('');
   /** Trim price list dialog: same default */
   const [priceListTrimTab, setPriceListTrimTab] = useState<'standard' | 'custom'>('standard');
 
@@ -489,28 +492,6 @@ export function TrimPricingCalculator() {
     });
     
     return { x: sumX / count, y: sumY / count };
-  }
-
-  /** Pick the bisector that places the angle label on the outside of the bend. Top bends: side farther from centroid. Bottom bends: side closer to centroid. */
-  function getExteriorBisector(prevSegment: LineSegment, segment: LineSegment, centroidPoint: Point): number {
-    const corner = segment.start;
-    const prevDx = prevSegment.end.x - prevSegment.start.x;
-    const prevDy = prevSegment.end.y - prevSegment.start.y;
-    const currDx = segment.end.x - segment.start.x;
-    const currDy = segment.end.y - segment.start.y;
-    const prevAngle = Math.atan2(prevDy, prevDx);
-    const currAngle = Math.atan2(currDy, currDx);
-    const fromCornerBack = prevAngle + Math.PI;
-    const fromCornerFwd = currAngle;
-    const bisector1 = (fromCornerBack + fromCornerFwd) / 2;
-    const bisector2 = bisector1 + Math.PI;
-    const dist = 1;
-    const pos1 = { x: corner.x + Math.cos(bisector1) * dist, y: corner.y + Math.sin(bisector1) * dist };
-    const pos2 = { x: corner.x + Math.cos(bisector2) * dist, y: corner.y + Math.sin(bisector2) * dist };
-    const d1 = Math.hypot(pos1.x - centroidPoint.x, pos1.y - centroidPoint.y);
-    const d2 = Math.hypot(pos2.x - centroidPoint.x, pos2.y - centroidPoint.y);
-    const isBottomBend = corner.y > centroidPoint.y;
-    return isBottomBend ? (d1 < d2 ? bisector1 : bisector2) : (d1 > d2 ? bisector1 : bisector2);
   }
 
   /** Hem offset from trim = 2 line widths (must match drawHem). */
@@ -887,7 +868,7 @@ export function TrimPricingCalculator() {
       ctx.fillText(`${formatMeasurementToEighth(lengthInInches)}`, baseX, baseY + 5);
       ctx.textAlign = 'left';
 
-      // Draw angle label if not first segment - on outside of bend (side farther from profile centroid)
+      // Draw angle label if not first segment — outside of bend (bisector of reflex wedge)
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
@@ -895,8 +876,8 @@ export function TrimPricingCalculator() {
         const useComplement = angleDisplayMode[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
         
-        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
-        const angleDistance = 20;
+        const exteriorBisector = getOutsideBendAngleLabelBisectorRad(prevSegment, segment);
+        const angleDistance = 28;
         const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
         const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
 
@@ -1061,8 +1042,7 @@ export function TrimPricingCalculator() {
         
         const startX = segment.start.x * scale;
         const startY = segment.start.y * scale;
-        const centroid = calculateCentroid(drawing.segments);
-        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
+        const exteriorBisector = getOutsideBendAngleLabelBisectorRad(prevSegment, segment);
         const angleDistance = 28;
         const angleX = startX + Math.cos(exteriorBisector) * angleDistance;
         const angleY = startY + Math.sin(exteriorBisector) * angleDistance;
@@ -1561,12 +1541,12 @@ export function TrimPricingCalculator() {
       }
     });
     // Include angle label position in bbox so degree is not cut off
-    const angleDistInches = 20 / 80; // offset for angle label so bbox includes it
+    const angleDistInches = 28 / 80; // offset for angle label so bbox includes it
     const centroid = calculateCentroid(segments);
     segments.forEach((segment, segmentIndex) => {
       if (segmentIndex > 0) {
         const prevSegment = segments[segmentIndex - 1];
-        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
+        const exteriorBisector = getOutsideBendAngleLabelBisectorRad(prevSegment, segment);
         const cornerX = segment.start.x;
         const cornerY = segment.start.y;
         points.push({
@@ -1646,8 +1626,8 @@ export function TrimPricingCalculator() {
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
         const useComplement = angleDisplayModeRecord[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
-        const exteriorBisector = getExteriorBisector(prevSegment, segment, centroid);
-        const angleDist = 20 * (scale / 80);
+        const exteriorBisector = getOutsideBendAngleLabelBisectorRad(prevSegment, segment);
+        const angleDist = 28 * (scale / 80);
         const angleX = startX + Math.cos(exteriorBisector) * angleDist;
         const angleY = startY + Math.sin(exteriorBisector) * angleDist;
         // Degree label: blue text with ° symbol (match on-screen trim drawing style)
@@ -2202,7 +2182,10 @@ export function TrimPricingCalculator() {
 
   // Load / price-list dialogs: always open on Standard (library) list first
   useEffect(() => {
-    if (showLoadDialog) setLoadSavedTrimTab('standard');
+    if (showLoadDialog) {
+      setLoadSavedTrimTab('standard');
+      setLoadConfigSearch('');
+    }
   }, [showLoadDialog]);
   useEffect(() => {
     if (showPriceList) setPriceListTrimTab('standard');
@@ -2622,6 +2605,40 @@ export function TrimPricingCalculator() {
       markup: markupAmount,
       markupPercent: markupPercentActual
     };
+  }
+
+  /** Move saved trim between Standard (library) and Custom lists by setting is_custom_trim. */
+  async function setSavedConfigClassification(configId: string, asCustom: boolean) {
+    const id = typeof configId === 'string' ? configId.trim() : String(configId);
+    if (!id) {
+      toast.error('Invalid configuration');
+      return;
+    }
+    setReclassifyingConfigId(id);
+    try {
+      const { error } = await supabase
+        .from('trim_saved_configs')
+        .update({ is_custom_trim: asCustom })
+        .eq('id', id);
+
+      if (error) {
+        if (/is_custom_trim|column/i.test(String(error.message || ''))) {
+          toast.error('Database missing is_custom_trim — run migration 20250326000000_trim_saved_configs_is_custom.sql.');
+          return;
+        }
+        throw error;
+      }
+
+      setSavedConfigs((prev) =>
+        prev.map((c) => (String(c.id) === id ? { ...c, is_custom_trim: asCustom } : c))
+      );
+      toast.success(asCustom ? 'Moved to Custom trims' : 'Moved to Standard trims');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not update classification';
+      toast.error(msg);
+    } finally {
+      setReclassifyingConfigId(null);
+    }
   }
 
   async function deleteConfiguration(configId: string) {
@@ -3705,18 +3722,68 @@ export function TrimPricingCalculator() {
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-yellow-500/70"
+                    aria-hidden
+                  />
+                  <Input
+                    value={loadConfigSearch}
+                    onChange={(e) => setLoadConfigSearch(e.target.value)}
+                    placeholder="Search name, job, material, bends, inches, price…"
+                    className="border-green-800 bg-black/40 pl-9 text-white placeholder:text-white/40"
+                    aria-label="Search saved configurations"
+                  />
+                </div>
               {(() => {
-                const visible =
+                const tabFiltered =
                   loadSavedTrimTab === 'standard'
                     ? savedConfigs.filter((c) => !isSavedConfigCustom(c))
                     : savedConfigs.filter((c) => isSavedConfigCustom(c));
-                if (visible.length === 0) {
+                const q = loadConfigSearch.trim().toLowerCase();
+                const words = q.split(/\s+/).filter(Boolean);
+                const visible = tabFiltered.filter((c) => {
+                  if (words.length === 0) return true;
+                  let totalInchesStr = '';
+                  try {
+                    const inchesArray = typeof c.inches === 'string' ? JSON.parse(c.inches) : c.inches;
+                    if (Array.isArray(inchesArray)) {
+                      totalInchesStr = inchesArray.reduce((a: number, b: number) => a + Number(b), 0).toFixed(2);
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                  const p = calculateConfigPricing(c);
+                  const hay = [
+                    c.name,
+                    c.material_type_name,
+                    c.job_name,
+                    String(c.bends),
+                    totalInchesStr,
+                    p.price.toFixed(2),
+                    String(Math.round(p.price)),
+                    p.markupPercent.toFixed(1),
+                    new Date(c.created_at).toLocaleDateString(),
+                  ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase();
+                  return words.every((w) => hay.includes(w));
+                });
+                if (tabFiltered.length === 0) {
                   return (
                     <div className="text-center py-6 text-white/50 text-sm border border-green-800/50 rounded-lg bg-black/20">
                       No {loadSavedTrimTab === 'standard' ? 'standard' : 'custom'} saved configurations yet.
                       {loadSavedTrimTab === 'standard'
                         ? ' Save a new configuration as Standard trim, or switch to Custom.'
                         : ' Mark saves as Custom trim (existing job-linked saves appear here).'}
+                    </div>
+                  );
+                }
+                if (visible.length === 0) {
+                  return (
+                    <div className="text-center py-6 text-white/50 text-sm border border-green-800/50 rounded-lg bg-black/20">
+                      No configurations match your search. Try different words or clear the search box.
                     </div>
                   );
                 }
@@ -3777,6 +3844,29 @@ export function TrimPricingCalculator() {
                                 Standard
                               </span>
                             )}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={reclassifyingConfigId === String(config.id)}
+                              title={
+                                isSavedConfigCustom(config)
+                                  ? 'Show this trim under Standard (library) list'
+                                  : 'Show this trim under Custom list'
+                              }
+                              className="h-7 border-yellow-600/50 px-2 text-[11px] text-yellow-200 hover:bg-yellow-900/30"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void setSavedConfigClassification(String(config.id), !isSavedConfigCustom(config));
+                              }}
+                            >
+                              {reclassifyingConfigId === String(config.id)
+                                ? '…'
+                                : isSavedConfigCustom(config)
+                                  ? 'Move to Standard'
+                                  : 'Move to Custom'}
+                            </Button>
                           </div>
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-sm mt-0.5 text-white/80">
                             <span>Bends: <span className="font-semibold text-white">{config.bends}</span></span>
@@ -4069,6 +4159,30 @@ export function TrimPricingCalculator() {
                                     title="Download trim drawing as PDF"
                                   >
                                     <Download className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    disabled={reclassifyingConfigId === String(item.config.id)}
+                                    onClick={() =>
+                                      void setSavedConfigClassification(
+                                        String(item.config.id),
+                                        !isSavedConfigCustom(item.config)
+                                      )
+                                    }
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-yellow-600/70 text-yellow-200 hover:bg-yellow-900/30 h-7 px-2 text-xs"
+                                    title={
+                                      isSavedConfigCustom(item.config)
+                                        ? 'Move to Standard (library) list'
+                                        : 'Move to Custom list'
+                                    }
+                                  >
+                                    {reclassifyingConfigId === String(item.config.id)
+                                      ? '…'
+                                      : isSavedConfigCustom(item.config)
+                                        ? '→ Std'
+                                        : '→ Custom'}
                                   </Button>
                                   <Button
                                     onClick={async () => {

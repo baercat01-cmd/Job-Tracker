@@ -197,11 +197,25 @@ export function buildModel(group: THREE.Group, state: EstimatorBuildingState, vi
         opG.add(jamb);
       });
 
-      let px = 0, pz = 0, ry = 0;
-      if (op.wall === 'Front') { pz = -l / 2 - Tg / 2; px = -w / 2 + op.offset + op.w / 2; }
-      else if (op.wall === 'Back') { pz = l / 2 + Tg / 2; px = -w / 2 + op.offset + op.w / 2; }
-      else if (op.wall === 'Left') { px = -w / 2 - Tg / 2; pz = -l / 2 + op.offset + op.w / 2; ry = Math.PI / 2; }
-      else if (op.wall === 'Right') { px = w / 2 + Tg / 2; pz = -l / 2 + op.offset + op.w / 2; ry = Math.PI / 2; }
+      // Plan: Front y=0, Back y=length; offset is distance along each wall from wall.start (createDefaultRectPlan order).
+      let px = 0,
+        pz = 0,
+        ry = 0;
+      if (op.wall === 'Front') {
+        pz = -l / 2 - Tg / 2;
+        px = -w / 2 + op.offset + op.w / 2;
+      } else if (op.wall === 'Back') {
+        pz = l / 2 + Tg / 2;
+        px = w / 2 - op.offset - op.w / 2;
+      } else if (op.wall === 'Left') {
+        px = -w / 2 - Tg / 2;
+        pz = l / 2 - op.offset - op.w / 2;
+        ry = Math.PI / 2;
+      } else if (op.wall === 'Right') {
+        px = w / 2 + Tg / 2;
+        pz = -l / 2 + op.offset + op.w / 2;
+        ry = Math.PI / 2;
+      }
 
       opG.position.set(px, op.elev + op.h / 2, pz);
       opG.rotation.y = ry;

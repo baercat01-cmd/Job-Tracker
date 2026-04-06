@@ -40,6 +40,8 @@ import {
   FileCode,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { pdfUrlForIframeViewer } from '@/lib/pdfIframeUrl';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -83,6 +85,103 @@ interface FloatingDocumentViewerProps {
 }
 
 const DEFAULT_DOC_CATEGORIES = ['Drawings', 'Specifications', 'Materials', 'Purchase Orders', 'Plans', 'Site Documents', 'Other'];
+
+function getFileExtFromPath(pathOrName: string): string {
+  const base = pathOrName.split(/[?#]/)[0];
+  const seg = base.split('/').pop() ?? '';
+  const parts = seg.split('.');
+  if (parts.length < 2) return '';
+  return (parts.pop() ?? '').toLowerCase();
+}
+
+function getFileExt(url: string): string {
+  try {
+    return getFileExtFromPath(new URL(url).pathname);
+  } catch {
+    return getFileExtFromPath(url.split('?')[0]);
+  }
+}
+
+type DocFileType = 'image' | 'pdf' | 'office-word' | 'office-excel' | 'office-ppt' | 'other';
+
+function getDocFileType(url: string, fileNameHint?: string): DocFileType {
+  let ext = getFileExt(url);
+  if (!ext && fileNameHint) ext = getFileExtFromPath(fileNameHint);
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
+  if (ext === 'pdf') return 'pdf';
+  if (['doc', 'docx', 'rtf'].includes(ext)) return 'office-word';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'office-excel';
+  if (['ppt', 'pptx'].includes(ext)) return 'office-ppt';
+  return 'other';
+}
+
+/**
+ * Signed storage URLs often use Content-Disposition: attachment, so the browser
+ * opens PDFs externally instead of in an iframe. Fetch → blob URL displays inline.
+ */
+function EmbeddedPdfFrame({
+  url,
+  name,
+  className = 'w-full h-full min-h-0 flex-1 border-0',
+}: {
+  url: string;
+  name: string;
+  className?: string;
+}) {
+  const [phase, setPhase] = useState<'loading' | 'blob' | 'direct'>('loading');
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let created: string | null = null;
+
+    setPhase('loading');
+    setBlobUrl(null);
+
+    (async () => {
+      try {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store' });
+        if (!res.ok) throw new Error(String(res.status));
+        const blob = await res.blob();
+        if (cancelled) return;
+        const typed =
+          blob.type === 'application/pdf' || blob.type === '' || blob.type === 'application/octet-stream'
+            ? new Blob([blob], { type: 'application/pdf' })
+            : blob;
+        const u = URL.createObjectURL(typed);
+        if (cancelled) {
+          URL.revokeObjectURL(u);
+          return;
+        }
+        created = u;
+        setBlobUrl(u);
+        setPhase('blob');
+      } catch {
+        if (!cancelled) setPhase('direct');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [url]);
+
+  if (phase === 'loading') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 text-muted-foreground">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm">Loading PDF…</p>
+      </div>
+    );
+  }
+
+  if (phase === 'direct') {
+    return <iframe src={pdfUrlForIframeViewer(url)} className={className} title={name} />;
+  }
+
+  return <iframe src={pdfUrlForIframeViewer(blobUrl!)} className={className} title={name} />;
+}
 
 export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, backLabel = 'Back to Workbook', sketchUpViewerUrl }: FloatingDocumentViewerProps) {
   const { profile } = useAuth();
@@ -314,29 +413,6 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
     if (viewMode === 'grid') setViewMode('viewer');
   }
 
-  // ─── file-type helpers ───────────────────────────────────────────────────
-  function getFileExt(url: string): string {
-    try {
-      // Strip query params before extracting extension
-      const path = new URL(url).pathname;
-      return path.split('.').pop()?.toLowerCase() ?? '';
-    } catch {
-      return url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
-    }
-  }
-
-  type DocFileType = 'image' | 'pdf' | 'office-word' | 'office-excel' | 'office-ppt' | 'other';
-
-  function getDocFileType(url: string): DocFileType {
-    const ext = getFileExt(url);
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
-    if (ext === 'pdf') return 'pdf';
-    if (['doc', 'docx', 'rtf'].includes(ext)) return 'office-word';
-    if (['xls', 'xlsx', 'csv'].includes(ext)) return 'office-excel';
-    if (['ppt', 'pptx'].includes(ext)) return 'office-ppt';
-    return 'other';
-  }
-
   /** Thumbnail shown inside the document card — never triggers a file download */
   function DocThumbnail({ url, name }: { url: string | undefined; name: string }) {
     if (!url) {
@@ -346,7 +422,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
         </div>
       );
     }
-    const type = getDocFileType(url);
+    const type = getDocFileType(url, name);
     if (type === 'image') {
       return <img src={url} alt={name} className="w-full h-full object-cover" />;
     }
@@ -368,7 +444,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
 
   /** Viewer panel content — embeds PDFs, images, Office docs; never triggers a download */
   function DocViewer({ url, name, className = 'w-full h-full border-0' }: { url: string; name: string; className?: string }) {
-    const type = getDocFileType(url);
+    const type = getDocFileType(url, name);
     if (type === 'image') {
       return (
         <div className="flex items-center justify-center h-full bg-slate-50 p-4 overflow-auto">
@@ -377,7 +453,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
       );
     }
     if (type === 'pdf') {
-      return <iframe src={url} className={className} title={name} />;
+      return <EmbeddedPdfFrame url={url} name={name} className={className} />;
     }
     if (type === 'office-word' || type === 'office-excel' || type === 'office-ppt') {
       const embedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
@@ -681,8 +757,8 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
   if (embed) {
     return (
       <>
-      <div className="flex flex-col h-full min-h-0 w-full">
-        <Card className="h-full flex flex-col border-2 overflow-hidden">
+      <div className="flex flex-col flex-1 min-h-0 w-full h-full">
+        <Card className="flex flex-1 min-h-0 h-full flex-col border-2 overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-3 flex-shrink-0">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
@@ -700,10 +776,15 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               </Button>
             </div>
           </CardHeader>
-          <div className="p-3 border-b bg-slate-50 flex-shrink-0">
+          <div
+            className={cn(
+              'border-b bg-slate-50 flex-shrink-0',
+              viewMode === 'viewer' ? 'py-1.5 px-2' : 'p-3',
+            )}
+          >
             <div className="flex items-center gap-2">
               {(viewMode === 'viewer' || viewMode === 'sketchup') && (
-                <Button onClick={backToGrid} variant="outline" size="sm">
+                <Button onClick={backToGrid} variant="outline" size="sm" className={viewMode === 'viewer' ? 'h-7 text-xs' : ''}>
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back
                 </Button>
@@ -750,20 +831,21 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-7 shrink-0 px-2 text-xs"
                     onClick={() => window.open(selectedDoc.latest_file_url!, '_blank', 'noopener,noreferrer')}
                   >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    Open in new tab
+                    <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                    Open
                   </Button>
-                  <Button onClick={downloadDocument} variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
+                  <Button onClick={downloadDocument} variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs">
+                    <Download className="mr-1 h-3.5 w-3.5" />
                     Download
                   </Button>
                 </>
               )}
             </div>
           </div>
-          <CardContent className="flex-1 p-0 overflow-auto min-h-0">
+          <CardContent className="flex-1 p-0 overflow-hidden min-h-0 flex flex-col">
             {viewMode === 'sketchup' && currentViewerUrl ? (
               <div className="h-full min-h-[300px] bg-slate-100 flex flex-col">
                 <iframe
@@ -783,126 +865,127 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                   </Button>
                 </div>
               </div>
-            ) : viewMode === 'grid' ? (
-              <div
-                className="p-4 flex flex-col gap-3 min-h-0"
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-              >
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <Button
-                    variant={selectedFolderId === null ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setSelectedFolderId(null)}
-                  >
-                    All
-                  </Button>
-                  {folders.map((f) => (
-                    <Button
-                      key={f.id}
-                      variant={selectedFolderId === f.id ? 'default' : 'outline'}
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => setSelectedFolderId(f.id)}
-                    >
-                      <Folder className="w-3 h-3 mr-1" />
-                      {f.name}
-                    </Button>
-                  ))}
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNewFolderDialog(true)}>
-                    <FolderPlus className="w-3 h-3 mr-1" />
-                    New folder
-                  </Button>
-                  <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                    <Upload className="w-3 h-3 mr-1" />
-                    {uploading ? 'Uploading...' : 'Upload files'}
-                  </Button>
-                </div>
-                {loading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="text-center">
-                      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                      <p className="text-muted-foreground text-sm">Loading documents...</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className={`rounded-lg border-2 border-dashed flex-1 min-h-[120px] transition-colors ${
-                      isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-                    }`}
-                  >
-                    {documentsInFolder.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                        <Upload className="w-10 h-10 text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground mb-1">
-                          {isDragging ? 'Drop files here' : 'Drag and drop files here, or use Upload files'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">Documents are stored for the job and visible to your team</p>
-                      </div>
-                    ) : (
-                      <div className="p-2 grid grid-cols-1 gap-3">
-                        {documentsInFolder.map((doc) => (
-                          <Card
-                            key={doc.id}
-                            className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-blue-400 overflow-hidden"
-                            onClick={() => selectDocument(doc.id)}
-                          >
-                            <div className="flex gap-3">
-                              <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0 overflow-hidden">
-                                <DocThumbnail url={doc.latest_file_url} name={doc.name} />
-                              </div>
-                              <div className="flex-1 py-3 pr-3 min-w-0">
-                                <p className="font-semibold text-sm truncate mb-1">{doc.name}</p>
-                                <Badge variant="outline" className="text-xs mb-2">
-                                  {doc.category}
-                                </Badge>
-                                <p className="text-xs text-muted-foreground">
-                                  Version {doc.current_version}
-                                </p>
-                              </div>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
             ) : (
-              <div className="h-full min-h-[300px] bg-slate-100">
-                {!selectedDoc ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                      <p className="text-muted-foreground">No document selected</p>
-                    </div>
-                  </div>
-                ) : !selectedDoc.latest_file_url ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-muted-foreground">No file available</p>
-                  </div>
-                ) : (
-                  <div className="h-full flex flex-col min-h-[300px]">
-                    <DocViewer url={selectedDoc.latest_file_url} name={selectedDoc.name} className="w-full flex-1 min-h-[280px] border-0" />
-                    <div className="px-3 py-2 bg-slate-100 border-t flex items-center justify-between gap-2 flex-wrap">
-                      <p className="text-xs text-muted-foreground">
-                        Document not displaying? Open it in a new tab.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs shrink-0"
-                        onClick={() => window.open(selectedDoc.latest_file_url!, '_blank', 'noopener,noreferrer')}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Open in new tab
-                      </Button>
+              <div className="flex flex-col flex-1 min-h-0">
+                {viewMode !== 'viewer' && (
+                  <div className="shrink-0 max-h-[min(36vh,360px)] min-h-[88px] overflow-y-auto border-b border-slate-200 bg-background">
+                    <div
+                      className="p-3 flex flex-col gap-2 min-h-0"
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <Button
+                          variant={selectedFolderId === null ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setSelectedFolderId(null)}
+                        >
+                          All
+                        </Button>
+                        {folders.map((f) => (
+                          <Button
+                            key={f.id}
+                            variant={selectedFolderId === f.id ? 'default' : 'outline'}
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => setSelectedFolderId(f.id)}
+                          >
+                            <Folder className="w-3 h-3 mr-1" />
+                            {f.name}
+                          </Button>
+                        ))}
+                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNewFolderDialog(true)}>
+                          <FolderPlus className="w-3 h-3 mr-1" />
+                          New folder
+                        </Button>
+                        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                          <Upload className="w-3 h-3 mr-1" />
+                          {uploading ? 'Uploading...' : 'Upload files'}
+                        </Button>
+                      </div>
+                      {loading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="text-center">
+                            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                            <p className="text-muted-foreground text-sm">Loading documents...</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className={cn(
+                            'rounded-lg border-2 border-dashed transition-colors',
+                            isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25',
+                            documentsInFolder.length === 0 ? 'min-h-[88px]' : 'min-h-0',
+                          )}
+                        >
+                          {documentsInFolder.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
+                              <Upload className="w-8 h-8 text-muted-foreground mb-1.5" />
+                              <p className="text-sm text-muted-foreground mb-1">
+                                {isDragging ? 'Drop files here' : 'Drag and drop files here, or use Upload files'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">Documents are stored for the job and visible to your team</p>
+                            </div>
+                          ) : (
+                            <div className="p-1.5 grid grid-cols-1 gap-2">
+                              {documentsInFolder.map((doc) => (
+                                <Card
+                                  key={doc.id}
+                                  className={cn(
+                                    'cursor-pointer transition-shadow border overflow-hidden',
+                                    selectedDocId === doc.id
+                                      ? 'ring-2 ring-primary border-primary shadow-sm'
+                                      : 'hover:shadow-sm hover:border-blue-400',
+                                  )}
+                                  onClick={() => selectDocument(doc.id)}
+                                >
+                                  <div className="flex gap-2">
+                                    <div className="w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 bg-slate-100 relative flex-shrink-0 overflow-hidden">
+                                      <DocThumbnail url={doc.latest_file_url} name={doc.name} />
+                                    </div>
+                                    <div className="flex-1 py-1 pr-2 min-w-0 flex flex-col justify-center gap-0.5">
+                                      <p className="font-medium text-xs sm:text-sm leading-tight line-clamp-2">{doc.name}</p>
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 w-fit">
+                                        {doc.category}
+                                      </Badge>
+                                      <p className="text-[10px] text-muted-foreground">v{doc.current_version}</p>
+                                    </div>
+                                  </div>
+                                </Card>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
+                <div className="flex-1 min-h-0 flex flex-col bg-slate-100 overflow-hidden">
+                  {viewMode === 'viewer' && selectedDoc?.latest_file_url ? (
+                    <div className="flex flex-col flex-1 min-h-0 h-full">
+                      <DocViewer
+                        url={selectedDoc.latest_file_url}
+                        name={selectedDoc.name}
+                        className="w-full h-full min-h-0 flex-1 border-0"
+                      />
+                    </div>
+                  ) : viewMode === 'viewer' && selectedDoc && !selectedDoc.latest_file_url ? (
+                    <div className="flex items-center justify-center flex-1 min-h-[200px]">
+                      <p className="text-muted-foreground text-sm">No file available for this document</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center flex-1 min-h-[200px] p-6 text-center text-muted-foreground">
+                      <Eye className="w-12 h-12 opacity-40 mb-3 text-slate-500" />
+                      <p className="text-sm font-medium text-slate-700">Document preview</p>
+                      <p className="text-xs mt-1.5 max-w-xs">
+                        Select a document in the list above to open it in this panel. You can still scroll the list while a PDF is open.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>
@@ -1407,25 +1490,23 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 gap-2">
                   {documentsInFolder.map((doc) => (
                     <Card
                       key={doc.id}
-                      className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-blue-400 overflow-hidden"
+                      className="cursor-pointer hover:shadow-sm transition-shadow border hover:border-blue-400 overflow-hidden"
                       onClick={() => selectDocument(doc.id)}
                     >
-                      <div className="flex gap-3">
-                        <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0 overflow-hidden">
+                      <div className="flex gap-2">
+                        <div className="w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 bg-slate-100 relative flex-shrink-0 overflow-hidden">
                           <DocThumbnail url={doc.latest_file_url} name={doc.name} />
                         </div>
-                        <div className="flex-1 py-3 pr-3 min-w-0">
-                          <p className="font-semibold text-sm truncate mb-1">{doc.name}</p>
-                          <Badge variant="outline" className="text-xs mb-2">
+                        <div className="flex-1 py-1 pr-2 min-w-0 flex flex-col justify-center gap-0.5">
+                          <p className="font-medium text-xs sm:text-sm leading-tight line-clamp-2">{doc.name}</p>
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 w-fit">
                             {doc.category}
                           </Badge>
-                          <p className="text-xs text-muted-foreground">
-                            Version {doc.current_version}
-                          </p>
+                          <p className="text-[10px] text-muted-foreground">v{doc.current_version}</p>
                         </div>
                       </div>
                     </Card>

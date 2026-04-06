@@ -15,15 +15,53 @@ import {
   DEFAULT_OVERHEAD_STYLE,
   newId,
   normalizeRoomLevel,
+  resolvePerimeterPostSettings,
   roomMatchesFloor,
   type PlanRoomLevel,
 } from '@/lib/buildingPlanModel';
 import type { PlanOp } from '@/lib/planOps';
 import {
   computePerimeterPostSlotsFromPlan,
+  getSlotPostWidthFt,
   perimeterSlotToPlanPoint,
-  POST_Tp,
 } from '@/lib/perimeterPostLayout';
+
+/** Match PlanPostLayoutPrint wood tones; read well on light floor fill. */
+function postMarkerFillClass(reason: string): string {
+  if (reason === 'corner') return '#5c3d1e';
+  if (reason === 'overhead_jamb') return '#b45309';
+  if (reason === 'door_jamb') return '#0e7490';
+  return '#8b5a2b';
+}
+
+/** Viewport clientX/Y → SVG root user space (viewBox units). */
+function clientToSvgUserSpace(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } | null {
+  try {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const out = pt.matrixTransform(ctm.inverse());
+    return { x: out.x, y: out.y };
+  } catch {
+    return null;
+  }
+}
+
+function clientToSvgUserSpaceFallback(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } | null {
+  const sr = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  if (!sr.width || !sr.height) return null;
+  return {
+    x: ((clientX - sr.left) / sr.width) * vb.width,
+    y: ((clientY - sr.top) / sr.height) * vb.height,
+  };
+}
+
+function svgPointerToUser(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } | null {
+  return clientToSvgUserSpace(svg, clientX, clientY) ?? clientToSvgUserSpaceFallback(svg, clientX, clientY);
+}
 
 type ToolMode =
   | 'select'
@@ -102,6 +140,8 @@ export function Plan2DEditor(props: {
   focusedSpace?: PlanFocusedSpace | null;
   /** Double-click a room or loft to request entering focused editing (parent sets `focusedSpace`). */
   onRequestFocusSpace?: (focus: PlanFocusedSpace) => void;
+  /** Select mode: tap opening without sliding opens placement editor in parent sidebar. */
+  onRequestOpeningPlacementEdit?: (openingId: PlanEntityId) => void;
 }) {
   const {
     plan,
@@ -123,6 +163,7 @@ export function Plan2DEditor(props: {
     onSelect,
     focusedSpace = null,
     onRequestFocusSpace,
+    onRequestOpeningPlacementEdit,
   } = props;
 
   const activeRoomFloor: PlanActiveRoomFloor = activeRoomFloorProp ?? { kind: 'main' };
@@ -132,11 +173,21 @@ export function Plan2DEditor(props: {
   }
 
   const wrapRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const panRef = useRef({ x: 40, y: 40 });
+  const zoomRef = useRef(10);
   const lastPointerPlanRef = useRef<PlanPoint | null>(null);
   const [pan, setPan] = useState({ x: 40, y: 40 });
   const [zoom, setZoom] = useState(10); // px per ft
+  panRef.current = pan;
+  zoomRef.current = zoom;
   const [wallDraft, setWallDraft] = useState<PlanPoint | null>(null);
-  const [panning, setPanning] = useState<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+  const [panning, setPanning] = useState<{
+    startSvgX: number;
+    startSvgY: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
   const [roomGhostOrigin, setRoomGhostOrigin] = useState<PlanPoint | null>(null);
   const [loftGhostOrigin, setLoftGhostOrigin] = useState<PlanPoint | null>(null);
   const [stairDraftFoot, setStairDraftFoot] = useState<PlanPoint | null>(null);
@@ -312,6 +363,7 @@ export function Plan2DEditor(props: {
   }, [plan.dims.width, plan.dims.length, orientation]);
 
   const perimeterPostSlots = useMemo(() => computePerimeterPostSlotsFromPlan(plan), [plan]);
+  const maxPostWidthFt = useMemo(() => resolvePerimeterPostSettings(plan).maxPostHalfFt * 2, [plan]);
 
   const planToView = useMemo(() => {
     if (orientation === 'lengthX') {
@@ -375,36 +427,62 @@ export function Plan2DEditor(props: {
       const newZoom = clamp(Math.min(zw, zh), 4, 40);
       const cvx = (vx0 + vx1) / 2;
       const cvy = (vy0 + vy1) / 2;
+      const viewWf = bounds.w * newZoom + 200;
+      const viewHf = bounds.l * newZoom + 200;
       setZoom(newZoom);
-      setPan({ x: rect.width / 2 - cvx * newZoom, y: rect.height / 2 - cvy * newZoom });
+      setPan({ x: viewWf / 2 - cvx * newZoom, y: viewHf / 2 - cvy * newZoom });
     };
 
     fit();
     const ro = new ResizeObserver(() => fit());
     ro.observe(el);
     return () => ro.disconnect();
-  }, [focusedSpace, plan.rooms, plan.lofts, plan.meta?.rev, planToView]);
+  }, [focusedSpace, plan.rooms, plan.lofts, plan.meta?.rev, planToView, bounds.w, bounds.l]);
 
-  function screenToPlan(evt: React.PointerEvent): PlanPoint | null {
+  /** Browser client (viewport) → SVG user space (viewBox units). */
+  function clientToSvgUser(clientX: number, clientY: number): { x: number; y: number } | null {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    return svgPointerToUser(svg, clientX, clientY);
+  }
+
+  useEffect(() => {
     const el = wrapRef.current;
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    const sx = evt.clientX - r.left;
-    const sy = evt.clientY - r.top;
-    const vx = (sx - pan.x) / zoom;
-    const vy = (sy - pan.y) / zoom;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const svg = svgRef.current;
+      if (!svg) return;
+      const svgPt = svgPointerToUser(svg, e.clientX, e.clientY);
+      if (!svgPt) return;
+      const oldZ = zoomRef.current;
+      const p = panRef.current;
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZ = clamp(oldZ * factor, 4, 40);
+      if (Math.abs(newZ - oldZ) < 1e-9) return;
+      const vx = (svgPt.x - p.x) / oldZ;
+      const vy = (svgPt.y - p.y) / oldZ;
+      setZoom(newZ);
+      setPan({ x: svgPt.x - vx * newZ, y: svgPt.y - vy * newZ });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  function clientToPlanFromClientXY(clientX: number, clientY: number): PlanPoint | null {
+    const u = clientToSvgUser(clientX, clientY);
+    if (!u) return null;
+    const vx = (u.x - pan.x) / zoom;
+    const vy = (u.y - pan.y) / zoom;
     return viewToPlan({ x: vx, y: vy });
   }
 
+  function screenToPlan(evt: React.PointerEvent): PlanPoint | null {
+    return clientToPlanFromClientXY(evt.clientX, evt.clientY);
+  }
+
   function clientToPlan(clientX: number, clientY: number): PlanPoint | null {
-    const el = wrapRef.current;
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    const sx = clientX - r.left;
-    const sy = clientY - r.top;
-    const vx = (sx - pan.x) / zoom;
-    const vy = (sy - pan.y) / zoom;
-    return viewToPlan({ x: vx, y: vy });
+    return clientToPlanFromClientXY(clientX, clientY);
   }
 
   function placeOpeningAt(p: PlanPoint, kind: DroppableItem) {
@@ -420,7 +498,7 @@ export function Plan2DEditor(props: {
         wallLen,
         openingWidth: oh.width,
         postSpacing: 8,
-        postSize: POST_Tp,
+        postSize: maxPostWidthFt,
       });
       const offset = clamp(snappedCenter - oh.width / 2, 0, Math.max(0, wallLen - oh.width));
       onOp({
@@ -469,7 +547,7 @@ export function Plan2DEditor(props: {
       wallLen,
       openingWidth: spec.width,
       postSpacing: 8,
-      postSize: POST_Tp,
+      postSize: maxPostWidthFt,
     });
     const offset = clamp(snappedCenter - spec.width / 2, 0, Math.max(0, wallLen - spec.width));
     onOp({
@@ -620,7 +698,10 @@ export function Plan2DEditor(props: {
     // Right/middle drag pans (works for viewers too).
     if (evt.button === 1 || evt.button === 2) {
       evt.preventDefault();
-      setPanning({ startX: evt.clientX, startY: evt.clientY, panX: pan.x, panY: pan.y });
+      const svg = svgRef.current;
+      const u = svg ? svgPointerToUser(svg, evt.clientX, evt.clientY) : null;
+      if (!u) return;
+      setPanning({ startSvgX: u.x, startSvgY: u.y, panX: pan.x, panY: pan.y });
       return;
     }
     if (!canEdit) return;
@@ -630,7 +711,7 @@ export function Plan2DEditor(props: {
 
     // Drag wall opening, then room, in select mode.
     if (mode === 'select') {
-      const openHit = hitTestNearestOpeningOnWall(p, plan, 1.35);
+      const openHit = hitTestNearestOpeningOnWall(p, plan, 2.5);
       if (openHit) {
         evt.preventDefault();
         onSelect(openHit.opening.id);
@@ -800,17 +881,16 @@ export function Plan2DEditor(props: {
     }
   }
 
-  function handleWheel(evt: React.WheelEvent) {
-    evt.preventDefault();
-    const delta = evt.deltaY;
-    setZoom((z) => clamp(z * (delta > 0 ? 0.9 : 1.1), 4, 40));
-  }
-
   function handlePointerMove(evt: React.PointerEvent) {
     if (!panning) return;
-    const dx = evt.clientX - panning.startX;
-    const dy = evt.clientY - panning.startY;
-    setPan({ x: panning.panX + dx, y: panning.panY + dy });
+    const svg = svgRef.current;
+    if (!svg) return;
+    const u = svgPointerToUser(svg, evt.clientX, evt.clientY);
+    if (!u) return;
+    setPan({
+      x: panning.panX + (u.x - panning.startSvgX),
+      y: panning.panY + (u.y - panning.startSvgY),
+    });
   }
 
   function handlePointerUp() {
@@ -822,12 +902,16 @@ export function Plan2DEditor(props: {
     if (draggingOpening) {
       const o = plan.openings.find((x) => x.id === draggingOpening.openingId);
       if (o) {
-        const nextOff = clamp(
-          draggingOpening.previewOffset,
-          0,
-          Math.max(0, hypot(draggingOpening.wall.end.x - draggingOpening.wall.start.x, draggingOpening.wall.end.y - draggingOpening.wall.start.y) - o.width)
+        const wallLen = hypot(
+          draggingOpening.wall.end.x - draggingOpening.wall.start.x,
+          draggingOpening.wall.end.y - draggingOpening.wall.start.y
         );
-        if (Math.abs(nextOff - o.offset) > 0.001) {
+        const nextOff = clamp(draggingOpening.previewOffset, 0, Math.max(0, wallLen - o.width));
+        const draggedAlongWall = Math.abs(nextOff - draggingOpening.startOffset) > 0.04;
+        if (!draggedAlongWall) {
+          skipNextSelectClickRef.current = true;
+          onRequestOpeningPlacementEdit?.(draggingOpening.openingId);
+        } else if (Math.abs(nextOff - o.offset) > 0.001) {
           skipNextSelectClickRef.current = true;
           onOp({ type: 'upsert_opening', opening: { ...o, offset: nextOff } });
         }
@@ -986,13 +1070,8 @@ export function Plan2DEditor(props: {
       skipNextSelectClickRef.current = false;
       return;
     }
-    const el = wrapRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const sx = evt.clientX - r.left;
-    const sy = evt.clientY - r.top;
-    const vp: PlanPoint = { x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom };
-    const p: PlanPoint = viewToPlan(vp);
+    const p = clientToPlan(evt.clientX, evt.clientY);
+    if (!p) return;
 
     const sameFloorRooms = plan.rooms.filter((rm) => roomMatchesFloor(rm, activeRoomFloor));
     const roomHit = hitTestRoom(p, sameFloorRooms);
@@ -1040,13 +1119,8 @@ export function Plan2DEditor(props: {
   function handleDoubleClickFocus(evt: React.MouseEvent) {
     if (!onRequestFocusSpace) return;
     if (mode !== 'select') return;
-    const el = wrapRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const sx = evt.clientX - r.left;
-    const sy = evt.clientY - r.top;
-    const vp: PlanPoint = { x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom };
-    const p: PlanPoint = viewToPlan(vp);
+    const p = clientToPlan(evt.clientX, evt.clientY);
+    if (!p) return;
 
     const roomHit = hitTestRoom(p, plan.rooms);
     if (roomHit) {
@@ -1074,7 +1148,6 @@ export function Plan2DEditor(props: {
     <div
       className="w-full h-full overflow-hidden bg-white"
       ref={wrapRef}
-      onWheel={handleWheel}
       onContextMenu={(e) => e.preventDefault()}
       onDragOver={(e) => {
         const types = e.dataTransfer.types;
@@ -1098,6 +1171,7 @@ export function Plan2DEditor(props: {
       }}
     >
       <svg
+        ref={svgRef}
         className="w-full h-full"
         viewBox={`0 0 ${viewW} ${viewH}`}
         onPointerDown={handlePointerDown}
@@ -1133,24 +1207,6 @@ export function Plan2DEditor(props: {
           strokeWidth={2}
           opacity={focusedSpace ? 0.35 : 1}
         />
-
-        {/* Post markers (8' OC + overhead jamb posts; matches 3D layout) */}
-        {perimeterPostSlots.map((slot, idx) => {
-          const center = perimeterSlotToPlanPoint(slot, plan.dims.width, plan.dims.length);
-          const v = planToView(center);
-          const px = POST_Tp * zoom;
-          return (
-            <rect
-              key={`post_${slot.edge}_${slot.along.toFixed(4)}_${idx}`}
-              x={pan.x + v.x * zoom - px / 2}
-              y={pan.y + v.y * zoom - px / 2}
-              width={px}
-              height={px}
-              fill="#0f172a"
-              opacity={focusedSpace ? 0.2 : 0.55}
-            />
-          );
-        })}
 
         {/* Rooms (dim other floors; color by level) */}
         {plan.rooms.map((r) => {
@@ -1356,25 +1412,42 @@ export function Plan2DEditor(props: {
           const b = pointAlongWall(wall.start, wall.end, off + o.width);
           const av = planToView(a);
           const bv = planToView(b);
+          const x1 = pan.x + av.x * zoom;
+          const y1 = pan.y + av.y * zoom;
+          const x2 = pan.x + bv.x * zoom;
+          const y2 = pan.y + bv.y * zoom;
           return (
-            <line
-              key={o.id}
-              x1={pan.x + av.x * zoom}
-              y1={pan.y + av.y * zoom}
-              x2={pan.x + bv.x * zoom}
-              y2={pan.y + bv.y * zoom}
-              stroke={
-                selectedId === o.id
-                  ? '#22c55e'
-                  : o.type === 'overhead_door'
-                    ? '#f59e0b'
-                    : o.type === 'door'
-                      ? '#0ea5e9'
-                      : '#eab308'
-              }
-              strokeWidth={6}
-              strokeLinecap="round"
-            />
+            <g key={o.id}>
+              {/* Wide pick target — visible line is still thin for drawing clarity */}
+              <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke="transparent"
+                strokeWidth={22}
+                strokeLinecap="round"
+                style={{ cursor: mode === 'select' && canEdit ? 'pointer' : undefined }}
+              />
+              <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke={
+                  selectedId === o.id
+                    ? '#22c55e'
+                    : o.type === 'overhead_door'
+                      ? '#f59e0b'
+                      : o.type === 'door'
+                        ? '#0ea5e9'
+                        : '#eab308'
+                }
+                strokeWidth={6}
+                strokeLinecap="round"
+                pointerEvents="none"
+              />
+            </g>
           );
         })}
 
@@ -1401,6 +1474,33 @@ export function Plan2DEditor(props: {
             />
           );
         })() : null}
+
+        {/* Post markers (on top of walls/openings for visibility; pointer-events off for hit-testing) */}
+        {perimeterPostSlots.map((slot, idx) => {
+          const center = perimeterSlotToPlanPoint(slot, plan.dims.width, plan.dims.length);
+          const v = planToView(center);
+          const scaled = getSlotPostWidthFt(plan, slot) * zoom;
+          const side = Math.max(scaled, 0.35);
+          const cx = pan.x + v.x * zoom;
+          const cy = pan.y + v.y * zoom;
+          const fill = postMarkerFillClass(slot.reason);
+          const strokeW = Math.max(1.25, Math.min(2.75, side * 0.14));
+          return (
+            <rect
+              key={`post_${slot.edge}_${slot.along.toFixed(4)}_${idx}`}
+              x={cx - side / 2}
+              y={cy - side / 2}
+              width={side}
+              height={side}
+              fill={fill}
+              stroke="#ffffff"
+              strokeWidth={strokeW}
+              paintOrder="stroke fill"
+              opacity={focusedSpace ? 0.72 : 1}
+              pointerEvents="none"
+            />
+          );
+        })}
 
         {/* Fixtures */}
         {plan.fixtures.map((f) => (

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid, ShoppingCart, Key, StickyNote, FileDown } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid, ShoppingCart, Key, StickyNote } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -43,7 +43,6 @@ import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { isQuoteContractFrozen } from '@/lib/quoteProposalLock';
 import { loadProposalFinancialData } from '@/lib/loadProposalFinancialData';
-import { requestJobBidSpecExport } from '@/lib/jobBidExportBridge';
 import { computeProposalCostBudget } from '@/lib/proposalCostBudget';
 import type { Job } from '@/types';
 import { JobDetailProposalToolbarContext } from '@/contexts/JobDetailProposalToolbarContext';
@@ -1545,7 +1544,8 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
         onValueChange={setActiveTab}
         className={`w-full ${
           activeTab === 'proposal-materials'
-            ? 'pt-[calc(3.5rem+2.5rem)]'
+            ? /* Fixed black (min-h-14) + green (h-8 row + py-1); slightly under old 6rem to remove gray gap */
+              'pt-[calc(3.5rem+2.25rem)]'
             : 'pt-14'
         }`}
       >
@@ -1693,7 +1693,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
           {/* Proposal & Materials: green bar below black bar */}
           {activeTab === 'proposal-materials' && (
             <div className="relative z-[1] border-t border-yellow-600/30 bg-green-900/95 text-xs shadow-sm">
-              <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 px-3 py-1">
                 <div className="flex items-center gap-1">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1731,17 +1731,6 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 text-yellow-100 border-yellow-600/40 px-2 shrink-0"
-                  title="Subcontractor bid spec — print or Save as PDF"
-                  onClick={() => requestJobBidSpecExport()}
-                >
-                  <FileDown className="w-3 h-3 shrink-0 opacity-90" />
-                  Export bid PDF
-                </Button>
                 <Popover
                   open={proposalPageNotesOpen}
                   onOpenChange={(open) => {
@@ -2393,7 +2382,7 @@ export function JobDetailedView({ job, portalJobId, getPortalJobId, onBack, onEd
         <TabsContent
           forceMount
           value="proposal-materials"
-          className="relative z-0 mt-0 flex h-[calc(100dvh-9rem)] w-full min-h-[400px] flex-col overflow-hidden data-[state=inactive]:hidden sm:min-h-[520px]"
+          className="relative z-0 mt-0 flex h-[calc(100dvh-8.75rem)] w-full min-h-[400px] flex-col overflow-hidden data-[state=inactive]:hidden sm:min-h-[520px]"
         >
           <ProposalAndMaterialsView
               job={job}

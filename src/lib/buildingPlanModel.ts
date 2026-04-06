@@ -48,6 +48,45 @@ export interface PlanOpening {
   overheadStyle?: PlanOverheadStyle;
 }
 
+/** Nominal post face width used in layout & drawings (feet). */
+export const DEFAULT_POST_FACE_WIDTH_FT = 4 / 12;
+
+/** Perimeter line post spacing and post sizes (saved on the plan). */
+export interface PlanPerimeterPostSettings {
+  /** Center-to-center spacing after the first bay (feet). */
+  ocSpacingFt: number;
+  /** Feet from corner post outside face to first intermediate post center. */
+  firstBayFromCornerOutsideFt: number;
+  /** Eave / long-wall runs (not gable end). Default 4″. */
+  eaveWallPostWidthFt?: number;
+  /** Gable-end walls. Default 4″. */
+  gableWallPostWidthFt?: number;
+  /** Walk-door jamb posts (when enabled). Default matches eave width. */
+  doorJambPostWidthFt?: number;
+  /** Overhead door jamb posts. Default matches door jamb or eave. */
+  overheadJambPostWidthFt?: number;
+  /** Add posts at walk-door jambs (each side of opening). */
+  addWalkDoorJambPosts?: boolean;
+}
+
+export const DEFAULT_PERIMETER_POST_SETTINGS: PlanPerimeterPostSettings = {
+  ocSpacingFt: 8,
+  firstBayFromCornerOutsideFt: 8,
+};
+
+/** Fully resolved post settings for layout & rendering. */
+export type ResolvedPerimeterPostSettings = {
+  ocSpacingFt: number;
+  firstBayFromCornerOutsideFt: number;
+  eaveWallPostWidthFt: number;
+  gableWallPostWidthFt: number;
+  doorJambPostWidthFt: number;
+  overheadJambPostWidthFt: number;
+  addWalkDoorJambPosts: boolean;
+  /** max face width / 2 for overlap checks */
+  maxPostHalfFt: number;
+};
+
 export interface PlanLoftStairOpening {
   x: number; // feet from loft origin
   y: number; // feet from loft origin
@@ -132,6 +171,58 @@ export interface BuildingPlanModel {
     updatedAt: string;
     rev: number;
   };
+  /** Perimeter post spacing; omitted = defaults (8′ / 8′). */
+  perimeterPosts?: PlanPerimeterPostSettings;
+}
+
+const POST_WIDTH_MIN_FT = 2.5 / 12;
+const POST_WIDTH_MAX_FT = 2;
+
+export function getPerimeterPostSettings(plan: BuildingPlanModel): PlanPerimeterPostSettings {
+  const p = plan.perimeterPosts;
+  const d = DEFAULT_PERIMETER_POST_SETTINGS;
+  if (!p) return { ...d };
+  return {
+    ocSpacingFt: Number.isFinite(p.ocSpacingFt) ? clamp(p.ocSpacingFt, 1, 64) : d.ocSpacingFt,
+    firstBayFromCornerOutsideFt: Number.isFinite(p.firstBayFromCornerOutsideFt)
+      ? clamp(p.firstBayFromCornerOutsideFt, 1, 64)
+      : d.firstBayFromCornerOutsideFt,
+    eaveWallPostWidthFt: p.eaveWallPostWidthFt,
+    gableWallPostWidthFt: p.gableWallPostWidthFt,
+    doorJambPostWidthFt: p.doorJambPostWidthFt,
+    overheadJambPostWidthFt: p.overheadJambPostWidthFt,
+    addWalkDoorJambPosts: p.addWalkDoorJambPosts,
+  };
+}
+
+function clampPostWidthFt(v: number | undefined, fallback: number): number {
+  if (!Number.isFinite(v)) return fallback;
+  return clamp(v, POST_WIDTH_MIN_FT, POST_WIDTH_MAX_FT);
+}
+
+export function resolvePerimeterPostSettings(plan: BuildingPlanModel): ResolvedPerimeterPostSettings {
+  const p = plan.perimeterPosts;
+  const d = DEFAULT_PERIMETER_POST_SETTINGS;
+  const oc = Number.isFinite(p?.ocSpacingFt) ? clamp(p!.ocSpacingFt, 1, 64) : d.ocSpacingFt;
+  const fb = Number.isFinite(p?.firstBayFromCornerOutsideFt)
+    ? clamp(p!.firstBayFromCornerOutsideFt, 1, 64)
+    : d.firstBayFromCornerOutsideFt;
+  const eave = clampPostWidthFt(p?.eaveWallPostWidthFt, DEFAULT_POST_FACE_WIDTH_FT);
+  const gable = clampPostWidthFt(p?.gableWallPostWidthFt, eave);
+  const doorJ = clampPostWidthFt(p?.doorJambPostWidthFt, eave);
+  const ohJ = clampPostWidthFt(p?.overheadJambPostWidthFt, doorJ);
+  const addDoorJambs = p?.addWalkDoorJambPosts === true;
+  const maxW = Math.max(eave, gable, doorJ, ohJ);
+  return {
+    ocSpacingFt: oc,
+    firstBayFromCornerOutsideFt: fb,
+    eaveWallPostWidthFt: eave,
+    gableWallPostWidthFt: gable,
+    doorJambPostWidthFt: doorJ,
+    overheadJambPostWidthFt: ohJ,
+    addWalkDoorJambPosts: addDoorJambs,
+    maxPostHalfFt: maxW / 2,
+  };
 }
 
 export function newId(prefix: string = 'ent'): PlanEntityId {
@@ -157,7 +248,9 @@ export function createDefaultRectPlan(opts: {
   // 2D coordinate system (feet):
   // - origin at top-left of building rectangle for convenience
   // - +x to the right (width), +y down (length)
-  // This maps cleanly into screen space; 3D mapping can translate as needed.
+  // Wall order (and opening `offset` = ft along wall from `start` → `end`):
+  // Front (0,0)→(w,0), Right (w,0)→(w,l), Back (w,l)→(0,l), Left (0,l)→(0,0).
+  // Elevations and 3D must use the same edge directions when mapping offsets.
   const a: PlanPoint = { x: 0, y: 0 };
   const b: PlanPoint = { x: width, y: 0 };
   const c: PlanPoint = { x: width, y: length };

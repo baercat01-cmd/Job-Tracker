@@ -145,7 +145,7 @@ export default function BuildingEstimator3D({
   const { lines, total, numPosts, lumberPieces } = syncProject();
 
   // Save estimate to database
-  const handleSave = async (opts?: { after?: 'close' }) => {
+  const handleSave = async (opts?: { after?: 'close' | 'stay' }) => {
     const after = opts?.after ?? 'close';
     setSaving(true);
     try {
@@ -286,7 +286,15 @@ export default function BuildingEstimator3D({
 
           <div className="relative flex-1 overflow-hidden bg-[#eef2f6]">
             {/* 2D Plans (local; no token needed) */}
-            {activeTab === '2d' && <PlanLocalWorkspace plan={plan} onChange={setPlan} />}
+            {activeTab === '2d' && (
+              <PlanLocalWorkspace
+                plan={plan}
+                onChange={setPlan}
+                onPersistDrawing={() => handleSave({ after: 'stay' })}
+                persistDrawingDisabled={saving || !profile?.id}
+                persistDrawingPending={saving}
+              />
+            )}
             {/* 3D View */}
             {activeTab === '3d' && (
               <div className="absolute inset-0 w-full h-full flex flex-col">

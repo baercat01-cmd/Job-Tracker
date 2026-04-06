@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -40,7 +41,6 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
-import { registerJobBidSpecExporter } from '@/lib/jobBidExportBridge';
 import { generateProposalHTML } from './ProposalPDFTemplate';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 import { ProposalTemplateEditor } from './ProposalTemplateEditor';
@@ -68,6 +68,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { cn } from '@/lib/utils';
 
 interface CustomFinancialRow {
   id: string;
@@ -875,7 +876,7 @@ function SortableRow({
           </div>
 
           {/* Two-column layout: Description + Pricing */}
-          <div className="ml-2 flex gap-2 mt-1">
+          <div className="ml-2 flex gap-1.5 mt-1">
             {/* Description column (wide) */}
             <div className="flex-1 min-w-0">
               {sheet.sheetDescription ? (
@@ -921,23 +922,23 @@ function SortableRow({
               )}
             </div>
 
-            {/* Pricing column (narrow) */}
-            <div className="w-[100px] flex-shrink-0 text-right">
+            {/* Pricing column (compact — frees width for description) */}
+            <div className="w-[78px] sm:w-[86px] flex-shrink-0 text-right leading-tight">
               {(sheet as any).isOptional && (
-                <p className="text-xs text-amber-700 font-medium mb-0.5">Not in total</p>
+                <p className="text-[10px] text-amber-700 font-medium mb-0.5 leading-tight">Not in total</p>
               )}
-              <p className="text-sm text-slate-500">Materials</p>
-              <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-slate-500 leading-tight" title="Materials">Materials</p>
+              <p className={`text-sm font-bold tabular-nums ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               {Number.isFinite(totalLaborCost) && totalLaborCost > 0 ? (
                 <>
-                  <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className={`text-base font-bold ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] text-slate-500 mt-1 leading-tight">Labor</p>
+                  <p className={`text-sm font-bold tabular-nums ${(sheet as any).isOptional ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </>
               ) : null}
               {(sheet as any).isOptional && (
                 <>
-                  <p className="text-[11px] text-slate-500 mt-2">Section total</p>
-                  <p className="text-sm font-bold text-amber-700">
+                  <p className="text-[10px] text-slate-500 mt-1">Sect. total</p>
+                  <p className="text-xs font-bold text-amber-700 tabular-nums">
                     ${sectionTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </>
@@ -2021,7 +2022,7 @@ function SortableRow({
           </div>
 
           {/* Two-column layout: Description + Pricing */}
-          <div className="ml-2 flex gap-2 mt-1">
+          <div className="ml-2 flex gap-1.5 mt-1">
             {/* Description column (full width, height fits content) */}
             <div className="flex-1 min-w-0">
               <Textarea
@@ -2059,12 +2060,12 @@ function SortableRow({
               />
             </div>
 
-            {/* Pricing column */}
-            <div className="w-[120px] flex-shrink-0 text-right">
+            {/* Pricing column (compact) */}
+            <div className="w-[92px] sm:w-[100px] flex-shrink-0 text-right leading-tight">
               {/* Only show row-level markup if NO line items exist */}
               {lineItems.length === 0 && (
-                <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1 flex-wrap">
-                  <span className="shrink-0">Base:</span>
+                <div className="flex items-center justify-end gap-0.5 text-[10px] text-slate-600 mb-0.5 flex-nowrap">
+                  <span className="shrink-0">Base</span>
                   <Input
                     type="number"
                     key={`base-cost-${row.id}-${baseCost}`}
@@ -2078,11 +2079,11 @@ function SortableRow({
                       updateCustomRowBaseCost(row.id, newBase, linkedSubsMaterialsTotal);
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="w-20 h-6 text-xs px-1.5 text-right tabular-nums"
+                    className="w-[3.25rem] h-5 text-[10px] px-1 text-right tabular-nums"
                     step="0.01"
                     min="0"
                   />
-                  <span>+</span>
+                  <span className="shrink-0">+</span>
                   <Input
                     type="number"
                     value={row.markup_percent || 0}
@@ -2091,19 +2092,19 @@ function SortableRow({
                       updateCustomRowMarkup(row.id, newMarkup);
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="w-14 h-5 text-xs px-1 text-center"
+                    className="w-9 h-5 text-[10px] px-0.5 text-center tabular-nums"
                     step="1"
                     min="0"
                   />
-                  <span>%</span>
+                  <span className="shrink-0">%</span>
                 </div>
               )}
-              <p className="text-sm text-slate-500">Materials</p>
-              <p className={`text-base font-bold ${toBool((row as any).is_option) ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-slate-500 leading-tight" title="Materials">Materials</p>
+              <p className={`text-sm font-bold tabular-nums ${toBool((row as any).is_option) ? 'text-amber-600 line-through decoration-amber-400' : 'text-blue-700'}`}>${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               {Number.isFinite(totalLaborCost) && totalLaborCost > 0 ? (
                 <>
-                  <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className={`text-base font-bold ${toBool((row as any).is_option) ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] text-slate-500 mt-1 leading-tight">Labor</p>
+                  <p className={`text-sm font-bold tabular-nums ${toBool((row as any).is_option) ? 'text-amber-600 line-through decoration-amber-400' : 'text-amber-700'}`}>${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </>
               ) : null}
             </div>
@@ -2684,7 +2685,7 @@ function SortableRow({
           </div>
 
           {/* Two-column layout: Description + Pricing */}
-          <div className="ml-2 flex gap-2 mt-1">
+          <div className="ml-2 flex gap-1.5 mt-1">
             {/* Description column (full width, height fits content) */}
             <div className="flex-1 min-w-0">
               <Textarea
@@ -2721,9 +2722,9 @@ function SortableRow({
               />
             </div>
 
-            {/* Pricing column: Material (taxable) and Labor (non-taxable) split */}
-            <div className="w-[140px] flex-shrink-0 text-right">
-              <div className="flex items-center justify-end gap-1 text-xs text-slate-600 mb-0.5">
+            {/* Pricing column: Material (taxable) and Labor (non-taxable) split — compact */}
+            <div className="w-[100px] sm:w-[112px] flex-shrink-0 text-right leading-tight">
+              <div className="flex items-center justify-end gap-0.5 text-[10px] text-slate-600 mb-0.5">
                 <span>+</span>
                 <Input
                   type="number"
@@ -2733,26 +2734,26 @@ function SortableRow({
                     updateSubcontractorMarkup(est.id, newMarkup);
                   }}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-12 h-5 text-xs px-1 text-center"
+                  className="w-9 h-5 text-[10px] px-0.5 text-center tabular-nums"
                   step="1"
                   min="0"
                 />
                 <span>%</span>
               </div>
               {materialIncludedTotal > 0 && (
-                <div className="text-xs mb-0.5">
-                  <span className="text-slate-500">Material: </span>
+                <div className="text-[10px] mb-0.5 tabular-nums leading-tight">
+                  <span className="text-slate-500">Mat. </span>
                   <span className="font-medium">${materialWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
               {laborIncludedTotal > 0 && (
-                <div className="text-xs mb-0.5">
-                  <span className="text-slate-500">Labor: </span>
+                <div className="text-[10px] mb-0.5 tabular-nums leading-tight">
+                  <span className="text-slate-500">Lab. </span>
                   <span className="font-medium text-amber-700">${laborWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
-              <p className="text-sm text-slate-500 mt-1">Total</p>
-              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Total</p>
+              <p className="text-sm font-bold text-blue-700 tabular-nums">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
           </div>
 
@@ -2894,6 +2895,16 @@ export function JobFinancials({
   const [customRowLineItems, setCustomRowLineItems] = useState<Record<string, CustomRowLineItem[]>>({});
   const [laborPricing, setLaborPricing] = useState<LaborPricing | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [customRowPanelPos, setCustomRowPanelPos] = useState({ x: 120, y: 72 });
+  const customRowDialogRef = useRef<HTMLDivElement>(null);
+  const customRowDragRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const customRowPanelPosInitialized = useRef(false);
   const [showSubUploadDialog, setShowSubUploadDialog] = useState(false);
   const [editingRow, setEditingRow] = useState<CustomFinancialRow | null>(null);
   const savingMarkupsRef = useRef<Set<string>>(new Set());
@@ -3012,7 +3023,7 @@ export function JobFinancials({
   // Remove tab state - this is now a single-view component (Proposal only)
 
   // Form state for custom rows
-  const [category, setCategory] = useState('subcontractor');
+  const [category, setCategory] = useState('materials');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unitCost, setUnitCost] = useState('60');
@@ -3040,14 +3051,6 @@ export function JobFinancials({
   const [pdfViewFilename, setPdfViewFilename] = useState<string>('');
   const [pdfPrintUrl, setPdfPrintUrl] = useState<string | null>(null);
   const pdfIframeRef = useRef<HTMLIFrameElement>(null);
-
-  useEffect(() => {
-    registerJobBidSpecExporter(() => {
-      setExportViewType('bid_spec');
-      setShowExportDialog(true);
-    });
-    return () => registerJobBidSpecExporter(null);
-  }, []);
 
   // Proposal state - each proposal is independent
   const [currentProposal, setCurrentProposal] = useState<any>(null);
@@ -3132,6 +3135,18 @@ export function JobFinancials({
     loadMaterialsData: () => {},
     loadSubcontractorEstimates: async () => {},
   });
+
+  // First open: center the floating custom-row panel; later opens keep last position.
+  useEffect(() => {
+    if (!showAddDialog || typeof window === 'undefined') return;
+    if (customRowPanelPosInitialized.current) return;
+    customRowPanelPosInitialized.current = true;
+    const w = Math.min(672, window.innerWidth - 32);
+    setCustomRowPanelPos({
+      x: Math.max(16, (window.innerWidth - w) / 2),
+      y: Math.max(16, window.innerHeight * 0.08),
+    });
+  }, [showAddDialog]);
 
   // Clear session unlock when switching to a different proposal (internal state only; parent clears its own when controlled).
   useEffect(() => {
@@ -7771,7 +7786,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
   function resetForm() {
     setEditingRow(null);
-    setCategory('subcontractor');
+    setCategory('materials');
     setDescription('');
     setQuantity('1');
     setUnitCost('0'); // Default to 0 - user can add line items without base cost
@@ -11636,13 +11651,79 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         </DialogContent>
       </Dialog>
 
-      {/* Custom Row Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{editingRow ? 'Edit Row' : 'Add Custom Row'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
+      {/* Custom Row Dialog — non-modal floating panel (draggable) */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog} modal={false}>
+        <DialogContent
+          ref={customRowDialogRef}
+          floating
+          overlayClassName="pointer-events-none bg-slate-950/20 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
+          showCloseButton={false}
+          className={cn(
+            'w-[min(42rem,calc(100vw-1.5rem))] max-w-2xl max-h-[min(88vh,900px)] shadow-2xl border-2 border-slate-300',
+          )}
+          style={{
+            left: `${customRowPanelPos.x}px`,
+            top: `${customRowPanelPos.y}px`,
+            transform: 'none',
+          }}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <div
+            className="flex items-center gap-2 px-3 py-2.5 border-b bg-slate-100 cursor-grab active:cursor-grabbing select-none shrink-0 touch-none"
+            onPointerDown={(e) => {
+              const t = e.target as HTMLElement;
+              if (t.closest('button')) return;
+              customRowDragRef.current = {
+                pointerId: e.pointerId,
+                startClientX: e.clientX,
+                startClientY: e.clientY,
+                originX: customRowPanelPos.x,
+                originY: customRowPanelPos.y,
+              };
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              const d = customRowDragRef.current;
+              if (!d || e.pointerId !== d.pointerId) return;
+              const nx = d.originX + (e.clientX - d.startClientX);
+              const ny = d.originY + (e.clientY - d.startClientY);
+              const rect = customRowDialogRef.current?.getBoundingClientRect();
+              const pw = rect?.width ?? 672;
+              const ph = rect?.height ?? 480;
+              const margin = 8;
+              setCustomRowPanelPos({
+                x: Math.max(margin, Math.min(window.innerWidth - pw - margin, nx)),
+                y: Math.max(margin, Math.min(window.innerHeight - ph - margin, ny)),
+              });
+            }}
+            onPointerUp={(e) => {
+              const d = customRowDragRef.current;
+              if (!d || e.pointerId !== d.pointerId) return;
+              customRowDragRef.current = null;
+              try {
+                (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+              } catch {
+                /* already released */
+              }
+            }}
+            onPointerCancel={() => {
+              customRowDragRef.current = null;
+            }}
+          >
+            <GripVertical className="w-4 h-4 text-slate-500 shrink-0 pointer-events-none" aria-hidden />
+            <DialogTitle className="text-base font-semibold m-0 flex-1 pointer-events-none leading-tight">
+              {editingRow ? 'Edit Row' : 'Add Custom Row'}
+            </DialogTitle>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 cursor-pointer" aria-label="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogClose>
+          </div>
+          <div className="overflow-y-auto flex-1 min-h-0 p-6 space-y-4">
+            <DialogDescription className="sr-only">
+              Add or edit a custom proposal row: category, name, quantity, unit cost, and options.
+            </DialogDescription>
             {!linkedSheetId && (
               <div>
                 <Label>Category</Label>

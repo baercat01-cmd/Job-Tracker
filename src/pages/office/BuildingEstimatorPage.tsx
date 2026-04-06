@@ -238,19 +238,13 @@ export default function BuildingEstimatorPage() {
               </div>
             </CardHeader>
             <CardContent className="h-[calc(100dvh-64px)] flex flex-col gap-3">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <div className="text-xs font-medium text-slate-700">Drawing name</div>
-                  <Input
-                    ref={planNameInputRef}
-                    value={planName}
-                    onChange={(e) => setPlanName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-medium text-slate-700">Linked job</div>
-                  <div className="text-xs text-muted-foreground break-all">{jobId}</div>
-                </div>
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-slate-700">Drawing name</div>
+                <Input
+                  ref={planNameInputRef}
+                  value={planName}
+                  onChange={(e) => setPlanName(e.target.value)}
+                />
               </div>
               <div className="relative w-full flex-1 min-h-0 rounded-none sm:rounded-md border bg-white overflow-hidden">
                 {plan ? (
@@ -287,7 +281,13 @@ export default function BuildingEstimatorPage() {
 
                     <div className="flex-1 min-h-0 relative bg-[#eef2f6]">
                       {activeView === '2d' ? (
-                        <PlanLocalWorkspace plan={plan} onChange={setPlan} />
+                        <PlanLocalWorkspace
+                          plan={plan}
+                          onChange={setPlan}
+                          onPersistDrawing={savePlan}
+                          persistDrawingDisabled={!planId || !plan || saving || creating}
+                          persistDrawingPending={saving}
+                        />
                       ) : (
                         <div className="absolute inset-0">
                           <Canvas camera={{ position: [110, 80, 110], fov: 38 }}>
