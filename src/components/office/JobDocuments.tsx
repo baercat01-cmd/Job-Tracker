@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { pdfUrlForIframeViewer } from '@/lib/pdfIframeUrl';
+import { EmbeddedPdfFrame } from './EmbeddedPdfFrame';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,39 @@ import {
 import { PdfThumbnail } from './PdfThumbnail';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
+
+/** Extension from storage URL path or document display name (handles encoded paths, signed query strings). */
+function fileExtensionFromUrlOrName(url: string, name: string): string {
+  const extFromPath = (path: string) => {
+    const clean = path.split(/[?#]/)[0];
+    const seg = clean.split('/').pop() ?? '';
+    const dot = seg.lastIndexOf('.');
+    if (dot < 0 || dot === seg.length - 1) return '';
+    return seg.slice(dot + 1).toLowerCase();
+  };
+  try {
+    const u = new URL(url);
+    const fromPath = extFromPath(decodeURIComponent(u.pathname));
+    if (fromPath) return fromPath;
+  } catch {
+    /* ignore */
+  }
+  const fromRaw = extFromPath(url);
+  if (fromRaw) return fromRaw;
+  const n = (name || '').trim();
+  const dot = n.lastIndexOf('.');
+  if (dot >= 0 && dot < n.length - 1) return n.slice(dot + 1).toLowerCase();
+  return '';
+}
+
+function urlLooksLikePdf(url: string): boolean {
+  const u = url.toLowerCase();
+  return /\.pdf([?#]|$)/i.test(url) || /%2epdf([?#]|$)/i.test(u);
+}
+
+function nameLooksLikePdf(name: string): boolean {
+  return /\.pdf$/i.test((name || '').trim());
+}
 
 interface JobDocument {
   id: string;
@@ -898,9 +931,16 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {documents.map((doc) => {
             const isEditing = editingDocId === doc.id;
-            const fileExtension = doc.latest_file_url?.split('.').pop()?.toLowerCase();
-            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
-            const isPDF = fileExtension === 'pdf';
+            const fileExtension = doc.latest_file_url
+              ? fileExtensionFromUrlOrName(doc.latest_file_url, doc.name)
+              : '';
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(fileExtension);
+            const isPDF =
+              fileExtension === 'pdf' ||
+              (!!doc.latest_file_url &&
+                (urlLooksLikePdf(doc.latest_file_url) ||
+                  nameLooksLikePdf(doc.name) ||
+                  (fileExtension === '' && /job-files|\/documents\//i.test(doc.latest_file_url))));
             
             return (
               <Card 
@@ -1596,84 +1636,85 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       
       {/* Document Viewer Dialog */}
       <Dialog open={!!viewingDocument} onOpenChange={() => setViewingDocument(null)}>
-        <DialogContent className="max-w-6xl max-h-[95vh] p-0">
-          <DialogHeader className="p-6 pb-0">
-            <div className="flex items-center justify-between">
-              <DialogTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                {viewingDocument?.name}
+        <DialogContent className="!flex !flex-col !gap-0 max-w-[95vw] w-[min(1152px,95vw)] h-[90vh] max-h-[95vh] p-0 overflow-hidden sm:max-w-[95vw]">
+          <DialogHeader className="px-4 py-3 border-b shrink-0 space-y-0 text-left pr-12">
+            <div className="flex items-center gap-3 min-w-0">
+              <DialogTitle className="flex items-center gap-2 text-base font-semibold min-w-0 flex-1">
+                <FileText className="w-5 h-5 shrink-0" />
+                <span className="truncate">{viewingDocument?.name}</span>
               </DialogTitle>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => viewingDocument && window.open(viewingDocument.url, '_blank')}
+                className="shrink-0"
+                onClick={() => viewingDocument && window.open(viewingDocument.url, '_blank', 'noopener,noreferrer')}
               >
                 Open in New Tab
               </Button>
             </div>
           </DialogHeader>
-          <div className="flex-1 overflow-auto p-6 pt-4">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-slate-50">
             {viewingDocument && (() => {
-              const extensionFromUrl = (() => {
-                try {
-                  const parsed = new URL(viewingDocument.url);
-                  const fileName = parsed.pathname.split('/').pop() || '';
-                  return fileName.includes('.') ? (fileName.split('.').pop() || '').toLowerCase() : '';
-                } catch {
-                  const clean = viewingDocument.url.split('?')[0].split('#')[0];
-                  const fileName = clean.split('/').pop() || '';
-                  return fileName.includes('.') ? (fileName.split('.').pop() || '').toLowerCase() : '';
-                }
-              })();
-              const extensionFromName = (() => {
-                const n = viewingDocument.name || '';
-                return n.includes('.') ? (n.split('.').pop() || '').toLowerCase() : '';
-              })();
-              const ext = extensionFromUrl || extensionFromName;
-              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '');
-              const isPDF = ext === 'pdf';
-              
+              const ext = fileExtensionFromUrlOrName(viewingDocument.url, viewingDocument.name);
+              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+              const isOffice =
+                ['doc', 'docx', 'rtf'].includes(ext) ||
+                ['xls', 'xlsx', 'csv'].includes(ext) ||
+                ['ppt', 'pptx'].includes(ext);
+              const tryPdfInline =
+                ext === 'pdf' ||
+                urlLooksLikePdf(viewingDocument.url) ||
+                nameLooksLikePdf(viewingDocument.name) ||
+                (ext === '' && /job-files|\/documents\//i.test(viewingDocument.url));
+
               if (isImage) {
                 return (
-                  <div className="flex items-center justify-center bg-slate-50 rounded-lg p-4">
+                  <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-4">
                     <img
                       src={viewingDocument.url}
                       alt={viewingDocument.name}
-                      className="max-w-full h-auto rounded shadow-lg"
+                      className="max-w-full max-h-full w-auto h-auto object-contain rounded shadow-lg"
                     />
-                  </div>
-                );
-              } else if (isPDF) {
-                const pdfSrc = pdfUrlForIframeViewer(viewingDocument.url);
-                return (
-                  <object
-                    data={pdfSrc}
-                    type="application/pdf"
-                    className="w-full h-[70vh] rounded-lg border"
-                  >
-                    <iframe
-                      src={pdfSrc}
-                      className="w-full h-[70vh] rounded-lg border"
-                      title={viewingDocument.name}
-                    />
-                  </object>
-                );
-              } else {
-                return (
-                  <div className="text-center py-12">
-                    <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-lg font-medium mb-2">Preview not available</p>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      This file type cannot be previewed in the browser
-                    </p>
-                    <Button
-                      onClick={() => viewingDocument && window.open(viewingDocument.url, '_blank')}
-                    >
-                      Download File
-                    </Button>
                   </div>
                 );
               }
+              if (isOffice) {
+                const embedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(viewingDocument.url)}`;
+                return (
+                  <div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col">
+                    <iframe
+                      src={embedUrl}
+                      className="w-full h-full min-h-0 flex-1 border-0 bg-white"
+                      title={viewingDocument.name}
+                    />
+                  </div>
+                );
+              }
+              if (tryPdfInline) {
+                return (
+                  <div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col">
+                    <EmbeddedPdfFrame
+                      url={viewingDocument.url}
+                      name={viewingDocument.name}
+                      className="w-full h-full min-h-0 flex-1 border-0"
+                    />
+                  </div>
+                );
+              }
+              return (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+                  <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-lg font-medium mb-2">Preview not available</p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    This file type cannot be previewed in the browser
+                  </p>
+                  <Button
+                    onClick={() => viewingDocument && window.open(viewingDocument.url, '_blank', 'noopener,noreferrer')}
+                  >
+                    Download File
+                  </Button>
+                </div>
+              );
             })()}
           </div>
         </DialogContent>

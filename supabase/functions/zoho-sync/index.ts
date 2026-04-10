@@ -10,6 +10,10 @@ import {
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
+/** Off by default: Zoho "Color" is often a dropdown; free text (e.g. "Red") breaks API with code 120124. Set ZOHO_SEND_MATERIAL_COLOR_TO_ZOHO=true only if options match your workbook. */
+const zohoSendMaterialColorToBooks =
+  (Deno.env.get('ZOHO_SEND_MATERIAL_COLOR_TO_ZOHO') ?? '').toLowerCase() === 'true';
+
 interface ZohoSettings {
   id: string;
   client_id: string;
@@ -588,8 +592,10 @@ serve(async (req) => {
             const row = item as Record<string, unknown>;
             const partLength = row.part_length ?? row.length ?? '';
             const trimmedLength = partLength ? String(partLength).trim() : '';
-            const trimmedColor = row.color ? String(row.color).trim() : '';
-            console.log('📦 Processing material for Sales Order - SKU:', row.sku, '- Name:', row.material_name, '- Part Length:', trimmedLength, '- Color:', trimmedColor);
+            const colorLog = row.color ? String(row.color).trim() : '';
+            const trimmedColor =
+              zohoSendMaterialColorToBooks && row.color ? String(row.color).trim() : '';
+            console.log('📦 Processing material for Sales Order - SKU:', row.sku, '- Name:', row.material_name, '- Part Length:', trimmedLength, '- Color:', colorLog || '(not sent to Zoho)');
             
             const itemId = await ensurePurchasableItem(
               accessToken,
@@ -629,7 +635,8 @@ serve(async (req) => {
           const salesOrderUrl = `https://www.zohoapis.com/books/v3/salesorders?organization_id=${settings.countywide_org_id}`;
           let salesOrderResult: any = null;
           let salesOrderBodyText = '';
-          for (let soAttempt = 0; soAttempt < 2; soAttempt++) {
+          const MAX_SO_ATTEMPTS = 8;
+          for (let soAttempt = 0; soAttempt < MAX_SO_ATTEMPTS; soAttempt++) {
             const salesOrderResponse = await fetch(salesOrderUrl, {
               method: 'POST',
               headers: {
@@ -652,11 +659,13 @@ serve(async (req) => {
                 salesOrderResult.code !== 0);
             if (!salesOrderZohoError) break;
 
+            const canRetrySo = soAttempt < MAX_SO_ATTEMPTS - 1;
+
             const isInactiveLineError =
               salesOrderResult?.code === 2007 &&
               Array.isArray(salesOrderResult.error_info) &&
               salesOrderResult.error_info.length > 0;
-            if (soAttempt === 0 && isInactiveLineError) {
+            if (canRetrySo && isInactiveLineError) {
               const ids = new Set<string>();
               for (const rawId of salesOrderResult.error_info) {
                 const zid = String(rawId).trim();
@@ -680,6 +689,20 @@ serve(async (req) => {
                 );
               }
               continue;
+            }
+
+            const soDropdown =
+              salesOrderResult?.code === 120124 ||
+              isZohoDropdownIllegalValueError(salesOrderResult, salesOrderBodyText);
+            if (canRetrySo && soDropdown) {
+              if (stripColorFromLineItems(lineItems)) {
+                console.warn('⚠️ Retrying sales order without Color on lines (Zoho dropdown)');
+                continue;
+              }
+              if (stripAllCustomFieldsFromLineItems(lineItems)) {
+                console.warn('⚠️ Retrying sales order without line custom fields');
+                continue;
+              }
             }
 
             throw new Error(
@@ -710,8 +733,10 @@ serve(async (req) => {
           for (const item of materialItems) {
             const partLength = item.part_length ?? item.length ?? '';
             const trimmedLength = partLength ? String(partLength).trim() : '';
-            const trimmedColor = item.color ? String(item.color).trim() : '';
-            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', trimmedLength, '- Color:', trimmedColor);
+            const colorLogPo = item.color ? String(item.color).trim() : '';
+            const trimmedColor =
+              zohoSendMaterialColorToBooks && item.color ? String(item.color).trim() : '';
+            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', trimmedLength, '- Color:', colorLogPo || '(not sent to Zoho)');
             
             const itemId = await ensurePurchasableItem(
               accessToken,
@@ -747,7 +772,8 @@ serve(async (req) => {
           const purchaseOrderUrl = `https://www.zohoapis.com/books/v3/purchaseorders?organization_id=${settings.countywide_org_id}`;
           let purchaseOrderResult: any = null;
           let purchaseOrderBodyText = '';
-          for (let poAttempt = 0; poAttempt < 2; poAttempt++) {
+          const MAX_PO_ATTEMPTS = 8;
+          for (let poAttempt = 0; poAttempt < MAX_PO_ATTEMPTS; poAttempt++) {
             const purchaseOrderResponse = await fetch(purchaseOrderUrl, {
               method: 'POST',
               headers: {
@@ -770,11 +796,13 @@ serve(async (req) => {
                 purchaseOrderResult.code !== 0);
             if (!purchaseOrderZohoError) break;
 
+            const canRetryPo = poAttempt < MAX_PO_ATTEMPTS - 1;
+
             const isInactiveLineError =
               purchaseOrderResult?.code === 2007 &&
               Array.isArray(purchaseOrderResult.error_info) &&
               purchaseOrderResult.error_info.length > 0;
-            if (poAttempt === 0 && isInactiveLineError) {
+            if (canRetryPo && isInactiveLineError) {
               const ids = new Set<string>();
               for (const rawId of purchaseOrderResult.error_info) {
                 const zid = String(rawId).trim();
@@ -798,6 +826,20 @@ serve(async (req) => {
                 );
               }
               continue;
+            }
+
+            const poDropdown =
+              purchaseOrderResult?.code === 120124 ||
+              isZohoDropdownIllegalValueError(purchaseOrderResult, purchaseOrderBodyText);
+            if (canRetryPo && poDropdown) {
+              if (stripColorFromLineItems(lineItems)) {
+                console.warn('⚠️ Retrying purchase order without Color on lines (Zoho dropdown)');
+                continue;
+              }
+              if (stripAllCustomFieldsFromLineItems(lineItems)) {
+                console.warn('⚠️ Retrying purchase order without line custom fields');
+                continue;
+              }
             }
 
             throw new Error(
@@ -1248,6 +1290,73 @@ function formatZohoLineOrderError(
   return `Failed to create ${kind}: ${raw}`;
 }
 
+/** Zoho Books code 120124: custom field value not in dropdown options (e.g. Color "Red" vs configured list). */
+function isZohoDropdownIllegalValueError(data: any, rawText: string): boolean {
+  const raw = String(rawText ?? '');
+  const codeNum = Number(data?.code);
+  if (!Number.isNaN(codeNum) && codeNum === 120124) return true;
+  if (/\b120124\b/.test(raw)) return true;
+  const msg = String(data?.message ?? '');
+  return (
+    /illegal value specified for a dropdown/i.test(msg) ||
+    /illegal value specified for a dropdown field/i.test(raw)
+  );
+}
+
+/** Rebuild line-item style custom_fields from GET /items (drops Color so bad dropdown values are not re-sent). */
+function buildCustomFieldsFromZohoDetailSansColor(
+  detail: any,
+  trimmedLength: string
+): { label: string; value: string }[] {
+  if (!detail || !Array.isArray(detail.custom_fields)) return [];
+  const out: { label: string; value: string }[] = [];
+  for (const cf of detail.custom_fields) {
+    const lab = String(cf.label ?? cf.api_name ?? '').trim();
+    if (!lab) continue;
+    const labLower = lab.toLowerCase();
+    if (labLower === 'color') continue;
+    const v = cf.value != null ? String(cf.value) : '';
+    out.push({ label: lab, value: v });
+  }
+  if (trimmedLength) {
+    const plIx = out.findIndex(
+      (x) => x.label.toLowerCase().includes('part') && x.label.toLowerCase().includes('length')
+    );
+    if (plIx >= 0) out[plIx] = { ...out[plIx], value: trimmedLength };
+    else out.push({ label: 'Part Length', value: trimmedLength });
+  }
+  return out;
+}
+
+function customFieldsWithoutColor(fields: { label: string; value: string }[]): { label: string; value: string }[] {
+  return fields.filter((f) => String(f.label ?? '').trim().toLowerCase() !== 'color');
+}
+
+function stripColorFromLineItems(lineItems: any[]): boolean {
+  let changed = false;
+  for (const li of lineItems) {
+    if (!Array.isArray(li.custom_fields)) continue;
+    const next = li.custom_fields.filter(
+      (cf: any) => String(cf.label ?? '').trim().toLowerCase() !== 'color'
+    );
+    if (next.length !== li.custom_fields.length) changed = true;
+    if (next.length === 0) delete li.custom_fields;
+    else li.custom_fields = next;
+  }
+  return changed;
+}
+
+function stripAllCustomFieldsFromLineItems(lineItems: any[]): boolean {
+  let changed = false;
+  for (const li of lineItems) {
+    if (li.custom_fields != null) {
+      delete li.custom_fields;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /**
  * When Zoho returns multiple rows for one SKU, prefer explicitly active, then unknown status, last inactive.
  * (Previously we used find(isZohoItemActive) which treats missing status as active and could pick an inactive row first.)
@@ -1313,7 +1422,12 @@ async function reliableActivateZohoItem(
     status: 'active',
   };
   if (Array.isArray(detail.custom_fields) && detail.custom_fields.length > 0) {
-    putBody.custom_fields = detail.custom_fields;
+    if (zohoSendMaterialColorToBooks) {
+      putBody.custom_fields = detail.custom_fields;
+    } else {
+      const sans = buildCustomFieldsFromZohoDetailSansColor(detail, '');
+      if (sans.length > 0) putBody.custom_fields = sans;
+    }
   }
 
   const putRes = await fetch(
@@ -1337,6 +1451,34 @@ async function reliableActivateZohoItem(
   if (putRes.ok && putData.code === 0) {
     console.log('✅ Zoho item activated via PUT status=active:', itemId);
     return;
+  }
+  if (isZohoDropdownIllegalValueError(putData, putText) && putBody.custom_fields) {
+    delete putBody.custom_fields;
+    const putRes2 = await fetch(
+      `https://www.zohoapis.com/books/v3/items/${encId}?organization_id=${org}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(putBody),
+      }
+    );
+    const putText2 = await putRes2.text();
+    let putData2: any = {};
+    try {
+      putData2 = JSON.parse(putText2);
+    } catch {
+      /* non-JSON */
+    }
+    if (putRes2.ok && putData2.code === 0) {
+      console.log('✅ Zoho item activated via PUT (custom fields omitted; dropdown conflict):', itemId);
+      return;
+    }
+    throw new Error(
+      `Cannot activate Zoho item ${itemId} for sales order. POST /active: ${postText}; PUT: ${putText}; retry PUT: ${putText2}`
+    );
   }
   throw new Error(
     `Cannot activate Zoho item ${itemId} for sales order. POST /active: ${postText}; PUT: ${putText}`
@@ -1559,7 +1701,10 @@ async function ensurePurchasableItem(
   
   const partLength = materialItem.part_length ?? materialItem.length ?? '';
   const trimmedLength = partLength ? String(partLength).trim() : '';
-  const trimmedColor = materialItem.color ? String(materialItem.color).trim() : '';
+  const trimmedColor =
+    zohoSendMaterialColorToBooks && materialItem.color
+      ? String(materialItem.color).trim()
+      : '';
   const itemData: any = {
     name: itemName,
     sku: sku,
@@ -1576,29 +1721,83 @@ async function ensurePurchasableItem(
   const itemCustomFields: { label: string; value: string }[] = [];
   if (trimmedLength) itemCustomFields.push({ label: 'Part Length', value: trimmedLength });
   if (trimmedColor) itemCustomFields.push({ label: 'Color', value: trimmedColor });
-  if (itemCustomFields.length > 0) itemData.custom_fields = itemCustomFields;
-  
-  const createResponse = await fetch(
-    `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Zoho-oauthtoken ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(itemData),
-    }
-  );
 
-  if (!createResponse.ok) {
-    const errorText = await createResponse.text();
-    console.error('❌ Failed to create item:', errorText);
-    throw new Error(`Failed to create item "${itemName}": ${errorText}`);
+  const createUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${encodeURIComponent(orgId)}`;
+
+  type CfStep = { note: string; fields: { label: string; value: string }[] | undefined };
+  const createSteps: CfStep[] = [];
+  if (itemCustomFields.length === 0) {
+    createSteps.push({ note: 'base', fields: undefined });
+  } else {
+    createSteps.push({ note: 'with custom fields', fields: itemCustomFields });
+    if (trimmedColor) {
+      const noColor = customFieldsWithoutColor(itemCustomFields);
+      if (noColor.length < itemCustomFields.length) {
+        createSteps.push({
+          note: 'without Color',
+          fields: noColor.length > 0 ? noColor : undefined,
+        });
+      }
+    }
+    createSteps.push({ note: 'without custom fields', fields: undefined });
   }
 
-  const createData = await createResponse.json();
-  console.log('✅ Created new purchasable item:', createData.item?.item_id);
-  return createData.item.item_id;
+  const dedupedCreateSteps: CfStep[] = [];
+  let prevCfKey = '';
+  for (const st of createSteps) {
+    const k = JSON.stringify(st.fields ?? null);
+    if (k === prevCfKey && dedupedCreateSteps.length > 0) continue;
+    dedupedCreateSteps.push(st);
+    prevCfKey = k;
+  }
+
+  let lastCreateText = '';
+  let lastCreateData: any = null;
+
+  for (let ci = 0; ci < dedupedCreateSteps.length; ci++) {
+    const st = dedupedCreateSteps[ci];
+    const payload: any = { ...itemData };
+    if (st.fields && st.fields.length > 0) payload.custom_fields = st.fields;
+    else delete payload.custom_fields;
+
+    const createResponse = await fetch(createUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    lastCreateText = await createResponse.text();
+    try {
+      lastCreateData = JSON.parse(lastCreateText);
+    } catch {
+      lastCreateData = null;
+    }
+
+    const createdOk =
+      createResponse.ok &&
+      lastCreateData &&
+      lastCreateData.code === 0 &&
+      lastCreateData.item?.item_id;
+
+    if (createdOk) {
+      console.log('✅ Created new purchasable item:', lastCreateData.item.item_id, '(' + st.note + ')');
+      return lastCreateData.item.item_id;
+    }
+
+    const dropdown = isZohoDropdownIllegalValueError(lastCreateData, lastCreateText);
+    if (dropdown && ci < dedupedCreateSteps.length - 1) {
+      console.warn(`⚠️ Zoho dropdown validation on item create (${st.note}); trying: ${dedupedCreateSteps[ci + 1].note}`);
+      continue;
+    }
+
+    console.error('❌ Failed to create item:', lastCreateText);
+    throw new Error(`Failed to create item "${itemName}": ${lastCreateText}`);
+  }
+
+  throw new Error(`Failed to create item "${itemName}": ${lastCreateText}`);
 }
 
 async function registerWebhooks(supabase: any, requestData: any) {
@@ -1811,12 +2010,15 @@ async function updateItemPurchasable(
   throwOnError = false
 ): Promise<void> {
   console.log('🔄 Updating item to be purchasable:', itemId, '- SKU:', materialItem.sku);
-  
-  // Update with ALL information from the SKU in materials_catalog
+
   const partLength = materialItem.part_length ?? materialItem.length ?? '';
   const trimmedLength = partLength ? String(partLength).trim() : '';
-  const trimmedColor = materialItem.color ? String(materialItem.color).trim() : '';
-  const updateData: any = {
+  const trimmedColor =
+    zohoSendMaterialColorToBooks && materialItem.color
+      ? String(materialItem.color).trim()
+      : '';
+
+  const base: any = {
     name: materialItem.material_name,
     sku: materialItem.sku,
     rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
@@ -1827,37 +2029,113 @@ async function updateItemPurchasable(
     status: 'active',
   };
 
-  const updateCustomFields: { label: string; value: string }[] = [];
-  if (trimmedLength) updateCustomFields.push({ label: 'Part Length', value: trimmedLength });
-  if (trimmedColor) updateCustomFields.push({ label: 'Color', value: trimmedColor });
-  if (updateCustomFields.length > 0) updateData.custom_fields = updateCustomFields;
-  
-  const updateResponse = await fetch(
-    `https://www.zohoapis.com/books/v3/items/${itemId}?organization_id=${orgId}`,
-    {
+  const cfFull: { label: string; value: string }[] = [];
+  if (trimmedLength) cfFull.push({ label: 'Part Length', value: trimmedLength });
+  if (trimmedColor) cfFull.push({ label: 'Color', value: trimmedColor });
+
+  const encId = encodeURIComponent(itemId);
+  const encOrg = encodeURIComponent(orgId);
+  const url = `https://www.zohoapis.com/books/v3/items/${encId}?organization_id=${encOrg}`;
+
+  const tryPut = async (
+    custom_fields: { label: string; value: string }[] | undefined | 'CLEAR_ALL'
+  ): Promise<{ zohoOk: boolean; respData: any; errorText: string }> => {
+    const body: any = { ...base };
+    if (custom_fields === 'CLEAR_ALL') body.custom_fields = [];
+    else if (custom_fields && custom_fields.length > 0) body.custom_fields = custom_fields;
+    const updateResponse = await fetch(url, {
       method: 'PUT',
       headers: {
-        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(updateData),
+      body: JSON.stringify(body),
+    });
+    const errorText = await updateResponse.text();
+    let respData: any = {};
+    try {
+      respData = JSON.parse(errorText);
+    } catch {
+      /* non-JSON */
     }
-  );
+    const zohoOk =
+      updateResponse.ok && (respData.code === undefined || respData.code === 0);
+    return { zohoOk, respData, errorText };
+  };
 
-  const errorText = await updateResponse.text();
-  let respData: any = {};
-  try {
-    respData = JSON.parse(errorText);
-  } catch {
-    /* non-JSON */
+  type Step = { note: string; fields: { label: string; value: string }[] | undefined };
+  const rawSteps: Step[] = [];
+  if (cfFull.length === 0) {
+    rawSteps.push({ note: 'base', fields: undefined });
+  } else {
+    rawSteps.push({ note: 'with Part Length / Color', fields: cfFull });
+    if (trimmedColor) {
+      const noColor = customFieldsWithoutColor(cfFull);
+      if (noColor.length < cfFull.length) {
+        rawSteps.push({
+          note: 'without Color',
+          fields: noColor.length > 0 ? noColor : undefined,
+        });
+      }
+    }
+    rawSteps.push({ note: 'without custom fields', fields: undefined });
   }
-  const zohoOk =
-    updateResponse.ok && (respData.code === undefined || respData.code === 0);
-  if (!zohoOk) {
-    const msg = `Failed to update Zoho item ${itemId}: ${errorText}`;
-    console.warn('⚠️', msg);
-    if (throwOnError) throw new Error(msg);
+
+  const steps: Step[] = [];
+  let prevKey = '';
+  for (const s of rawSteps) {
+    const key = JSON.stringify(s.fields ?? null);
+    if (key === prevKey && steps.length > 0) continue;
+    steps.push(s);
+    prevKey = key;
+  }
+
+  let last: { zohoOk: boolean; respData: any; errorText: string } | null = null;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    last = await tryPut(step.fields);
+    if (last.zohoOk) {
+      console.log('✅ Item updated to be purchasable (' + step.note + ')');
+      return;
+    }
+    const dropdownConflict = isZohoDropdownIllegalValueError(last.respData, last.errorText);
+    if (!dropdownConflict) {
+      const msg = `Failed to update Zoho item ${itemId}: ${last.errorText}`;
+      console.warn('⚠️', msg);
+      if (throwOnError) throw new Error(msg);
+      return;
+    }
+    if (i < steps.length - 1) {
+      console.warn(`⚠️ Zoho dropdown validation on item update (${step.note}); trying: ${steps[i + 1].note}`);
+    }
+  }
+
+  // Omitting custom_fields on PUT often leaves stored Color in Zoho; rebuild from GET and drop Color.
+  const detail = await fetchZohoItemDetails(accessToken, orgId, itemId);
+  const sansColor = buildCustomFieldsFromZohoDetailSansColor(detail, trimmedLength);
+  if (sansColor.length > 0) {
+    last = await tryPut(sansColor);
+    if (last.zohoOk) {
+      console.log('✅ Item updated (merged Zoho custom fields without Color)');
+      return;
+    }
+  }
+
+  last = await tryPut('CLEAR_ALL');
+  if (last.zohoOk) {
+    console.log('✅ Item updated (cleared item custom fields in Zoho to avoid dropdown conflict)');
     return;
   }
-  console.log('✅ Item updated to be purchasable');
+
+  const msg = `Failed to update Zoho item ${itemId}: ${last?.errorText || 'unknown'}`;
+  console.warn('⚠️', msg);
+  if (throwOnError) {
+    if (isZohoDropdownIllegalValueError(last?.respData, last?.errorText ?? '')) {
+      console.warn(
+        '⚠️ Continuing without item update: Zoho Books Color (or another field) is a dropdown and rejected this value. Align workbook text with Zoho dropdown options, or fix the field in Zoho → Items.'
+      );
+      return;
+    }
+    throw new Error(msg);
+  }
 }

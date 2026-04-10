@@ -65,7 +65,7 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
       const { data: quotes, error } = await supabase
         .from('quotes')
         .select(
-          'id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, signed_version, customer_signed_at, is_change_order_proposal'
+          'id, proposal_number, quote_number, estimate_number, is_customer_estimate, created_at, sent_at, locked_for_editing, signed_version, customer_signed_at, is_change_order_proposal'
         )
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
@@ -87,9 +87,15 @@ export function ProposalAndMaterialsView({ job, userId: userIdProp, viewMode: vi
         return;
       }
 
+      const sortKey = (q: any) => {
+        if (q.is_customer_estimate === true) {
+          return (q.estimate_number || q.quote_number || q.created_at || '').toString();
+        }
+        return (q.proposal_number || q.quote_number || '').toString();
+      };
       const sorted = [...quotes].sort((a: any, b: any) => {
-        const na = (a.proposal_number || a.quote_number || '').toString();
-        const nb = (b.proposal_number || b.quote_number || '').toString();
+        const na = sortKey(a);
+        const nb = sortKey(b);
         if (na === nb) return 0;
         return nb.localeCompare(na, undefined, { numeric: true });
       });

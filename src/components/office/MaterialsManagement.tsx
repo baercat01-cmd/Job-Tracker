@@ -116,6 +116,7 @@ import {
   sanitizeTrimPdfFilenameBase,
   type TrimPdfPageInput,
 } from '@/lib/trimDrawingPdfExport';
+import { formatQuoteScopeLabel } from '@/lib/quoteDisplay';
 import {
   Select,
   SelectContent,
@@ -277,6 +278,8 @@ interface JobQuote {
   id: string;
   proposal_number: string | null;
   quote_number: string | null;
+  estimate_number?: string | null;
+  is_customer_estimate?: boolean;
   created_at: string;
   sent_at: string | null;
   locked_for_editing: boolean | null;
@@ -367,6 +370,16 @@ export function MaterialsManagement({
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [cellValue, setCellValue] = useState('');
   const [categoryFootPriceEdit, setCategoryFootPriceEdit] = useState<{ category: string; costPerFoot: string; pricePerFoot: string } | null>(null);
+  const [categoryNameEdit, setCategoryNameEdit] = useState<{
+    sheetId: string;
+    oldName: string;
+    value: string;
+  } | null>(null);
+  const [savingCategoryRename, setSavingCategoryRename] = useState(false);
+  const categoryNameEditRef = useRef(categoryNameEdit);
+  categoryNameEditRef.current = categoryNameEdit;
+  const skipCategoryRenameBlurRef = useRef(false);
+  const categoryRenameInFlightRef = useRef(false);
   const [metalCatalogBySku, setMetalCatalogBySku] = useState<Record<string, { purchase_cost: number; unit_price: number }>>({});
   const scrollPositionRef = useRef<number>(0);
 
@@ -377,6 +390,10 @@ export function MaterialsManagement({
 
   useEffect(() => {
     setSheetDeleteConfirmId(null);
+  }, [activeSheetId]);
+
+  useEffect(() => {
+    setCategoryNameEdit(null);
   }, [activeSheetId]);
 
   // Split view sync: when left panel selects a sheet, mirror it in Materials tabs/selectors.
@@ -1098,7 +1115,7 @@ export function MaterialsManagement({
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at')
+        .select('id, proposal_number, quote_number, estimate_number, is_customer_estimate, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -1131,7 +1148,7 @@ export function MaterialsManagement({
     (async () => {
       const { data, error } = await supabase
         .from('quotes')
-        .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at')
+        .select('id, proposal_number, quote_number, estimate_number, is_customer_estimate, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at')
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       if (!mounted) return;
@@ -1284,7 +1301,7 @@ export function MaterialsManagement({
         const { data: jq, error } = await supabase
           .from('quotes')
           .select(
-            'id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at',
+            'id, proposal_number, quote_number, estimate_number, is_customer_estimate, created_at, sent_at, locked_for_editing, is_change_order_proposal, signed_version, customer_signed_at',
           )
           .eq('job_id', job.id)
           .order('created_at', { ascending: false });
@@ -1661,18 +1678,22 @@ export function MaterialsManagement({
         !!historicalUnlockedQuoteId &&
         historicalUnlockedQuoteId === quoteIdForLoad;
       const sameProposalQuoteIds = selectedQuote
-        ? new Set(
-            jobQuotes
-              .filter((q) =>
+        ? (() => {
+            const ids = new Set<string>([selectedQuote.id]);
+            for (const q of jobQuotes) {
+              if (
                 (selectedQuote.proposal_number != null &&
                   q.proposal_number != null &&
                   q.proposal_number === selectedQuote.proposal_number) ||
                 (selectedQuote.quote_number != null &&
                   q.quote_number != null &&
                   q.quote_number === selectedQuote.quote_number)
-              )
-              .map((q) => q.id)
-          )
+              ) {
+                ids.add(q.id);
+              }
+            }
+            return ids;
+          })()
         : new Set<string>();
       const matchProposalFamily = (w: (typeof wbs)[0]) =>
         !!w.quote_id && sameProposalQuoteIds.has(w.quote_id);
@@ -3610,7 +3631,7 @@ export function MaterialsManagement({
         workbookCache.delete(`${job.id}:${changeOrderQuoteId}`);
         const { data: quotes } = await supabase
           .from('quotes')
-          .select('id, proposal_number, quote_number, created_at, sent_at, locked_for_editing, is_change_order_proposal')
+          .select('id, proposal_number, quote_number, estimate_number, is_customer_estimate, created_at, sent_at, locked_for_editing, is_change_order_proposal')
           .eq('job_id', job.id)
           .order('created_at', { ascending: false });
         if (quotes?.length) setJobQuotes(quotes as JobQuote[]);
@@ -4125,9 +4146,7 @@ export function MaterialsManagement({
   const selectedQuote = jobQuotes.find(q => q.id === effectiveQuoteId);
   const quoteForContractUi = buildQuoteForContract(jobQuotes, effectiveQuoteId, contractQuoteFields);
   const labelQuote = selectedQuote ?? quoteForContractUi;
-  const proposalLabel = labelQuote
-    ? (labelQuote.is_change_order_proposal ? 'Change orders' : (labelQuote.proposal_number || labelQuote.quote_number || `Proposal ${labelQuote.id.slice(0, 8)}`))
-    : (proposalNumber || 'Proposal');
+  const proposalLabel = labelQuote ? formatQuoteScopeLabel(labelQuote as JobQuote) : proposalNumber || 'Proposal';
 
   const quoteContractFrozen = isQuoteContractFrozen(quoteForContractUi as any);
   const quoteHasSignedContract = quoteHasActiveContract(quoteForContractUi as any);
@@ -4261,6 +4280,123 @@ export function MaterialsManagement({
   const isWorkbookReadOnly = proposalPanelReadOnly && !isViewingSignedContractJobWorkbook;
   isWorkbookReadOnlyRef.current = isWorkbookReadOnly;
   const materialsWorkbookLocked = isWorkbookReadOnly;
+
+  async function finalizeCategoryRename() {
+    const edit = categoryNameEditRef.current;
+    if (!edit || savingCategoryRename || categoryRenameInFlightRef.current) return;
+    if (isWorkbookReadOnly) {
+      setCategoryNameEdit(null);
+      return;
+    }
+    const trimmed = edit.value.trim();
+    if (trimmed === edit.oldName) {
+      setCategoryNameEdit(null);
+      return;
+    }
+    if (!trimmed) {
+      toast.error('Category name cannot be empty');
+      setCategoryNameEdit(null);
+      return;
+    }
+    const sheet = workbook?.sheets.find((s) => s.id === edit.sheetId);
+    if (!sheet) {
+      setCategoryNameEdit(null);
+      return;
+    }
+    const normalizedOld = edit.oldName;
+    const normalizedNew = trimmed;
+    const catsInSheet = new Set(sheet.items.map((i) => i.category || 'Uncategorized'));
+    if (catsInSheet.has(normalizedNew)) {
+      toast.error('A category with that name already exists');
+      return;
+    }
+    const itemIds = sheet.items
+      .filter((i) => (i.category || 'Uncategorized') === normalizedOld)
+      .map((i) => i.id);
+    if (itemIds.length === 0) {
+      setCategoryNameEdit(null);
+      return;
+    }
+
+    categoryRenameInFlightRef.current = true;
+    setSavingCategoryRename(true);
+    try {
+      const now = new Date().toISOString();
+      const { error: itemsErr } = await supabase
+        .from('material_items')
+        .update({ category: normalizedNew, updated_at: now })
+        .in('id', itemIds);
+      if (itemsErr) throw itemsErr;
+
+      if (sheet.category_order?.length) {
+        const nextOrder = sheet.category_order.map((c) => (c === normalizedOld ? normalizedNew : c));
+        const { error: ordErr } = await supabase
+          .from('material_sheets')
+          .update({ category_order: nextOrder })
+          .eq('id', edit.sheetId);
+        if (ordErr) console.warn('category_order rename:', ordErr);
+      }
+
+      await supabase
+        .from('material_category_markups')
+        .update({ category_name: normalizedNew })
+        .eq('sheet_id', edit.sheetId)
+        .eq('category_name', normalizedOld);
+
+      const { error: optErr } = await supabase
+        .from('material_category_options')
+        .update({ category_name: normalizedNew })
+        .eq('sheet_id', edit.sheetId)
+        .eq('category_name', normalizedOld);
+      if (optErr) console.warn('material_category_options rename:', optErr);
+
+      setCategoryFootPriceEdit((prev) =>
+        prev && prev.category === normalizedOld ? { ...prev, category: normalizedNew } : prev
+      );
+
+      setWorkbook((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sheets: prev.sheets.map((s) => {
+            if (s.id !== edit.sheetId) return s;
+            const newCatOrder =
+              s.category_order?.length != null
+                ? s.category_order.map((c) => (c === normalizedOld ? normalizedNew : c))
+                : s.category_order;
+            return {
+              ...s,
+              category_order: newCatOrder,
+              items: s.items.map((i) =>
+                (i.category || 'Uncategorized') === normalizedOld
+                  ? { ...i, category: normalizedNew, updated_at: now }
+                  : i
+              ),
+            };
+          }),
+        };
+      });
+
+      for (const key of workbookCache.keys()) {
+        if (key.startsWith(`${job.id}:`)) workbookCache.delete(key);
+      }
+
+      setCategoryNameEdit(null);
+      toast.success(`Renamed category to "${normalizedNew}"`);
+      window.dispatchEvent(
+        new CustomEvent('materials-workbook-updated', {
+          detail: { quoteId: effectiveQuoteId ?? null, jobId: job.id },
+        })
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to rename category';
+      console.error(e);
+      toast.error(msg);
+    } finally {
+      categoryRenameInFlightRef.current = false;
+      setSavingCategoryRename(false);
+    }
+  }
   /** Shop / trim / Zoho / workbook-level mutations — only when the visible grid is editable. */
   const canUseShopTrimAndZohoOnThisWorkbook =
     !isWorkbookReadOnly &&
@@ -4587,7 +4723,7 @@ export function MaterialsManagement({
                   <SelectContent>
                     {jobQuotes.map((q) => (
                       <SelectItem key={q.id} value={q.id}>
-                        {q.is_change_order_proposal ? 'Change orders' : (q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`)}
+                        {formatQuoteScopeLabel(q as JobQuote)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -5008,7 +5144,63 @@ export function MaterialsManagement({
                                   <div className="flex items-center justify-between flex-wrap gap-1">
                                     <div className="flex items-center gap-1">
                                       <FileSpreadsheet className="w-3 h-3 text-indigo-700" />
-                                      <h3 className="font-bold text-xs text-indigo-900">{catGroup.category}</h3>
+                                      {categoryNameEdit?.sheetId === activeSheet?.id &&
+                                      categoryNameEdit.oldName === catGroup.category ? (
+                                        <Input
+                                          autoFocus
+                                          disabled={savingCategoryRename}
+                                          className="h-6 w-[min(12rem,100%)] min-w-[6rem] text-xs font-bold text-indigo-900 border-indigo-400"
+                                          value={categoryNameEdit.value}
+                                          onChange={(e) =>
+                                            setCategoryNameEdit((p) =>
+                                              p ? { ...p, value: e.target.value } : null
+                                            )
+                                          }
+                                          onBlur={() => {
+                                            if (skipCategoryRenameBlurRef.current) {
+                                              skipCategoryRenameBlurRef.current = false;
+                                              return;
+                                            }
+                                            void finalizeCategoryRename();
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              void finalizeCategoryRename();
+                                            } else if (e.key === 'Escape') {
+                                              e.preventDefault();
+                                              skipCategoryRenameBlurRef.current = true;
+                                              setCategoryNameEdit(null);
+                                            }
+                                          }}
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                      ) : (
+                                        <h3
+                                          className={`font-bold text-xs text-indigo-900 ${
+                                            materialsWorkbookLocked
+                                              ? ''
+                                              : 'cursor-pointer hover:underline decoration-indigo-600/60'
+                                          }`}
+                                          title={
+                                            materialsWorkbookLocked
+                                              ? undefined
+                                              : 'Click to rename category'
+                                          }
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (materialsWorkbookLocked || !activeSheet) return;
+                                            setCategoryFootPriceEdit(null);
+                                            setCategoryNameEdit({
+                                              sheetId: activeSheet.id,
+                                              oldName: catGroup.category,
+                                              value: catGroup.category,
+                                            });
+                                          }}
+                                        >
+                                          {catGroup.category}
+                                        </h3>
+                                      )}
                                       <Badge variant="outline" className="bg-white text-[10px] px-1">
                                         {catGroup.items.length} items
                                       </Badge>

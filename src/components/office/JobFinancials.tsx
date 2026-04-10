@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, ChevronLeft, ChevronRight, Briefcase, Edit, Upload, MoreVertical, List, Eye, EyeOff, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, Settings, Printer, Send, CheckCircle, GitCompare, Link2, PauseCircle, PlayCircle } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, ChevronLeft, ChevronRight, Briefcase, Edit, Upload, MoreVertical, List, Eye, EyeOff, Check, X, GripVertical, Download, History, Lock, LockOpen, Calendar, FileText, FilePlus, Settings, Printer, Send, CheckCircle, GitCompare, Link2, PauseCircle, PlayCircle, ArrowRightCircle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import {
@@ -41,6 +41,10 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
+import {
+  BudgetMaterialCatalogLineItemPicker,
+  BudgetMaterialCatalogManageDialog,
+} from './BudgetMaterialCatalog';
 import { generateProposalHTML } from './ProposalPDFTemplate';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 import { ProposalTemplateEditor } from './ProposalTemplateEditor';
@@ -69,6 +73,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/utils';
+import { displayNumberForQuoteRow } from '@/lib/quoteDisplay';
 
 interface CustomFinancialRow {
   id: string;
@@ -110,6 +115,30 @@ interface CustomRowLineItem {
   hide_from_customer?: boolean;
 }
 
+/** Persisted price-list estimate row (separate from proposal workbook / custom_financial_rows). */
+interface CustomerEstimateLineRow {
+  id: string;
+  job_id: string;
+  anchor_quote_id: string;
+  budget_material_catalog_id: string | null;
+  description: string;
+  quantity: number;
+  unit_cost: number;
+  markup_percent: number;
+  taxable: boolean;
+  notes: string | null;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+function estimateCatalogLineExtendedSell(r: CustomerEstimateLineRow): number {
+  const qty = Number(r.quantity) || 0;
+  const uc = Number(r.unit_cost) || 0;
+  const mu = Number(r.markup_percent) || 0;
+  return qty * uc * (1 + mu / 100);
+}
+
 interface LaborPricing {
   id: string;
   job_id: string;
@@ -143,6 +172,11 @@ function toBool(value: unknown): boolean {
 function isMissingSubcontractorOptionalColumnError(error: unknown): boolean {
   const msg = String((error as any)?.message || '').toLowerCase();
   return msg.includes('subcontractor_estimates') && msg.includes('is_option') && msg.includes('column');
+}
+
+function isMissingCustomerEstimateLinesTableError(error: unknown): boolean {
+  const msg = String((error as any)?.message || '').toLowerCase();
+  return msg.includes('customer_estimate_lines') && (msg.includes('does not exist') || msg.includes('schema cache'));
 }
 
 function getSubOptionalStorageKey(scopeId: string): string {
@@ -733,20 +767,25 @@ function SortableRow({
                       CO-{String((sheet as any).changeOrderSeq).padStart(3, '0')}
                     </span>
                   )}
-                  <h3 className="text-base font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
+                  <h3
+                    className={`text-base font-bold text-slate-900 truncate ${!isReadOnly ? 'cursor-text' : ''}`}
+                    title={!isReadOnly ? 'Double-click to rename' : undefined}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (isReadOnly) {
+                        toast.error('Cannot edit in historical view');
+                        return;
+                      }
+                      startEditingRowName(sectionSheetId, 'sheet', sheet.sheetName);
+                    }}
+                  >
+                    {sheet.sheetName}
+                  </h3>
                   {(sheet as any).isOptional && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
                       Optional
                     </span>
                   )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                    onClick={() => startEditingRowName(sectionSheetId, 'sheet', sheet.sheetName)}
-                  >
-                    <Edit className="w-3 h-3 text-slate-500" />
-                  </Button>
                 </div>
               )}
             </div>
@@ -1948,20 +1987,25 @@ function SortableRow({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base font-bold text-slate-900 truncate">{row.description}</h3>
+                  <h3
+                    className={`text-base font-bold text-slate-900 truncate ${!isReadOnly ? 'cursor-text' : ''}`}
+                    title={!isReadOnly ? 'Double-click to rename' : undefined}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (isReadOnly) {
+                        toast.error('Cannot edit in historical view');
+                        return;
+                      }
+                      startEditingRowName(row.id, 'custom', row.description);
+                    }}
+                  >
+                    {row.description}
+                  </h3>
                   {toBool((row as any).is_option) && (
                     <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
                       Optional
                     </Badge>
                   )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                    onClick={() => startEditingRowName(row.id, 'custom', row.description)}
-                  >
-                    <Edit className="w-3 h-3 text-slate-500" />
-                  </Button>
                   {row.category === 'labor' && <Badge variant="secondary" className="text-xs">Labor</Badge>}
                   {(lineItems.length > 0 || linkedSubs.length > 0) && (
                     <Badge variant="outline" className="text-xs">
@@ -2620,21 +2664,26 @@ function SortableRow({
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold text-slate-900 truncate">{est.company_name}</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3
+                    className={`text-base font-bold text-slate-900 truncate ${!isReadOnly ? 'cursor-text' : ''}`}
+                    title={!isReadOnly ? 'Double-click to rename' : undefined}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (isReadOnly) {
+                        toast.error('Cannot edit in historical view');
+                        return;
+                      }
+                      startEditingRowName(est.id, 'subcontractor', est.company_name);
+                    }}
+                  >
+                    {est.company_name}
+                  </h3>
                   {toBool((est as any).is_option) && (
                     <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
                       Optional
                     </Badge>
                   )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                    onClick={() => startEditingRowName(est.id, 'subcontractor', est.company_name)}
-                  >
-                    <Edit className="w-3 h-3 text-slate-500" />
-                  </Button>
                 </div>
               )}
             </div>
@@ -2917,6 +2966,7 @@ export function JobFinancials({
   const [lineItemParentRowId, setLineItemParentRowId] = useState<string | null>(null);
   const [lineItemParentType, setLineItemParentType] = useState<'sheet' | 'row' | null>(null);
   const [lineItemType, setLineItemType] = useState<'material' | 'labor' | 'combined'>('material');
+  const [budgetCatalogManageOpen, setBudgetCatalogManageOpen] = useState(false);
   const [lineItemForm, setLineItemForm] = useState({
     description: '',
     quantity: '1',
@@ -3073,14 +3123,40 @@ export function JobFinancials({
       }),
     [allJobQuotes]
   );
+
+  const formalJobQuotes = useMemo(
+    () => allJobQuotes.filter((q: any) => q.is_customer_estimate !== true),
+    [allJobQuotes]
+  );
+  /** Formal proposals excluding change-order rows — same set as scripts/renumber_job_proposals_newest_is_one.sql */
+  const formalProposalsForRenumber = useMemo(
+    () => formalJobQuotes.filter((q: any) => !q.is_change_order_proposal),
+    [formalJobQuotes]
+  );
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
   const [showProposalComparison, setShowProposalComparison] = useState(false);
   const [showDeleteProposalConfirm, setShowDeleteProposalConfirm] = useState(false);
   const [deleteProposalQuoteId, setDeleteProposalQuoteId] = useState<string | null>(null);
+  const [showRenumberProposalsDialog, setShowRenumberProposalsDialog] = useState(false);
+  const [renumberingProposals, setRenumberingProposals] = useState(false);
   // Local overlay for optional categories when DB save fails (key = sheetId_categoryName)
   const [optionalCategoryOverlay, setOptionalCategoryOverlay] = useState<Record<string, boolean>>({});
+  /** Price-list estimate UI: lines live in `customer_estimate_lines`, not a new quotes row. */
+  const [estimateCatalogViewOpen, setEstimateCatalogViewOpen] = useState(false);
+  const [customerEstimateLines, setCustomerEstimateLines] = useState<CustomerEstimateLineRow[]>([]);
+  const [estimateLineDialogOpen, setEstimateLineDialogOpen] = useState(false);
+  const [editingEstimateLine, setEditingEstimateLine] = useState<CustomerEstimateLineRow | null>(null);
+  const [estimateLineForm, setEstimateLineForm] = useState({
+    description: '',
+    quantity: '1',
+    unit_cost: '0',
+    markup_percent: '10',
+    taxable: true,
+    notes: '',
+  });
+  const [savingEstimateLine, setSavingEstimateLine] = useState(false);
   const [templateQuoteIdForNewProposal, setTemplateQuoteIdForNewProposal] = useState<string | null>(null);
   const [recoveringProposal, setRecoveringProposal] = useState(false);
   const [showMarkAsSentManualDialog, setShowMarkAsSentManualDialog] = useState(false);
@@ -3383,6 +3459,12 @@ export function JobFinancials({
     }
   }, [controlledQuoteId, allJobQuotes.length, job.id]);
 
+  useEffect(() => {
+    if (!estimateCatalogViewOpen || !quote?.id) return;
+    void loadCustomerEstimateLines(quote.id);
+    // loadCustomerEstimateLines is stable (function declaration).
+  }, [estimateCatalogViewOpen, quote?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // When the materials workbook saves a change, refresh materials (and thus proposal totals) in real time.
   // Registered once (dep = job.id only); reads fresh values from workbookUpdateCtxRef to avoid stale closures.
   useEffect(() => {
@@ -3472,7 +3554,7 @@ export function JobFinancials({
         p_quote_id: quote?.id || null,
         p_job_id: quote ? null : job.id,
         p_user_id: profile?.id || null,
-        p_change_notes: changeNotes || null
+        p_change_notes: changeNotes || null,
       });
       
       if (error) throw error;
@@ -4521,12 +4603,20 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
   /** Deletes a proposal (quote) and all its data. Only allowed when job has more than one proposal. */
   async function deleteProposal(quoteIdToDelete: string) {
-    if (allJobQuotes.length <= 1) {
-      toast.error('Cannot delete the only proposal. A job must have at least one proposal.');
+    const deleting = allJobQuotes.find((x: any) => x.id === quoteIdToDelete);
+    const deletingIsEstimate = (deleting as any)?.is_customer_estimate === true;
+    if (!deletingIsEstimate && formalJobQuotes.length <= 1) {
+      toast.error('Cannot delete the only formal proposal. A job must have at least one proposal.');
+      return;
+    }
+    if (deletingIsEstimate && allJobQuotes.length <= 1) {
+      toast.error('Cannot delete the only quote on this job.');
       return;
     }
     const q = allJobQuotes.find((x: any) => x.id === quoteIdToDelete);
-    const label = q ? `Proposal #${q.proposal_number || q.quote_number || q.id}` : 'This proposal';
+    const label = q
+      ? `${(q as any).is_customer_estimate ? 'Estimate' : 'Proposal'} #${displayNumberForQuoteRow(q, !!(q as any).is_customer_estimate)}`
+      : 'This proposal';
     if (!confirm(`Delete ${label}? All materials, financial rows, and subcontractor estimates for this proposal will be permanently removed.\n\nThis cannot be undone.`)) {
       return;
     }
@@ -5132,6 +5222,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           const fromList = quotesList.find((q: any) => q.id === quote.id);
           quoteData = fromList ?? quote;
         }
+        const formalsOnly = quotesList.filter((q: any) => q.is_customer_estimate !== true);
+        if (quoteData && (quoteData as any).is_customer_estimate === true && formalsOnly.length > 0) {
+          quoteData = formalsOnly[0];
+          userSelectedQuoteIdRef.current = quoteData.id;
+        }
         setQuote(quoteData);
         return quoteData;
       }
@@ -5302,6 +5397,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         created_by:       profile.id,
         estimated_price:  (sourceQuote as any).estimated_price   ?? null,
         tax_exempt:       (sourceQuote as any).tax_exempt === true,
+        is_customer_estimate: (sourceQuote as any).is_customer_estimate === true,
       };
       const payloadWithDescription = { ...quotePayload, description: (sourceQuote as any).description ?? null };
       let result = await supabase.from('quotes').insert(payloadWithDescription).select().single();
@@ -5650,6 +5746,293 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     }
   }
 
+  async function loadCustomerEstimateLines(anchorQuoteId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('customer_estimate_lines')
+        .select('*')
+        .eq('anchor_quote_id', anchorQuoteId)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setCustomerEstimateLines((data as CustomerEstimateLineRow[]) || []);
+    } catch (e) {
+      if (isMissingCustomerEstimateLinesTableError(e)) {
+        toast.error('Estimate lines table is not installed. Apply migration 20260415120000_customer_estimate_lines.sql.');
+      } else {
+        toast.error((e as Error)?.message || 'Could not load estimate lines');
+      }
+      setCustomerEstimateLines([]);
+    }
+  }
+
+  /** Opens the price-list estimate workspace for the current formal proposal (no new quotes row). */
+  async function createNewCustomerEstimate() {
+    const formal =
+      quote &&
+      (quote as any).is_customer_estimate !== true &&
+      (quote as any).is_change_order_proposal !== true
+        ? quote
+        : formalJobQuotes.find((q: any) => !q.is_change_order_proposal) ?? formalJobQuotes[0];
+    if (!formal?.id) {
+      toast.error('Create or select a main proposal first, then open an estimate from the price list.');
+      return;
+    }
+    if (quote?.id !== formal.id) {
+      setQuote(formal);
+      userSelectedQuoteIdRef.current = formal.id;
+      await loadData(false, formal);
+    }
+    setEstimateCatalogViewOpen(true);
+    await loadCustomerEstimateLines(formal.id);
+    toast.success('Price-list estimate — lines are separate from the proposal workbook.');
+  }
+
+  function openEstimateLineDialog(existing: CustomerEstimateLineRow | null) {
+    if (existing) {
+      setEditingEstimateLine(existing);
+      setEstimateLineForm({
+        description: existing.description || '',
+        quantity: String(existing.quantity ?? 1),
+        unit_cost: String(existing.unit_cost ?? 0),
+        markup_percent: String(existing.markup_percent ?? 0),
+        taxable: existing.taxable !== false,
+        notes: existing.notes || '',
+      });
+    } else {
+      setEditingEstimateLine(null);
+      setEstimateLineForm({
+        description: '',
+        quantity: '1',
+        unit_cost: '0',
+        markup_percent: '10',
+        taxable: true,
+        notes: '',
+      });
+    }
+    setEstimateLineDialogOpen(true);
+  }
+
+  async function saveEstimateLineFromDialog() {
+    if (!quote?.id || isReadOnly) return;
+    const desc = estimateLineForm.description.trim();
+    if (!desc) {
+      toast.error('Enter a description');
+      return;
+    }
+    const qty = parseFloat(estimateLineForm.quantity) || 0;
+    const uc = parseFloat(estimateLineForm.unit_cost) || 0;
+    const mu = parseFloat(estimateLineForm.markup_percent) || 0;
+    setSavingEstimateLine(true);
+    try {
+      if (editingEstimateLine) {
+        const { error } = await supabase
+          .from('customer_estimate_lines')
+          .update({
+            description: desc,
+            quantity: qty,
+            unit_cost: uc,
+            markup_percent: mu,
+            taxable: estimateLineForm.taxable,
+            notes: estimateLineForm.notes.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingEstimateLine.id);
+        if (error) throw error;
+        toast.success('Line updated');
+      } else {
+        const maxSort =
+          customerEstimateLines.length > 0
+            ? Math.max(...customerEstimateLines.map((r) => r.sort_order ?? 0))
+            : -1;
+        const { error } = await supabase.from('customer_estimate_lines').insert({
+          job_id: job.id,
+          anchor_quote_id: quote.id,
+          description: desc,
+          quantity: qty,
+          unit_cost: uc,
+          markup_percent: mu,
+          taxable: estimateLineForm.taxable,
+          notes: estimateLineForm.notes.trim() || null,
+          sort_order: maxSort + 1,
+        });
+        if (error) throw error;
+        toast.success('Line added');
+      }
+      setEstimateLineDialogOpen(false);
+      setEditingEstimateLine(null);
+      await loadCustomerEstimateLines(quote.id);
+    } catch (e: any) {
+      if (isMissingCustomerEstimateLinesTableError(e)) {
+        toast.error('Run the customer_estimate_lines migration in Supabase.');
+      } else {
+        toast.error(e?.message || 'Could not save line');
+      }
+    } finally {
+      setSavingEstimateLine(false);
+    }
+  }
+
+  async function deleteCustomerEstimateLine(id: string) {
+    if (!quote?.id || isReadOnly) return;
+    if (!confirm('Remove this estimate line?')) return;
+    try {
+      const { error } = await supabase.from('customer_estimate_lines').delete().eq('id', id);
+      if (error) throw error;
+      await loadCustomerEstimateLines(quote.id);
+      toast.success('Line removed');
+    } catch (e: any) {
+      toast.error(e?.message || 'Delete failed');
+    }
+  }
+
+  async function importEstimateCatalogLinesToProposal() {
+    if (!quote?.id || isReadOnly) return;
+    if ((quote as any).is_customer_estimate === true) {
+      toast.info('Switch to a formal proposal to import lines.');
+      return;
+    }
+    if (customerEstimateLines.length === 0) {
+      toast.error('No estimate lines to import.');
+      return;
+    }
+    if (
+      !confirm(
+        `Add ${customerEstimateLines.length} material row(s) from this price-list estimate into the proposal below?`
+      )
+    )
+      return;
+    try {
+      const maxOrderIndex = customRows.length > 0 ? Math.max(...customRows.map((r) => r.order_index)) : -1;
+      let idx = maxOrderIndex + 1;
+      const sorted = [...customerEstimateLines].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      for (const line of sorted) {
+        const qty = Number(line.quantity) || 1;
+        const cost = Number(line.unit_cost) || 0;
+        const markup = Number(line.markup_percent) || 0;
+        const totalCost = qty * cost;
+        const sellingPrice = totalCost * (1 + markup / 100);
+        const { error } = await supabase.from('custom_financial_rows').insert([
+          {
+            job_id: job.id,
+            quote_id: quote.id,
+            category: 'materials',
+            description: line.description,
+            quantity: qty,
+            unit_cost: cost,
+            total_cost: totalCost,
+            markup_percent: markup,
+            selling_price: sellingPrice,
+            notes: line.notes?.trim() || 'Imported from price-list estimate',
+            taxable: line.taxable !== false,
+            order_index: idx++,
+            sheet_id: null,
+            is_option: false,
+          },
+        ]);
+        if (error) throw error;
+      }
+      toast.success('Imported into proposal financials.');
+      await loadCustomRows(quote.id, !!isReadOnly);
+      await loadMaterialsData(quote.id, !!isReadOnly);
+      setEstimateCatalogViewOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message || 'Import failed');
+    }
+  }
+
+  async function convertEstimateToProposal() {
+    if (!quote?.id || isReadOnly) return;
+    if ((quote as any).is_customer_estimate !== true) return;
+    if (
+      !confirm(
+        'Turn this estimate into a formal proposal? It can appear on the customer portal when you share a link.'
+      )
+    )
+      return;
+    try {
+      const { data: convData, error: convErr } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote.id,
+        p_job_id: null,
+        p_user_id: profile?.id ?? null,
+        p_change_notes: '__MB_CONVERT_FORMAL__',
+      });
+      if (convErr) throw new Error(convErr.message);
+      const updatedRow = (convData as any)?.quote ?? convData;
+      if (!updatedRow || typeof (updatedRow as any).id !== 'string') {
+        throw new Error('Convert response missing quote row; redeploy create_proposal_version SQL from the repo.');
+      }
+      setQuote(updatedRow as any);
+      userSelectedQuoteIdRef.current = String((updatedRow as any).id);
+      toast.success('Converted to a formal proposal.');
+      await loadQuoteData();
+      await loadData(false, updatedRow as any);
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not convert to proposal');
+    }
+  }
+
+  function parseProposalNumberBase(q: any): string | null {
+    const raw = String(q?.proposal_number || q?.quote_number || '').trim();
+    const m = raw.match(/^([0-9]+)-[0-9]+$/);
+    return m ? m[1] : null;
+  }
+
+  function tryOpenRenumberProposalsDialog() {
+    if (isReadOnly) {
+      toast.error('Cannot edit in historical view');
+      return;
+    }
+    if ((quote as any).is_customer_estimate === true || showingCatalogOrLegacyEstimate) return;
+    if (!parseProposalNumberBase(quote)) {
+      toast.error('Proposal number must look like 26040-11 to renumber.');
+      return;
+    }
+    setShowRenumberProposalsDialog(true);
+  }
+
+  async function confirmRenumberProposalsNewestIsOne() {
+    if (!quote?.id || isReadOnly) return;
+    if ((quote as any).is_customer_estimate === true || showingCatalogOrLegacyEstimate) {
+      toast.error('Open a formal proposal to renumber.');
+      return;
+    }
+    const base = parseProposalNumberBase(quote);
+    if (!base) {
+      toast.error('Could not read proposal base (expected format like 26040-11).');
+      setShowRenumberProposalsDialog(false);
+      return;
+    }
+    const rows = [...formalProposalsForRenumber].sort(
+      (a: any, b: any) =>
+        new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+    if (rows.length === 0) {
+      toast.error('No formal proposals to renumber.');
+      setShowRenumberProposalsDialog(false);
+      return;
+    }
+    setRenumberingProposals(true);
+    try {
+      for (let i = 0; i < rows.length; i++) {
+        const label = `${base}-${i + 1}`;
+        const { error } = await supabase
+          .from('quotes')
+          .update({ proposal_number: label, quote_number: label })
+          .eq('id', (rows[i] as any).id);
+        if (error) throw error;
+      }
+      const refreshed = await loadQuoteData();
+      await loadData(false, refreshed ?? quote);
+      toast.success(`Renumbered ${rows.length} proposal(s). Newest is now ${base}-1.`);
+      setShowRenumberProposalsDialog(false);
+    } catch (e: any) {
+      toast.error(e?.message || 'Renumber failed');
+    } finally {
+      setRenumberingProposals(false);
+    }
+  }
+
   async function autoCreateFirstProposal() {
     // Only run if we don't have a quote yet
     if (quote) return;
@@ -5685,7 +6068,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         p_quote_id: null,
         p_job_id: job.id,
         p_user_id: profile?.id || null,
-        p_change_notes: 'Initial proposal'
+        p_change_notes: 'Initial proposal',
       });
 
       if (error) {
@@ -5757,20 +6140,22 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
   // Proposal navigation functions
   async function navigateToFirstProposal() {
-    if (allJobQuotes.length === 0) return;
-    const firstQuote = allJobQuotes[0];
+    if (formalJobQuotes.length === 0) return;
+    const firstQuote = formalJobQuotes[0];
     if (quote?.id === firstQuote.id) return;
+    setEstimateCatalogViewOpen(false);
     setQuote(firstQuote);
     userSelectedQuoteIdRef.current = firstQuote.id;
     await loadData(false, firstQuote);
   }
 
   async function navigateToPreviousProposal() {
-    if (allJobQuotes.length === 0) return;
+    if (formalJobQuotes.length === 0) return;
 
-    const currentIndex = allJobQuotes.findIndex(q => q.id === quote?.id);
-    if (currentIndex < allJobQuotes.length - 1) {
-      const olderQuote = allJobQuotes[currentIndex + 1];
+    const currentIndex = formalJobQuotes.findIndex(q => q.id === quote?.id);
+    if (currentIndex < formalJobQuotes.length - 1) {
+      const olderQuote = formalJobQuotes[currentIndex + 1];
+      setEstimateCatalogViewOpen(false);
       setQuote(olderQuote);
       userSelectedQuoteIdRef.current = olderQuote.id;
       // Pass olderQuote explicitly — avoids stale closure on quote state
@@ -5779,11 +6164,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   }
 
   async function navigateToNextProposal() {
-    if (allJobQuotes.length === 0) return;
+    if (formalJobQuotes.length === 0) return;
     
-    const currentIndex = allJobQuotes.findIndex(q => q.id === quote?.id);
+    const currentIndex = formalJobQuotes.findIndex(q => q.id === quote?.id);
     if (currentIndex > 0) {
-      const newerQuote = allJobQuotes[currentIndex - 1];
+      const newerQuote = formalJobQuotes[currentIndex - 1];
+      setEstimateCatalogViewOpen(false);
       setQuote(newerQuote);
       userSelectedQuoteIdRef.current = newerQuote.id;
       // Pass newerQuote explicitly — avoids stale closure on quote state
@@ -5793,6 +6179,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
   async function navigateToProposal(selectedQuote: any) {
     if (!selectedQuote || selectedQuote.id === quote?.id) return;
+    setEstimateCatalogViewOpen(false);
     setQuote(selectedQuote);
     userSelectedQuoteIdRef.current = selectedQuote.id;
     await loadData(false, selectedQuote);
@@ -5869,6 +6256,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   /** Copy customer portal URL with current proposal so portal total matches this GRAND TOTAL. */
   async function copyPortalLinkForThisProposal() {
     if (!job?.id || !quote?.id) return;
+    if ((quote as any).is_customer_estimate === true || estimateCatalogViewOpen) {
+      toast.info(
+        'Estimates are hidden from the customer portal. Close the price-list estimate or convert a legacy estimate, then copy the portal link.'
+      );
+      return;
+    }
     try {
       const { data: link } = await supabase
         .from('customer_portal_access')
@@ -6257,7 +6650,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   workbookUpdateCtxRef.current = {
     jobId: job.id,
     quoteId: quote?.id ?? null,
-    allJobQuotesFirstId: allJobQuotes[0]?.id,
+    allJobQuotesFirstId: formalJobQuotes[0]?.id ?? allJobQuotes[0]?.id,
     historicalUnlockedQuoteId: effectiveHistoricalUnlockedQuoteId,
     loadMaterialsData,
     loadSubcontractorEstimates,
@@ -9518,13 +9911,58 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     setExporting(true);
     
     try {
-      // Get proposal number from quote if available, otherwise use job ID
-      const proposalNumber = quote?.proposal_number || job.id.split('-')[0].toUpperCase();
+      const isLegacyQuoteEstimate = (quote as any)?.is_customer_estimate === true;
+      const isCustomerEstimateExport = isLegacyQuoteEstimate || estimateCatalogViewOpen;
+      const proposalNumber = isLegacyQuoteEstimate
+        ? displayNumberForQuoteRow(quote as any, true)
+        : quote?.proposal_number || job.id.split('-')[0].toUpperCase();
       const isBidSpec = exportViewType === 'bid_spec';
       const includeLineItemsForPdf = showLineItems || (isBidSpec && bidSpecShowQuantities);
 
       // Prepare sections data for the template (required items first, then optional at end)
-      const sections = allItemsUnsorted.map((item, index) => {
+      const estimatePdfMaterialsTotal =
+        Math.round(customerEstimateLines.reduce((s, r) => s + estimateCatalogLineExtendedSell(r), 0) * 100) / 100;
+      const estimatePdfTaxable =
+        Math.round(
+          customerEstimateLines
+            .filter((r) => r.taxable !== false)
+            .reduce((s, r) => s + estimateCatalogLineExtendedSell(r), 0) * 100
+        ) / 100;
+      const estimatePdfTax = taxExemptChecked ? 0 : Math.round(estimatePdfTaxable * 0.07 * 100) / 100;
+      const estimatePdfGrand = Math.round((estimatePdfMaterialsTotal + estimatePdfTax) * 100) / 100;
+
+      const sections = estimateCatalogViewOpen
+        ? (isBidSpec
+            ? customerEstimateLines.map((r, i) => ({
+                name: r.description || `Item ${i + 1}`,
+                description: (r.notes || '').trim(),
+                price: 0,
+                optional: false,
+                items: [
+                  {
+                    description: r.description,
+                    quantity: Number(r.quantity) || 0,
+                    unit: '',
+                    price: 0,
+                  },
+                ],
+              }))
+            : [
+                {
+                  name: 'Price list (preliminary)',
+                  description:
+                    'Office price list — rough pricing only; not the formal proposal workbook.',
+                  price: estimatePdfMaterialsTotal,
+                  optional: false,
+                  items: customerEstimateLines.map((r) => ({
+                    description: r.description,
+                    quantity: Number(r.quantity) || 0,
+                    unit: '',
+                    price: estimateCatalogLineExtendedSell(r),
+                  })),
+                },
+              ])
+        : allItemsUnsorted.map((item, index) => {
         if (item.type === 'material') {
           const sheet = item.data;
           const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
@@ -9639,10 +10077,30 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             }
           }
 
+          const exportSheetLaborRow = sheetLabor[sheet.sheetId];
+          const exportSheetLaborTotal = exportSheetLaborRow
+            ? Number(exportSheetLaborRow.total_labor_cost) ||
+              Number(exportSheetLaborRow.estimated_hours || 0) * Number(exportSheetLaborRow.hourly_rate || 0)
+            : 0;
+          const exportLaborLineItems =
+            customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
+          const exportSheetLaborLineItemsTotal = exportLaborLineItems.reduce(
+            (s2: number, it: any) => s2 + effectiveCustomRowLineItemBase(it) * (1 + (it.markup_percent || 0) / 100),
+            0
+          );
+          const exportLinkedSubsLabor = sumLinkedSubLaborFromSubs(linkedSubs, subcontractorLineItems);
+          const totalLaborCost =
+            exportSheetLaborTotal + exportSheetLaborLineItemsTotal + linkedRowTotals.laborTotal + exportLinkedSubsLabor;
+          const sectionTotal = sheetFinalPrice + totalLaborCost;
+
           return {
             name: sheet.sheetName,
             description: sheet.sheetDescription || '',
             price: sheetFinalPrice,
+            /** Optional sheets: PDF shows Materials / Labor / Sect. total like the proposal panel. */
+            materialsPrice: sheetFinalPrice,
+            laborPrice: totalLaborCost,
+            sectionTotalPrice: sectionTotal,
             optional: (sheet as any).isOptional ?? false,
             comparisonData,
             items: materialPdfItems,
@@ -9664,6 +10122,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             name: row.description,
             description: row.notes || '',
             price: finalPrice,
+            materialsPrice: finalPrice,
+            laborPrice: 0,
+            sectionTotalPrice: finalPrice,
             optional: toBool((row as any).is_option),
             items: includeLineItemsForPdf && lineItems.length > 0 ? lineItems.map((li: any) => ({
               description: li.description,
@@ -9685,6 +10146,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             name: est.company_name,
             description: est.scope_of_work || '',
             price: finalPrice,
+            materialsPrice: finalPrice,
+            laborPrice: 0,
+            sectionTotalPrice: finalPrice,
             optional: toBool((est as any).is_option),
             items: includeLineItemsForPdf ? lineItems
               .filter((item: any) => !item.excluded)
@@ -9713,13 +10177,21 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           description: buildingDescription,
         },
         sections,
-        totals: {
-          materials: proposalMaterialsTotalWithSubcontractors,
-          labor: proposalLaborPrice,
-          subtotal: proposalSubtotal,
-          tax: proposalTotalTax,
-          grandTotal: proposalGrandTotal,
-        },
+        totals: estimateCatalogViewOpen
+          ? {
+              materials: estimatePdfMaterialsTotal,
+              labor: 0,
+              subtotal: estimatePdfMaterialsTotal,
+              tax: estimatePdfTax,
+              grandTotal: estimatePdfGrand,
+            }
+          : {
+              materials: proposalMaterialsTotalWithSubcontractors,
+              labor: proposalLaborPrice,
+              subtotal: proposalSubtotal,
+              tax: proposalTotalTax,
+              grandTotal: proposalGrandTotal,
+            },
         bidSpec: isBidSpec
           ? {
               bidDueDate: bidSpecDueDate.trim() || undefined,
@@ -9733,6 +10205,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         showInternalDetails: descriptionsOnly ? false : isOfficeView,
         theme: exportTheme,
         taxExempt: taxExemptChecked,
+        documentKind: isCustomerEstimateExport ? 'estimate' : 'proposal',
       });
 
       console.log('Generating PDF with HTML');
@@ -10436,6 +10909,32 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   const proposalSubtotal = (Number(materialsSubtotal) || 0) + (Number(laborSubtotal) || 0);
   const proposalGrandTotal = (Number(proposalSubtotal) || 0) + (Number(proposalTotalTax) || 0);
 
+  const estimateCatalogMaterialsTotal = useMemo(() => {
+    const raw = customerEstimateLines.reduce((s, r) => s + estimateCatalogLineExtendedSell(r), 0);
+    return Math.round(raw * 100) / 100;
+  }, [customerEstimateLines]);
+  const estimateCatalogTaxableMaterials = useMemo(() => {
+    const raw = customerEstimateLines
+      .filter((r) => r.taxable !== false)
+      .reduce((s, r) => s + estimateCatalogLineExtendedSell(r), 0);
+    return Math.round(raw * 100) / 100;
+  }, [customerEstimateLines]);
+  const estimateCatalogTaxAmount = useMemo(() => {
+    if (taxExemptChecked) return 0;
+    return Math.round(estimateCatalogTaxableMaterials * 0.07 * 100) / 100;
+  }, [taxExemptChecked, estimateCatalogTaxableMaterials]);
+  const estimateCatalogGrandTotalFull = useMemo(() => {
+    return Math.round((estimateCatalogMaterialsTotal + estimateCatalogTaxAmount) * 100) / 100;
+  }, [estimateCatalogMaterialsTotal, estimateCatalogTaxAmount]);
+
+  const financialBarMaterials = estimateCatalogViewOpen ? estimateCatalogMaterialsTotal : sumAllSectionBlueTotals;
+  const financialBarLabor = estimateCatalogViewOpen ? 0 : proposalLaborPrice;
+  const financialBarSubtotal = estimateCatalogViewOpen ? estimateCatalogMaterialsTotal : proposalSubtotal;
+  const financialBarTax = estimateCatalogViewOpen ? estimateCatalogTaxAmount : proposalTotalTax;
+  const financialBarGrand = estimateCatalogViewOpen ? estimateCatalogGrandTotalFull : proposalGrandTotal;
+  const showingCatalogOrLegacyEstimate =
+    estimateCatalogViewOpen || (quote as any)?.is_customer_estimate === true;
+
   // Optional categories (section-level options): list for the "Options" block at bottom of proposal
   const optionalCategoriesList: { sheetName: string; categoryName: string; totalCost: number; priceWithMarkup: number }[] = [];
   materialsBreakdown.sheetBreakdowns.forEach((sheet: any) => {
@@ -10561,10 +11060,56 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           <Edit className="w-2.5 h-2.5 mr-0.5" />
           {buildingDescription ? 'Edit Description' : 'Add Description'}
         </Button>
-        <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Create a new proposal (allowed even when current proposal is locked)">
-          {creatingVersion ? <><span className="animate-spin mr-0.5">⏳</span>Creating...</> : <><Plus className="w-2.5 h-2.5 mr-0.5" />New Proposal</>}
+        <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion || creatingProposal} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Create a new proposal (allowed even when current proposal is locked)">
+          {creatingVersion || creatingProposal ? <><span className="animate-spin mr-0.5">⏳</span>Creating...</> : <><Plus className="w-2.5 h-2.5 mr-0.5" />New Proposal</>}
         </Button>
-        {quote && !quoteHasActiveContract(quote) && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => { void createNewCustomerEstimate(); }}
+          disabled={creatingVersion}
+          className="bg-white/90 hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2"
+          title="Price-list estimate for this proposal — separate lines from the workbook; not a new proposal row"
+        >
+          <FilePlus className="w-2.5 h-2.5 mr-0.5" />
+          New estimate
+        </Button>
+        {estimateCatalogViewOpen && quote && !isReadOnly && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { void importEstimateCatalogLinesToProposal(); }}
+              className="border-emerald-400 text-emerald-100 hover:bg-emerald-950/40 h-8 text-xs px-2"
+              title="Append each line as a material row in the formal proposal below"
+            >
+              <ArrowRightCircle className="w-2.5 h-2.5 mr-0.5" />
+              Import to proposal
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setEstimateCatalogViewOpen(false)}
+              className="h-8 text-xs px-2 border-slate-400 text-slate-100 hover:bg-white/10"
+              title="Close price-list estimate view (proposal workbook totals return in the bar)"
+            >
+              Close estimate
+            </Button>
+          </>
+        )}
+        {quote && (quote as any).is_customer_estimate === true && !isReadOnly && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { void convertEstimateToProposal(); }}
+            className="border-emerald-400 text-emerald-100 hover:bg-emerald-950/40 h-8 text-xs px-2"
+            title="Make this a formal proposal (visible on customer portal when shared)"
+          >
+            <ArrowRightCircle className="w-2.5 h-2.5 mr-0.5" />
+            Convert to proposal
+          </Button>
+        )}
+        {quote && !quoteHasActiveContract(quote) && (quote as any).is_customer_estimate !== true && (
           <Button size="sm" onClick={setActiveProposalAsContract} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2">
             <Lock className="w-2.5 h-2.5 mr-0.5" />Set as Contract
           </Button>
@@ -10607,7 +11152,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm" disabled={isReadOnly} className={headerBtn}>
           <Upload className="w-2.5 h-2.5 mr-0.5" />Upload Sub
         </Button>
-        {allJobQuotes.length > 1 && (
+        {formalJobQuotes.length > 1 && (
           <Button onClick={() => setShowProposalComparison(true)} variant="outline" size="sm" className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs px-2" title="Compare two proposals side by side">
             <GitCompare className="w-2.5 h-2.5 mr-0.5" />Compare 2
           </Button>
@@ -10615,7 +11160,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       </div>
     );
     return () => { setProposalToolbar(null); };
-  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, allJobQuotes.length, buildingDescription, creatingVersion, isReadOnly, isDefaultLocked, effectiveHistoricalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version, (quote as any)?.customer_signed_at, jobHasContract, (quote as any)?.is_change_order_proposal, job.id, job.status]);
+  }, [setProposalToolbar, quote?.id, quote?.sent_at, quote?.locked_for_editing, formalJobQuotes.length, buildingDescription, creatingVersion, creatingProposal, isReadOnly, isDefaultLocked, effectiveHistoricalUnlockedQuoteId, proposalVersions?.length, quote?.signed_version, (quote as any)?.customer_signed_at, (quote as any)?.is_customer_estimate, estimateCatalogViewOpen, jobHasContract, (quote as any)?.is_change_order_proposal, job.id, job.status]);
 
   // Sync proposal summary to green header bar (Proposal #, Materials, Labor, Grand Total)
   useEffect(() => {
@@ -10625,20 +11170,28 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       setSummary(null);
       return;
     }
+    const isLegacyEst = (quote as any).is_customer_estimate === true;
+    const showEstimateSummary = isLegacyEst || estimateCatalogViewOpen;
     setSummary({
-      proposalNumber: String(quote.proposal_number ?? quote.quote_number ?? ''),
-      materials: Number(proposalMaterialsTotalWithSubcontractors) || 0,
-      labor: Number(proposalLaborPrice) || 0,
-      subtotal: Number(proposalSubtotal) || 0,
-      tax: Number(proposalTotalTax) || 0,
-      grandTotal: Number(proposalGrandTotal) || 0,
+      proposalNumber: displayNumberForQuoteRow(quote, isLegacyEst),
+      materials: showEstimateSummary ? Number(estimateCatalogMaterialsTotal) || 0 : Number(proposalMaterialsTotalWithSubcontractors) || 0,
+      labor: showEstimateSummary ? 0 : Number(proposalLaborPrice) || 0,
+      subtotal: showEstimateSummary ? Number(estimateCatalogMaterialsTotal) || 0 : Number(proposalSubtotal) || 0,
+      tax: showEstimateSummary ? Number(estimateCatalogTaxAmount) || 0 : Number(proposalTotalTax) || 0,
+      grandTotal: showEstimateSummary ? Number(estimateCatalogGrandTotalFull) || 0 : Number(proposalGrandTotal) || 0,
       jobWorkbookMaterials:
         typeof externalJobWorkbookMaterialsTotal === 'number' ? externalJobWorkbookMaterialsTotal : null,
+      isCustomerEstimate: showEstimateSummary,
     });
     return () => setSummary(null);
   }, [
     proposalSummaryCtx?.setSummary,
     quote,
+    (quote as any)?.is_customer_estimate,
+    estimateCatalogViewOpen,
+    estimateCatalogMaterialsTotal,
+    estimateCatalogTaxAmount,
+    estimateCatalogGrandTotalFull,
     proposalMaterialsTotalWithSubcontractors,
     proposalLaborPrice,
     proposalSubtotal,
@@ -10650,6 +11203,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   // Sync proposal totals to quote so customer portal can display the same numbers (single source of truth)
   const lastSyncedTotalsRef = useRef<{ quoteId: string; sub: number; tax: number; grand: number } | null>(null);
   useEffect(() => {
+    if (estimateCatalogViewOpen) return;
     if (!quote?.id || !Number.isFinite(proposalSubtotal) || !Number.isFinite(proposalGrandTotal)) return;
     const sub = Math.round(proposalSubtotal * 100) / 100;
     const tax = Math.round((proposalTotalTax ?? 0) * 100) / 100;
@@ -10667,7 +11221,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       })
       .eq('id', quote.id)
       .then(({ error }) => { if (error) console.warn('Sync proposal totals to quote:', error?.message); });
-  }, [quote?.id, proposalSubtotal, proposalTotalTax, proposalGrandTotal]);
+  }, [quote?.id, proposalSubtotal, proposalTotalTax, proposalGrandTotal, estimateCatalogViewOpen]);
 
   if (loading) {
     return (
@@ -10710,20 +11264,52 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               variant="ghost"
               size="sm"
               onClick={navigateToPreviousProposal}
-              disabled={allJobQuotes.length <= 1 || allJobQuotes.findIndex((q: any) => q.id === quote.id) >= allJobQuotes.length - 1}
+              disabled={formalJobQuotes.length <= 1 || formalJobQuotes.findIndex((q: any) => q.id === quote.id) >= formalJobQuotes.length - 1}
               className="h-8 w-8 p-0 rounded-none text-slate-600 hover:bg-slate-200 disabled:opacity-40"
               title="Previous (older) proposal"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
-            <span className="min-w-[100px] px-2 py-1.5 text-center font-semibold text-slate-800 text-sm">
-              Proposal #{quote.proposal_number || quote.quote_number}
+            <span
+              className={cn(
+                'min-w-[100px] px-2 py-1.5 text-center text-sm inline-flex items-center justify-center gap-1 rounded-md border',
+                showingCatalogOrLegacyEstimate
+                  ? 'bg-amber-50 border-amber-200 text-amber-950'
+                  : 'bg-sky-50 border-sky-200 text-slate-900'
+              )}
+            >
+              <span
+                className={cn(
+                  'font-semibold',
+                  showingCatalogOrLegacyEstimate ? 'text-amber-900' : 'text-sky-900'
+                )}
+              >
+                {showingCatalogOrLegacyEstimate ? 'Estimate' : 'Proposal'}
+              </span>
+              <span
+                className={cn(
+                  'font-mono font-bold tabular-nums tracking-tight',
+                  showingCatalogOrLegacyEstimate ? 'text-amber-950' : 'text-slate-800',
+                  !isReadOnly && !showingCatalogOrLegacyEstimate ? 'cursor-pointer hover:underline decoration-dotted underline-offset-2' : ''
+                )}
+                title={
+                  !isReadOnly && !showingCatalogOrLegacyEstimate
+                    ? 'Double-click: renumber proposals (newest becomes …-1)'
+                    : undefined
+                }
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  tryOpenRenumberProposalsDialog();
+                }}
+              >
+                #{displayNumberForQuoteRow(quote, (quote as any).is_customer_estimate === true)}
+              </span>
             </span>
             <Button
               variant="ghost"
               size="sm"
               onClick={navigateToNextProposal}
-              disabled={allJobQuotes.length <= 1 || allJobQuotes.findIndex((q: any) => q.id === quote.id) <= 0}
+              disabled={formalJobQuotes.length <= 1 || formalJobQuotes.findIndex((q: any) => q.id === quote.id) <= 0}
               className="h-8 w-8 p-0 rounded-none text-slate-600 hover:bg-slate-200 disabled:opacity-40"
               title="Next (newer) proposal"
             >
@@ -10733,14 +11319,22 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           <span className="text-slate-300">|</span>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-slate-200 bg-slate-50/90 px-2.5 py-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 whitespace-nowrap">
-              Customer proposal
+              {showingCatalogOrLegacyEstimate ? 'Customer estimate' : 'Customer proposal'}
             </span>
+            {showingCatalogOrLegacyEstimate ? (
+              <>
+                <span className="text-slate-300 hidden sm:inline">|</span>
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-900">
+                  Portal: hidden
+                </span>
+              </>
+            ) : null}
             <span className="text-slate-300 hidden sm:inline">|</span>
             <span className="text-slate-600">Materials:</span>
             <span className="font-bold text-slate-900">
-              ${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${financialBarMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            {debugMaterialsBuckets && (
+            {debugMaterialsBuckets && !estimateCatalogViewOpen && (
               <span
                 className="text-[11px] text-slate-500"
                 title={JSON.stringify(debugMaterialsBuckets)}
@@ -10751,12 +11345,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               </span>
             )}
             <span className="text-slate-600">Labor:</span>
-            <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="font-bold text-slate-900">${financialBarLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             <span className="text-slate-300">|</span>
             <span className="text-slate-600">Subtotal:</span>
-            <span className="font-semibold text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="font-semibold text-slate-900">${financialBarSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             {taxExemptChecked ? null : (
-              <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+              <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${financialBarTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
             )}
             {!isReadOnly && (
               <label className="flex items-center gap-1.5 cursor-pointer text-slate-600" title={taxExemptChecked && taxExemptSaved ? 'Saved — all users will see this job as tax exempt' : taxExemptChecked ? 'Not yet saved to database' : 'Mark this job as tax exempt'}>
@@ -10773,11 +11367,13 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               title={
                 typeof externalJobWorkbookMaterialsTotal === 'number'
                   ? 'Signed contract / proposal workbook only. Job workbook total is shown above the materials workbook column — not included here.'
-                  : 'Customer proposal total'
+                  : showingCatalogOrLegacyEstimate
+                    ? 'Price-list estimate — not on customer portal until you add lines to the formal proposal below'
+                    : 'Customer proposal total'
               }
             >
               GRAND TOTAL: $
-              {(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', {
+              {(Number.isFinite(financialBarGrand) ? financialBarGrand : 0).toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
@@ -10816,8 +11412,35 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               {/* Left: Current Proposal Info */}
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-blue-900">
-                  Proposal #{quote.proposal_number || quote.quote_number}
+                <span
+                  className={cn(
+                    'text-sm font-semibold inline-flex items-center gap-1.5 flex-wrap rounded-md border px-2 py-0.5',
+                    showingCatalogOrLegacyEstimate
+                      ? 'text-amber-950 bg-amber-50 border-amber-200'
+                      : 'text-sky-950 bg-sky-50 border-sky-200'
+                  )}
+                >
+                  <span className={showingCatalogOrLegacyEstimate ? 'text-amber-900' : 'text-sky-900'}>
+                    {showingCatalogOrLegacyEstimate ? 'Estimate' : 'Proposal'}
+                  </span>
+                  <span
+                    className={cn(
+                      'font-mono font-bold tabular-nums',
+                      showingCatalogOrLegacyEstimate ? 'text-amber-950' : 'text-slate-800',
+                      !isReadOnly && !showingCatalogOrLegacyEstimate ? 'cursor-pointer hover:underline decoration-dotted underline-offset-2' : ''
+                    )}
+                    title={
+                      !isReadOnly && !showingCatalogOrLegacyEstimate
+                        ? 'Double-click: renumber proposals (newest becomes …-1)'
+                        : undefined
+                    }
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      tryOpenRenumberProposalsDialog();
+                    }}
+                  >
+                    #{displayNumberForQuoteRow(quote, (quote as any).is_customer_estimate === true)}
+                  </span>
                 </span>
                 {(quote as any).sent_at && (() => {
                   const sentAt = new Date((quote as any).sent_at);
@@ -10856,27 +11479,27 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               </div>
 
               {/* Right: Navigation Controls (only show if multiple proposals exist) */}
-              {allJobQuotes.length > 1 && (
+              {formalJobQuotes.length > 1 && (
                 <div className="flex items-center gap-3">
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={navigateToFirstProposal}
-                    disabled={allJobQuotes.findIndex(q => q.id === quote.id) === 0}
+                    disabled={formalJobQuotes.findIndex(q => q.id === quote.id) === 0}
                     className="h-7 px-2 text-xs text-blue-700 hover:bg-blue-100 disabled:opacity-50"
                     title="Go to first proposal"
                   >
                     First
                   </Button>
                   <span className="text-xs text-blue-700 font-medium">
-                    {allJobQuotes.findIndex(q => q.id === quote.id) + 1} of {allJobQuotes.length}
+                    {formalJobQuotes.findIndex(q => q.id === quote.id) + 1} of {formalJobQuotes.length}
                   </span>
                   <div className="flex items-center gap-1">
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={navigateToPreviousProposal}
-                      disabled={allJobQuotes.findIndex(q => q.id === quote.id) === allJobQuotes.length - 1}
+                      disabled={formalJobQuotes.findIndex(q => q.id === quote.id) === formalJobQuotes.length - 1}
                       className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
                       title="Previous Proposal (Older)"
                     >
@@ -10886,7 +11509,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                       size="sm"
                       variant="outline"
                       onClick={navigateToNextProposal}
-                      disabled={allJobQuotes.findIndex(q => q.id === quote.id) === 0}
+                      disabled={formalJobQuotes.findIndex(q => q.id === quote.id) === 0}
                       className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
                       title="Next Proposal (Newer)"
                     >
@@ -10895,12 +11518,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                   </div>
                 </div>
               )}
-              {allJobQuotes.length > 1 && (
+              {formalJobQuotes.length > 1 && (
                 <Button size="sm" variant="outline" onClick={() => setShowProposalComparison(true)} className="border-blue-300 text-blue-700 hover:bg-blue-50">
                   <GitCompare className="w-3 h-3 mr-1" />Compare proposals
                 </Button>
               )}
-              {quote && allJobQuotes.length > 1 && (
+              {quote && formalJobQuotes.length > 1 && (
                 <Button size="sm" variant="outline" onClick={() => { setDeleteProposalQuoteId(quote.id); setShowDeleteProposalConfirm(true); }} className="h-8 w-8 p-0 border-red-300 text-red-700 hover:bg-red-50" title="Delete this proposal">
                   <Trash2 className="w-3 h-3" />
                 </Button>
@@ -10921,10 +11544,44 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                 {buildingDescription ? 'Edit Building Description' : 'Add Building Description'}
               </Button>
               <div className="h-6 w-px bg-border" />
-              <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion} className="bg-blue-600 hover:bg-blue-700" title="Create a new proposal (allowed even when current proposal is locked)">
-                {creatingVersion ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />Creating...</> : <><Plus className="w-3 h-3 mr-2" />New Proposal</>}
+              <Button size="sm" onClick={() => { if (quote) setShowCreateProposalDialog(true); else autoCreateFirstProposal(); }} disabled={creatingVersion || creatingProposal} className="bg-blue-600 hover:bg-blue-700" title="Create a new proposal (allowed even when current proposal is locked)">
+                {creatingVersion || creatingProposal ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />Creating...</> : <><Plus className="w-3 h-3 mr-2" />New Proposal</>}
               </Button>
-              {quote && !quoteHasActiveContract(quote) && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { void createNewCustomerEstimate(); }}
+                disabled={creatingVersion}
+                className="border-blue-200 bg-white text-blue-900 hover:bg-blue-50"
+                title="Price-list estimate for this proposal — no new proposal row"
+              >
+                <FilePlus className="w-3 h-3 mr-2" />
+                New estimate
+              </Button>
+              {estimateCatalogViewOpen && quote && !isReadOnly && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { void importEstimateCatalogLinesToProposal(); }}
+                    className="border-emerald-500 text-emerald-800 hover:bg-emerald-50"
+                    title="Append lines as material rows in the proposal below"
+                  >
+                    <ArrowRightCircle className="w-3 h-3 mr-2" />
+                    Import to proposal
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setEstimateCatalogViewOpen(false)}>
+                    Close estimate
+                  </Button>
+                </>
+              )}
+              {quote && (quote as any).is_customer_estimate === true && !isReadOnly && (
+                <Button size="sm" variant="outline" onClick={() => { void convertEstimateToProposal(); }} className="border-emerald-500 text-emerald-800 hover:bg-emerald-50">
+                  <ArrowRightCircle className="w-3 h-3 mr-2" />
+                  Convert to proposal
+                </Button>
+              )}
+              {quote && !quoteHasActiveContract(quote) && (quote as any).is_customer_estimate !== true && (
                 <Button size="sm" onClick={setActiveProposalAsContract} className="bg-emerald-600 hover:bg-emerald-700">
                   <Lock className="w-3 h-3 mr-2" />Set as Contract
                 </Button>
@@ -10983,21 +11640,23 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         {!setProposalToolbar && (
         <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
           <div className="flex flex-wrap items-center gap-3 py-2 px-3 rounded-lg bg-gradient-to-r from-slate-100 to-slate-50 border border-slate-200">
-            <span className="text-[10px] font-bold uppercase text-slate-500">Customer proposal</span>
+            <span className="text-[10px] font-bold uppercase text-slate-500">
+              {showingCatalogOrLegacyEstimate ? 'Customer estimate' : 'Customer proposal'}
+            </span>
             <span className="text-slate-400">|</span>
             <span className="font-semibold text-slate-700">Materials:</span>
-            <span className="font-bold text-slate-900">${sumAllSectionBlueTotals.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            {proposalLaborPrice > 0 && (
+            <span className="font-bold text-slate-900">${financialBarMaterials.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            {(estimateCatalogViewOpen ? financialBarLabor > 0 : proposalLaborPrice > 0) && (
               <>
                 <span className="font-semibold text-slate-700">Labor:</span>
-                <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="font-bold text-slate-900">${financialBarLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </>
             )}
             <span className="text-slate-400">|</span>
             <span className="text-slate-600">Subtotal:</span>
-            <span className="font-semibold">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="font-semibold">${financialBarSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             {taxExemptChecked ? null : (
-              <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+              <span className="text-slate-600">Tax (7%): <span className="font-semibold text-amber-700">${financialBarTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
             )}
             <span className="text-slate-400">|</span>
             <span
@@ -11005,11 +11664,13 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               title={
                 typeof externalJobWorkbookMaterialsTotal === 'number'
                   ? 'Signed contract workbook only — job workbook is separate'
-                  : 'Customer proposal total'
+                  : showingCatalogOrLegacyEstimate
+                    ? 'Price-list estimate — not on customer portal'
+                    : 'Customer proposal total'
               }
             >
               GRAND TOTAL: $
-              {(Number.isFinite(proposalGrandTotal) ? proposalGrandTotal : 0).toLocaleString('en-US', {
+              {(Number.isFinite(financialBarGrand) ? financialBarGrand : 0).toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
@@ -11036,6 +11697,101 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           <div className="w-full max-w-full mx-auto px-3 sm:px-4">
             <div className="w-full min-w-0">
               <div className="flex-1 min-w-0 space-y-4">
+                {estimateCatalogViewOpen && quote && (quote as any).is_customer_estimate !== true && (
+                  <Card className="border-amber-300 bg-amber-50/80">
+                    <CardHeader className="py-3 pb-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <CardTitle className="text-base font-semibold text-amber-950">Price-list estimate</CardTitle>
+                        <div className="flex flex-wrap gap-2">
+                          <BudgetMaterialCatalogLineItemPicker
+                            disabled={!!isReadOnly}
+                            onApply={(patch) => {
+                              setEstimateLineForm((prev) => ({
+                                ...prev,
+                                description: patch.description ?? prev.description,
+                                quantity: patch.quantity ?? prev.quantity,
+                                unit_cost: patch.unit_cost ?? prev.unit_cost,
+                                markup_percent: patch.markup_percent ?? prev.markup_percent,
+                                taxable: patch.taxable ?? prev.taxable,
+                                notes: patch.notes ?? prev.notes,
+                              }));
+                              setEditingEstimateLine(null);
+                              setEstimateLineDialogOpen(true);
+                            }}
+                          />
+                          <Button type="button" variant="outline" size="sm" onClick={() => setBudgetCatalogManageOpen(true)}>
+                            Manage price list
+                          </Button>
+                          <Button size="sm" onClick={() => openEstimateLineDialog(null)} disabled={!!isReadOnly}>
+                            <Plus className="w-4 h-4 mr-1" /> Add line
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-amber-900/90 mt-1">
+                        Stored separately from the materials workbook. Use Import to proposal to copy lines into formal material rows.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      {customerEstimateLines.length === 0 ? (
+                        <p className="text-sm text-muted-foreground py-4">No lines yet — pick from the price list or add a line.</p>
+                      ) : (
+                        <div className="overflow-x-auto rounded-md border border-amber-200/80 bg-white">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b bg-amber-100/60 text-left text-xs uppercase text-amber-950">
+                                <th className="p-2">Description</th>
+                                <th className="p-2 w-20">Qty</th>
+                                <th className="p-2 w-24">Unit $</th>
+                                <th className="p-2 w-20">Mkup %</th>
+                                <th className="p-2 w-28 text-right">Extended</th>
+                                <th className="p-2 w-16">Tax</th>
+                                <th className="p-2 w-28 text-right"> </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {customerEstimateLines.map((row) => (
+                                <tr key={row.id} className="border-b border-amber-100">
+                                  <td className="p-2 font-medium">{row.description}</td>
+                                  <td className="p-2 tabular-nums">{Number(row.quantity).toLocaleString()}</td>
+                                  <td className="p-2 tabular-nums">${Number(row.unit_cost).toFixed(2)}</td>
+                                  <td className="p-2 tabular-nums">{Number(row.markup_percent)}%</td>
+                                  <td className="p-2 text-right tabular-nums">
+                                    $
+                                    {estimateCatalogLineExtendedSell(row).toLocaleString('en-US', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
+                                  </td>
+                                  <td className="p-2">{row.taxable !== false ? 'Yes' : 'No'}</td>
+                                  <td className="p-2 text-right whitespace-nowrap">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      disabled={!!isReadOnly}
+                                      onClick={() => openEstimateLineDialog(row)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2 text-destructive"
+                                      disabled={!!isReadOnly}
+                                      onClick={() => void deleteCustomerEstimateLine(row.id)}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
@@ -11893,14 +12649,36 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       <Dialog open={showLineItemDialog} onOpenChange={setShowLineItemDialog}>
         <DialogContent className={lineItemType === 'combined' ? "max-w-4xl" : "max-w-lg"}>
           <DialogHeader>
-            <DialogTitle>
-              {editingLineItem ? 'Edit Line Item' : 'Add Line Item'}
-            </DialogTitle>
-            <DialogDescription>
-              {lineItemType === 'material' && 'Add material costs with markup and tax options'}
-              {lineItemType === 'labor' && 'Add labor hours and rates'}
-              {lineItemType === 'combined' && 'Add material costs, labor hours, or both in a single line item'}
-            </DialogDescription>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="min-w-0 space-y-1.5">
+                <DialogTitle>
+                  {editingLineItem ? 'Edit Line Item' : 'Add Line Item'}
+                </DialogTitle>
+                <DialogDescription>
+                  {lineItemType === 'material' && 'Add material costs with markup and tax options'}
+                  {lineItemType === 'labor' && 'Add labor hours and rates'}
+                  {lineItemType === 'combined' && 'Add material costs, labor hours, or both in a single line item'}
+                </DialogDescription>
+              </div>
+              {(lineItemType === 'material' || lineItemType === 'combined') && (
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <BudgetMaterialCatalogLineItemPicker
+                    disabled={savingLineItem}
+                    onApply={(patch) => {
+                      setLineItemForm((prev) => ({ ...prev, ...patch }));
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBudgetCatalogManageOpen(true)}
+                  >
+                    Manage price list
+                  </Button>
+                </div>
+              )}
+            </div>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -12271,6 +13049,105 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         </DialogContent>
       </Dialog>
 
+      <BudgetMaterialCatalogManageDialog open={budgetCatalogManageOpen} onOpenChange={setBudgetCatalogManageOpen} />
+
+      <Dialog open={estimateLineDialogOpen} onOpenChange={setEstimateLineDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingEstimateLine ? 'Edit estimate line' : 'Add estimate line'}</DialogTitle>
+            <DialogDescription>
+              Lines use the office price list database (not the proposal materials workbook).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2">
+            <BudgetMaterialCatalogLineItemPicker
+              disabled={savingEstimateLine}
+              onApply={(patch) => {
+                setEstimateLineForm((prev) => ({
+                  ...prev,
+                  description: patch.description ?? prev.description,
+                  quantity: patch.quantity ?? prev.quantity,
+                  unit_cost: patch.unit_cost ?? prev.unit_cost,
+                  markup_percent: patch.markup_percent ?? prev.markup_percent,
+                  taxable: patch.taxable ?? prev.taxable,
+                  notes: patch.notes ?? prev.notes,
+                }));
+              }}
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => setBudgetCatalogManageOpen(true)}>
+              Manage price list
+            </Button>
+          </div>
+          <div className="space-y-3 pt-2">
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={estimateLineForm.description}
+                onChange={(e) => setEstimateLineForm((p) => ({ ...p, description: e.target.value }))}
+                placeholder="e.g., Roofing underlayment"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <Label>Qty</Label>
+                <Input
+                  type="number"
+                  value={estimateLineForm.quantity}
+                  onChange={(e) => setEstimateLineForm((p) => ({ ...p, quantity: e.target.value }))}
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+              <div>
+                <Label>Unit $</Label>
+                <Input
+                  type="number"
+                  value={estimateLineForm.unit_cost}
+                  onChange={(e) => setEstimateLineForm((p) => ({ ...p, unit_cost: e.target.value }))}
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+              <div>
+                <Label>Markup %</Label>
+                <Input
+                  type="number"
+                  value={estimateLineForm.markup_percent}
+                  onChange={(e) => setEstimateLineForm((p) => ({ ...p, markup_percent: e.target.value }))}
+                  step="0.1"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="est-line-tax"
+                checked={estimateLineForm.taxable}
+                onCheckedChange={(c) => setEstimateLineForm((p) => ({ ...p, taxable: !!c }))}
+              />
+              <Label htmlFor="est-line-tax" className="cursor-pointer text-sm">
+                Taxable (7% when not tax exempt)
+              </Label>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                rows={2}
+                value={estimateLineForm.notes}
+                onChange={(e) => setEstimateLineForm((p) => ({ ...p, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setEstimateLineDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => void saveEstimateLineFromDialog()} disabled={savingEstimateLine}>
+                {savingEstimateLine ? 'Saving…' : editingEstimateLine ? 'Save' : 'Add'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Subcontractor Upload Dialog */}
       {showSubUploadDialog && (
         <SubcontractorEstimatesManagement
@@ -12287,9 +13164,17 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Export Proposal as PDF</DialogTitle>
+            <DialogTitle>
+              {(quote as any)?.is_customer_estimate === true || estimateCatalogViewOpen
+                ? 'Export estimate as PDF'
+                : 'Export proposal as PDF'}
+            </DialogTitle>
             <DialogDescription>
-              Choose the version to export: customer proposal, office view, descriptions only, or a subcontractor bid specification PDF (no pricing).
+              {(quote as any)?.is_customer_estimate === true || estimateCatalogViewOpen
+                ? estimateCatalogViewOpen
+                  ? 'Exports price-list estimate lines only (rough pricing). For the full workbook, close the estimate view first.'
+                  : 'Same sections and scope as a formal proposal. Wording and totals are labeled as a preliminary estimate (rough pricing), not a construction contract.'
+                : 'Choose the version to export: customer proposal, office view, descriptions only, or a subcontractor bid specification PDF (no pricing).'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -12625,12 +13510,15 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__blank__">Start from blank (empty proposal)</SelectItem>
-                  {allJobQuotes.map((q: any) => (
-                    <SelectItem key={q.id} value={q.id}>
-                      Proposal #{q.proposal_number ?? q.quote_number ?? q.id?.slice(0, 8)}
-                      {q.id === quote?.id ? ' (current)' : ''}
-                    </SelectItem>
-                  ))}
+                  {formalJobQuotes.map((q: any) => {
+                    const isEst = !!q.is_customer_estimate;
+                    return (
+                      <SelectItem key={q.id} value={q.id}>
+                        {isEst ? 'Estimate' : 'Proposal'} #{displayNumberForQuoteRow(q, isEst)}
+                        {q.id === quote?.id ? ' (current)' : ''}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
@@ -12700,7 +13588,15 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <ProposalComparisonView
             job={job}
-            quotes={allJobQuotes.map((q: any) => ({ id: q.id, proposal_number: q.proposal_number, quote_number: q.quote_number, created_at: q.created_at }))}
+            quotes={formalJobQuotes.map((q: any) => ({
+              id: q.id,
+              proposal_number: q.proposal_number,
+              quote_number: q.quote_number,
+              estimate_number: q.estimate_number,
+              is_customer_estimate: q.is_customer_estimate,
+              is_change_order_proposal: q.is_change_order_proposal,
+              created_at: q.created_at,
+            }))}
             onClose={() => setShowProposalComparison(false)}
           />
         </DialogContent>
@@ -12734,6 +13630,38 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showRenumberProposalsDialog}
+        onOpenChange={(open) => {
+          if (!open && !renumberingProposals) setShowRenumberProposalsDialog(false);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renumber proposals?</DialogTitle>
+            <DialogDescription>
+              This only updates <span className="font-mono text-foreground">proposal_number</span> and{' '}
+              <span className="font-mono text-foreground">quote_number</span>. Workbooks, materials, and financial rows
+              stay on the same quote IDs.{' '}
+              <strong>{formalProposalsForRenumber.length}</strong> formal proposal(s) on this job (change orders excluded)
+              are renumbered newest-first: the newest becomes{' '}
+              <strong className="font-mono text-foreground">
+                {parseProposalNumberBase(quote) ?? '?'}-1
+              </strong>
+              , then <span className="font-mono">{parseProposalNumberBase(quote) ?? '?'}-2</span>, and so on.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setShowRenumberProposalsDialog(false)} disabled={renumberingProposals}>
+              Cancel
+            </Button>
+            <Button onClick={() => void confirmRenumberProposalsNewestIsOne()} disabled={renumberingProposals}>
+              {renumberingProposals ? 'Saving…' : 'Renumber'}
             </Button>
           </div>
         </DialogContent>

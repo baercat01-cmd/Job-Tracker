@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
+import { cn } from '@/lib/utils';
 
 export interface ProposalSummary {
   proposalNumber: string;
@@ -9,6 +10,8 @@ export interface ProposalSummary {
   grandTotal: number;
   /** Signed contract: job workbook materials extended sell; not part of proposal subtotal/grand total */
   jobWorkbookMaterials?: number | null;
+  /** Office-only rough pricing; hidden from customer portal until promoted */
+  isCustomerEstimate?: boolean;
 }
 
 type SetProposalSummary = (summary: ProposalSummary | null) => void;
@@ -40,9 +43,32 @@ export function ProposalSummaryRow({ className }: { className?: string }) {
   const fmt = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs ${className ?? ''}`}>
-      <span className="font-semibold text-yellow-100">
-        Proposal #{s.proposalNumber}
+      <span className="inline-flex items-baseline gap-1">
+        <span
+          className={cn(
+            'font-semibold',
+            s.isCustomerEstimate ? 'text-amber-100' : 'text-sky-100'
+          )}
+        >
+          {s.isCustomerEstimate ? 'Estimate' : 'Proposal'}
+        </span>
+        <span
+          className={cn(
+            'font-mono font-bold tabular-nums tracking-tight',
+            s.isCustomerEstimate ? 'text-amber-50' : 'text-yellow-100'
+          )}
+        >
+          #{s.proposalNumber}
+        </span>
       </span>
+      {s.isCustomerEstimate ? (
+        <>
+          <span className="text-yellow-600/80">|</span>
+          <span className="rounded bg-amber-500/25 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-100">
+            Rough pricing
+          </span>
+        </>
+      ) : null}
       <span className="text-yellow-600/80">|</span>
       <span className="text-yellow-100/90">Materials:</span>
       <span className="font-semibold text-yellow-100">${fmt(s.materials)}</span>

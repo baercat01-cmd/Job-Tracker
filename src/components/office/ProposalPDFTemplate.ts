@@ -8,6 +8,25 @@ function escapeHtmlBid(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Sell total for one PDF section (matches optional/required header math). */
+function pdfSectionLineTotal(section: {
+  price?: number;
+  materialsPrice?: number;
+  laborPrice?: number;
+  sectionTotalPrice?: number;
+}): number {
+  if (section.sectionTotalPrice != null && !isNaN(Number(section.sectionTotalPrice))) {
+    return Number(section.sectionTotalPrice);
+  }
+  const mat =
+    section.materialsPrice != null && !isNaN(Number(section.materialsPrice))
+      ? Number(section.materialsPrice)
+      : Number(section.price || 0);
+  const lab =
+    section.laborPrice != null && !isNaN(Number(section.laborPrice)) ? Number(section.laborPrice) : 0;
+  return mat + lab;
+}
+
 function renderBidSpecScopeSection(
   section: {
     name: string;
@@ -94,8 +113,8 @@ function buildBidSpecBody(params: {
 
   const optionalBlock =
     optionalSections.length > 0
-      ? `<div class="intro-box" style="margin-top: 14px; border-color: #d97706;">
-          <div class="box-header" style="background: #b45309;">Optional / alternate scope <span style="font-size: 9pt; font-weight: normal;">(bid separately unless noted)</span></div>
+      ? `<div class="intro-box" style="margin-top: 14px;">
+          <div class="box-header">Optional / alternate scope <span style="font-size: 9pt; font-weight: normal;">(bid separately unless noted)</span></div>
           <div style="padding: 12px 14px 14px 14px;">
             ${optionalSections.map((s) => renderBidSpecScopeSection(s, showQuantities)).join('')}
           </div>
@@ -210,6 +229,8 @@ export function generateProposalHTML(data: {
   templateSettings?: any; // Template customization settings
   theme?: 'default' | 'premium'; // premium = dark green + gold modern look
   taxExempt?: boolean; // when true, show "Tax Exempt" on printout and tax amount is 0
+  /** estimate = rough pricing wording & labels; proposal = formal building quote (sections data is the same). */
+  documentKind?: 'proposal' | 'estimate';
 }): string {
   const {
     proposalNumber,
@@ -225,8 +246,11 @@ export function generateProposalHTML(data: {
     templateSettings,
     theme = 'default',
     taxExempt = false,
+    documentKind = 'proposal',
   } = data;
   const isPremium = theme === 'premium';
+  const isEstimate = documentKind === 'estimate';
+  const docTitle = isEstimate ? 'Estimate' : 'Proposal';
 
   // Apply template settings or use defaults
   const t = templateSettings || {};
@@ -246,9 +270,33 @@ export function generateProposalHTML(data: {
   const sectionMinHeight = t.section_min_height ?? 40;
   const proposalTitleSize = t.proposal_title_size ?? 32;
   const sectionTitleSize = t.section_title_size ?? 12;
-  const introText = t.intro_text ?? 'We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:';
+  const defaultProposalIntro =
+    'We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:';
+  const defaultEstimateIntro =
+    'The sections and descriptions below use the same structure as our formal building proposals. Dollar amounts are rough estimated pricing for planning and discussion only—not a detailed quote or construction contract. A formal proposal is prepared for building.';
+  const introText = isEstimate
+    ? (t.estimate_intro_text ?? defaultEstimateIntro)
+    : (t.intro_text ?? defaultProposalIntro);
+  const hasOptionalSections =
+    !bidSpec && !descriptionsOnly && sections.some((s: any) => s.optional);
+  const pdfOptionalSubtotal = hasOptionalSections
+    ? sections.filter((s: any) => s.optional).reduce((acc, s) => acc + pdfSectionLineTotal(s), 0)
+    : 0;
+  const showPdfOptionalPricing =
+    hasOptionalSections &&
+    (showInternalDetails ||
+      showSectionPrices ||
+      sections.some((s: any) => pdfSectionLineTotal(s) > 0.005));
+  const pdfCombinedSubtotalBeforeTax = (Number(totals.subtotal) || 0) + pdfOptionalSubtotal;
+  const pdfGrandTotalAllScope = pdfCombinedSubtotalBeforeTax + (taxExempt ? 0 : Number(totals.tax) || 0);
   const paymentText = t.payment_text ?? 'Payment to be made as follows: 20% Down, 60% COD, 20% Final';
-  const acceptanceText = t.acceptance_text ?? 'The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.';
+  const defaultAcceptanceProposal =
+    'The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.';
+  const defaultAcceptanceEstimate =
+    'The customer acknowledges receipt of this preliminary estimate. It is for budgeting and discussion only and does not authorize construction; a formal proposal and agreement will follow.';
+  const acceptanceText = isEstimate
+    ? (t.estimate_acceptance_text ?? defaultAcceptanceEstimate)
+    : (t.acceptance_text ?? defaultAcceptanceProposal);
   const companyName = t.company_name ?? 'Martin Builder';
   const companyAddress1 = t.company_address_1 ?? '27608-A CR 36';
   const companyAddress2 = t.company_address_2 ?? 'Goshen, IN 46526';
@@ -262,7 +310,7 @@ export function generateProposalHTML(data: {
     <html>
       <head>
         <meta charset="UTF-8">
-        <title>${bidSpec ? 'Bid-spec' : 'Proposal'}-${proposalNumber}</title>
+        <title>${bidSpec ? 'Bid-spec' : docTitle}-${proposalNumber}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
@@ -697,11 +745,11 @@ export function generateProposalHTML(data: {
           </div>
           
           <div class="proposal-header">
-            <div class="proposal-title">Proposal</div>
+            <div class="proposal-title">${docTitle}</div>
             <table class="proposal-info-table">
               <tr>
                 <th>Date</th>
-                <th>Proposal #</th>
+                <th>${isEstimate ? 'Estimate #' : 'Proposal #'}</th>
               </tr>
               <tr>
                 <td>${date}</td>
@@ -710,6 +758,14 @@ export function generateProposalHTML(data: {
             </table>
           </div>
         </div>
+
+        ${
+          isEstimate
+            ? `<div style="margin: 14px 0; padding: 12px 14px; background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; font-size: ${bodyFontSize}pt; line-height: 1.55; color: #78350f;">
+            <strong>Preliminary estimate.</strong> Section titles and scope descriptions follow the same layout as a formal proposal. Dollar totals are <strong>rough pricing</strong> for planning only—not shop drawings, takeoffs, or a construction contract.
+          </div>`
+            : ''
+        }
         
         <div class="customer-section">
           <div class="customer-row">
@@ -805,9 +861,18 @@ export function generateProposalHTML(data: {
           </div>
         </div>
 
+        ${
+          hasOptionalSections && showPdfOptionalPricing
+            ? `<div style="margin-top: 12px; padding: 10px 14px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <strong style="font-size: ${bodyFontSize}pt;">Subtotal (base scope — excludes optional items)</strong>
+            <strong style="font-size: ${bodyFontSize}pt;">$${(Number(totals.subtotal) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+          </div>`
+            : ''
+        }
+
         ${sections.some((s: any) => s.optional) ? `
-        <div class="intro-box" style="margin-top: 10px; border-color: #d97706;">
-          <div class="box-header" style="background: #b45309;">Optional Items <span style="font-size: 9pt; font-weight: normal;">(not included in contract total)</span></div>
+        <div class="intro-box" style="margin-top: 10px;">
+          <div class="box-header">Optional items <span style="font-size: 9pt; font-weight: normal;">${isEstimate ? '(not included in estimated total above)' : '(not included in base contract total above)'}</span></div>
           <div style="padding: 15px 10px 10px 10px;">
             ${sections.filter((s: any) => s.optional).map((section: any, sectionIndex: number) => {
               const isFirstSection = sectionIndex === 0;
@@ -815,15 +880,21 @@ export function generateProposalHTML(data: {
               let content = '<div class="section-wrapper">';
               
               if (showInternalDetails) {
+                const optTot = pdfSectionLineTotal(section);
                 content += '<div class="section-title" style="margin-top: ' + sectionTitleMargin + ';">';
                 content += '<span style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">' + section.name + '</span>';
-                if (section.price) {
-                  content += '<span class="section-price" style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+                if (optTot > 0) {
+                  content +=
+                    '<span class="section-price" style="font-weight: bold; font-size: ' +
+                    (sectionTitleSize + 1) +
+                    'pt;">$' +
+                    optTot.toLocaleString('en-US', { minimumFractionDigits: 2 }) +
+                    '</span>';
                 }
                 content += '</div>';
-                
+
                 if (section.description) {
-                  content += '<div class="section-content" style="margin: 6px 0 8px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #b45309;">' + section.description + '</div>';
+                  content += '<div class="section-content" style="margin: 6px 0 8px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #2d5f3f;">' + section.description + '</div>';
                 }
                 
                 if (section.items && section.items.length > 0) {
@@ -850,13 +921,29 @@ export function generateProposalHTML(data: {
                   
                   content += '<tr class="total-row">';
                   content += '<td colspan="3" style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0;">Section Total:</td>';
-                  content += '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: ' + bodyFontSize + 'pt;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                  content +=
+                    '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: ' +
+                    bodyFontSize +
+                    'pt;">$' +
+                    (optTot > 0 ? optTot : section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) +
+                    '</td>';
                   content += '</tr>';
                   content += '</tbody></table>';
                   content += '</div>';
                 }
               } else {
-                if (showSectionPrices && section.price) {
+                const tot = pdfSectionLineTotal(section);
+                const optShowCustomerPricing = tot > 0;
+
+                if (optShowCustomerPricing) {
+                  content += '<div class="section-title" style="margin-top: ' + sectionTitleMargin + '; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">';
+                  content += '<span>' + section.name + '</span>';
+                  content +=
+                    '<span class="section-price">$' +
+                    tot.toLocaleString('en-US', { minimumFractionDigits: 2 }) +
+                    '</span>';
+                  content += '</div>';
+                } else if (showSectionPrices && section.price) {
                   content += '<div class="section-title" style="margin-top: ' + sectionTitleMargin + ';">';
                   content += '<span>' + section.name + '</span>';
                   content += '<span class="section-price">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
@@ -882,7 +969,7 @@ export function generateProposalHTML(data: {
                 content += '<thead><tr style="border-bottom:1px solid #e2e8f0;">';
                 content += '<th style="text-align:left; padding:5px 8px; color:#64748b; font-weight:600; width:35%;"></th>';
                 content += '<th style="text-align:right; padding:5px 8px; color:#1e40af; font-weight:700;">' + cd.baseName + ' <span style="font-size:8pt; font-weight:normal;">(included)</span></th>';
-                content += '<th style="text-align:right; padding:5px 8px; color:#b45309; font-weight:700;">' + cd.optionName + ' <span style="font-size:8pt; font-weight:normal;">(option)</span></th>';
+                content += '<th style="text-align:right; padding:5px 8px; color:#1d4ed8; font-weight:700;">' + cd.optionName + ' <span style="font-size:8pt; font-weight:normal;">(option)</span></th>';
                 content += '<th style="text-align:right; padding:5px 8px; color:#64748b; font-weight:600;">Difference</th>';
                 content += '</tr></thead><tbody>';
                 cd.categoryRows.forEach((row: any) => {
@@ -891,7 +978,7 @@ export function generateProposalHTML(data: {
                   content += '<tr style="border-bottom:1px solid #f1f5f9;">';
                   content += '<td style="padding:4px 8px; color:#475569;">' + row.name + '</td>';
                   content += '<td style="text-align:right; padding:4px 8px; color:#1e3a8a;">' + (row.basePrice > 0 ? '$' + row.basePrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
-                  content += '<td style="text-align:right; padding:4px 8px; color:#92400e;">' + (row.optionPrice > 0 ? '$' + row.optionPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; color:#1e40af;">' + (row.optionPrice > 0 ? '$' + row.optionPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
                   content += '<td style="text-align:right; padding:4px 8px; font-weight:600; color:' + rowDiffColor + ';">' + (rowDiff !== 0 ? (rowDiff > 0 ? '+' : '') + '$' + Math.abs(rowDiff).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
                   content += '</tr>';
                 });
@@ -900,14 +987,14 @@ export function generateProposalHTML(data: {
                   content += '<tr style="border-bottom:1px solid #e2e8f0;">';
                   content += '<td style="padding:4px 8px; color:#475569;">Labor</td>';
                   content += '<td style="text-align:right; padding:4px 8px; color:#1e3a8a;">' + (cd.baseLaborPrice > 0 ? '$' + cd.baseLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
-                  content += '<td style="text-align:right; padding:4px 8px; color:#92400e;">' + (cd.optionLaborPrice > 0 ? '$' + cd.optionLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
+                  content += '<td style="text-align:right; padding:4px 8px; color:#1e40af;">' + (cd.optionLaborPrice > 0 ? '$' + cd.optionLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
                   content += '<td style="text-align:right; padding:4px 8px; font-weight:600; color:' + (laborDiff > 0 ? '#dc2626' : laborDiff < 0 ? '#16a34a' : '#94a3b8') + ';">' + (laborDiff !== 0 ? (laborDiff > 0 ? '+' : '') + '$' + Math.abs(laborDiff).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—') + '</td>';
                   content += '</tr>';
                 }
                 content += '<tr style="background:#eff6ff;">';
                 content += '<td style="padding:6px 8px; font-weight:700; color:#1e293b;">Total</td>';
                 content += '<td style="text-align:right; padding:6px 8px; font-weight:700; color:#1e40af; font-size:10pt;">$' + cd.baseTotal.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
-                content += '<td style="text-align:right; padding:6px 8px; font-weight:700; color:#b45309; font-size:10pt;">$' + cd.optionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                content += '<td style="text-align:right; padding:6px 8px; font-weight:700; color:#1d4ed8; font-size:10pt;">$' + cd.optionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
                 content += '<td style="text-align:right; padding:6px 8px; font-weight:700; font-size:10pt; color:' + diffColor + ';">' + diffStr + '</td>';
                 content += '</tr>';
                 content += '</tbody></table>';
@@ -917,6 +1004,14 @@ export function generateProposalHTML(data: {
               content += '</div>';
               return content;
             }).join('')}
+            ${
+              hasOptionalSections && showPdfOptionalPricing
+                ? `<div style="margin-top: 14px; padding: 10px 14px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <strong style="font-size: ${bodyFontSize}pt;">Subtotal (optional items only)</strong>
+            <strong style="font-size: ${bodyFontSize}pt;">$${pdfOptionalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+          </div>`
+                : ''
+            }
           </div>
         </div>
         ` : ''}
@@ -924,7 +1019,7 @@ export function generateProposalHTML(data: {
         ${showInternalDetails ? `
           <!-- Office View - Summary Only (kept together on same page) -->
           <div class="financial-summary-block" style="margin-top: 30px; padding: 20px; background: #f5f5f5; border: 2px solid #333; border-radius: 8px;">
-            <h3 style="margin: 0 0 15px 0; font-size: 14pt;">Proposal Summary - Office View</h3>
+            <h3 style="margin: 0 0 15px 0; font-size: 14pt;">${docTitle} Summary - Office View</h3>
             <table style="width: 100%;">
               ${totals.materials > 0 ? `
                 <tr>
@@ -938,17 +1033,47 @@ export function generateProposalHTML(data: {
                   <td style="text-align: right; padding: 5px;">$${totals.labor.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                 </tr>
               ` : ''}
+              ${
+                hasOptionalSections && pdfOptionalSubtotal > 0.005
+                  ? `<tr>
+                <td style="text-align: right; padding: 5px;"><strong>Base scope subtotal (excludes optional):</strong></td>
+                <td style="text-align: right; padding: 5px;">$${(Number(totals.subtotal) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
               <tr>
+                <td style="text-align: right; padding: 5px;"><strong>Optional items subtotal:</strong></td>
+                <td style="text-align: right; padding: 5px;">$${pdfOptionalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td style="text-align: right; padding: 5px;"><strong>Subtotal (all scope):</strong></td>
+                <td style="text-align: right; padding: 5px;">$${pdfCombinedSubtotalBeforeTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>`
+                  : `<tr>
                 <td style="text-align: right; padding: 5px;"><strong>Subtotal:</strong></td>
                 <td style="text-align: right; padding: 5px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-              </tr>
+              </tr>`
+              }
               <tr>
                 <td style="text-align: right; padding: 5px;"><strong>${taxExempt ? 'Tax:' : 'Sales Tax (7%):'}</strong></td>
                 <td style="text-align: right; padding: 5px;">${taxExempt ? 'Tax Exempt' : '$' + totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
+              ${
+                hasOptionalSections && pdfOptionalSubtotal > 0.005 && !taxExempt
+                  ? `<tr>
+                <td colspan="2" style="font-size: 9pt; color: #64748b; padding: 2px 5px 8px 5px; text-align: right; line-height: 1.35;">
+                  Tax reflects taxable materials in the base scope; optional selections may change the tax amount.
+                </td>
+              </tr>`
+                  : ''
+              }
               <tr class="summary-table-total" style="border-top: 2px solid #333;">
-                <td style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 12pt;">GRAND TOTAL:</strong></td>
-                <td class="grand-total-amount" style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 14pt;">$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+                <td style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 12pt;">${
+                  isEstimate
+                    ? 'ESTIMATED TOTAL (non-binding):'
+                    : hasOptionalSections && pdfOptionalSubtotal > 0.005
+                      ? 'GRAND TOTAL (all scope + tax shown):'
+                      : 'GRAND TOTAL:'
+                }</strong></td>
+                <td class="grand-total-amount" style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 14pt;">$${(hasOptionalSections && pdfOptionalSubtotal > 0.005 ? pdfGrandTotalAllScope : totals.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
               </tr>
             </table>
           </div>
@@ -956,8 +1081,8 @@ export function generateProposalHTML(data: {
           <div class="terms-page">
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
-              <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
-              <div class="terms-reference">Contract Amount: $${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+              <div class="terms-reference">${docTitle} #${proposalNumber} | ${job.name} | ${job.client_name}</div>
+              <div class="terms-reference">${isEstimate ? 'Estimated amount (non-binding)' : 'Contract Amount'}: $${(hasOptionalSections && pdfOptionalSubtotal > 0.005 ? pdfGrandTotalAllScope : totals.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
             </div>
             <div class="terms-content">
               <div class="terms-section">
@@ -990,7 +1115,7 @@ export function generateProposalHTML(data: {
               </div>
               <div class="terms-signature-section">
                 <div class="terms-signature-intro">
-                  By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of Proposal #${proposalNumber}.
+                  By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of ${docTitle} #${proposalNumber}.
                 </div>
                 <div class="terms-signature-row">
                   <div class="terms-signature-block">
@@ -1008,29 +1133,71 @@ export function generateProposalHTML(data: {
         ` : `
           <!-- Customer Version - hereby + subtotal + tax + grand total kept together on same page -->
           <div class="financial-summary-block">
-            <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
+            <p style="margin-top: 30px; margin-bottom: 10px;">${
+              isEstimate
+                ? 'The following is our <strong>rough estimated</strong> investment for the scope described above (same section structure as a formal proposal). This is preliminary pricing only—not a detailed quote for construction:'
+                : 'We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:'
+            }</p>
             
             <table style="margin-top: 15px;">
+              ${
+                hasOptionalSections && pdfOptionalSubtotal > 0.005
+                  ? `<tr>
+                <td style="text-align: right;"><strong>Base scope subtotal (excludes optional):</strong></td>
+                <td style="text-align: right; width: 150px;">$${(Number(totals.subtotal) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
               <tr>
+                <td style="text-align: right;"><strong>Optional items subtotal:</strong></td>
+                <td style="text-align: right; width: 150px;">$${pdfOptionalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td style="text-align: right;"><strong>Subtotal (all scope):</strong></td>
+                <td style="text-align: right; width: 150px;">$${pdfCombinedSubtotalBeforeTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>`
+                  : `<tr>
                 <td style="text-align: right;"><strong>Subtotal:</strong></td>
                 <td style="text-align: right; width: 150px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-              </tr>
+              </tr>`
+              }
               <tr>
                 <td style="text-align: right;"><strong>${taxExempt ? 'Tax:' : 'Sales Tax (7%):'}</strong></td>
                 <td style="text-align: right;">${taxExempt ? 'Tax Exempt' : '$' + totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
+              ${
+                hasOptionalSections && pdfOptionalSubtotal > 0.005 && !taxExempt
+                  ? `<tr>
+                <td colspan="2" style="font-size: 9pt; color: #64748b; padding: 4px 0 8px 0; text-align: right; line-height: 1.35;">
+                  Tax reflects taxable materials in the base scope; optional selections may change the tax amount.
+                </td>
+              </tr>`
+                  : ''
+              }
               <tr class="summary-table-total">
-                <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
-                <td class="grand-total-amount" style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+                <td style="text-align: right; padding-top: 10px;"><strong>${
+                  isEstimate
+                    ? 'ESTIMATED TOTAL (non-binding):'
+                    : hasOptionalSections && pdfOptionalSubtotal > 0.005
+                      ? 'GRAND TOTAL (all scope + tax shown):'
+                      : 'GRAND TOTAL:'
+                }</strong></td>
+                <td class="grand-total-amount" style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${(hasOptionalSections && pdfOptionalSubtotal > 0.005 ? pdfGrandTotalAllScope : totals.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
               </tr>
             </table>
           </div>
           
           <div class="footer">
-            <p style="margin-bottom: 10px;">${paymentText}</p>
-            <p style="margin-bottom: 15px;"><strong>Note:</strong> This proposal may be withdrawn by us if not accepted within 30 days.</p>
+            ${
+              isEstimate
+                ? `<p style="margin-bottom: 10px; color: #92400e; font-size: 10pt;"><em>Payment terms below apply to the formal proposal; this estimate is for discussion only.</em></p><p style="margin-bottom: 10px;">${paymentText}</p>`
+                : `<p style="margin-bottom: 10px;">${paymentText}</p>`
+            }
+            <p style="margin-bottom: 15px;"><strong>Note:</strong> ${
+              isEstimate
+                ? 'This estimate is subject to change and does not obligate either party. A formal proposal will be issued before construction.'
+                : 'This proposal may be withdrawn by us if not accepted within 30 days.'
+            }</p>
             <div class="signature-section">
-              <p style="margin-bottom: 5px;"><strong>Acceptance of Proposal</strong></p>
+              <p style="margin-bottom: 5px;"><strong>${isEstimate ? 'Acknowledgment of estimate' : 'Acceptance of Proposal'}</strong></p>
               <p style="margin-bottom: 20px;">${acceptanceText}</p>
               <div style="display: flex; justify-content: space-between; margin-top: 40px;">
                 <div>
@@ -1042,15 +1209,15 @@ export function generateProposalHTML(data: {
                   <div class="signature-line"></div>
                 </div>
               </div>
-              <div class="proposal-number-signing-page">Proposal #${proposalNumber}</div>
+              <div class="proposal-number-signing-page">${docTitle} #${proposalNumber}</div>
             </div>
           </div>
           
           <div class="terms-page">
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
-              <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
-              <div class="terms-reference">Contract Amount: $${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+              <div class="terms-reference">${docTitle} #${proposalNumber} | ${job.name} | ${job.client_name}</div>
+              <div class="terms-reference">${isEstimate ? 'Estimated amount (non-binding)' : 'Contract Amount'}: $${(hasOptionalSections && pdfOptionalSubtotal > 0.005 ? pdfGrandTotalAllScope : totals.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
             </div>
             <div class="terms-content">
               <div class="terms-section">
@@ -1083,7 +1250,7 @@ export function generateProposalHTML(data: {
               </div>
               <div class="terms-signature-section">
                 <div class="terms-signature-intro">
-                  By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of Proposal #${proposalNumber}.
+                  By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of ${docTitle} #${proposalNumber}.
                 </div>
                 <div class="terms-signature-row">
                   <div class="terms-signature-block">
@@ -1099,7 +1266,8 @@ export function generateProposalHTML(data: {
             </div>
           </div>
         `}
-        `}
+        `
+        }
       </body>
     </html>
   `;

@@ -22,7 +22,6 @@ import {
   X,
   Minimize2,
   Maximize2,
-  Eye,
   Download,
   ArrowLeft,
   Grid3x3,
@@ -41,7 +40,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { pdfUrlForIframeViewer } from '@/lib/pdfIframeUrl';
+import { EmbeddedPdfFrame } from './EmbeddedPdfFrame';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -113,74 +112,6 @@ function getDocFileType(url: string, fileNameHint?: string): DocFileType {
   if (['xls', 'xlsx', 'csv'].includes(ext)) return 'office-excel';
   if (['ppt', 'pptx'].includes(ext)) return 'office-ppt';
   return 'other';
-}
-
-/**
- * Signed storage URLs often use Content-Disposition: attachment, so the browser
- * opens PDFs externally instead of in an iframe. Fetch → blob URL displays inline.
- */
-function EmbeddedPdfFrame({
-  url,
-  name,
-  className = 'w-full h-full min-h-0 flex-1 border-0',
-}: {
-  url: string;
-  name: string;
-  className?: string;
-}) {
-  const [phase, setPhase] = useState<'loading' | 'blob' | 'direct'>('loading');
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let created: string | null = null;
-
-    setPhase('loading');
-    setBlobUrl(null);
-
-    (async () => {
-      try {
-        const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store' });
-        if (!res.ok) throw new Error(String(res.status));
-        const blob = await res.blob();
-        if (cancelled) return;
-        const typed =
-          blob.type === 'application/pdf' || blob.type === '' || blob.type === 'application/octet-stream'
-            ? new Blob([blob], { type: 'application/pdf' })
-            : blob;
-        const u = URL.createObjectURL(typed);
-        if (cancelled) {
-          URL.revokeObjectURL(u);
-          return;
-        }
-        created = u;
-        setBlobUrl(u);
-        setPhase('blob');
-      } catch {
-        if (!cancelled) setPhase('direct');
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (created) URL.revokeObjectURL(created);
-    };
-  }, [url]);
-
-  if (phase === 'loading') {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 text-muted-foreground">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm">Loading PDF…</p>
-      </div>
-    );
-  }
-
-  if (phase === 'direct') {
-    return <iframe src={pdfUrlForIframeViewer(url)} className={className} title={name} />;
-  }
-
-  return <iframe src={pdfUrlForIframeViewer(blobUrl!)} className={className} title={name} />;
 }
 
 export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, backLabel = 'Back to Workbook', sketchUpViewerUrl }: FloatingDocumentViewerProps) {
@@ -866,126 +797,131 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col flex-1 min-h-0">
-                {viewMode !== 'viewer' && (
-                  <div className="shrink-0 max-h-[min(36vh,360px)] min-h-[88px] overflow-y-auto border-b border-slate-200 bg-background">
-                    <div
-                      className="p-3 flex flex-col gap-2 min-h-0"
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div
+                className={cn(
+                  'flex flex-1 min-h-0',
+                  viewMode === 'viewer' && selectedDoc ? 'flex-col lg:flex-row' : 'flex-col',
+                )}
+              >
+                {/* List: full height when no preview; narrow column beside preview when a doc is open */}
+                <div
+                  className={cn(
+                    'min-h-0 overflow-y-auto bg-background',
+                    viewMode === 'grid' || !selectedDoc
+                      ? 'flex-1'
+                      : 'max-h-[min(42vh,360px)] shrink-0 border-b border-slate-200 lg:max-h-none lg:min-h-0 lg:w-[min(320px,38vw)] lg:max-w-sm lg:shrink-0 lg:border-b-0 lg:border-r',
+                  )}
+                >
+                  <div
+                    className="p-3 flex flex-col gap-2 min-h-0 h-full"
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <Button
+                        variant={selectedFolderId === null ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setSelectedFolderId(null)}
+                      >
+                        All
+                      </Button>
+                      {folders.map((f) => (
                         <Button
-                          variant={selectedFolderId === null ? 'default' : 'outline'}
+                          key={f.id}
+                          variant={selectedFolderId === f.id ? 'default' : 'outline'}
                           size="sm"
                           className="h-8 text-xs"
-                          onClick={() => setSelectedFolderId(null)}
+                          onClick={() => setSelectedFolderId(f.id)}
                         >
-                          All
+                          <Folder className="w-3 h-3 mr-1" />
+                          {f.name}
                         </Button>
-                        {folders.map((f) => (
-                          <Button
-                            key={f.id}
-                            variant={selectedFolderId === f.id ? 'default' : 'outline'}
-                            size="sm"
-                            className="h-8 text-xs"
-                            onClick={() => setSelectedFolderId(f.id)}
-                          >
-                            <Folder className="w-3 h-3 mr-1" />
-                            {f.name}
-                          </Button>
-                        ))}
-                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNewFolderDialog(true)}>
-                          <FolderPlus className="w-3 h-3 mr-1" />
-                          New folder
-                        </Button>
-                        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
-                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                          <Upload className="w-3 h-3 mr-1" />
-                          {uploading ? 'Uploading...' : 'Upload files'}
-                        </Button>
-                      </div>
-                      {loading ? (
-                        <div className="flex items-center justify-center py-8">
-                          <div className="text-center">
-                            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                            <p className="text-muted-foreground text-sm">Loading documents...</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div
-                          className={cn(
-                            'rounded-lg border-2 border-dashed transition-colors',
-                            isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25',
-                            documentsInFolder.length === 0 ? 'min-h-[88px]' : 'min-h-0',
-                          )}
-                        >
-                          {documentsInFolder.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
-                              <Upload className="w-8 h-8 text-muted-foreground mb-1.5" />
-                              <p className="text-sm text-muted-foreground mb-1">
-                                {isDragging ? 'Drop files here' : 'Drag and drop files here, or use Upload files'}
-                              </p>
-                              <p className="text-xs text-muted-foreground">Documents are stored for the job and visible to your team</p>
-                            </div>
-                          ) : (
-                            <div className="p-1.5 grid grid-cols-1 gap-2">
-                              {documentsInFolder.map((doc) => (
-                                <Card
-                                  key={doc.id}
-                                  className={cn(
-                                    'cursor-pointer transition-shadow border overflow-hidden',
-                                    selectedDocId === doc.id
-                                      ? 'ring-2 ring-primary border-primary shadow-sm'
-                                      : 'hover:shadow-sm hover:border-blue-400',
-                                  )}
-                                  onClick={() => selectDocument(doc.id)}
-                                >
-                                  <div className="flex gap-2">
-                                    <div className="w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 bg-slate-100 relative flex-shrink-0 overflow-hidden">
-                                      <DocThumbnail url={doc.latest_file_url} name={doc.name} />
-                                    </div>
-                                    <div className="flex-1 py-1 pr-2 min-w-0 flex flex-col justify-center gap-0.5">
-                                      <p className="font-medium text-xs sm:text-sm leading-tight line-clamp-2">{doc.name}</p>
-                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 w-fit">
-                                        {doc.category}
-                                      </Badge>
-                                      <p className="text-[10px] text-muted-foreground">v{doc.current_version}</p>
-                                    </div>
-                                  </div>
-                                </Card>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      ))}
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNewFolderDialog(true)}>
+                        <FolderPlus className="w-3 h-3 mr-1" />
+                        New folder
+                      </Button>
+                      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                        <Upload className="w-3 h-3 mr-1" />
+                        {uploading ? 'Uploading...' : 'Upload files'}
+                      </Button>
                     </div>
+                    {loading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="text-center">
+                          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                          <p className="text-muted-foreground text-sm">Loading documents...</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={cn(
+                          'rounded-lg border-2 border-dashed transition-colors',
+                          isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25',
+                          documentsInFolder.length === 0 ? 'min-h-[88px]' : 'min-h-0',
+                        )}
+                      >
+                        {documentsInFolder.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
+                            <Upload className="w-8 h-8 text-muted-foreground mb-1.5" />
+                            <p className="text-sm text-muted-foreground mb-1">
+                              {isDragging ? 'Drop files here' : 'Drag and drop files here, or use Upload files'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Documents are stored for the job and visible to your team</p>
+                          </div>
+                        ) : (
+                          <div className="p-1.5 grid grid-cols-1 gap-2">
+                            {documentsInFolder.map((doc) => (
+                              <Card
+                                key={doc.id}
+                                className={cn(
+                                  'cursor-pointer transition-shadow border overflow-hidden',
+                                  selectedDocId === doc.id
+                                    ? 'ring-2 ring-primary border-primary shadow-sm'
+                                    : 'hover:shadow-sm hover:border-blue-400',
+                                )}
+                                onClick={() => selectDocument(doc.id)}
+                              >
+                                <div className="flex gap-2">
+                                  <div className="w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 bg-slate-100 relative flex-shrink-0 overflow-hidden">
+                                    <DocThumbnail url={doc.latest_file_url} name={doc.name} />
+                                  </div>
+                                  <div className="flex-1 py-1 pr-2 min-w-0 flex flex-col justify-center gap-0.5">
+                                    <p className="font-medium text-xs sm:text-sm leading-tight line-clamp-2">{doc.name}</p>
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 w-fit">
+                                      {doc.category}
+                                    </Badge>
+                                    <p className="text-[10px] text-muted-foreground">v{doc.current_version}</p>
+                                  </div>
+                                </div>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {viewMode === 'viewer' && selectedDoc && (
+                  <div className="flex flex-1 min-h-[min(45vh,320px)] flex-col bg-slate-100 overflow-hidden lg:min-h-0">
+                    {selectedDoc.latest_file_url ? (
+                      <div className="flex flex-col flex-1 min-h-0 h-full">
+                        <DocViewer
+                          url={selectedDoc.latest_file_url}
+                          name={selectedDoc.name}
+                          className="w-full h-full min-h-0 flex-1 border-0"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center flex-1 min-h-[120px] p-4">
+                        <p className="text-muted-foreground text-sm text-center">No file available for this document</p>
+                      </div>
+                    )}
                   </div>
                 )}
-                <div className="flex-1 min-h-0 flex flex-col bg-slate-100 overflow-hidden">
-                  {viewMode === 'viewer' && selectedDoc?.latest_file_url ? (
-                    <div className="flex flex-col flex-1 min-h-0 h-full">
-                      <DocViewer
-                        url={selectedDoc.latest_file_url}
-                        name={selectedDoc.name}
-                        className="w-full h-full min-h-0 flex-1 border-0"
-                      />
-                    </div>
-                  ) : viewMode === 'viewer' && selectedDoc && !selectedDoc.latest_file_url ? (
-                    <div className="flex items-center justify-center flex-1 min-h-[200px]">
-                      <p className="text-muted-foreground text-sm">No file available for this document</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center flex-1 min-h-[200px] p-6 text-center text-muted-foreground">
-                      <Eye className="w-12 h-12 opacity-40 mb-3 text-slate-500" />
-                      <p className="text-sm font-medium text-slate-700">Document preview</p>
-                      <p className="text-xs mt-1.5 max-w-xs">
-                        Select a document in the list above to open it in this panel. You can still scroll the list while a PDF is open.
-                      </p>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </CardContent>

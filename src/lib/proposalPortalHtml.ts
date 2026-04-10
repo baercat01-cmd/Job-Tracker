@@ -1,6 +1,7 @@
 import { isFieldRequestSheetName } from '@/lib/materialWorkbook';
 import { generateProposalHTML } from '@/components/office/ProposalPDFTemplate';
 import type { ProposalDataBundle } from '@/lib/loadProposalDataForQuote';
+import { displayNumberForQuoteRow } from '@/lib/quoteDisplay';
 import { formatPortalMaterialQty } from '@/components/customer/PortalMaterialItemsTable';
 
 function escapeHtml(s: string): string {
@@ -59,7 +60,10 @@ export function buildProposalHtmlForPortal(opts: {
   const showPriceForSection = (sectionId: string) =>
     showFinancial && showLineItemPrices && (showSectionPrices == null || showSectionPrices[sectionId] !== false);
 
-  const proposalNumber = quote?.proposal_number || quote?.quote_number || 'N/A';
+  const isCustomerEstimate = quote?.is_customer_estimate === true;
+  const proposalNumber = isCustomerEstimate
+    ? displayNumberForQuoteRow(quote, true)
+    : quote?.proposal_number || quote?.quote_number || 'N/A';
   const proposalSheets = (proposalData.materialSheets || []).filter(
     (s: any) => s.sheet_type !== 'change_order' && !isFieldRequestSheetName(s.sheet_name)
   );
@@ -183,5 +187,6 @@ export function buildProposalHtmlForPortal(opts: {
     showInternalDetails: false,
     theme: 'default',
     taxExempt: !!quote?.tax_exempt,
+    documentKind: isCustomerEstimate ? 'estimate' : 'proposal',
   });
 }

@@ -21,6 +21,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { X, FileText, Package, List, DollarSign, ArrowRight, Minus, Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { displayNumberForQuoteRow, formatQuoteScopeLabel } from '@/lib/quoteDisplay';
 
 const TAX_RATE = 0.07;
 
@@ -28,6 +29,9 @@ interface QuoteOption {
   id: string;
   proposal_number?: string;
   quote_number?: string;
+  estimate_number?: string | null;
+  is_customer_estimate?: boolean;
+  is_change_order_proposal?: boolean;
   created_at?: string;
 }
 
@@ -86,7 +90,15 @@ interface SubcontractorSnapshot {
 }
 
 export interface ProposalSnapshot {
-  quote: { id: string; description?: string | null; tax_exempt?: boolean; proposal_number?: string; quote_number?: string };
+  quote: {
+    id: string;
+    description?: string | null;
+    tax_exempt?: boolean;
+    proposal_number?: string;
+    quote_number?: string;
+    estimate_number?: string | null;
+    is_customer_estimate?: boolean;
+  };
   sheets: SheetSnapshot[];
   customRows: CustomRowSnapshot[];
   subcontractors: SubcontractorSnapshot[];
@@ -102,7 +114,11 @@ export interface ProposalSnapshot {
 async function fetchProposalSnapshot(jobId: string, quoteId: string): Promise<ProposalSnapshot | null> {
   // Fetch quote: try full columns first, then minimal so comparison works even when schema is missing columns
   let quote: any = null;
-  let quoteRes = await supabase.from('quotes').select('id, description, tax_exempt, proposal_number, quote_number').eq('id', quoteId).single();
+  let quoteRes = await supabase
+    .from('quotes')
+    .select('id, description, tax_exempt, proposal_number, quote_number, estimate_number, is_customer_estimate')
+    .eq('id', quoteId)
+    .single();
   if (quoteRes.error || !quoteRes.data) {
     const firstError = quoteRes.error?.message;
     console.warn('ProposalComparison: quote fetch failed, retrying with minimal columns', quoteId, firstError);
@@ -548,14 +564,16 @@ export function ProposalComparisonView({ job, quotes, onClose }: ProposalCompari
     }
   }, [quoteAId, quoteBId, loadBoth]);
 
-  const label = (q: QuoteOption) => `Proposal #${q.proposal_number ?? q.quote_number ?? q.id.slice(0, 8)}`;
+  const label = (q: QuoteOption) => formatQuoteScopeLabel(q);
   const quoteA = quotes.find((q) => q.id === quoteAId);
   const quoteB = quotes.find((q) => q.id === quoteBId);
   const labelA = quoteA ? label(quoteA) : 'Proposal A';
   const labelB = quoteB ? label(quoteB) : 'Proposal B';
   const hasComparison = snapshotA && snapshotB;
   const snapshotLabel = (s: ProposalSnapshot | null) =>
-    s?.quote ? `#${s.quote.proposal_number ?? s.quote.quote_number ?? s.quote.id.slice(0, 8)}` : '—';
+    s?.quote
+      ? `#${displayNumberForQuoteRow(s.quote as any, s.quote.is_customer_estimate === true)}`
+      : '—';
 
   return (
     <div className="space-y-4">
