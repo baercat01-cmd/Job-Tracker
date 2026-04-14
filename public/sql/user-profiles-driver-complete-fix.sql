@@ -1,11 +1,10 @@
 -- =============================================================================
 -- ONE FILE — paste into YOUR project's SQL console (same database as REST API).
 --
--- OnSpace / custom API (*.backend.onspace.ai): use the SQL console for THAT
--- project (same org/host as your API URL), not an unrelated supabase.com project.
+-- Stops 23514 on role "driver" by REMOVING brittle CHECK constraints and enforcing
+-- allowed roles in a BEFORE ROW trigger (runs before any leftover CHECK weirdness).
 --
--- Fixes: can_manage_fleet_vehicles (PGRST204), role "driver" (23514), grants,
---        role column as plain text, PostgREST reload.
+-- OnSpace (*.backend.onspace.ai): use the SQL console for THAT project only.
 -- =============================================================================
 
 -- A) Fleet column + helper (expects public.user_profiles for fleet RLS)
@@ -38,7 +37,7 @@ $$;
 REVOKE ALL ON FUNCTION public.user_can_manage_fleet_vehicles() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.user_can_manage_fleet_vehicles() TO authenticated;
 
--- B0) List relations named user_profiles (Results tab — usually one row: public r or p)
+-- B0) List relations named user_profiles
 SELECT n.nspname AS schema, c.relkind, c.oid::regclass AS regclass
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -63,8 +62,31 @@ BEGIN
   END LOOP;
 END $$;
 
--- B2) Each physical / partitioned parent table "user_profiles": drop ALL CHECKs on parent only,
---     force role to text, add one CHECK (includes driver), normalize unknown roles.
+-- B1b) Trigger function: normalize + allow driver (no CHECK dependency)
+CREATE OR REPLACE FUNCTION public.mb_user_profiles_role_bi()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  v text;
+BEGIN
+  v := lower(btrim(COALESCE(NEW.role::text, '')));
+  IF v = '' THEN
+    NEW.role := 'crew';
+    RETURN NEW;
+  END IF;
+  IF v NOT IN ('crew', 'foreman', 'office', 'payroll', 'shop', 'driver') THEN
+    RAISE EXCEPTION 'new row for relation "user_profiles" violates check constraint "user_profiles_role_check"'
+      USING ERRCODE = '23514',
+        DETAIL = format('invalid role: %s', NEW.role::text);
+  END IF;
+  NEW.role := v;
+  RETURN NEW;
+END;
+$$;
+
+-- B2) For each user_profiles table: drop ALL CHECKs on parent, text role, attach trigger, fix bad rows
 DO $$
 DECLARE
   p RECORD;
@@ -96,7 +118,16 @@ BEGIN
     );
 
     EXECUTE format(
-      'ALTER TABLE %I.%I ADD CONSTRAINT user_profiles_role_check CHECK (role::text = ANY (ARRAY[''crew'', ''foreman'', ''office'', ''payroll'', ''shop'', ''driver'']::text[]))',
+      'DROP TRIGGER IF EXISTS tr_mb_user_profiles_role_bi ON %I.%I',
+      p.sch,
+      p.tname
+    );
+
+    EXECUTE format(
+      'CREATE TRIGGER tr_mb_user_profiles_role_bi
+         BEFORE INSERT OR UPDATE OF role ON %I.%I
+         FOR EACH ROW
+         EXECUTE PROCEDURE public.mb_user_profiles_role_bi()',
       p.sch,
       p.tname
     );
@@ -109,23 +140,23 @@ BEGIN
   END LOOP;
 END $$;
 
--- C) PIN / anon (public — matches typical PostgREST config)
+-- C) PIN / anon
 ALTER TABLE public.user_profiles DISABLE ROW LEVEL SECURITY;
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.user_profiles TO anon, authenticated, service_role;
 
--- D) Verify CHECK on public.user_profiles
+-- D) Verify: should show tr_mb_user_profiles_role_bi; CHECK list should be empty or not include role
+SELECT tgname, pg_get_triggerdef(t.oid, true) AS trigger_def
+FROM pg_trigger t
+WHERE t.tgrelid = 'public.user_profiles'::regclass
+  AND NOT t.tgisinternal
+ORDER BY 1;
+
 SELECT conname, pg_get_constraintdef(oid) AS definition
 FROM pg_constraint
 WHERE conrelid = 'public.user_profiles'::regclass
   AND contype = 'c';
-
-SELECT column_name, data_type, udt_name
-FROM information_schema.columns
-WHERE table_schema = 'public'
-  AND table_name = 'user_profiles'
-  AND column_name = 'role';
 
 -- E) PostgREST reload
 NOTIFY pgrst, 'reload schema';

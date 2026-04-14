@@ -321,8 +321,11 @@ export function UserManagement() {
                 <AlertDescription className="space-y-2 mt-2">
                   <p className="text-sm">
                     Use <strong>Copy SQL</strong> (from <code className="text-xs">src/sql/user-profiles-driver-complete-fix.sql</code>
-                    ). Run it in the <strong>SQL console for the same database as your API URL</strong>. In Messages, confirm{' '}
-                    <code className="text-xs">driver insert test: SUCCESS</code>. Wait ~60s, then save again.
+                    ). It removes brittle role <strong>CHECK</strong> constraints and adds a <strong>BEFORE INSERT trigger</strong> so{' '}
+                    <code className="text-xs">driver</code> is allowed. Run it on the <strong>same Postgres</strong> your app uses (SQL editor,{' '}
+                    <code className="text-xs">psql</code> with the connection string, or your host). Confirm trigger{' '}
+                    <code className="text-xs">tr_mb_user_profiles_role_bi</code> and <code className="text-xs">driver insert test: SUCCESS</code>. Wait
+                    ~60s, then save again.
                   </p>
                   <pre className="text-[11px] leading-snug whitespace-pre-wrap break-all max-h-72 overflow-auto rounded-md bg-muted p-2 border">
                     {driverFixSql ||
