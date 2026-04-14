@@ -36,7 +36,6 @@ interface VehicleListProps {
   companyId: string;
   vehicleType: string;
   statusFilter: string;
-  onAddVehicle: () => void;
   onVehicleUpdated: () => void;
 }
 
@@ -44,7 +43,6 @@ export function VehicleList({
   companyId,
   vehicleType,
   statusFilter,
-  onAddVehicle,
   onVehicleUpdated,
 }: VehicleListProps) {
   const { profile } = useAuth();
@@ -147,17 +145,11 @@ export function VehicleList({
           <Plus className="w-8 h-8 text-slate-400" />
         </div>
         <p className="text-slate-600 font-medium mb-2">No vehicles found</p>
-        <p className="text-sm text-slate-500 mb-4">
-          {statusFilter !== 'All' ? `No ${statusFilter.toLowerCase()} vehicles in this category` : 'Get started by adding a vehicle'}
+        <p className="text-sm text-slate-500">
+          {statusFilter !== 'All'
+            ? `No ${statusFilter.toLowerCase()} vehicles in this category`
+            : 'Use the + in the section header above to add a vehicle'}
         </p>
-        <Button
-          onClick={onAddVehicle}
-          variant="outline"
-          className="border-2 border-yellow-600 text-yellow-700 hover:bg-yellow-50"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Vehicle
-        </Button>
       </div>
     );
   }
@@ -265,16 +257,6 @@ export function VehicleList({
             </CardContent>
           </Card>
         ))}
-
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full border-2 border-dashed border-yellow-600/60 text-yellow-800 hover:bg-yellow-50"
-          onClick={onAddVehicle}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add vehicle to this category
-        </Button>
       </div>
 
       {selectedVehicle && (

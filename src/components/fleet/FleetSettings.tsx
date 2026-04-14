@@ -1,3 +1,5 @@
+import { useAuth } from '@/hooks/useAuth';
+import { canManageFleetAppUsers } from '@/lib/fleetVehiclePermissions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, Building2, Wrench, Archive, X } from 'lucide-react';
 import { UserManagementTab } from './settings/UserManagementTab';
@@ -12,6 +14,9 @@ interface FleetSettingsProps {
 }
 
 export function FleetSettings({ onClose, onLogout }: FleetSettingsProps) {
+  const { profile } = useAuth();
+  const showUserTab = canManageFleetAppUsers(profile);
+
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
@@ -26,12 +31,16 @@ export function FleetSettings({ onClose, onLogout }: FleetSettingsProps) {
           Exit settings
         </Button>
       </div>
-      <Tabs defaultValue="users" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 h-12 bg-slate-200">
-          <TabsTrigger value="users" className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black">
-            <Users className="w-4 h-4 mr-2" />
-            Users
-          </TabsTrigger>
+      <Tabs defaultValue={showUserTab ? 'users' : 'vendors'} className="w-full">
+        <TabsList
+          className={`grid w-full h-12 bg-slate-200 ${showUserTab ? 'grid-cols-4' : 'grid-cols-3'}`}
+        >
+          {showUserTab && (
+            <TabsTrigger value="users" className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black">
+              <Users className="w-4 h-4 mr-2" />
+              Users
+            </TabsTrigger>
+          )}
           <TabsTrigger value="vendors" className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black text-xs sm:text-sm px-2 sm:px-3">
             <Building2 className="w-4 h-4 mr-1 sm:mr-2 shrink-0" />
             <span className="truncate">Vehicle vendors</span>
@@ -46,9 +55,11 @@ export function FleetSettings({ onClose, onLogout }: FleetSettingsProps) {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="users" className="mt-4">
-          <UserManagementTab />
-        </TabsContent>
+        {showUserTab && (
+          <TabsContent value="users" className="mt-4">
+            <UserManagementTab />
+          </TabsContent>
+        )}
 
         <TabsContent value="vendors" className="mt-4">
           <VendorManagementTab />

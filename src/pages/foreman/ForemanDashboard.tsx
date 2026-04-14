@@ -11,7 +11,25 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import type { Job, ActiveTimer } from '@/types';
+import type { Job, ActiveTimer, UserRole } from '@/types';
+
+function fieldRoleShortLabel(role: UserRole | undefined): string {
+  switch (role) {
+    case 'office':
+      return 'Office';
+    case 'payroll':
+      return 'Payroll';
+    case 'shop':
+      return 'Shop';
+    case 'foreman':
+      return 'Foreman';
+    case 'driver':
+      return 'Driver';
+    case 'crew':
+    default:
+      return 'Crew';
+  }
+}
 import { JobSelector } from '@/components/foreman/JobSelector';
 import { TimeTracker } from '@/components/foreman/TimeTracker';
 import { PhotoUpload } from '@/components/foreman/PhotoUpload';
@@ -159,7 +177,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
                 <p className="font-bold text-green-900 text-sm sm:text-base truncate">Shop Material Packages</p>
                 <p className="text-xs text-black truncate hidden sm:block">
-                  {profile?.username} • Crew
+                  {profile?.username} • {fieldRoleShortLabel(profile?.role)}
                 </p>
               </div>
             </div>
@@ -199,7 +217,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
                 <p className="font-bold text-green-900 text-sm sm:text-base truncate">Fleet Management</p>
                 <p className="text-xs text-black truncate hidden sm:block">
-                  {profile?.username} • Crew
+                  {profile?.username} • {fieldRoleShortLabel(profile?.role)}
                 </p>
               </div>
             </div>
@@ -235,7 +253,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
                 <p className="font-bold text-green-900 text-sm sm:text-base truncate">All Jobs Schedule</p>
                 <p className="text-xs text-black truncate hidden sm:block">
-                  {profile?.username} • Foreman
+                  {profile?.username} • {fieldRoleShortLabel(profile?.role)}
                 </p>
               </div>
             </div>
@@ -287,7 +305,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               />
               <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
                 <p className="text-xs text-black font-semibold truncate">
-                  {profile?.username} • Crew
+                  {profile?.username} • {fieldRoleShortLabel(profile?.role)}
                 </p>
               </div>
             </div>
@@ -326,7 +344,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
                 <p className="font-bold text-green-900 text-sm sm:text-base truncate">Calendar</p>
                 <p className="text-xs text-black truncate hidden sm:block">
-                  {profile?.username} • Crew
+                  {profile?.username} • {fieldRoleShortLabel(profile?.role)}
                 </p>
               </div>
             </div>
@@ -393,7 +411,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               />
               <div className="border-l border-slate-300 pl-3">
                 <p className="text-xs text-black font-semibold">
-                  {profile?.username} • Crew
+                  {profile?.username} • {fieldRoleShortLabel(profile?.role)}
                 </p>
               </div>
             </div>
@@ -440,7 +458,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               />
               <div className="border-l border-slate-300 pl-3">
                 <p className="text-xs text-black font-semibold">
-                  {profile?.username} • Crew
+                  {profile?.username} • {fieldRoleShortLabel(profile?.role)}
                 </p>
               </div>
             </div>
@@ -643,7 +661,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             />
             <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
               <p className="text-xs text-black font-semibold truncate">
-                {profile?.username} • Crew
+                {profile?.username} • {fieldRoleShortLabel(profile?.role)}
               </p>
             </div>
           </div>

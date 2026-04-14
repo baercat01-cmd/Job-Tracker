@@ -7,9 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { User, Plus, Pencil, Trash2, ArrowLeft, Shield, Briefcase, DollarSign, Users, Package } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { User, Plus, Pencil, Trash2, ArrowLeft, Shield, Briefcase, DollarSign, Users, Package, Truck, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UserProfile } from '@/types';
+import { useDriverRoleFixSql } from '@/hooks/useDriverRoleFixSql';
+import { formatPostgrestError } from '@/lib/formatPostgrestError';
 
 interface AdminSetupProps {
   onBack: () => void;
@@ -24,6 +27,8 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
     username: '',
     role: 'crew' as any,
   });
+  const [driverFixHint, setDriverFixHint] = useState(false);
+  const { sql: driverFixSql } = useDriverRoleFixSql(driverFixHint);
 
   useEffect(() => {
     loadUsers();
@@ -48,6 +53,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
 
   function openAddDialog() {
     setEditingUser(null);
+    setDriverFixHint(false);
     setFormData({
       username: '',
       role: 'crew' as any,
@@ -57,6 +63,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
 
   function openEditDialog(user: UserProfile) {
     setEditingUser(user);
+    setDriverFixHint(false);
     setFormData({
       username: user.username || '',
       role: user.role || 'crew',
@@ -91,7 +98,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
           .from('user_profiles')
           .insert({
             username: formData.username.trim(),
-            email: null,
+            email: '',
             role: formData.role as any,
           });
 
@@ -99,11 +106,42 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
         toast.success('User created successfully');
       }
 
+      setDriverFixHint(false);
       setShowDialog(false);
       loadUsers();
     } catch (error: any) {
       console.error('Error saving user:', error);
-      toast.error(error.message || 'Failed to save user');
+      const msg = formatPostgrestError(error);
+      const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code) : '';
+      const driverBlocked =
+        formData.role === 'driver' &&
+        (code === '23514' ||
+          (typeof msg === 'string' &&
+            (msg.includes('user_profiles_role_check') ||
+              msg.includes('violates check constraint') ||
+              msg.includes('role_check'))));
+      if (driverBlocked) {
+        setDriverFixHint(true);
+        let dbHost = '';
+        try {
+          const u = import.meta.env.VITE_SUPABASE_URL;
+          if (u) dbHost = new URL(u).hostname;
+        } catch {
+          /* ignore */
+        }
+        const onspace =
+          dbHost.includes('onspace.ai') || dbHost.includes('onspace')
+            ? '\n\nOnSpace: run the SQL in this environment’s database console (the project tied to this API host). A generic supabase.com SQL editor will not fix a different database.'
+            : '';
+        toast.error('Could not save Driver — run the bundled SQL in your project’s SQL console, then try again.', {
+          description: `${msg}${dbHost ? `\n\nApp is using API host: ${dbHost}` : ''}${onspace}\n\nIf that host does not match where you ran the SQL, fix VITE_SUPABASE_URL and restart.`,
+          duration: 22_000,
+        });
+      } else if (code === '23505' || msg.toLowerCase().includes('duplicate') || msg.toLowerCase().includes('unique')) {
+        toast.error(`${msg} — Try editing the existing user instead of creating a new one.`, { duration: 10_000 });
+      } else {
+        toast.error(msg, { duration: 10_000 });
+      }
     }
   }
 
@@ -193,6 +231,8 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                         <DollarSign className="w-6 h-6 text-primary" />
                       ) : user.role === 'shop' ? (
                         <Package className="w-6 h-6 text-primary" />
+                      ) : user.role === 'driver' ? (
+                        <Truck className="w-6 h-6 text-primary" />
                       ) : (
                         <Briefcase className="w-6 h-6 text-primary" />
                       )}
@@ -200,11 +240,27 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                     <div className="flex-1">
                       <p className="font-semibold">{user.username || 'Unnamed User'}</p>
                       <p className="text-sm text-muted-foreground capitalize">
-                        {user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : user.role} Member
+                        {user.role === 'driver'
+                          ? 'Fleet driver'
+                          : user.role === 'payroll'
+                            ? 'Payroll Member'
+                            : user.role === 'shop'
+                              ? 'Shop Member'
+                              : user.role === 'office'
+                                ? 'Office Member'
+                                : `${user.role} Member`}
                       </p>
                     </div>
                     <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
-                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : 'Crew'}
+                      {user.role === 'office'
+                        ? 'Office'
+                        : user.role === 'payroll'
+                          ? 'Payroll'
+                          : user.role === 'shop'
+                            ? 'Shop'
+                            : user.role === 'driver'
+                              ? 'Driver'
+                              : 'Crew'}
                     </Badge>
                     <div className="flex gap-2">
                       <Button
@@ -232,8 +288,14 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
       </div>
 
       {/* Add/Edit User Dialog */}
-      <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent>
+      <Dialog
+        open={showDialog}
+        onOpenChange={(open) => {
+          setShowDialog(open);
+          if (!open) setDriverFixHint(false);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingUser ? 'Edit User' : 'Add New User'}
@@ -261,7 +323,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <Label htmlFor="role">Role *</Label>
               <Select
                 value={formData.role}
-                onValueChange={(value: 'crew' | 'shop' | 'office' | 'payroll') =>
+                onValueChange={(value: 'crew' | 'shop' | 'office' | 'payroll' | 'driver') =>
                   setFormData({ ...formData, role: value })
                 }
               >
@@ -293,6 +355,12 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                       <span>Payroll</span>
                     </div>
                   </SelectItem>
+                  <SelectItem value="driver">
+                    <div className="flex items-center gap-2">
+                      <Truck className="w-4 h-4" />
+                      <span>Driver (Fleet only)</span>
+                    </div>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
@@ -302,9 +370,43 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                   ? 'Shop users can process materials, manage packages, and prepare items for job sites'
                   : formData.role === 'payroll'
                   ? 'Payroll users can view and export time entries for payroll processing'
+                  : formData.role === 'driver'
+                  ? 'Drivers only see fleet management (all companies) and cannot open jobs, estimator, or office tools'
                   : 'Office users have full access to manage jobs, users, and view all data'}
               </p>
             </div>
+
+            {driverFixHint && (
+              <Alert variant="destructive" className="text-left">
+                <AlertTitle>One-time database fix</AlertTitle>
+                <AlertDescription className="space-y-2 mt-2">
+                  <p className="text-sm">
+                    Use <strong>Copy SQL</strong> (from <code className="text-xs">src/sql/user-profiles-driver-complete-fix.sql</code>
+                    ). Paste into the <strong>SQL console for the same database as your API URL</strong> (OnSpace: that project’s DB, not a random
+                    supabase.com project). Run once, check Messages for <code className="text-xs">driver insert test: SUCCESS</code>, wait ~60s, then{' '}
+                    <strong>Create User</strong> again.
+                  </p>
+                  <pre className="text-[11px] leading-snug whitespace-pre-wrap break-all max-h-72 overflow-auto rounded-md bg-muted p-2 border">
+                    {driverFixSql ||
+                      '(SQL bundle missing — open src/sql/user-profiles-driver-complete-fix.sql in the repo.)'}
+                  </pre>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                    disabled={!driverFixSql}
+                    onClick={() => {
+                      void navigator.clipboard.writeText(driverFixSql);
+                      toast.success('SQL copied to clipboard');
+                    }}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy SQL to clipboard
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
 
             <div className="flex gap-2 pt-4">
               <Button type="submit" className="flex-1 gradient-primary">

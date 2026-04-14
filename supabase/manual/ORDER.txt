@@ -1,0 +1,17 @@
+Supabase SQL — recommended (one run):
+
+  src/sql/user-profiles-driver-complete-fix.sql   (same text as public/sql/… for manual copy)
+
+Fixes: PGRST204 (can_manage_fleet_vehicles) + 23514 (driver role check) + grants.
+After running: wait ~60s for PostgREST schema cache, then create Driver in the app.
+
+Optional split (same end state):
+
+1) public/sql/00-add-can-manage-fleet-vehicles-column.sql  OR  supabase/manual/00_add_can_manage_fleet_vehicles.sql
+2) public/sql/driver-role-user-profiles-fix.sql  OR  scripts/fix_user_profiles_role_check_driver.sql
+
+Optional — full history matches repo migrations:
+  supabase/migrations/20260414110000_create_user_profiles_if_missing.sql  (only if user_profiles table missing)
+  supabase/migrations/20260414120000_fleet_vehicle_editors.sql            (RLS policies on fleet tables; overlaps 00)
+  supabase/migrations/20260414150000_user_profiles_driver_role.sql
+  supabase/migrations/20260416100000_ensure_user_profiles_driver_role_check.sql

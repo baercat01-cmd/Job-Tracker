@@ -18,9 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Users, UserPlus, Edit, Trash2, Shield, Briefcase, Package, DollarSign } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Users, UserPlus, Edit, Trash2, Shield, Briefcase, Package, DollarSign, HardHat, Truck, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import type { UserProfile } from '@/types';
+import type { UserProfile, UserRole } from '@/types';
+import { useDriverRoleFixSql } from '@/hooks/useDriverRoleFixSql';
+import { formatPostgrestError } from '@/lib/formatPostgrestError';
 
 export function UserManagement() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -29,8 +32,10 @@ export function UserManagement() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   
   const [formUsername, setFormUsername] = useState('');
-  const [formRole, setFormRole] = useState<'crew' | 'office' | 'shop' | 'payroll'>('crew' as any);
+  const [formRole, setFormRole] = useState<UserRole>('crew');
   const [saving, setSaving] = useState(false);
+  const [driverFixHint, setDriverFixHint] = useState(false);
+  const { sql: driverFixSql } = useDriverRoleFixSql(driverFixHint);
 
   useEffect(() => {
     loadUsers();
@@ -57,6 +62,7 @@ export function UserManagement() {
     setEditingUser(null);
     setFormUsername('');
     setFormRole('crew');
+    setDriverFixHint(false);
     setShowDialog(true);
   }
 
@@ -64,6 +70,7 @@ export function UserManagement() {
     setEditingUser(user);
     setFormUsername(user.username || '');
     setFormRole(user.role);
+    setDriverFixHint(false);
     setShowDialog(true);
   }
 
@@ -94,7 +101,7 @@ export function UserManagement() {
           .from('user_profiles')
           .insert({
             username: formUsername.trim(),
-            email: null,
+            email: '',
             role: formRole as any,
           });
 
@@ -105,11 +112,42 @@ export function UserManagement() {
         toast.success('User added successfully');
       }
 
+      setDriverFixHint(false);
       setShowDialog(false);
       loadUsers();
     } catch (error: any) {
       console.error('Error saving user:', error);
-      toast.error(error.message || 'Failed to save user');
+      const msg = formatPostgrestError(error);
+      const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code) : '';
+      const driverBlocked =
+        formRole === 'driver' &&
+        (code === '23514' ||
+          (typeof msg === 'string' &&
+            (msg.includes('user_profiles_role_check') ||
+              msg.includes('violates check constraint') ||
+              msg.includes('role_check'))));
+      if (driverBlocked) {
+        setDriverFixHint(true);
+        let dbHost = '';
+        try {
+          const u = import.meta.env.VITE_SUPABASE_URL;
+          if (u) dbHost = new URL(u).hostname;
+        } catch {
+          /* ignore */
+        }
+        const onspace =
+          dbHost.includes('onspace.ai') || dbHost.includes('onspace')
+            ? '\n\nOnSpace: run the SQL in this environment’s database console (the project tied to this API host). A generic supabase.com SQL editor will not fix a different database.'
+            : '';
+        toast.error('Could not save Driver — run the bundled SQL in your project’s SQL console, then try again.', {
+          description: `${msg}${dbHost ? `\n\nApp is using API host: ${dbHost}` : ''}${onspace}\n\nIf that host does not match where you ran the SQL, fix VITE_SUPABASE_URL and restart.`,
+          duration: 22_000,
+        });
+      } else if (code === '23505' || msg.toLowerCase().includes('duplicate') || msg.toLowerCase().includes('unique')) {
+        toast.error(`${msg} — Edit the existing user instead of creating a new one.`, { duration: 10_000 });
+      } else {
+        toast.error(msg, { duration: 10_000 });
+      }
     } finally {
       setSaving(false);
     }
@@ -175,6 +213,10 @@ export function UserManagement() {
                       <Package className="w-6 h-6 text-purple-600" />
                     ) : user.role === 'payroll' ? (
                       <DollarSign className="w-6 h-6 text-green-600" />
+                    ) : user.role === 'driver' ? (
+                      <Truck className="w-6 h-6 text-amber-800" />
+                    ) : user.role === 'foreman' ? (
+                      <HardHat className="w-6 h-6 text-amber-700" />
                     ) : (
                       <Briefcase className="w-6 h-6 text-primary" />
                     )}
@@ -183,9 +225,11 @@ export function UserManagement() {
                     <p className="font-semibold truncate">{user.username || 'Unnamed User'}</p>
                     <p className="text-sm text-muted-foreground capitalize">
                       {user.role === 'crew' ? 'Field Crew' : 
+                       user.role === 'foreman' ? 'Foreman' : 
                        user.role === 'office' ? 'Office Staff' : 
                        user.role === 'shop' ? 'Shop User' : 
-                       user.role === 'payroll' ? 'Payroll' : user.role}
+                       user.role === 'payroll' ? 'Payroll' : 
+                       user.role === 'driver' ? 'Fleet driver' : user.role}
                     </p>
                   </div>
                 </div>
@@ -193,12 +237,16 @@ export function UserManagement() {
                   <Badge variant={user.role === 'office' ? 'default' : 'secondary'} 
                     className={
                       user.role === 'shop' ? 'bg-purple-100 text-purple-700 border-purple-300' : 
-                      user.role === 'payroll' ? 'bg-green-100 text-green-700 border-green-300' : ''
+                      user.role === 'payroll' ? 'bg-green-100 text-green-700 border-green-300' : 
+                      user.role === 'foreman' ? 'bg-amber-100 text-amber-900 border-amber-300' : 
+                      user.role === 'driver' ? 'bg-yellow-100 text-yellow-900 border-yellow-400' : ''
                     }>
                     {user.role === 'crew' ? 'Crew' : 
+                     user.role === 'foreman' ? 'Foreman' : 
                      user.role === 'office' ? 'Office' : 
                      user.role === 'shop' ? 'Shop' : 
-                     user.role === 'payroll' ? 'Payroll' : user.role}
+                     user.role === 'payroll' ? 'Payroll' : 
+                     user.role === 'driver' ? 'Driver' : user.role}
                   </Badge>
                   <div className="flex gap-2">
                     <Button
@@ -225,7 +273,13 @@ export function UserManagement() {
         ))}
       </div>
 
-      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+      <Dialog
+        open={showDialog}
+        onOpenChange={(open) => {
+          setShowDialog(open);
+          if (!open) setDriverFixHint(false);
+        }}
+      >
         <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -246,18 +300,51 @@ export function UserManagement() {
 
             <div className="space-y-2">
               <Label htmlFor="role">Role *</Label>
-              <Select value={formRole} onValueChange={(v: any) => setFormRole(v)}>
+              <Select value={formRole} onValueChange={(v: UserRole) => setFormRole(v)}>
                 <SelectTrigger id="role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="crew">Crew (Field Worker)</SelectItem>
+                  <SelectItem value="foreman">Foreman</SelectItem>
                   <SelectItem value="office">Office Staff (Admin)</SelectItem>
                   <SelectItem value="shop">Shop (Materials Processing)</SelectItem>
                   <SelectItem value="payroll">Payroll (Time Tracking)</SelectItem>
+                  <SelectItem value="driver">Driver (Fleet only)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {driverFixHint && (
+              <Alert variant="destructive" className="text-left">
+                <AlertTitle>One-time database fix</AlertTitle>
+                <AlertDescription className="space-y-2 mt-2">
+                  <p className="text-sm">
+                    Use <strong>Copy SQL</strong> (from <code className="text-xs">src/sql/user-profiles-driver-complete-fix.sql</code>
+                    ). Run it in the <strong>SQL console for the same database as your API URL</strong>. In Messages, confirm{' '}
+                    <code className="text-xs">driver insert test: SUCCESS</code>. Wait ~60s, then save again.
+                  </p>
+                  <pre className="text-[11px] leading-snug whitespace-pre-wrap break-all max-h-72 overflow-auto rounded-md bg-muted p-2 border">
+                    {driverFixSql ||
+                      '(SQL bundle missing — open src/sql/user-profiles-driver-complete-fix.sql in the repo.)'}
+                  </pre>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                    disabled={!driverFixSql}
+                    onClick={() => {
+                      void navigator.clipboard.writeText(driverFixSql);
+                      toast.success('SQL copied to clipboard');
+                    }}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy SQL to clipboard
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
 
             <div className="flex gap-2 pt-4">
               <Button

@@ -16,6 +16,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { canManageFleetAppUsers } from '@/lib/fleetVehiclePermissions';
 import { VehicleList } from './VehicleList';
 import { AddVehicleDialog } from './AddVehicleDialog';
 import { MapView } from './MapView';
@@ -111,14 +112,17 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
             >
               <Map className="w-5 h-5" />
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onOpenSettings}
-              className="text-white hover:text-yellow-400"
-            >
-              <Settings className="w-5 h-5" />
-            </Button>
+            {canManageFleetAppUsers(profile) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onOpenSettings}
+                className="text-white hover:text-yellow-400"
+                title="Fleet settings"
+              >
+                <Settings className="w-5 h-5" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -203,7 +207,6 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                     companyId={company.id}
                     vehicleType={type}
                     statusFilter={statusFilter}
-                    onAddVehicle={() => setShowAddDialog(true)}
                     onVehicleUpdated={loadVehicleCounts}
                   />
                 </TabsContent>
@@ -242,10 +245,6 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                 companyId={company.id}
                 vehicleType="truck"
                 statusFilter={statusFilter}
-                onAddVehicle={() => {
-                  setActiveTab('truck');
-                  setShowAddDialog(true);
-                }}
                 onVehicleUpdated={loadVehicleCounts}
               />
             </div>
@@ -281,10 +280,6 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                     companyId={company.id}
                     vehicleType="heavy_equipment"
                     statusFilter={statusFilter}
-                    onAddVehicle={() => {
-                      setActiveTab('heavy_equipment');
-                      setShowAddDialog(true);
-                    }}
                     onVehicleUpdated={loadVehicleCounts}
                   />
                 </div>
@@ -318,10 +313,6 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                     companyId={company.id}
                     vehicleType="small_engine"
                     statusFilter={statusFilter}
-                    onAddVehicle={() => {
-                      setActiveTab('small_engine');
-                      setShowAddDialog(true);
-                    }}
                     onVehicleUpdated={loadVehicleCounts}
                   />
                 </div>
@@ -355,10 +346,6 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                     companyId={company.id}
                     vehicleType="trailer"
                     statusFilter={statusFilter}
-                    onAddVehicle={() => {
-                      setActiveTab('trailer');
-                      setShowAddDialog(true);
-                    }}
                     onVehicleUpdated={loadVehicleCounts}
                   />
                 </div>
