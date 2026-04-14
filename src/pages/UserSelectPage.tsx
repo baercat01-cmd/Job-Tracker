@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { User, Briefcase, Shield, Settings, DollarSign, Users, Package, Truck } from 'lucide-react';
+import { User, Briefcase, Shield, Settings, DollarSign, Users, Package } from 'lucide-react';
 import { InstallButton } from '@/components/ui/install-button';
 import type { UserProfile } from '@/types';
 import { AdminSetup } from './AdminSetup';
@@ -34,7 +34,7 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
       if (error) throw error;
       
       // Sort by role priority (crew -> foreman -> shop -> office -> payroll) then by username
-      const rolePriority = { driver: 0, crew: 1, foreman: 2, shop: 3, office: 4, payroll: 5 };
+      const rolePriority = { crew: 1, foreman: 2, shop: 3, office: 4, payroll: 5 };
       const sorted = (data || []).sort((a, b) => {
         const roleA = rolePriority[a.role as keyof typeof rolePriority] || 999;
         const roleB = rolePriority[b.role as keyof typeof rolePriority] || 999;
@@ -162,8 +162,6 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
                         <DollarSign className="w-6 h-6 text-primary" />
                       ) : user.role === 'shop' ? (
                         <Package className="w-6 h-6 text-primary" />
-                      ) : user.role === 'driver' ? (
-                        <Truck className="w-6 h-6 text-primary" />
                       ) : (
                         <Briefcase className="w-6 h-6 text-primary" />
                       )}
@@ -171,27 +169,11 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
                     <div className="flex-1 text-left">
                       <p className="font-semibold text-lg">{user.username || 'Unnamed User'}</p>
                       <p className="text-sm text-muted-foreground capitalize">
-                        {user.role === 'driver'
-                          ? 'Fleet driver (vehicles only)'
-                          : user.role === 'payroll'
-                            ? 'Payroll Member'
-                            : user.role === 'office'
-                              ? 'Office Member'
-                              : user.role === 'shop'
-                                ? 'Shop Member'
-                                : 'Crew Member'}
+                        {user.role === 'payroll' ? 'Payroll' : user.role === 'office' ? 'Office' : user.role === 'shop' ? 'Shop' : 'Crew'} Member
                       </p>
                     </div>
                     <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
-                      {user.role === 'office'
-                        ? 'Office'
-                        : user.role === 'payroll'
-                          ? 'Payroll'
-                          : user.role === 'shop'
-                            ? 'Shop'
-                            : user.role === 'driver'
-                              ? 'Driver'
-                              : 'Crew'}
+                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : 'Crew'}
                     </Badge>
                   </div>
                 </Button>

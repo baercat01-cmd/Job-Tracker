@@ -33,14 +33,14 @@ import {
   ListTodo
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, JobTask, UserProfile, UserRole } from '@/types';
+import type { Job, JobTask, UserProfile } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDateLocal, parseDateLocal } from '@/lib/date-utils';
 
 interface JobTasksManagementProps {
   job: Job;
   userId: string;
-  userRole?: UserRole;
+  userRole?: 'crew' | 'office' | 'shop' | 'payroll';
 }
 
 export function JobTasksManagement({ job, userId, userRole }: JobTasksManagementProps) {

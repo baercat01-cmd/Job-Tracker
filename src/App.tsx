@@ -120,21 +120,13 @@ function AppContent() {
   // Critical: Role-based routing using profile.role from database
   // DO NOT use auth.user metadata - always check profile.role
   
-  // Crew / foreman: field interface (Jobs, Timer, Photos, Logs, optional fleet from there)
-  if (profile.role === 'crew' || profile.role === 'foreman') {
+  // Crew users: limited field interface (Jobs, Timer, Photos, Logs)
+  if (profile.role === 'crew') {
     return <ForemanDashboard />;
   }
 
-  // Driver: fleet only (all companies); no jobs, estimator, or office building tools
-  if (profile.role === 'driver') {
-    return (
-      <div className="min-h-[100dvh] md:min-h-screen bg-slate-50 overflow-x-hidden">
-        <main className="w-full px-4 py-4 md:px-2 md:py-6">
-          <FleetDashboard hideHeader={false} />
-        </main>
-      </div>
-    );
-  }
+  // Crew users also get foreman dashboard (same interface)
+  // This handles legacy 'foreman' role that was renamed to 'crew'
 
   // Office users: full admin dashboard (Jobs, Components, Logs, Time, Photos, Settings)
   if (profile.role === 'office') {
