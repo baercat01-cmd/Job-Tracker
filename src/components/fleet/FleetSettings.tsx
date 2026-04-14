@@ -1,6 +1,5 @@
-import { useAuth } from '@/hooks/useAuth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Building2, Wrench, Archive } from 'lucide-react';
+import { Users, Building2, Wrench, Archive, X } from 'lucide-react';
 import { UserManagementTab } from './settings/UserManagementTab';
 import { VendorManagementTab } from './settings/VendorManagementTab';
 import { ChecklistManagementTab } from './settings/ChecklistManagementTab';
@@ -13,19 +12,29 @@ interface FleetSettingsProps {
 }
 
 export function FleetSettings({ onClose, onLogout }: FleetSettingsProps) {
-  const { profile } = useAuth();
-
   return (
     <div className="p-4 max-w-6xl mx-auto">
+      <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onClose}
+          className="border-slate-300 text-slate-800"
+        >
+          <X className="w-4 h-4 mr-1.5" />
+          Exit settings
+        </Button>
+      </div>
       <Tabs defaultValue="users" className="w-full">
         <TabsList className="grid w-full grid-cols-4 h-12 bg-slate-200">
           <TabsTrigger value="users" className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black">
             <Users className="w-4 h-4 mr-2" />
             Users
           </TabsTrigger>
-          <TabsTrigger value="vendors" className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black">
-            <Building2 className="w-4 h-4 mr-2" />
-            Vendors
+          <TabsTrigger value="vendors" className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black text-xs sm:text-sm px-2 sm:px-3">
+            <Building2 className="w-4 h-4 mr-1 sm:mr-2 shrink-0" />
+            <span className="truncate">Vehicle vendors</span>
           </TabsTrigger>
           <TabsTrigger value="checklist" className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black">
             <Wrench className="w-4 h-4 mr-2" />

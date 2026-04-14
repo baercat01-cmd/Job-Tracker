@@ -79,23 +79,33 @@ export function FleetDashboard({ hideHeader = false, defaultCompany }: FleetDash
   if (showSettings) {
     return (
       <div className={hideHeader ? '' : 'min-h-screen bg-slate-50'}>
-        {!hideHeader && (
-          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-3 py-2 border-b-4 border-yellow-600">
-            <div className="flex items-center justify-between">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowSettings(false)}
-                className="text-white hover:text-yellow-400"
-              >
-                <ArrowLeft className="w-5 h-5 mr-2" />
-                Back
-              </Button>
-              <h1 className="text-lg font-bold">Fleet Settings</h1>
-              <div className="w-20" /> {/* Spacer */}
-            </div>
+        <div
+          className={
+            hideHeader
+              ? 'sticky top-0 z-20 border-b border-slate-200 bg-white px-3 py-2 shadow-sm'
+              : 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-3 py-2 border-b-4 border-yellow-600'
+          }
+        >
+          <div className="flex items-center justify-between gap-2 max-w-6xl mx-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSettings(false)}
+              className={
+                hideHeader
+                  ? 'text-slate-800 hover:bg-slate-100 -ml-1 shrink-0'
+                  : 'text-white hover:text-yellow-400 shrink-0'
+              }
+            >
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              {hideHeader ? 'Back to fleet' : 'Back'}
+            </Button>
+            <h1 className={`text-lg font-bold truncate ${hideHeader ? 'text-slate-900' : 'text-white'}`}>
+              Fleet Settings
+            </h1>
+            <div className="w-20 shrink-0 hidden sm:block" aria-hidden />
           </div>
-        )}
+        </div>
         <FleetSettings onClose={() => setShowSettings(false)} onLogout={handleLogout} />
       </div>
     );

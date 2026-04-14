@@ -435,6 +435,25 @@ function isWorkbookLaborCategoryName(name: unknown): boolean {
   );
 }
 
+/**
+ * `sheetLabor` can include rows merged from another workbook/sheet onto this section for display.
+ * Those objects set `labor_source_sheet_id` to the DB row's real `material_sheets.id`.
+ * Only native rows (source id === displayed sheet id) should show in the section, affect totals, or be edited in place.
+ */
+function isNativeMaterialSheetLabor(labor: any, displaySheetId: string): boolean {
+  if (!labor || !displaySheetId) return false;
+  const sid = String(displaySheetId).trim();
+  const source = String(labor.labor_source_sheet_id ?? labor.sheet_id ?? '').trim();
+  return source !== '' && source === sid;
+}
+
+/** Include labor in this section's totals/UI when it is native, or an intentional same-quote / fallback merge (not orphan job-sheet bleed). */
+function sheetLaborCountsForDisplayedSection(labor: any, displaySheetId: string): boolean {
+  if (!labor || !displaySheetId) return false;
+  if (labor.labor_mergetrusted === true) return true;
+  return isNativeMaterialSheetLabor(labor, displaySheetId);
+}
+
 /** Linked custom row totals split by item_type and per-line-item markup. */
 function sumLinkedRowTotals(
   linkedRows: any[],
@@ -618,10 +637,11 @@ function SortableRow({
           }
         }
       }
-      const sheetLaborTotal = sheetLaborRow
-        ? Number(sheetLaborRow.total_labor_cost) ||
-          Number(sheetLaborRow.estimated_hours || 0) * Number(sheetLaborRow.hourly_rate || 0)
-        : 0;
+      const sheetLaborTotal =
+        sheetLaborRow && sheetLaborCountsForDisplayedSection(sheetLaborRow, sectionSheetId)
+          ? Number(sheetLaborRow.total_labor_cost) ||
+            Number(sheetLaborRow.estimated_hours || 0) * Number(sheetLaborRow.hourly_rate || 0)
+          : 0;
       
       // Calculate labor from sheet line items (with markup, same as line item display)
       const sheetLaborItems = customRowLineItems[sectionSheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
@@ -1545,8 +1565,8 @@ function SortableRow({
                 );
               })()}
 
-              {/* Legacy Sheet Labor (for backward compatibility) */}
-              {sheetLaborRow && (
+              {/* Sheet-level material_sheet_labor (only when stored on this section — not merged from another sheet/workbook) */}
+              {sheetLaborRow && sheetLaborCountsForDisplayedSection(sheetLaborRow, sectionSheetId) && (
                 <div className="bg-amber-50 border border-amber-200 rounded p-2">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
@@ -1768,8 +1788,13 @@ function SortableRow({
               }, 0);
               const baseFinalPrice = baseCategoryTotals + baseLinkedRowTotals.materialTotal + baseLinkedSubsMaterialsTotal;
 
-              // Base sheet labor
-              const baseSheetLaborTotal = sheetLabor[baseSheet.sheetId] ? sheetLabor[baseSheet.sheetId].total_labor_cost : 0;
+              // Base sheet labor (exclude merged-from-elsewhere rows)
+              const baseSheetLaborRowCmp = sheetLabor[baseSheet.sheetId];
+              const baseSheetLaborTotal =
+                baseSheetLaborRowCmp && sheetLaborCountsForDisplayedSection(baseSheetLaborRowCmp, baseSheet.sheetId)
+                  ? Number(baseSheetLaborRowCmp.total_labor_cost) ||
+                    Number(baseSheetLaborRowCmp.estimated_hours || 0) * Number(baseSheetLaborRowCmp.hourly_rate || 0)
+                  : 0;
               const baseSheetLaborLineItems = customRowLineItems[baseSheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
               const baseSheetLaborLineItemsTotal = baseSheetLaborLineItems.reduce((sum: number, item: any) => {
                 const markup = item.markup_percent ?? 0;
@@ -4602,7 +4627,10 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   }
 
   /** Deletes a proposal (quote) and all its data. Only allowed when job has more than one proposal. */
-  async function deleteProposal(quoteIdToDelete: string) {
+  async function deleteProposal(
+    quoteIdToDelete: string,
+    options?: { skipWindowConfirm?: boolean }
+  ) {
     const deleting = allJobQuotes.find((x: any) => x.id === quoteIdToDelete);
     const deletingIsEstimate = (deleting as any)?.is_customer_estimate === true;
     if (!deletingIsEstimate && formalJobQuotes.length <= 1) {
@@ -4617,7 +4645,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     const label = q
       ? `${(q as any).is_customer_estimate ? 'Estimate' : 'Proposal'} #${displayNumberForQuoteRow(q, !!(q as any).is_customer_estimate)}`
       : 'This proposal';
-    if (!confirm(`Delete ${label}? All materials, financial rows, and subcontractor estimates for this proposal will be permanently removed.\n\nThis cannot be undone.`)) {
+    if (
+      !options?.skipWindowConfirm &&
+      !confirm(
+        `Delete ${label}? All materials, financial rows, and subcontractor estimates for this proposal will be permanently removed.\n\nThis cannot be undone.`
+      )
+    ) {
       return;
     }
     try {
@@ -6014,6 +6047,17 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     }
     setRenumberingProposals(true);
     try {
+      // Two-phase update: unique constraint on proposal_number would fail if we wrote e.g. 26040-1
+      // while another row still holds 26040-1. Clear to unique temps first, then assign final labels.
+      for (let i = 0; i < rows.length; i++) {
+        const id = String((rows[i] as any).id);
+        const tmp = `_mbtmp_${id.replace(/-/g, '')}`;
+        const { error } = await supabase
+          .from('quotes')
+          .update({ proposal_number: tmp, quote_number: tmp })
+          .eq('id', id);
+        if (error) throw error;
+      }
       for (let i = 0; i < rows.length; i++) {
         const label = `${base}-${i + 1}`;
         const { error } = await supabase
@@ -7073,7 +7117,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         (sheet.material_sheet_labor || []).forEach((labor: any) => {
           const total = labor.total_labor_cost ?? (Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
           const lk = String(labor.sheet_id ?? '').trim();
-          if (lk) laborMap[lk] = { ...labor, total_labor_cost: total, sheet_id: lk };
+          if (lk) laborMap[lk] = { ...labor, total_labor_cost: total, sheet_id: lk, labor_source_sheet_id: lk };
         });
       });
       // For locked/sent proposals, nested material_sheet_labor may be missing; supplement from DB so labor always shows.
@@ -7094,7 +7138,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               Number(prev.estimated_hours || 0) * Number(prev.hourly_rate || 0)
             : 0;
           if (!prev || total > prevTotal) {
-            laborMap[lk] = { ...labor, total_labor_cost: total, sheet_id: lk };
+            laborMap[lk] = { ...labor, total_labor_cost: total, sheet_id: lk, labor_source_sheet_id: lk };
           }
         });
       }
@@ -7123,7 +7167,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             const name = sheet.sheet_name || '';
             if (laborBySheetName.has(name) && !laborMap[sheet.id]) {
               const labor = laborBySheetName.get(name)!;
-              laborMap[sheet.id] = { ...labor, sheet_id: sheet.id, total_labor_cost: labor.total_labor_cost };
+              const sourceSid = String(labor.sheet_id ?? '').trim();
+              laborMap[sheet.id] = {
+                ...labor,
+                sheet_id: sheet.id,
+                total_labor_cost: labor.total_labor_cost,
+                labor_source_sheet_id: sourceSid || String(sheet.id).trim(),
+                labor_mergetrusted: true,
+              };
             }
           });
         }
@@ -7192,7 +7243,13 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                 const existing = laborMap[mappedSheetId];
                 const existingTotal = existing ? effectiveLaborTotal(existing) : 0;
                 if (total <= existingTotal) return;
-                laborMap[mappedSheetId] = { ...labor, sheet_id: mappedSheetId, total_labor_cost: total };
+                laborMap[mappedSheetId] = {
+                  ...labor,
+                  sheet_id: mappedSheetId,
+                  total_labor_cost: total,
+                  labor_source_sheet_id: sid,
+                  labor_mergetrusted: true,
+                };
               });
             }
           }
@@ -7263,7 +7320,12 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                 const existing = laborMap[mappedSheetId];
                 const existingTotal = existing ? effectiveLaborTotalJl(existing) : 0;
                 if (total <= existingTotal) return;
-                laborMap[mappedSheetId] = { ...labor, sheet_id: mappedSheetId, total_labor_cost: total };
+                laborMap[mappedSheetId] = {
+                  ...labor,
+                  sheet_id: mappedSheetId,
+                  total_labor_cost: total,
+                  labor_source_sheet_id: sid,
+                };
               });
             }
           }
@@ -8400,15 +8462,17 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
   function openLaborDialog(sheetId?: string, rowId?: string) {
     if (sheetId) {
       const existingLabor = sheetLabor[sheetId];
+      const nativeSheetLabor =
+        existingLabor && sheetLaborCountsForDisplayedSection(existingLabor, sheetId) ? existingLabor : null;
       setEditingLaborSheetId(sheetId);
       setEditingLaborRowId(null);
       
-      if (existingLabor) {
+      if (nativeSheetLabor) {
         setLaborForm({
-          description: existingLabor.description,
-          estimated_hours: existingLabor.estimated_hours,
-          hourly_rate: existingLabor.hourly_rate,
-          notes: existingLabor.notes || '',
+          description: nativeSheetLabor.description,
+          estimated_hours: nativeSheetLabor.estimated_hours,
+          hourly_rate: nativeSheetLabor.hourly_rate,
+          notes: nativeSheetLabor.notes || '',
         });
       } else {
         setLaborForm({
@@ -8447,6 +8511,10 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     if (editingLaborSheetId) {
       // Save material sheet labor
       const existingLabor = sheetLabor[editingLaborSheetId];
+      const nativeExisting =
+        existingLabor && sheetLaborCountsForDisplayedSection(existingLabor, editingLaborSheetId)
+          ? existingLabor
+          : null;
       const laborData = {
         sheet_id: editingLaborSheetId,
         description: laborForm.description,
@@ -8456,16 +8524,24 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       };
 
       try {
-        if (existingLabor?.id) {
+        if (nativeExisting?.id) {
           const { error } = await supabase
             .from('material_sheet_labor')
             .update(laborData)
-            .eq('id', existingLabor.id);
+            .eq('id', nativeExisting.id);
 
           if (error) throw error;
           toast.success('Labor updated');
           const total = (laborData.estimated_hours ?? 0) * (laborData.hourly_rate ?? 0);
-          setSheetLabor(prev => ({ ...prev, [editingLaborSheetId]: { ...existingLabor, ...laborData, total_labor_cost: total } }));
+          setSheetLabor(prev => ({
+            ...prev,
+            [editingLaborSheetId]: {
+              ...nativeExisting,
+              ...laborData,
+              total_labor_cost: total,
+              labor_source_sheet_id: String(editingLaborSheetId).trim(),
+            },
+          }));
         } else {
           const { data: inserted, error } = await supabase
             .from('material_sheet_labor')
@@ -8476,7 +8552,15 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           if (error) throw error;
           toast.success('Labor added');
           const total = (laborData.estimated_hours ?? 0) * (laborData.hourly_rate ?? 0);
-          if (inserted) setSheetLabor(prev => ({ ...prev, [editingLaborSheetId]: { ...inserted, total_labor_cost: total } }));
+          if (inserted)
+            setSheetLabor(prev => ({
+              ...prev,
+              [editingLaborSheetId]: {
+                ...inserted,
+                total_labor_cost: total,
+                labor_source_sheet_id: String(inserted.sheet_id ?? editingLaborSheetId).trim(),
+              },
+            }));
         }
 
         setShowLaborDialog(false);
@@ -9998,7 +10082,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               }, 0);
               const baseMaterialsPrice = baseCatTotals2 + baseLinkedRowTotals2.materialTotal + baseLinkedSubsTotal2;
               const baseSheetLaborData = sheetLabor[baseSheetBd.sheetId];
-              const baseSheetLaborTotal2 = baseSheetLaborData ? baseSheetLaborData.total_labor_cost : 0;
+              const baseSheetLaborTotal2 =
+                baseSheetLaborData && sheetLaborCountsForDisplayedSection(baseSheetLaborData, baseSheetBd.sheetId)
+                  ? Number(baseSheetLaborData.total_labor_cost) ||
+                    Number(baseSheetLaborData.estimated_hours || 0) * Number(baseSheetLaborData.hourly_rate || 0)
+                  : 0;
               const baseSheetLaborLineItems2 = customRowLineItems[baseSheetBd.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
               const baseSheetLaborLineItemsTotal2 = baseSheetLaborLineItems2.reduce((s2: number, it: any) => s2 + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
               const baseNonTaxable2 = baseLinkedSubs2.reduce((s2: number, sub: any) => {
@@ -10010,7 +10098,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
 
               // Option sheet labor
               const optSheetLaborData = sheetLabor[sheet.sheetId];
-              const optSheetLaborTotal = optSheetLaborData ? optSheetLaborData.total_labor_cost : 0;
+              const optSheetLaborTotal =
+                optSheetLaborData && sheetLaborCountsForDisplayedSection(optSheetLaborData, sheet.sheetId)
+                  ? Number(optSheetLaborData.total_labor_cost) ||
+                    Number(optSheetLaborData.estimated_hours || 0) * Number(optSheetLaborData.hourly_rate || 0)
+                  : 0;
               const optSheetLaborLineItems = customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
               const optSheetLaborLineItemsTotal = optSheetLaborLineItems.reduce((s2: number, it: any) => s2 + (it.total_cost * (1 + (it.markup_percent || 0) / 100)), 0);
               const optLinkedSubs2 = linkedSubcontractors[sheet.sheetId] || [];
@@ -10078,10 +10170,11 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
           }
 
           const exportSheetLaborRow = sheetLabor[sheet.sheetId];
-          const exportSheetLaborTotal = exportSheetLaborRow
-            ? Number(exportSheetLaborRow.total_labor_cost) ||
-              Number(exportSheetLaborRow.estimated_hours || 0) * Number(exportSheetLaborRow.hourly_rate || 0)
-            : 0;
+          const exportSheetLaborTotal =
+            exportSheetLaborRow && sheetLaborCountsForDisplayedSection(exportSheetLaborRow, sheet.sheetId)
+              ? Number(exportSheetLaborRow.total_labor_cost) ||
+                Number(exportSheetLaborRow.estimated_hours || 0) * Number(exportSheetLaborRow.hourly_rate || 0)
+              : 0;
           const exportLaborLineItems =
             customRowLineItems[sheet.sheetId]?.filter((it: any) => (it.item_type || 'material') === 'labor') || [];
           const exportSheetLaborLineItemsTotal = exportLaborLineItems.reduce(
@@ -10685,6 +10778,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
     
     const sheetLaborDb =
       labor &&
+      sheetLaborCountsForDisplayedSection(labor, sheetId) &&
       (Number(labor.total_labor_cost) ||
         Number(labor.estimated_hours || 0) * Number(labor.hourly_rate || 0));
     return sum + (sheetLaborDb || 0) + sheetLaborLineItemsTotal + linkedRowsLaborTotal + linkedSubsLaborTotal;
@@ -13622,7 +13716,7 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               variant="destructive"
               onClick={async () => {
                 if (deleteProposalQuoteId) {
-                  await deleteProposal(deleteProposalQuoteId);
+                  await deleteProposal(deleteProposalQuoteId, { skipWindowConfirm: true });
                   setShowDeleteProposalConfirm(false);
                   setDeleteProposalQuoteId(null);
                 }
@@ -13656,6 +13750,50 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
               , then <span className="font-mono">{parseProposalNumberBase(quote) ?? '?'}-2</span>, and so on.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+            <p className="text-xs font-medium text-foreground">Remove proposals (newest first)</p>
+            <p className="text-xs text-muted-foreground">
+              You must keep at least one formal proposal. Deletes use the same permanent delete as the toolbar trash icon.
+            </p>
+            <ul className="max-h-44 overflow-y-auto space-y-1 text-sm">
+              {[...formalProposalsForRenumber]
+                .sort(
+                  (a: any, b: any) =>
+                    new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+                )
+                .map((qrow: any) => {
+                  const num = displayNumberForQuoteRow(qrow, false);
+                  const cannotDeleteFormal = formalJobQuotes.length <= 1;
+                  return (
+                    <li
+                      key={qrow.id}
+                      className="flex items-center justify-between gap-2 rounded border bg-background px-2 py-1.5"
+                    >
+                      <span className="font-mono truncate">{num}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 shrink-0 border-red-200 text-red-700 hover:bg-red-50"
+                        disabled={renumberingProposals || cannotDeleteFormal}
+                        title={
+                          cannotDeleteFormal
+                            ? 'Cannot delete the only formal proposal'
+                            : 'Delete this proposal permanently'
+                        }
+                        onClick={() => {
+                          setDeleteProposalQuoteId(qrow.id);
+                          setShowRenumberProposalsDialog(false);
+                          setShowDeleteProposalConfirm(true);
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </li>
+                  );
+                })}
+            </ul>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setShowRenumberProposalsDialog(false)} disabled={renumberingProposals}>
               Cancel

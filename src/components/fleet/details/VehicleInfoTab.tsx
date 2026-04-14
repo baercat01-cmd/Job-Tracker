@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,19 @@ export function VehicleInfoTab({ vehicle, onVehicleUpdated }: VehicleInfoTabProp
   const { profile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [fleetVendorNames, setFleetVendorNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.from('fleet_vendors').select('name').order('name');
+      if (cancelled || error) return;
+      setFleetVendorNames((data || []).map((r: { name: string }) => r.name).filter(Boolean));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [formData, setFormData] = useState({
     vehicle_name: vehicle.vehicle_name || '',
     year: vehicle.year || '',
@@ -239,11 +252,21 @@ export function VehicleInfoTab({ vehicle, onVehicleUpdated }: VehicleInfoTabProp
               />
             </div>
             <div className="space-y-2">
-              <Label>Vendor</Label>
+              <Label>Vendor (vehicle / fleet)</Label>
               <Input
+                list="fleet-vendor-name-options"
+                placeholder="Type or pick from fleet vendors"
                 value={formData.vendor_name}
                 onChange={(e) => setFormData({ ...formData, vendor_name: e.target.value })}
               />
+              <datalist id="fleet-vendor-name-options">
+                {fleetVendorNames.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+              <p className="text-xs text-slate-500">
+                Suggestions come from Fleet settings → Vehicle vendors (separate from Zoho Books).
+              </p>
             </div>
           </div>
 
@@ -314,7 +337,7 @@ export function VehicleInfoTab({ vehicle, onVehicleUpdated }: VehicleInfoTabProp
               <p className="font-medium">{vehicle.purchase_price ? `$${parseFloat(vehicle.purchase_price).toLocaleString()}` : 'Not set'}</p>
             </div>
             <div>
-              <p className="text-slate-500 text-xs">Vendor</p>
+              <p className="text-slate-500 text-xs">Vendor (vehicle / fleet)</p>
               <p className="font-medium">{vehicle.vendor_name || 'Not set'}</p>
             </div>
             <div>

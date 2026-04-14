@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -47,6 +47,11 @@ export function AddVehicleDialog({
     vin: '',
     license_plate: '',
   });
+
+  useEffect(() => {
+    if (!open) return;
+    setFormData((prev) => ({ ...prev, type: defaultType }));
+  }, [open, defaultType]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

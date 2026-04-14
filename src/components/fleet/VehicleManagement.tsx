@@ -216,11 +216,27 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
             {/* Trucks Column */}
             <div className="space-y-3">
               <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
-                <Truck className="w-5 h-5" />
-                <span>Trucks</span>
-                <Badge variant="secondary" className="ml-auto bg-white text-xs">
-                  {vehicleCounts.truck}
-                </Badge>
+                <Truck className="w-5 h-5 shrink-0" />
+                <span className="min-w-0 truncate">Trucks</span>
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-8 px-2 bg-black/10 hover:bg-black/20 text-black border-0"
+                    onClick={() => {
+                      setActiveTab('truck');
+                      setShowAddDialog(true);
+                    }}
+                    title="Add truck"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="sr-only">Add truck</span>
+                  </Button>
+                  <Badge variant="secondary" className="bg-white text-xs">
+                    {vehicleCounts.truck}
+                  </Badge>
+                </div>
               </div>
               <VehicleList
                 companyId={company.id}
@@ -239,11 +255,27 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                 {/* Heavy Equipment Column */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
-                    <Construction className="w-5 h-5" />
-                    <span>Heavy Equipment</span>
-                    <Badge variant="secondary" className="ml-auto bg-white text-xs">
-                      {vehicleCounts.heavy_equipment}
-                    </Badge>
+                    <Construction className="w-5 h-5 shrink-0" />
+                    <span className="min-w-0 truncate">Heavy Equipment</span>
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 px-2 bg-black/10 hover:bg-black/20 text-black border-0"
+                        onClick={() => {
+                          setActiveTab('heavy_equipment');
+                          setShowAddDialog(true);
+                        }}
+                        title="Add heavy equipment"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="sr-only">Add heavy equipment</span>
+                      </Button>
+                      <Badge variant="secondary" className="bg-white text-xs">
+                        {vehicleCounts.heavy_equipment}
+                      </Badge>
+                    </div>
                   </div>
                   <VehicleList
                     companyId={company.id}
@@ -260,11 +292,27 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                 {/* Small Engines Column */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
-                    <Wrench className="w-5 h-5" />
-                    <span>Small Engines</span>
-                    <Badge variant="secondary" className="ml-auto bg-white text-xs">
-                      {vehicleCounts.small_engine}
-                    </Badge>
+                    <Wrench className="w-5 h-5 shrink-0" />
+                    <span className="min-w-0 truncate">Small Engines</span>
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 px-2 bg-black/10 hover:bg-black/20 text-black border-0"
+                        onClick={() => {
+                          setActiveTab('small_engine');
+                          setShowAddDialog(true);
+                        }}
+                        title="Add small engine"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="sr-only">Add small engine</span>
+                      </Button>
+                      <Badge variant="secondary" className="bg-white text-xs">
+                        {vehicleCounts.small_engine}
+                      </Badge>
+                    </div>
                   </div>
                   <VehicleList
                     companyId={company.id}
@@ -281,11 +329,27 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
                 {/* Trailers Column */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
-                    <Box className="w-5 h-5" />
-                    <span>Trailers</span>
-                    <Badge variant="secondary" className="ml-auto bg-white text-xs">
-                      {vehicleCounts.trailer}
-                    </Badge>
+                    <Box className="w-5 h-5 shrink-0" />
+                    <span className="min-w-0 truncate">Trailers</span>
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 px-2 bg-black/10 hover:bg-black/20 text-black border-0"
+                        onClick={() => {
+                          setActiveTab('trailer');
+                          setShowAddDialog(true);
+                        }}
+                        title="Add trailer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="sr-only">Add trailer</span>
+                      </Button>
+                      <Badge variant="secondary" className="bg-white text-xs">
+                        {vehicleCounts.trailer}
+                      </Badge>
+                    </div>
                   </div>
                   <VehicleList
                     companyId={company.id}
@@ -301,14 +365,6 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
               </>
             )}
           </div>
-
-          {/* Add Vehicle FAB */}
-          <Button
-            onClick={() => setShowAddDialog(true)}
-            className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600 text-black shadow-2xl"
-          >
-            <Plus className="w-6 h-6" />
-          </Button>
 
           {/* Add Vehicle Dialog */}
           <AddVehicleDialog

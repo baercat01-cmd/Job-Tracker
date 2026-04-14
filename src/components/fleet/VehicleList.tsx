@@ -265,6 +265,16 @@ export function VehicleList({
             </CardContent>
           </Card>
         ))}
+
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full border-2 border-dashed border-yellow-600/60 text-yellow-800 hover:bg-yellow-50"
+          onClick={onAddVehicle}
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Add vehicle to this category
+        </Button>
       </div>
 
       {selectedVehicle && (

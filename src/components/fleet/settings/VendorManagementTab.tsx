@@ -40,15 +40,15 @@ export function VendorManagementTab() {
   async function loadVendors() {
     try {
       const { data, error } = await supabase
-        .from('vendors')
+        .from('fleet_vendors')
         .select('*')
         .order('name');
 
       if (error) throw error;
       setVendors(data || []);
     } catch (error) {
-      console.error('Error loading vendors:', error);
-      toast.error('Failed to load vendors');
+      console.error('Error loading fleet vendors:', error);
+      toast.error('Failed to load vehicle vendors');
     } finally {
       setLoading(false);
     }
@@ -63,8 +63,8 @@ export function VendorManagementTab() {
     }
 
     try {
-      const { error } = await supabase.from('vendors').insert({
-        name: formData.name,
+      const { error } = await supabase.from('fleet_vendors').insert({
+        name: formData.name.trim(),
         phone: formData.phone || null,
         email: formData.email || null,
         address: formData.address || null,
@@ -75,15 +75,15 @@ export function VendorManagementTab() {
       });
 
       if (error) {
-        if (error.message.includes('duplicate') || error.message.includes('unique')) {
-          toast.error('Vendor name already exists');
+        if (error.code === '23505' || error.message.includes('duplicate') || error.message.includes('unique')) {
+          toast.error('A vehicle vendor with this name already exists');
         } else {
           throw error;
         }
         return;
       }
 
-      toast.success('Vendor added');
+      toast.success('Vehicle vendor added');
       setFormData({
         name: '',
         phone: '',
@@ -97,26 +97,26 @@ export function VendorManagementTab() {
       loadVendors();
     } catch (error: any) {
       console.error('Error adding vendor:', error);
-      toast.error('Failed to add vendor');
+      toast.error('Failed to add vehicle vendor');
     }
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Delete vendor "${name}"?`)) return;
+    if (!confirm(`Delete vehicle vendor "${name}"?`)) return;
 
     try {
       const { error } = await supabase
-        .from('vendors')
+        .from('fleet_vendors')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
 
-      toast.success('Vendor deleted');
+      toast.success('Vehicle vendor deleted');
       loadVendors();
     } catch (error: any) {
       console.error('Error deleting vendor:', error);
-      toast.error('Failed to delete vendor');
+      toast.error('Failed to delete vehicle vendor');
     }
   }
 
@@ -124,29 +124,34 @@ export function VendorManagementTab() {
     return (
       <div className="py-12 text-center">
         <div className="w-8 h-8 border-4 border-yellow-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        <p className="text-sm text-slate-600">Loading vendors...</p>
+        <p className="text-sm text-slate-600">Loading vehicle vendors...</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold">Vendors ({vendors.length})</h3>
+      <p className="text-sm text-slate-600">
+        Vehicle and fleet suppliers you maintain here. This list is separate from office{' '}
+        <span className="font-medium text-slate-800">Zoho Books vendors</span> (materials catalog sync) and is not
+        imported automatically.
+      </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h3 className="text-lg font-bold">Vehicle vendors ({vendors.length})</h3>
         <Button
           onClick={() => setShowForm(!showForm)}
           size="sm"
           className="bg-yellow-600 hover:bg-yellow-700 text-black"
         >
           <Plus className="w-4 h-4 mr-2" />
-          {showForm ? 'Cancel' : 'Add Vendor'}
+          {showForm ? 'Cancel' : 'Add vendor'}
         </Button>
       </div>
 
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">New Vendor</CardTitle>
+            <CardTitle className="text-base">New vehicle vendor</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-3">
@@ -193,7 +198,7 @@ export function VendorManagementTab() {
                 />
               </div>
               <Button type="submit" className="w-full bg-yellow-600 hover:bg-yellow-700 text-black">
-                Add Vendor
+                Add vehicle vendor
               </Button>
             </form>
           </CardContent>
