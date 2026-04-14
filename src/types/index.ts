@@ -1,15 +1,17 @@
-export type UserRole = 'crew' | 'office' | 'payroll' | 'shop';
+export type UserRole = 'crew' | 'foreman' | 'office' | 'payroll' | 'shop' | 'driver';
 
 export interface UserProfile {
   id: string;
   username: string | null;
   email: string;
-  role: 'crew' | 'office' | 'payroll' | 'shop'; // Must be exactly 'crew', 'office', 'payroll', or 'shop'
+  role: UserRole;
   phone: string | null;
   created_at: string;
   pin_hash?: string | null;
   webauthn_credentials?: any[] | null;
   is_admin?: boolean;
+  /** When true (or role office/foreman/driver), user may edit fleet vehicles; see migrations + RLS. */
+  can_manage_fleet_vehicles?: boolean;
   /** From Supabase Auth; may contain full_name etc. when profile is augmented from auth. */
   user_metadata?: { full_name?: string; [key: string]: unknown } | null;
 }

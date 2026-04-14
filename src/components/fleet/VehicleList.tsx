@@ -36,13 +36,16 @@ interface VehicleListProps {
   companyId: string;
   vehicleType: string;
   statusFilter: string;
-  onVehicleUpdated: () => void;
+  /** Mobile tab layout: opens add-vehicle dialog for this section. */
+  onAddVehicle?: () => void;
+  onVehicleUpdated: () => void | Promise<void>;
 }
 
 export function VehicleList({
   companyId,
   vehicleType,
   statusFilter,
+  onAddVehicle,
   onVehicleUpdated,
 }: VehicleListProps) {
   const { profile } = useAuth();

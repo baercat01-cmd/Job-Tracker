@@ -12,24 +12,6 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import type { Job, ActiveTimer, UserRole } from '@/types';
-
-function fieldRoleShortLabel(role: UserRole | undefined): string {
-  switch (role) {
-    case 'office':
-      return 'Office';
-    case 'payroll':
-      return 'Payroll';
-    case 'shop':
-      return 'Shop';
-    case 'foreman':
-      return 'Foreman';
-    case 'driver':
-      return 'Driver';
-    case 'crew':
-    default:
-      return 'Crew';
-  }
-}
 import { JobSelector } from '@/components/foreman/JobSelector';
 import { TimeTracker } from '@/components/foreman/TimeTracker';
 import { PhotoUpload } from '@/components/foreman/PhotoUpload';
@@ -54,6 +36,23 @@ import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 
+function fieldRoleShortLabel(role: UserRole | undefined): string {
+  switch (role) {
+    case 'office':
+      return 'Office';
+    case 'payroll':
+      return 'Payroll';
+    case 'shop':
+      return 'Shop';
+    case 'foreman':
+      return 'Foreman';
+    case 'driver':
+      return 'Driver';
+    case 'crew':
+    default:
+      return 'Crew';
+  }
+}
 
 type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'schedule';
 
