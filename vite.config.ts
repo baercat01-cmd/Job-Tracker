@@ -77,14 +77,79 @@ export default defineConfig({
     },
   },
   build: {
-    // Generate sourcemaps for production debugging
-    sourcemap: true,
-    // Optimize chunk size
+    // Disable sourcemaps to reduce peak memory during bundling
+    sourcemap: false,
+    // Increase chunk size warning limit
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor': ['react', 'react-dom'],
-          'supabase': ['@supabase/supabase-js'],
+        manualChunks(id) {
+          // Core React runtime
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/scheduler/')) {
+            return 'vendor-react';
+          }
+          // Router
+          if (id.includes('node_modules/react-router') || id.includes('node_modules/@remix-run/')) {
+            return 'vendor-router';
+          }
+          // Supabase
+          if (id.includes('node_modules/@supabase/')) {
+            return 'vendor-supabase';
+          }
+          // Recharts + D3
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3') || id.includes('node_modules/victory')) {
+            return 'vendor-charts';
+          }
+          // Radix UI / shadcn primitives
+          if (id.includes('node_modules/@radix-ui/')) {
+            return 'vendor-radix';
+          }
+          // lucide icons
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons';
+          }
+          // React Query / Zustand / form libs
+          if (
+            id.includes('node_modules/@tanstack/') ||
+            id.includes('node_modules/zustand') ||
+            id.includes('node_modules/react-hook-form') ||
+            id.includes('node_modules/zod')
+          ) {
+            return 'vendor-state';
+          }
+          // PDF / xlsx / heavy utilities
+          if (
+            id.includes('node_modules/jspdf') ||
+            id.includes('node_modules/xlsx') ||
+            id.includes('node_modules/html2canvas') ||
+            id.includes('node_modules/dompurify')
+          ) {
+            return 'vendor-heavy';
+          }
+          // Date utilities
+          if (id.includes('node_modules/date-fns') || id.includes('node_modules/dayjs')) {
+            return 'vendor-date';
+          }
+          // Fleet / vehicle pages (large isolated feature)
+          if (id.includes('src/components/fleet') || id.includes('src/pages/fleet')) {
+            return 'feature-fleet';
+          }
+          // Foreman / field pages
+          if (id.includes('src/components/foreman') || id.includes('src/pages/foreman')) {
+            return 'feature-foreman';
+          }
+          // Plans / 3D estimator
+          if (id.includes('src/components/plans') || id.includes('BuildingEstimator') || id.includes('BuildingModel')) {
+            return 'feature-plans';
+          }
+          // Customer portal
+          if (id.includes('src/components/customer') || id.includes('src/pages/customer')) {
+            return 'feature-portal';
+          }
+          // All remaining node_modules
+          if (id.includes('node_modules/')) {
+            return 'vendor-misc';
+          }
         },
       },
     },
