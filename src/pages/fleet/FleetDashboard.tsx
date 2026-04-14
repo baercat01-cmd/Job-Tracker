@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { canManageFleetAppUsers } from '@/lib/fleetVehiclePermissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Building2, Settings, ArrowLeft, LogOut } from 'lucide-react';
+import { Building2, Settings, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { VehicleManagement } from '@/components/fleet/VehicleManagement';
 import { FleetSettings } from '@/components/fleet/FleetSettings';
@@ -22,7 +21,7 @@ interface FleetDashboardProps {
 }
 
 export function FleetDashboard({ hideHeader = false, defaultCompany }: FleetDashboardProps) {
-  const { profile, clearUser } = useAuth();
+  const { profile } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -60,9 +59,9 @@ export function FleetDashboard({ hideHeader = false, defaultCompany }: FleetDash
   }
 
   function handleLogout() {
+    // Logout handled by main app
     setShowSettings(false);
     setSelectedCompany(null);
-    clearUser();
   }
 
   if (loading) {
@@ -133,25 +132,13 @@ export function FleetDashboard({ hideHeader = false, defaultCompany }: FleetDash
             <h1 className="text-lg font-bold">Fleet Management</h1>
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-300">Welcome, {profile?.username}</span>
-              {canManageFleetAppUsers(profile) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowSettings(true)}
-                  className="text-white hover:text-yellow-400"
-                  title="Fleet settings"
-                >
-                  <Settings className="w-5 h-5" />
-                </Button>
-              )}
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleLogout}
+                onClick={() => setShowSettings(true)}
                 className="text-white hover:text-yellow-400"
-                title="Sign out"
               >
-                <LogOut className="w-5 h-5" />
+                <Settings className="w-5 h-5" />
               </Button>
             </div>
           </div>
