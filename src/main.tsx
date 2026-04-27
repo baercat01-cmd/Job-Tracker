@@ -14,7 +14,7 @@ import './lib/stress-test';
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); });
 
 const APP_VERSION = '2.0.7';
-console.log(`🚀 FieldTrack Pro v${APP_VERSION} (PWA) - Starting...`);
+console.log(`🚀 Martin Builder OS v${APP_VERSION} (PWA) - Starting...`);
 console.log('📱 Offline support enabled');
 
 // PWA: register generated service worker (precaches app for offline)

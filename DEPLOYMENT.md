@@ -1,4 +1,4 @@
-# FieldTrack Pro - Production Deployment Guide
+# Martin Builder OS - Production Deployment Guide
 
 ## ✅ Production Readiness Checklist
 
@@ -7,7 +7,7 @@
 - ✅ Automatic cache invalidation on version updates
 - ✅ Network-first strategy with offline fallback
 - ✅ Auto-reload when new version is available
-- ✅ Toast notification: "FieldTrack Pro updated. Reloading..."
+- ✅ Toast notification: "Martin Builder OS updated. Reloading..."
 
 ### 2. **Login Persistence**
 - ✅ Session saved in localStorage
@@ -107,7 +107,7 @@ When you make changes and publish a new version:
 1. **Build & Publish**: Click "Publish" to deploy new version
 2. **Service Worker Updates**: Automatically detects new version
 3. **User Experience**:
-   - User sees toast: "FieldTrack Pro updated. Reloading..."
+   - User sees toast: "Martin Builder OS updated. Reloading..."
    - App auto-reloads after 2 seconds
    - New version loads cleanly
    - No white screens or broken states
@@ -117,7 +117,7 @@ When you make changes and publish a new version:
 
 ## 📱 Progressive Web App (PWA)
 
-Users can install FieldTrack Pro on their devices:
+Users can install Martin Builder OS on their devices:
 
 ### **iOS Installation**
 1. Open production URL in Safari
@@ -220,4 +220,4 @@ For production deployment assistance:
 
 ---
 
-**Your FieldTrack Pro app is now production-ready! 🎉**
+**Your Martin Builder OS app is now production-ready!**

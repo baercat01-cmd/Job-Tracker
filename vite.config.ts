@@ -30,9 +30,9 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["martin-logo.png", "favicon.ico"],
       manifest: {
-        short_name: "Martin OS",
-        name: "Martin Builder Operations OS",
-        description: "Martin Builder Operations OS",
+        short_name: "Martin Builder OS",
+        name: "Martin Builder OS",
+        description: "Martin Builder OS",
         start_url: "/office?tab=jobs",
         display: "standalone",
         background_color: "#000000",

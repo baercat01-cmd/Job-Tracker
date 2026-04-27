@@ -75,7 +75,7 @@ export function PWAInstallPrompt() {
             <div className="flex-1 space-y-2">
               <div className="flex items-center gap-2">
                 <Download className="w-5 h-5 text-green-600" />
-                <h3 className="font-bold text-sm">Install FieldTrack Pro</h3>
+                <h3 className="font-bold text-sm">Install Martin Builder OS</h3>
               </div>
               <p className="text-xs text-muted-foreground">
                 Install this app on your device for:

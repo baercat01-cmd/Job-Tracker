@@ -1,7 +1,7 @@
 # Offline Functionality Testing Guide
 
 ## Overview
-This guide provides comprehensive testing procedures for the offline capabilities of FieldTrack Pro.
+This guide provides comprehensive testing procedures for the offline capabilities of Martin Builder OS.
 
 ## Prerequisites
 - Chrome/Edge DevTools (F12)

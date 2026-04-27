@@ -2,7 +2,7 @@
 
 ## ✅ What's Already Configured
 
-Your FieldTrack Pro app is now a fully-featured Progressive Web App with:
+Your Martin Builder OS app is now a fully-featured Progressive Web App with:
 
 ### 1. **Manifest File** (`public/manifest.json`)
 - ✅ App name, icons, and branding

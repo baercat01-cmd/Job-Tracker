@@ -92,11 +92,11 @@ function AppContent() {
         <div className="text-center max-w-sm mx-auto px-4">
           <img
             src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png"
-            alt="Martin Builder"
+            alt="Martin Builder OS"
             className="h-12 mx-auto mb-6"
           />
           <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted-foreground font-medium">Loading FieldTrack Pro...</p>
+          <p className="text-muted-foreground font-medium">Loading Martin Builder OS...</p>
         </div>
       </div>
     );

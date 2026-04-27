@@ -44,7 +44,7 @@ export async function registerBiometric(userId: string, username: string) {
   const publicKeyOptions: PublicKeyCredentialCreationOptions = {
     challenge,
     rp: {
-      name: 'FieldTrack Pro',
+      name: 'Martin Builder OS',
       id: window.location.hostname,
     },
     user: {

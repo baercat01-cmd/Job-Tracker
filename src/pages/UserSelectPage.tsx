@@ -87,7 +87,7 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
             <div className="flex justify-center flex-1">
               <img 
                 src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-                alt="Martin Builder" 
+                alt="Martin Builder OS" 
                 className="h-16 w-auto"
               />
             </div>
@@ -104,7 +104,7 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
             </div>
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">FieldTrack Pro</CardTitle>
+            <CardTitle className="text-2xl font-bold">Martin Builder OS</CardTitle>
             <CardDescription>Select Your Name to Continue</CardDescription>
           </div>
         </CardHeader>

@@ -190,11 +190,11 @@ export function OfficeDashboard() {
             <div className="flex items-center gap-4">
               <img 
                 src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-                alt="Martin Builder" 
+                alt="Martin Builder OS" 
                 className="h-10 w-auto"
               />
               <div className="border-l border-slate-300 pl-4">
-                <h1 className="text-lg font-bold text-green-900 tracking-tight">FieldTrack Pro</h1>
+                <h1 className="text-lg font-bold text-green-900 tracking-tight">Martin Builder OS</h1>
                 <p className="text-xs text-black">Field View Preview</p>
               </div>
             </div>
@@ -237,7 +237,7 @@ export function OfficeDashboard() {
           {/* Logo - mobile: compact; desktop: unchanged */}
           <img 
             src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-            alt="Martin Builder" 
+            alt="Martin Builder OS" 
             className="h-8 w-auto flex-shrink-0 sm:h-10"
           />
 
