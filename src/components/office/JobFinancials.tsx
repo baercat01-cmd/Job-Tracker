@@ -5441,6 +5441,14 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         const { tax_exempt: _te, ...payloadWithoutTaxExempt } = quotePayload as Record<string, unknown>;
         result = await supabase.from('quotes').insert(payloadWithoutTaxExempt).select().single();
       }
+      if (result.error && /is_customer_estimate|schema cache|column.*is_customer_estimate/i.test(result.error.message)) {
+        const { is_customer_estimate: _ice, ...payloadWithoutIsEstimate } = quotePayload as Record<string, unknown>;
+        const maybeWithDescription = { ...payloadWithoutIsEstimate, description: (sourceQuote as any).description ?? null };
+        result = await supabase.from('quotes').insert(maybeWithDescription).select().single();
+        if (result.error && /description.*schema cache|column.*description/i.test(result.error.message)) {
+          result = await supabase.from('quotes').insert(payloadWithoutIsEstimate).select().single();
+        }
+      }
       const quoteErr = result.error;
       const newQuoteRow = result.data;
       if (quoteErr || !newQuoteRow) throw new Error(`Step 1 (create quote): ${quoteErr?.message ?? 'No data returned'}`);

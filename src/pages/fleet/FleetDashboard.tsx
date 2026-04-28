@@ -21,7 +21,7 @@ interface FleetDashboardProps {
 }
 
 export function FleetDashboard({ hideHeader = false, defaultCompany }: FleetDashboardProps) {
-  const { profile } = useAuth();
+  const { profile, clearUser } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -59,9 +59,8 @@ export function FleetDashboard({ hideHeader = false, defaultCompany }: FleetDash
   }
 
   function handleLogout() {
-    // Logout handled by main app
-    setShowSettings(false);
-    setSelectedCompany(null);
+    // Clear auth state for PIN-login app
+    clearUser();
   }
 
   if (loading) {

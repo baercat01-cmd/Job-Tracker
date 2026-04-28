@@ -10,6 +10,8 @@ interface AuthContextType {
   authState: AuthState;
   selectUser: (user: UserProfile) => void;
   clearUser: () => void;
+  markAuthenticated: () => void;
+  patchProfile: (updates: Partial<UserProfile>) => void;
 }
 
 // Initialize with default value to prevent undefined context errors
@@ -18,7 +20,9 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   authState: 'unauthenticated',
   selectUser: () => {},
-  clearUser: () => {}
+  clearUser: () => {},
+  markAuthenticated: () => {},
+  patchProfile: () => {}
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -125,8 +129,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthState('unauthenticated');
   }
 
+  function markAuthenticated() {
+    localStorage.setItem('fieldtrack_authenticated', 'true');
+    setAuthState('authenticated');
+  }
+
+  function patchProfile(updates: Partial<UserProfile>) {
+    setProfile((prev) => (prev ? { ...prev, ...updates } : prev));
+  }
+
   return (
-    <AuthContext.Provider value={{ profile, loading, authState, selectUser, clearUser }}>
+    <AuthContext.Provider value={{ profile, loading, authState, selectUser, clearUser, markAuthenticated, patchProfile }}>
       {children}
     </AuthContext.Provider>
   );

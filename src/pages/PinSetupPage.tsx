@@ -9,6 +9,7 @@ import { Lock, Fingerprint, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-r
 import { toast } from 'sonner';
 import { hashPin, registerBiometric, isWebAuthnSupported } from '@/lib/auth';
 import type { UserProfile } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
 
 interface PinSetupPageProps {
   user: UserProfile;
@@ -17,6 +18,7 @@ interface PinSetupPageProps {
 }
 
 export function PinSetupPage({ user, onComplete, onBack }: PinSetupPageProps) {
+  const { markAuthenticated, patchProfile } = useAuth();
   const [step, setStep] = useState<'pin' | 'confirm' | 'biometric'>('pin');
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -58,8 +60,8 @@ export function PinSetupPage({ user, onComplete, onBack }: PinSetupPageProps) {
 
       toast.success('PIN set successfully');
 
-      // Mark user as authenticated
-      localStorage.setItem('fieldtrack_authenticated', 'true');
+      patchProfile({ pin_hash: hash });
+      markAuthenticated();
 
       // Move to biometric setup if supported
       if (supportsBiometric) {
@@ -94,8 +96,8 @@ export function PinSetupPage({ user, onComplete, onBack }: PinSetupPageProps) {
 
       toast.success('Biometric authentication enabled');
       
-      // Mark user as authenticated
-      localStorage.setItem('fieldtrack_authenticated', 'true');
+      patchProfile({ webauthn_credentials: [credential] as any });
+      markAuthenticated();
       
       onComplete();
     } catch (error: any) {

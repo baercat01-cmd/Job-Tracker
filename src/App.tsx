@@ -109,24 +109,28 @@ function AppContent() {
 
   // User selected but needs to set up PIN
   if (authState === 'needs_pin_setup') {
-    return <PinSetupPage user={profile} onComplete={() => window.location.reload()} onBack={clearUser} />;
+    return <PinSetupPage user={profile} onComplete={() => {}} onBack={clearUser} />;
   }
 
   // User selected but needs to login
   if (authState === 'needs_login') {
-    return <LoginPage user={profile} onSuccess={() => window.location.reload()} onBack={clearUser} />;
+    return <LoginPage user={profile} onSuccess={() => {}} onBack={clearUser} />;
   }
 
   // Critical: Role-based routing using profile.role from database
   // DO NOT use auth.user metadata - always check profile.role
   
   // Crew users: limited field interface (Jobs, Timer, Photos, Logs)
-  if (profile.role === 'crew') {
+  // Legacy: 'foreman' is treated as 'crew'
+  if (profile.role === 'crew' || profile.role === 'foreman') {
     return <ForemanDashboard />;
   }
 
-  // Crew users also get foreman dashboard (same interface)
-  // This handles legacy 'foreman' role that was renamed to 'crew'
+  // Driver users: fleet-focused interface
+  if (profile.role === 'driver') {
+    // Let drivers pick any company (e.g. TriCounty or Martin Builder)
+    return <FleetDashboard />;
+  }
 
   // Office users: full admin dashboard (Jobs, Components, Logs, Time, Photos, Settings)
   if (profile.role === 'office') {

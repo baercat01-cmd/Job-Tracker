@@ -10,6 +10,7 @@ import { InstallButton } from '@/components/ui/install-button';
 import { toast } from 'sonner';
 import { verifyPin, authenticateBiometric, isWebAuthnSupported } from '@/lib/auth';
 import type { UserProfile } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
 
 interface LoginPageProps {
   user: UserProfile;
@@ -18,6 +19,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ user, onSuccess, onBack }: LoginPageProps) {
+  const { markAuthenticated } = useAuth();
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -47,9 +49,7 @@ export function LoginPage({ user, onSuccess, onBack }: LoginPageProps) {
 
       toast.success('Welcome back!');
       
-      // Mark user as authenticated
-      localStorage.setItem('fieldtrack_authenticated', 'true');
-      
+      markAuthenticated();
       onSuccess();
     } catch (error: any) {
       console.error('PIN login error:', error);
@@ -75,9 +75,7 @@ export function LoginPage({ user, onSuccess, onBack }: LoginPageProps) {
 
       toast.success('Welcome back!');
       
-      // Mark user as authenticated
-      localStorage.setItem('fieldtrack_authenticated', 'true');
-      
+      markAuthenticated();
       onSuccess();
     } catch (error: any) {
       console.error('Biometric login error:', error);
