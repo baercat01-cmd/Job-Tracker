@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -106,6 +107,39 @@ function parseDrawingSegmentsFromSavedConfig(config: SavedConfig): LineSegment[]
   }
 }
 
+/** Plain JSON row for backup / external tools (matches DB-oriented export scripts). */
+function serializeSavedConfigForExport(c: SavedConfig): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    id: c.id,
+    name: c.name,
+    job_id: c.job_id,
+    job_name: c.job_name,
+    inches: c.inches,
+    bends: c.bends,
+    drawing_segments: c.drawing_segments ?? null,
+    material_type_id: c.material_type_id ?? null,
+    material_type_name: c.material_type_name ?? null,
+    created_at: c.created_at,
+  };
+  if (Object.prototype.hasOwnProperty.call(c, 'is_custom_trim')) {
+    base.is_custom_trim = c.is_custom_trim;
+  }
+  return base;
+}
+
+function downloadJsonFile(filename: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function sanitizePdfFilenameBase(name: string): string {
   const cleaned = name.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ').trim();
   return cleaned.length > 0 ? cleaned.slice(0, 120) : 'Trim-Drawing';
@@ -183,6 +217,9 @@ export function TrimPricingCalculator() {
   const [showInfo, setShowInfo] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const [showExportTrimsDialog, setShowExportTrimsDialog] = useState(false);
+  const [exportTrimScope, setExportTrimScope] = useState<'standard' | 'custom' | 'all'>('standard');
+  const [exportIncludeTrimTypes, setExportIncludeTrimTypes] = useState(true);
   
   // Trim type management
   const [showTrimTypeManagement, setShowTrimTypeManagement] = useState(false);
@@ -1999,6 +2036,46 @@ export function TrimPricingCalculator() {
     }
   }
 
+  function performTrimLibraryExport() {
+    let list: SavedConfig[];
+    if (exportTrimScope === 'standard') {
+      list = savedConfigs.filter((c) => !isSavedConfigCustom(c));
+    } else if (exportTrimScope === 'custom') {
+      list = savedConfigs.filter((c) => isSavedConfigCustom(c));
+    } else {
+      list = [...savedConfigs];
+    }
+    if (list.length === 0) {
+      toast.error('Nothing to export for this selection');
+      return;
+    }
+    const sorted = [...list].sort((a, b) =>
+      String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' })
+    );
+    const trim_saved_configs = sorted.map(serializeSavedConfigForExport);
+    const payload: Record<string, unknown> = {
+      export_version: 1,
+      exported_at: new Date().toISOString(),
+      scope: exportTrimScope,
+      trim_saved_configs,
+    };
+    if (exportIncludeTrimTypes) {
+      payload.trim_types = trimTypes.map((t) => ({
+        id: t.id,
+        name: t.name,
+        width_inches: t.width_inches,
+        cost_per_lf: t.cost_per_lf,
+        price_per_bend: t.price_per_bend,
+        markup_percent: t.markup_percent,
+        cut_price: t.cut_price,
+        active: t.active,
+      }));
+    }
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    downloadJsonFile(`trim-library-export-${dateStamp}-${exportTrimScope}.json`, payload);
+    toast.success(`Downloaded ${list.length} trim configuration(s)`);
+    setShowExportTrimsDialog(false);
+  }
 
   
   async function saveTrimType() {
@@ -3286,6 +3363,20 @@ export function TrimPricingCalculator() {
                   </Button>
                 </div>
                 <Button
+                  type="button"
+                  disabled={savedConfigs.length === 0}
+                  onClick={() => {
+                    setExportTrimScope('standard');
+                    setExportIncludeTrimTypes(true);
+                    setShowExportTrimsDialog(true);
+                  }}
+                  variant="outline"
+                  className="w-full border-2 border-green-600 text-yellow-300 hover:bg-green-900/30 font-bold h-7 text-xs disabled:opacity-40"
+                >
+                  <Download className="w-3 h-3 mr-1" />
+                  Export JSON…
+                </Button>
+                <Button
                   onClick={() => {
                     if (trimTypes.length === 0) {
                       toast.error('Add material types first');
@@ -3927,6 +4018,72 @@ export function TrimPricingCalculator() {
             >
               Close
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export trim library (JSON download) */}
+      <Dialog open={showExportTrimsDialog} onOpenChange={setShowExportTrimsDialog}>
+        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500">
+              <Download className="w-5 h-5" />
+              Export trim library
+            </DialogTitle>
+            <DialogDescription className="text-white/70">
+              Download saved trims as JSON (same classification as Load: Standard vs Custom). Optionally include active
+              material types from this session for pricing context.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Tabs value={exportTrimScope} onValueChange={(v) => setExportTrimScope(v as 'standard' | 'custom' | 'all')}>
+              <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-lg border border-green-800 bg-black/40 p-1">
+                <TabsTrigger
+                  value="standard"
+                  className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-yellow-400 text-xs py-2"
+                >
+                  Standard ({savedConfigs.filter((c) => !isSavedConfigCustom(c)).length})
+                </TabsTrigger>
+                <TabsTrigger
+                  value="custom"
+                  className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-yellow-400 text-xs py-2"
+                >
+                  Custom ({savedConfigs.filter((c) => isSavedConfigCustom(c)).length})
+                </TabsTrigger>
+                <TabsTrigger
+                  value="all"
+                  className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-yellow-400 text-xs py-2"
+                >
+                  All ({savedConfigs.length})
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-yellow-200/90">
+              <Checkbox
+                checked={exportIncludeTrimTypes}
+                onCheckedChange={(v) => setExportIncludeTrimTypes(v === true)}
+                className="border-yellow-500 data-[state=checked]:bg-yellow-500 data-[state=checked]:text-black"
+              />
+              Include material types (trim_types){trimTypes.length === 0 ? ' — none loaded yet' : ` (${trimTypes.length})`}
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-green-700 text-yellow-400"
+                onClick={() => setShowExportTrimsDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="bg-yellow-500 font-bold text-black hover:bg-yellow-400"
+                onClick={performTrimLibraryExport}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download JSON
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

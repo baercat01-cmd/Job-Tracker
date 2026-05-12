@@ -3065,6 +3065,17 @@ export function JobFinancials({
   // Supabase Realtime broadcast channel for instant cross-user sync
   const taxExemptChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const quoteIdForSubsRef = useRef<string | null>(null);
+  /**
+   * Sibling-sheet remap (orphan_sheet_id → displayed_sheet_id) populated by
+   * `loadMaterialsData` while computing the orphan-labor merge. Lets
+   * `loadSubcontractorEstimates` and `loadCustomRows` re-attach subs/custom
+   * rows whose `sheet_id` points to a sibling workbook's section to the
+   * displayed sheet of the same name (or order_index). Without this, a
+   * proposal version whose displayed workbook is missing the sub/row's
+   * referenced sheet silently drops Cedar-Post-Changes-style cards from the
+   * proposal totals — even though the data is still in the DB.
+   */
+  const siblingSheetRemapRef = useRef<Record<string, string>>({});
   /** Incremented on each full `loadData` so superseded async loads cannot overwrite materials/labor state. */
   const financialLoadCoopGenRef = useRef(0);
   const isFinancialLoadStale = (gen?: number) =>
@@ -6565,15 +6576,31 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
         setSubcontractorEstimates(estimatesOnly);
       }
 
-      // Build linked-subcontractors map
+      // Build linked-subcontractors map.
+      // When a sub's `sheet_id` references a sibling workbook's sheet (e.g. the
+      // sub was originally pinned to the locked contract workbook's Pavilion
+      // sheet but the displayed proposal is the working workbook with a
+      // different Pavilion sheet id), also alias the sub under the DISPLAYED
+      // sheet id via siblingSheetRemapRef. Mirrors the orphan-labor merge in
+      // loadMaterialsData so cards like "Cedar Post Changes" stop disappearing
+      // whenever the chosen workbook flips between sibling versions.
       const linkedMap: Record<string, any[]> = {};
+      const remap = siblingSheetRemapRef.current || {};
+      const pushLinked = (key: string, est: any) => {
+        if (!linkedMap[key]) linkedMap[key] = [];
+        if (!linkedMap[key].some((e: any) => e?.id === est?.id)) {
+          linkedMap[key].push(est);
+        }
+      };
       estimatesOnly.forEach((est: any) => {
         if (est.sheet_id) {
-          if (!linkedMap[est.sheet_id]) linkedMap[est.sheet_id] = [];
-          linkedMap[est.sheet_id].push(est);
+          pushLinked(String(est.sheet_id), est);
+          const remapped = remap[String(est.sheet_id)];
+          if (remapped && remapped !== String(est.sheet_id)) {
+            pushLinked(remapped, est);
+          }
         } else if (est.row_id) {
-          if (!linkedMap[est.row_id]) linkedMap[est.row_id] = [];
-          linkedMap[est.row_id].push(est);
+          pushLinked(String(est.row_id), est);
         }
       });
       setLinkedSubcontractors(linkedMap);
@@ -6898,6 +6925,9 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
       
       // Air-gap: when a quote is active load ONLY by quote_id; fall back to job_id only when no quote.
       console.log('📝 Loading live materials data');
+      // Reset the sibling remap before each fresh load so a previous proposal's
+      // (orphan_sheet_id → displayed_sheet_id) entries can't bleed into this load.
+      siblingSheetRemapRef.current = {};
       const hasQuote = targetQuoteId != null && targetQuoteId !== '';
       let workbookData: any = null;
       let workbookError: any = null;
@@ -7302,6 +7332,20 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
             const orphanSheets = ((jobSheetsAll || []) as { id: string; sheet_name?: string; order_index?: number }[]).filter(
               (s) => s?.id && !displayedIdSet.has(String(s.id).trim())
             );
+            // Build the orphan→displayed remap and stash it in a ref so loadCustomRows
+            // and loadSubcontractorEstimates (which run after this fn awaits) can
+            // re-attach rows/subs whose sheet_id points at a sibling workbook's sheet.
+            const remap: Record<string, string> = {};
+            orphanSheets.forEach((s) => {
+              const sid = String(s.id ?? '').trim();
+              if (!sid) return;
+              const byName = displayedByNameJl.get(normalizeSheetNameJl(s.sheet_name));
+              const oi = Number(s.order_index);
+              const byOrder = Number.isFinite(oi) ? displayedByOrderJl.get(oi) : undefined;
+              const target = byName || byOrder;
+              if (target && target !== sid) remap[sid] = target;
+            });
+            siblingSheetRemapRef.current = remap;
             const orphanIds = orphanSheets.map((s) => s.id).filter(Boolean);
             if (orphanIds.length > 0) {
               const { data: orphanLabor } = await supabase
@@ -7333,6 +7377,10 @@ UPDATE material_workbooks SET status = 'locked', updated_at = now() WHERE quote_
                   sheet_id: mappedSheetId,
                   total_labor_cost: total,
                   labor_source_sheet_id: sid,
+                  // Same trust model as the locked-workbook sibling merge above:
+                  // matched by sheet name (or order_index) intentionally, so this
+                  // labor belongs to the displayed section and must count in totals.
+                  labor_mergetrusted: true,
                 };
               });
             }
